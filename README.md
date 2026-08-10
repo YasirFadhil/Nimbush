@@ -7,7 +7,7 @@ This is not a traditional command-line shell. It is a Wayland UI shell built wit
 
 ## Components
 * **Quickshell**: The core UI framework.
-* **Hyprland & Niri**: Supported Wayland compositors.
+* **Hyprland**: Supported Wayland compositors.
 * **wlogout**: Custom power menu styling.
 
 ## Installation & Setup
