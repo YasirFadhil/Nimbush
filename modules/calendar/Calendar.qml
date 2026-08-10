@@ -1,0 +1,160 @@
+import QtQuick
+import QtQuick.Layouts
+import Quickshell
+import Quickshell.Wayland
+import "../../services" as Services
+
+PanelWindow {
+    id: root
+
+    anchors { top: true; bottom: true; left: true; right: true }
+    color: "transparent"
+    exclusiveZone: 0
+    visible: Services.OverlayManager.calendarVisible
+    WlrLayershell.layer: WlrLayer.Overlay
+    WlrLayershell.namespace: "quickshell:calendar"
+    WlrLayershell.keyboardFocus: WlrKeyboardFocus.Exclusive
+
+    Item {
+        id: escFocus
+        focus: Services.OverlayManager.calendarVisible
+        Keys.onEscapePressed: root.close()
+    }
+
+    property date viewDate: new Date()
+    readonly property date today: new Date()
+
+    function close() {
+        Services.OverlayManager.calendarVisible = false
+    }
+    function hide() { close() }
+
+    Component.onCompleted: Services.OverlayManager.register(root)
+
+    function daysInMonth(y, m) { return new Date(y, m + 1, 0).getDate() }
+    function firstWeekday(y, m) { return new Date(y, m, 1).getDay() }
+
+    function buildGrid() {
+        const y = viewDate.getFullYear()
+        const m = viewDate.getMonth()
+        const total = daysInMonth(y, m)
+        const startOffset = firstWeekday(y, m)
+        const cells = []
+        for (let i = 0; i < startOffset; i++) cells.push(0)
+        for (let d = 1; d <= total; d++) cells.push(d)
+        return cells
+    }
+
+    MouseArea {
+        anchors.fill: parent
+        onClicked: root.close()
+
+        Rectangle {
+            id: panel
+            anchors { top: parent.top; right: parent.right }
+            anchors.rightMargin: 12
+            anchors.topMargin: 12
+            width: 300
+            height: col.implicitHeight + 32
+            radius: Services.Theme.radiusLg
+            color: Services.Theme.surface
+            border.color: Services.Theme.border
+            border.width: 1
+            clip: true
+
+            opacity: Services.OverlayManager.calendarVisible ? 1 : 0
+            scale: 1
+            y: Services.OverlayManager.calendarVisible ? 0 : -24
+            Behavior on opacity { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
+            Behavior on y { NumberAnimation { duration: 220; easing.type: Easing.OutBack; easing.overshoot: 0.6 } }
+
+            MouseArea { anchors.fill: parent; onClicked: {} }
+
+            ColumnLayout {
+                id: col
+                anchors.fill: parent
+                anchors.margins: 16
+                spacing: 10
+
+                RowLayout {
+                    Layout.fillWidth: true
+
+                    Text {
+                        Layout.fillWidth: true
+                        text: root.viewDate.toLocaleDateString(Qt.locale(), "MMMM yyyy")
+                        color: Services.Theme.textPrimary
+                        font.bold: true
+                        font.pixelSize: 14
+                    }
+
+                    Text {
+                        text: "\uf053"
+                        font.family: "Symbols Nerd Font Mono"
+                        font.pixelSize: 12
+                        color: Services.Theme.textSecondary
+                        MouseArea {
+                            anchors.fill: parent
+                            anchors.margins: -6
+                            onClicked: root.viewDate = new Date(root.viewDate.getFullYear(), root.viewDate.getMonth() - 1, 1)
+                        }
+                    }
+                    Text {
+                        text: "\uf054"
+                        font.family: "Symbols Nerd Font Mono"
+                        font.pixelSize: 12
+                        color: Services.Theme.textSecondary
+                        MouseArea {
+                            anchors.fill: parent
+                            anchors.margins: -6
+                            onClicked: root.viewDate = new Date(root.viewDate.getFullYear(), root.viewDate.getMonth() + 1, 1)
+                        }
+                    }
+                }
+
+                GridLayout {
+                    Layout.fillWidth: true
+                    columns: 7
+                    columnSpacing: 2
+                    rowSpacing: 6
+
+                    Repeater {
+                        model: ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"]
+                        Text {
+                            Layout.preferredWidth: 34
+                            horizontalAlignment: Text.AlignHCenter
+                            text: modelData
+                            font.pixelSize: 10
+                            color: Services.Theme.textDisabled
+                        }
+                    }
+
+                    Repeater {
+                        model: root.buildGrid()
+
+                        Rectangle {
+                            required property int modelData
+                            required property int index
+
+                            readonly property bool isToday: modelData > 0
+                                && modelData === root.today.getDate()
+                                && root.viewDate.getMonth() === root.today.getMonth()
+                                && root.viewDate.getFullYear() === root.today.getFullYear()
+
+                            Layout.preferredWidth: 34
+                            Layout.preferredHeight: 30
+                            radius: 8
+                            color: isToday ? Services.Theme.accent : "transparent"
+
+                            Text {
+                                anchors.centerIn: parent
+                                text: modelData > 0 ? modelData : ""
+                                font.pixelSize: 11
+                                color: isToday ? "#0a0a0a" : Services.Theme.textPrimary
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
