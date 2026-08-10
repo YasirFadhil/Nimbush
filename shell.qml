@@ -22,8 +22,6 @@ ShellRoot {
     PowerMenu.PowerMenu { id: powerMenu }
     Bar.Bar {}
     ControlCenter.ControlCenter { id: controlCenter }
-    ControlCenter.WifiPanel {}
-    ControlCenter.BluetoothPanel {}
     CalendarModule.Calendar {}
 
 
