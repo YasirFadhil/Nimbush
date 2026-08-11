@@ -19,7 +19,7 @@ git clone https://github.com/YasirFadhil/Shell.git
 mv Shell ~/.config/quickshell
 ```
 
-### Hyprland Configuration (Standard .conf)
+### Hyprland Configuration (Hyprland 0.55+)
 
 To make the shell start automatically when you launch Hyprland, add this line to your `hyprland.lua`:
 
