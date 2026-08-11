@@ -9,9 +9,10 @@ Item {
     Text {
         id: ccIcon
         anchors.fill: parent
-        text: "\u{f0493}"
+        text: "\u{eb52}"
         font.family: "Liga SFMono Nerd Font"
-        font.pixelSize: 14
+        font.pixelSize: 16
+        font.weight: Font.Bold
         color: Services.OverlayManager.controlCenterVisible ? Services.Theme.accent : Services.Theme.textPrimary
     }
 

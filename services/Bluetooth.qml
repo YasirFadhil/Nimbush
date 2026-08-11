@@ -35,6 +35,11 @@ Singleton {
         disconnectProc.running = true
     }
 
+    function removeDevice(mac) {
+        removeProc.command = ["bluetoothctl", "remove", mac]
+        removeProc.running = true
+    }
+
     function checkNextStatus() {
         if (root.statusIndex >= root.devices.length) {
             root.refreshing = false
@@ -100,4 +105,5 @@ Singleton {
     Process { id: connectProc; onExited: root.listDevices() }
     Process { id: disconnectProc; onExited: root.listDevices() }
     Process { id: toggleProc; onExited: root.refresh() }
+    Process { id: removeProc; onExited: root.listDevices() }
 }

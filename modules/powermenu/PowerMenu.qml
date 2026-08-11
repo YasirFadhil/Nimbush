@@ -45,6 +45,7 @@ PanelWindow {
     WlrLayershell.layer: WlrLayer.Overlay
     WlrLayershell.exclusiveZone: -1
     WlrLayershell.keyboardFocus: WlrKeyboardFocus.Exclusive
+    WlrLayershell.namespace: "quickshell:hud"
     anchors { top: true; bottom: true; left: true; right: true }
 
     // Keyboard handler

@@ -7,7 +7,7 @@ RowLayout {
     spacing: 14
 
     Components.NotificationIndicator {}
-    Components.MediaIndicator {}
+    // Components.MediaIndicator {}
     Components.SysmonIndicator {}
 
     Components.Separator {}
@@ -33,7 +33,7 @@ RowLayout {
     // RowLayout {
     //     spacing: 6
     //     Text {
-    //         text: Services.Icons.brightnessIcon(Services.Brightness.percent)
+    //         text: Services.Icons.brightnessIcon(Services.brightness.percent)
     //         font.family: "Liga SFMono Nerd Font"
     //         font.pixelSize: 14
     //         color: Services.Theme.textPrimary
