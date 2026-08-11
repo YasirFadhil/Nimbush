@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Layouts
 import Quickshell
+import Quickshell.Wayland
 import "root:/services" as Services
 
 PanelWindow {
@@ -12,6 +13,7 @@ PanelWindow {
     color: "transparent"
     exclusiveZone: 0
     visible: false
+    WlrLayershell.namespace: "quickshell:hud"
 
     property bool charging: false
     property real percentage: 0

@@ -12,6 +12,7 @@ PanelWindow {
 
     WlrLayershell.layer: WlrLayer.Overlay
     WlrLayershell.keyboardFocus: WlrKeyboardFocus.Exclusive
+    WlrLayershell.namespace: "quickshell:clipboard"
     exclusiveZone: 0
     anchors { top: true; bottom: true; left: true; right: true }
     color: "transparent"

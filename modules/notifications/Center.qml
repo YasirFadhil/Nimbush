@@ -244,7 +244,7 @@ PanelWindow {
                                         Text {
                                             anchors.centerIn: parent
                                             text: (groupCard.group.appName || "?").charAt(0).toUpperCase()
-                                            color: centerWin.T.textSecondary
+                                            color: centerWin.t.textSecondary
                                             font.bold: true
                                             font.pixelSize: 13
                                         }

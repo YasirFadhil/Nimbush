@@ -3,13 +3,13 @@ import QtQuick
 
 QtObject {
     // Base — dark tapi bukan pure black, ada breathing room
-    readonly property color bg:          '#111111'   // background paling dalam
-    readonly property color bgElevated:  "#181818"   // panel, bar
-    readonly property color bgHover:     "#1e1e1e"   // hover state
+    readonly property color bg:          "#cc111111"   // background paling dalam (~80% opaque)
+    readonly property color bgElevated:  "#cc181818"   // panel, bar (~80% opaque)
+    readonly property color bgHover:     "#d91e1e1e"   // hover state (~85% opaque)
 
     // Surface
-    readonly property color surface:        "#1e1e1e"   // card background
-    readonly property color surfaceVariant: "#272727"   // inner card / item hover
+    readonly property color surface:        "#b31e1e1e"   // card background (~70% opaque)
+    readonly property color surfaceVariant: "#b3272727"   // inner card / item hover (~70% opaque)
 
     // Text
     readonly property color textPrimary:   "#e8e8e8"

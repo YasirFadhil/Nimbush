@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Layouts
 import Quickshell
+import Quickshell.Wayland
 import "../../services" as Services
 PanelWindow {
     id: popupWin
@@ -11,6 +12,7 @@ PanelWindow {
     visible: Services.Notifications.popupList.count > 0
     color: "transparent"
     exclusiveZone: 0
+    WlrLayershell.namespace: "quickshell:hud"
     ColumnLayout {
         id: mainColumn
         width: parent.width

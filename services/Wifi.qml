@@ -12,11 +12,22 @@ Singleton {
     property int signalStrength: 0
 
     property var networks: []
+    property var savedNetworks: []
     property bool scanning: false
     property string lastError: ""
 
     function refresh() {
         radioProc.running = true
+        savedProc.running = true
+    }
+
+    function isSaved(targetSsid) {
+        return root.savedNetworks.indexOf(targetSsid) !== -1
+    }
+
+    function forgetNetwork(targetSsid) {
+        forgetProc.command = ["nmcli", "con", "delete", "id", targetSsid]
+        forgetProc.running = true
     }
 
     function toggle() {
@@ -148,4 +159,32 @@ Singleton {
 
     Process { id: disconnectProc; onExited: root.refresh() }
     Process { id: toggleProc; onExited: root.refresh() }
+
+    // Daftar profil WiFi yang udah pernah disave (buat badge "Saved" + fitur forget)
+    Process {
+        id: savedProc
+        command: ["nmcli", "-t", "-f", "NAME,TYPE", "connection", "show"]
+        property var buffer: []
+        stdout: SplitParser {
+            onRead: data => {
+                const line = data.trim()
+                if (line.length === 0) return
+                const parts = line.split(":")
+                if (parts[1] === "802-11-wireless") savedProc.buffer.push(parts[0])
+            }
+        }
+        onRunningChanged: { if (running) buffer = [] }
+        onExited: root.savedNetworks = savedProc.buffer
+    }
+
+    Process {
+        id: forgetProc
+        stderr: SplitParser {
+            onRead: data => { if (data.trim().length > 0) root.lastError = data.trim() }
+        }
+        onExited: {
+            root.refresh()
+            root.scan()
+        }
+    }
 }

@@ -25,8 +25,8 @@ PanelWindow {
         id: barBg
         anchors.fill: parent
         radius: 0
-        color: Services.Theme.bgElevated
-        // color: "transparent"
+        // color: Services.Theme.bgElevated
+        color: "transparent"
 
         RowLayout {
             anchors.fill: parent

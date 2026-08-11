@@ -21,23 +21,7 @@ mv Shell ~/.config/quickshell
 
 ### Hyprland Configuration (Standard .conf)
 
-To make the shell start automatically when you launch Hyprland, add this line to your `hyprland.conf`:
-
-```ini
-exec-once = qs -c ~/.config/quickshell
-```
-
-To set up keybindings for the application launcher and the clipboard manager:
-
-```ini
-bind = $mainMod, SPACE, exec, qs ipc call launcher toggle
-bind = $mainMod, V, exec, qs ipc call clipboard toggle
-bind = $mainMod, P, exec, qs ipc call power toggle
-```
-
-### Hyprland Configuration (Latest Lua Config)
-
-If you are using the newer Lua-based configuration for Hyprland, you can integrate it like this:
+To make the shell start automatically when you launch Hyprland, add this line to your `hyprland.lua`:
 
 ```lua
 -- Autostart Quickshell
@@ -49,6 +33,15 @@ end)
 hl.bind(mainMod .. " + SPACE", hl.dsp.exec_cmd("qs ipc call launcher toggle"))
 hl.bind(mainMod .. " + V", hl.dsp.exec_cmd("qs ipc call clipboard toggle"))
 hl.bind(mainMod .. " + P", hl.dsp.exec_cmd("qs ipc call powermenu toggle"))
+
+-- Layer Rules
+hl.layer_rule({ match = { namespace = "quickshell:bar" }, blur = true })
+hl.layer_rule({ match = { namespace = "quickshell:launcher" },      blur = true, ignore_alpha = 0 })
+hl.layer_rule({ match = { namespace = "quickshell:clipboard" },     blur = true, ignore_alpha = 0 })
+hl.layer_rule({ match = { namespace = "quickshell:controlcenter" }, blur = true, ignore_alpha = 0 })
+hl.layer_rule({ match = { namespace = "quickshell:notifcenter" },   blur = true, ignore_alpha = 0 })
+hl.layer_rule({ match = { namespace = "quickshell:calendar" },      blur = true, ignore_alpha = 0 })
+hl.layer_rule({ match = { namespace = "quickshell:hud" },      blur = true, ignore_alpha = 0 })
 ```
 
 ## DISCLAIMER: FULL VIBE CODED
