@@ -1,34 +1,43 @@
 import QtQuick
 import "../../../services" as Services
 
-Item {
-    implicitWidth: clock.implicitWidth
-    implicitHeight: clock.implicitHeight
+Rectangle {
+    id: clockPill
+    implicitHeight: 28
+    implicitWidth: clockText.implicitWidth + 20
+    radius: 14
+    color: clockArea.containsMouse ? Services.Theme.surfaceVariant : Services.Theme.surface
+    border.color: Services.Theme.border
+    border.width: 1
+
+    Behavior on color { ColorAnimation { duration: 100 } }
 
     Text {
-        id: clock
-        anchors.fill: parent
+        id: clockText
+        anchors.centerIn: parent
         font.family: "Liga SFMono Nerd Font"
-        font.pixelSize: 13
+        font.pixelSize: 12
         font.weight: Font.Bold
         color: Services.Theme.textPrimary
 
         function updateTime() {
-            clock.text = Qt.formatDateTime(new Date(), "ddd, d MMM hh:mm A")
+            clockText.text = Qt.formatDateTime(new Date(), "ddd, d MMM hh:mm A")
         }
 
         Timer {
             interval: 1000
             running: true
             repeat: true
-            onTriggered: clock.updateTime()
+            onTriggered: clockText.updateTime()
         }
 
         Component.onCompleted: updateTime()
     }
 
     MouseArea {
+        id: clockArea
         anchors.fill: parent
+        hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
         onClicked: {
             const newState = !Services.OverlayManager.calendarVisible

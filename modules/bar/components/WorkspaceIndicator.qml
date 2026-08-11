@@ -2,76 +2,131 @@ import QtQuick
 import QtQuick.Layouts
 import Quickshell
 import "../../../services" as Services
-import "." as Components
 
 RowLayout {
-    spacing: 10
+    spacing: 8
 
-    // OS logo — klik buat toggle launcher
-    Item {
-        Layout.preferredWidth: logoText.implicitWidth
-        Layout.preferredHeight: logoText.implicitHeight
+    // OS Logo & Workspaces Pill
+    Rectangle {
+        id: wsPill
+        implicitHeight: 28
+        implicitWidth: wsPillLayout.implicitWidth + 20
+        radius: 14
+        color: Services.Theme.surface
+        border.color: Services.Theme.border
+        border.width: 1
 
-        Text {
-            id: logoText
-            anchors.fill: parent
-            text: Services.OsInfo.logoGlyph
-            font.family: "Liga SFMono Nerd Font"
-            font.pixelSize: 16
-            color: Services.Theme.accent
-        }
+        RowLayout {
+            id: wsPillLayout
+            anchors.centerIn: parent
+            spacing: 10
 
-        MouseArea {
-            anchors.fill: parent
-            cursorShape: Qt.PointingHandCursor
-            onClicked: Services.OverlayManager.launcherToggleRequested()
-        }
-    }
-
-    // Workspace ovals — cuma render workspace yang beneran kebuka.
-    RowLayout {
-        id: wsRow
-        spacing: 5
-
-        readonly property var ids: Services.Workspaces.workspaceIds
-        readonly property int activeIdx: ids.indexOf(Services.Workspaces.activeWorkspaceId)
-        readonly property int nextWsId: (activeIdx >= 0 && activeIdx + 1 < ids.length) ? ids[activeIdx + 1] : -1
-
-        Repeater {
-            model: wsRow.ids
-
-            Rectangle {
-                id: ws
-                required property int modelData
-                readonly property bool isActive: modelData === Services.Workspaces.activeWorkspaceId
-                readonly property bool isNext: modelData === wsRow.nextWsId
-
+            // OS Logo — click to toggle launcher
+            Item {
+                Layout.preferredWidth: logoText.implicitWidth
+                Layout.preferredHeight: logoText.implicitHeight
                 Layout.alignment: Qt.AlignVCenter
-                width: isActive ? 20 : (isNext ? 11 : 6)
-                height: isActive ? 8 : (isNext ? 7 : 6)
-                radius: height / 2
-                color: isActive ? Services.Theme.accent
-                     : isNext ? Services.Theme.accentDim
-                     : Services.Theme.textDisabled
-                opacity: isActive ? 1.0 : (isNext ? 0.8 : 0.4)
 
-                Behavior on width { NumberAnimation { duration: 260; easing.type: Easing.OutBack; easing.overshoot: 1.6 } }
-                Behavior on height { NumberAnimation { duration: 260; easing.type: Easing.OutBack; easing.overshoot: 1.6 } }
-                Behavior on opacity { NumberAnimation { duration: 180 } }
-                Behavior on color { ColorAnimation { duration: 180 } }
+                Text {
+                    id: logoText
+                    anchors.centerIn: parent
+                    text: Services.OsInfo.logoGlyph
+                    font.family: "Liga SFMono Nerd Font"
+                    font.pixelSize: 15
+                    color: Services.Theme.accent
+                }
+
+                MouseArea {
+                    anchors.fill: parent
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: Services.OverlayManager.launcherToggleRequested()
+                }
+            }
+
+            // Divider
+            Rectangle {
+                width: 1
+                height: 12
+                color: Services.Theme.border
+                opacity: 0.8
+                Layout.alignment: Qt.AlignVCenter
+            }
+
+            // Workspace Indicators (Render 1..5 + any open workspace)
+            RowLayout {
+                id: wsRow
+                spacing: 6
+                Layout.alignment: Qt.AlignVCenter
+
+                property var workspaceList: {
+                    const list = [1, 2, 3, 4, 5]
+                    const openList = Services.Workspaces.workspaceIds || []
+                    for (let i = 0; i < openList.length; i++) {
+                        const id = openList[i]
+                        if (id > 0 && !list.includes(id)) list.push(id)
+                    }
+                    return list.sort((a, b) => a - b)
+                }
+
+                Repeater {
+                    model: wsRow.workspaceList
+
+                    Item {
+                        id: wsItem
+                        required property int modelData
+                        property int wsId: modelData
+                        property bool isActive: wsId === Services.Workspaces.activeWorkspaceId
+                        property bool isOccupied: (Services.Workspaces.workspaceIds || []).includes(wsId)
+
+                        Layout.preferredWidth: isActive ? 22 : (isOccupied ? 12 : 7)
+                        Layout.preferredHeight: 7
+                        Layout.alignment: Qt.AlignVCenter
+
+                        Rectangle {
+                            anchors.fill: parent
+                            radius: 3.5
+                            color: wsItem.isActive ? Services.Theme.accent
+                                 : wsItem.isOccupied ? Services.Theme.accentDim
+                                 : Services.Theme.textDisabled
+                            opacity: wsItem.isActive ? 1.0 : (wsItem.isOccupied ? 0.75 : 0.35)
+
+                            Behavior on color { ColorAnimation { duration: 180 } }
+                            Behavior on opacity { NumberAnimation { duration: 180 } }
+                        }
+
+                        MouseArea {
+                            anchors.fill: parent
+                            anchors.margins: -4
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: Services.Workspaces.switchTo(wsItem.wsId)
+                        }
+                    }
+                }
             }
         }
     }
 
-    Components.Separator {}
+    // Active Window Title Pill
+    Rectangle {
+        id: titlePill
+        implicitHeight: 28
+        implicitWidth: titleText.implicitWidth + 20
+        radius: 14
+        color: Services.Theme.surface
+        border.color: Services.Theme.border
+        border.width: 1
+        visible: Services.Workspaces.activeWindowTitle.length > 0
+        Layout.maximumWidth: 280
 
-    Text {
-        text: Services.Workspaces.activeWindowTitle
-        font.family: "Liga SFMono Nerd Font"
-        font.pixelSize: 13
-        color: Services.Theme.textSecondary
-        elide: Text.ElideRight
-        Layout.maximumWidth: 260
-        visible: text.length > 0
+        Text {
+            id: titleText
+            anchors.centerIn: parent
+            width: parent.width - 20
+            text: Services.Workspaces.activeWindowTitle
+            font.family: "Liga SFMono Nerd Font"
+            font.pixelSize: 12
+            color: Services.Theme.textSecondary
+            elide: Text.ElideRight
+        }
     }
 }

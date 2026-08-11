@@ -7,6 +7,8 @@ Singleton {
     id: root
     property var entries: []
     property string query: ""
+    property string filterType: "all" // "all", "text", "image", "pinned"
+    property var pinnedIds: []
     property var _buffer: []
 
     Process {
@@ -42,10 +44,33 @@ Singleton {
         listProc.running = true
     }
 
+    function togglePin(entry) {
+        if (!entry || !entry.id) return
+        const idx = pinnedIds.indexOf(entry.id)
+        if (idx !== -1) {
+            pinnedIds.splice(idx, 1)
+        } else {
+            pinnedIds.push(entry.id)
+        }
+        pinnedIds = pinnedIds.slice() // re-assign to trigger binding update
+    }
+
+    function isPinned(entry) {
+        return entry && entry.id ? pinnedIds.indexOf(entry.id) !== -1 : false
+    }
+
     function filtered() {
-        if (query.length === 0) return entries
+        let list = entries
+        if (filterType === "text") {
+            list = list.filter(e => !isImageEntry(e))
+        } else if (filterType === "image") {
+            list = list.filter(e => isImageEntry(e))
+        } else if (filterType === "pinned") {
+            list = list.filter(e => isPinned(e))
+        }
+        if (query.length === 0) return list
         const q = query.toLowerCase()
-        return entries.filter(e => e.preview.toLowerCase().indexOf(q) !== -1)
+        return list.filter(e => e.preview.toLowerCase().indexOf(q) !== -1)
     }
 
     function select(entry) {

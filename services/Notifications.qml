@@ -122,8 +122,17 @@ Singleton {
 
     // Hapus semua notif dalam satu group dari history
     function dismissGroupFromCenter(items) {
-        for (let i = 0; i < items.length; i++)
-            removeFromHistory(items[i].notifId)
+        if (!items) return
+        const ids = []
+        const count = items.length !== undefined ? items.length : items.count
+        for (let i = 0; i < count; i++) {
+            const item = items.get ? items.get(i) : items[i]
+            if (item && item.notifId !== undefined)
+                ids.push(item.notifId)
+        }
+        for (let i = 0; i < ids.length; i++) {
+            removeFromHistory(ids[i])
+        }
     }
 
     function clearHistory() { historyModel.clear() }

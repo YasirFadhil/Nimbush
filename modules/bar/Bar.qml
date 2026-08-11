@@ -17,21 +17,20 @@ PanelWindow {
     color: "transparent"
     WlrLayershell.namespace: "quickshell:bar"
 
-    // Reserve space for the bar (no floating margin — flush against top edge)
     exclusiveZone: implicitHeight
-    implicitHeight: 30
+    implicitHeight: 36
 
-    Rectangle {
-        id: barBg
+    Item {
+        id: barContainer
         anchors.fill: parent
-        radius: 0
-        // color: Services.Theme.bgElevated
-        color: "transparent"
 
         RowLayout {
             anchors.fill: parent
-            anchors.leftMargin: 16
-            anchors.rightMargin: 16
+            anchors.leftMargin: 12
+            anchors.rightMargin: 12
+            anchors.topMargin: 4
+            anchors.bottomMargin: 4
+            spacing: 12
 
             Components.WorkspaceIndicator {
                 Layout.alignment: Qt.AlignVCenter
@@ -45,8 +44,5 @@ PanelWindow {
                 Layout.alignment: Qt.AlignVCenter
             }
         }
-
-        // Sibling of RowLayout, anchored directly to the bar so it stays
-        // absolute-center regardless of left/right section widths.
     }
 }

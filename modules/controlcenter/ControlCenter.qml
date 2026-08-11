@@ -8,6 +8,7 @@ import "." as Local
 
 PanelWindow {
     id: root
+    property string overlayId: "controlCenter"
 
     anchors { top: true; bottom: true; left: true; right: true }
     color: "transparent"
@@ -15,7 +16,7 @@ PanelWindow {
     visible: Services.OverlayManager.controlCenterVisible
     WlrLayershell.layer: WlrLayer.Overlay
     WlrLayershell.namespace: "quickshell:controlcenter"
-    WlrLayershell.keyboardFocus: WlrKeyboardFocus.Exclusive
+    WlrLayershell.keyboardFocus: WlrKeyboardFocus.OnDemand
 
     property string wifiPasswordTarget: ""
     property string wifiPasswordInput: ""
@@ -152,6 +153,7 @@ PanelWindow {
                 ? 480
                 : Math.max(220, Math.min(mainCol.implicitHeight + 32, 640))
             radius: Services.Theme.radiusMd
+            // Background selalu Theme.surface agar Hyprland blur pada layer rule tetap aktif
             color: Services.Theme.surface
             border.color: Services.Theme.border
             border.width: 1
@@ -166,6 +168,10 @@ PanelWindow {
                 anchors.fill: parent
                 anchors.margins: 16
                 spacing: 12
+
+                opacity: (Services.OverlayManager.wifiPanelVisible || Services.OverlayManager.btPanelVisible) ? 0 : 1
+                visible: opacity > 0.01
+                Behavior on opacity { NumberAnimation { duration: 150 } }
 
                 Text {
                     text: "Control Center"
@@ -416,7 +422,7 @@ PanelWindow {
                 y: 0
                 width: panel.width
                 height: Services.OverlayManager.wifiPanelVisible ? panel.height : 0
-                color: Services.Theme.surface
+                color: "transparent"
                 clip: true
 
                 opacity: Services.OverlayManager.wifiPanelVisible ? 1 : 0
@@ -431,197 +437,363 @@ PanelWindow {
                     anchors.margins: 16
                     spacing: 10
 
+                    // Header Row
                     RowLayout {
                         Layout.fillWidth: true
                         spacing: 10
 
-                        Text {
-                            text: "\uf053"
-                            font.family: "Symbols Nerd Font Mono"
-                            font.pixelSize: 13
-                            color: Services.Theme.textSecondary
+                        // Back Button
+                        Rectangle {
+                            width: 26; height: 26; radius: 13
+                            color: backWifiMouse.containsMouse ? Services.Theme.surfaceVariant : "transparent"
+                            Behavior on color { ColorAnimation { duration: 100 } }
+
+                            Text {
+                                anchors.centerIn: parent
+                                text: "\uf053"
+                                font.family: "Symbols Nerd Font Mono"
+                                font.pixelSize: 12
+                                color: Services.Theme.textPrimary
+                            }
                             MouseArea {
+                                id: backWifiMouse
                                 anchors.fill: parent
-                                anchors.margins: -8
+                                hoverEnabled: true
                                 cursorShape: Qt.PointingHandCursor
                                 onClicked: Services.OverlayManager.wifiPanelVisible = false
                             }
                         }
+
                         Text {
-                            text: "Networks"
+                            text: "Wi-Fi Networks"
                             color: Services.Theme.textPrimary
                             font.bold: true
                             font.pixelSize: 14
                             Layout.fillWidth: true
                         }
-                        Text {
-                            text: Services.Wifi.scanning ? "Scanning…" : "\uf021"
-                            font.family: "Symbols Nerd Font Mono"
-                            font.pixelSize: 12
-                            color: Services.Theme.textDisabled
-                            MouseArea { anchors.fill: parent; anchors.margins: -6; onClicked: Services.Wifi.scan() }
+
+                        // Refresh Button
+                        Rectangle {
+                            width: 26; height: 26; radius: 13
+                            color: refreshWifiMouse.containsMouse ? Services.Theme.surfaceVariant : "transparent"
+                            Behavior on color { ColorAnimation { duration: 100 } }
+
+                            Text {
+                                anchors.centerIn: parent
+                                text: Services.Wifi.scanning ? "\uf110" : "\uf021"
+                                font.family: "Symbols Nerd Font Mono"
+                                font.pixelSize: 12
+                                color: Services.Wifi.scanning ? Services.Theme.accent : Services.Theme.textSecondary
+                            }
+                            MouseArea {
+                                id: refreshWifiMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: {
+                                    if (Services.Wifi.enabled) Services.Wifi.scan()
+                                }
+                            }
+                        }
+
+                        // Master Toggle Switch
+                        Rectangle {
+                            width: 42; height: 22; radius: 11
+                            color: Services.Wifi.enabled ? Services.Theme.accent : Services.Theme.surfaceVariant
+                            Behavior on color { ColorAnimation { duration: 150 } }
+
+                            Rectangle {
+                                width: 18; height: 18; radius: 9
+                                x: Services.Wifi.enabled ? parent.width - width - 2 : 2
+                                anchors.verticalCenter: parent.verticalCenter
+                                color: Services.Wifi.enabled ? "#0a0a0a" : Services.Theme.textSecondary
+                                Behavior on x { NumberAnimation { duration: 150; easing.type: Easing.OutQuad } }
+                            }
+
+                            MouseArea {
+                                anchors.fill: parent
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: Services.Wifi.toggle()
+                            }
                         }
                     }
 
-                Flickable {
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
-                    contentHeight: wifiOverlayCol.implicitHeight
-                    clip: true
-                    boundsBehavior: Flickable.StopAtBounds
+                    Flickable {
+                        id: wifiFlickable
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        contentHeight: wifiOverlayCol.implicitHeight
+                        clip: true
+                        boundsBehavior: Flickable.StopAtBounds
 
-                    ColumnLayout {
-                        id: wifiOverlayCol
-                        width: parent.width
-                        spacing: 6
+                        ColumnLayout {
+                            id: wifiOverlayCol
+                            width: wifiFlickable.width
+                            spacing: 8
 
-                        Text {
-                            visible: Services.Wifi.lastError.length > 0
-                            text: Services.Wifi.lastError
-                            color: Services.Theme.danger
-                            font.pixelSize: 10
-                            wrapMode: Text.Wrap
-                            Layout.fillWidth: true
-                        }
-
-                        Text {
-                            visible: Services.Wifi.networks.length === 0 && !Services.Wifi.scanning
-                            text: "No networks found"
-                            color: Services.Theme.textDisabled
-                            font.pixelSize: 11
-                        }
-
-                        Repeater {
-                            model: Services.Wifi.networks
-                            delegate: Rectangle {
-                                id: netRow
-                                required property var modelData
+                            // Wi-Fi Disabled State Card
+                            Rectangle {
+                                visible: !Services.Wifi.enabled
                                 Layout.fillWidth: true
-                                implicitHeight: netCol.implicitHeight + 16
-                                radius: Services.Theme.radiusMd
-                                color: netArea.containsMouse ? Services.Theme.bgHover : "transparent"
-                                Behavior on color { ColorAnimation { duration: 100 } }
-
-                                readonly property bool isSaved: Services.Wifi.isSaved(netRow.modelData.ssid)
-                                readonly property bool isPwOpen: root.wifiPasswordTarget === netRow.modelData.ssid
-
-                                function doJoin() {
-                                    Services.Wifi.connectNetwork(netRow.modelData.ssid, root.wifiPasswordInput)
-                                    root.wifiPasswordTarget = ""
-                                }
+                                implicitHeight: 130
+                                radius: Services.Theme.radiusLg
+                                color: Services.Theme.surfaceVariant
 
                                 ColumnLayout {
-                                    id: netCol
-                                    anchors { left: parent.left; right: parent.right; top: parent.top }
-                                    anchors.margins: 8
-                                    spacing: 6
+                                    anchors.centerIn: parent
+                                    spacing: 8
 
-                                    RowLayout {
-                                        Layout.fillWidth: true
-                                        spacing: 8
+                                    Text {
+                                        text: "\uf1eb"
+                                        font.family: "Symbols Nerd Font Mono"
+                                        font.pixelSize: 24
+                                        color: Services.Theme.textDisabled
+                                        Layout.alignment: Qt.AlignHCenter
+                                    }
+                                    Text {
+                                        text: "Wi-Fi is turned off"
+                                        color: Services.Theme.textSecondary
+                                        font.pixelSize: 12
+                                        Layout.alignment: Qt.AlignHCenter
+                                    }
+                                    Rectangle {
+                                        Layout.preferredWidth: 90; Layout.preferredHeight: 28; radius: 14
+                                        color: Services.Theme.accent
+                                        Layout.alignment: Qt.AlignHCenter
 
-                                        Item {
-                                            Layout.fillWidth: true
-                                            implicitHeight: rowContent.implicitHeight
-
-                                            RowLayout {
-                                                id: rowContent
-                                                anchors.fill: parent
-                                                spacing: 10
-
-                                                Text {
-                                                    text: netRow.modelData.security.length > 0 ? "\uf023" : "\uf09c"
-                                                    font.family: "Symbols Nerd Font Mono"
-                                                    font.pixelSize: 12
-                                                    color: netRow.modelData.inUse ? Services.Theme.accent : Services.Theme.textSecondary
-                                                }
-
-                                                ColumnLayout {
-                                                    Layout.fillWidth: true
-                                                    spacing: 1
-                                                    Text {
-                                                        text: netRow.modelData.ssid
-                                                        color: netRow.modelData.inUse ? Services.Theme.accent : Services.Theme.textPrimary
-                                                        font.bold: netRow.modelData.inUse
-                                                        font.pixelSize: 12
-                                                        Layout.fillWidth: true
-                                                        elide: Text.ElideRight
-                                                    }
-                                                    Text {
-                                                        visible: netRow.modelData.inUse || netRow.isSaved
-                                                        text: netRow.modelData.inUse ? "Connected" : "Saved · auto-connect"
-                                                        color: Services.Theme.textDisabled
-                                                        font.pixelSize: 9
-                                                    }
-                                                }
-
-                                                SignalBars { signal: netRow.modelData.signal }
-                                            }
-
-                                            MouseArea {
-                                                id: netArea
-                                                anchors.fill: parent
-                                                hoverEnabled: true
-                                                cursorShape: Qt.PointingHandCursor
-                                                onClicked: {
-                                                    if (netRow.modelData.inUse) {
-                                                        Services.Wifi.disconnectNetwork()
-                                                    } else if (netRow.modelData.security.length === 0) {
-                                                        Services.Wifi.connectNetwork(netRow.modelData.ssid, "")
-                                                    } else {
-                                                        root.wifiPasswordTarget = netRow.isPwOpen ? "" : netRow.modelData.ssid
-                                                        root.wifiPasswordInput = ""
-                                                    }
-                                                }
-                                            }
+                                        Text {
+                                            anchors.centerIn: parent
+                                            text: "Turn On"
+                                            font.pixelSize: 11
+                                            font.bold: true
+                                            color: "#0a0a0a"
                                         }
-
-                                        // Forget — cuma nongol kalau ada saved profile
-                                        Item {
-                                            visible: netRow.isSaved
-                                            Layout.preferredWidth: 22; Layout.preferredHeight: 22
-
-                                            Rectangle {
-                                                anchors.fill: parent
-                                                radius: 6
-                                                color: forgetHover.containsMouse ? Services.Theme.danger : "transparent"
-                                                Behavior on color { ColorAnimation { duration: 100 } }
-                                            }
-                                            Text {
-                                                anchors.centerIn: parent
-                                                text: "\uf1f8"
-                                                font.family: "Symbols Nerd Font Mono"
-                                                font.pixelSize: 10
-                                                color: forgetHover.containsMouse ? "#0a0a0a" : Services.Theme.textDisabled
-                                            }
-                                            MouseArea {
-                                                id: forgetHover
-                                                anchors.fill: parent
-                                                hoverEnabled: true
-                                                cursorShape: Qt.PointingHandCursor
-                                                onClicked: Services.Wifi.forgetNetwork(netRow.modelData.ssid)
-                                            }
+                                        MouseArea {
+                                            anchors.fill: parent
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: Services.Wifi.toggle()
                                         }
                                     }
+                                }
+                            }
 
-                                    RowLayout {
-                                        visible: netRow.isPwOpen
-                                        Layout.fillWidth: true
-                                        Layout.leftMargin: 22
+                            Text {
+                                visible: Services.Wifi.enabled && Services.Wifi.lastError.length > 0
+                                text: Services.Wifi.lastError
+                                color: Services.Theme.danger
+                                font.pixelSize: 10
+                                wrapMode: Text.Wrap
+                                Layout.fillWidth: true
+                            }
+
+                            Text {
+                                visible: Services.Wifi.enabled && Services.Wifi.networks.length === 0 && !Services.Wifi.scanning
+                                text: "No networks found"
+                                color: Services.Theme.textDisabled
+                                font.pixelSize: 11
+                            }
+
+                            Repeater {
+                                model: Services.Wifi.enabled ? Services.Wifi.networks : []
+                                delegate: Rectangle {
+                                    id: netRow
+                                    required property var modelData
+                                    Layout.fillWidth: true
+                                    implicitHeight: netCol.implicitHeight + 16
+                                    radius: Services.Theme.radiusMd
+                                    color: netArea.containsMouse ? Services.Theme.bgHover : "transparent"
+                                    Behavior on color { ColorAnimation { duration: 100 } }
+
+                                    readonly property bool isSaved: Services.Wifi.isSaved(netRow.modelData.ssid)
+                                    readonly property bool isPwOpen: root.wifiPasswordTarget === netRow.modelData.ssid
+                                    property bool showPassword: false
+
+                                    function doJoin() {
+                                        Services.Wifi.connectNetwork(netRow.modelData.ssid, root.wifiPasswordInput)
+                                        root.wifiPasswordTarget = ""
+                                    }
+
+                                    ColumnLayout {
+                                        id: netCol
+                                        anchors { left: parent.left; right: parent.right; top: parent.top }
+                                        anchors.margins: 8
                                         spacing: 6
 
-                                        TextField {
+                                        RowLayout {
                                             Layout.fillWidth: true
-                                            placeholderText: "Password"
-                                            echoMode: TextInput.Password
-                                            onTextChanged: root.wifiPasswordInput = text
-                                            Keys.onReturnPressed: netRow.doJoin()
+                                            spacing: 8
+
+                                            Item {
+                                                Layout.fillWidth: true
+                                                implicitHeight: rowContent.implicitHeight
+
+                                                RowLayout {
+                                                    id: rowContent
+                                                    anchors.fill: parent
+                                                    spacing: 10
+
+                                                    Text {
+                                                        text: netRow.modelData.security.length > 0 ? "\uf023" : "\uf09c"
+                                                        font.family: "Symbols Nerd Font Mono"
+                                                        font.pixelSize: 12
+                                                        color: netRow.modelData.inUse ? Services.Theme.accent : Services.Theme.textSecondary
+                                                    }
+
+                                                    ColumnLayout {
+                                                        Layout.fillWidth: true
+                                                        spacing: 1
+                                                        Text {
+                                                            text: netRow.modelData.ssid
+                                                            color: netRow.modelData.inUse ? Services.Theme.accent : Services.Theme.textPrimary
+                                                            font.bold: netRow.modelData.inUse
+                                                            font.pixelSize: 12
+                                                            Layout.fillWidth: true
+                                                            elide: Text.ElideRight
+                                                        }
+                                                        Text {
+                                                            visible: netRow.modelData.inUse || netRow.isSaved
+                                                            text: netRow.modelData.inUse ? "Connected" : "Saved · auto-connect"
+                                                            color: Services.Theme.textDisabled
+                                                            font.pixelSize: 9
+                                                        }
+                                                    }
+
+                                                    SignalBars { signal: netRow.modelData.signal }
+                                                }
+
+                                                MouseArea {
+                                                    id: netArea
+                                                    anchors.fill: parent
+                                                    hoverEnabled: true
+                                                    cursorShape: Qt.PointingHandCursor
+                                                    onClicked: {
+                                                        if (netRow.modelData.inUse) {
+                                                            Services.Wifi.disconnectNetwork()
+                                                        } else if (netRow.isSaved || netRow.modelData.security.length === 0) {
+                                                            Services.Wifi.connectNetwork(netRow.modelData.ssid, "")
+                                                        } else {
+                                                            root.wifiPasswordTarget = netRow.isPwOpen ? "" : netRow.modelData.ssid
+                                                            root.wifiPasswordInput = ""
+                                                        }
+                                                    }
+                                                }
+                                            }
+
+                                            // Forget Button
+                                            Item {
+                                                visible: netRow.isSaved
+                                                Layout.preferredWidth: 22; Layout.preferredHeight: 22
+
+                                                Rectangle {
+                                                    anchors.fill: parent
+                                                    radius: 6
+                                                    color: forgetHover.containsMouse ? Services.Theme.danger : "transparent"
+                                                    Behavior on color { ColorAnimation { duration: 100 } }
+                                                }
+                                                Text {
+                                                    anchors.centerIn: parent
+                                                    text: "\uf1f8"
+                                                    font.family: "Symbols Nerd Font Mono"
+                                                    font.pixelSize: 10
+                                                    color: forgetHover.containsMouse ? "#0a0a0a" : Services.Theme.textDisabled
+                                                }
+                                                MouseArea {
+                                                    id: forgetHover
+                                                    anchors.fill: parent
+                                                    hoverEnabled: true
+                                                    cursorShape: Qt.PointingHandCursor
+                                                    onClicked: Services.Wifi.forgetNetwork(netRow.modelData.ssid)
+                                                }
+                                            }
                                         }
-                                        Rectangle {
-                                            width: 56; height: 28; radius: 8
-                                            color: Services.Theme.accent
-                                            Text { anchors.centerIn: parent; text: "Join"; font.pixelSize: 11; color: "#0a0a0a" }
-                                            MouseArea { anchors.fill: parent; onClicked: netRow.doJoin() }
+
+                                        // Dark-themed Password Input Box
+                                        ColumnLayout {
+                                            visible: netRow.isPwOpen
+                                            Layout.fillWidth: true
+                                            spacing: 6
+
+                                            Rectangle {
+                                                Layout.fillWidth: true
+                                                height: 34
+                                                radius: Services.Theme.radiusSm
+                                                color: Services.Theme.surfaceVariant
+                                                border.color: pwInput.activeFocus ? Services.Theme.accent : Services.Theme.border
+                                                border.width: 1
+
+                                                RowLayout {
+                                                    anchors.fill: parent
+                                                    anchors.margins: 6
+                                                    spacing: 6
+
+                                                    TextInput {
+                                                        id: pwInput
+                                                        Layout.fillWidth: true
+                                                        text: root.wifiPasswordInput
+                                                        echoMode: netRow.showPassword ? TextInput.Normal : TextInput.Password
+                                                        font.pixelSize: 12
+                                                        color: Services.Theme.textPrimary
+                                                        verticalAlignment: TextInput.AlignVCenter
+                                                        clip: true
+
+                                                        Text {
+                                                            visible: pwInput.text.length === 0
+                                                            text: "Enter password"
+                                                            color: Services.Theme.textDisabled
+                                                            font.pixelSize: 12
+                                                            anchors.verticalCenter: parent.verticalCenter
+                                                        }
+
+                                                        onTextChanged: root.wifiPasswordInput = text
+                                                        Keys.onReturnPressed: netRow.doJoin()
+                                                    }
+
+                                                    Text {
+                                                        text: netRow.showPassword ? "\uf06e" : "\uf070"
+                                                        font.family: "Symbols Nerd Font Mono"
+                                                        font.pixelSize: 12
+                                                        color: eyeMouse.containsMouse ? Services.Theme.textPrimary : Services.Theme.textDisabled
+                                                        MouseArea {
+                                                            id: eyeMouse
+                                                            anchors.fill: parent
+                                                            anchors.margins: -4
+                                                            hoverEnabled: true
+                                                            cursorShape: Qt.PointingHandCursor
+                                                            onClicked: netRow.showPassword = !netRow.showPassword
+                                                        }
+                                                    }
+                                                }
+                                            }
+
+                                            RowLayout {
+                                                Layout.fillWidth: true
+                                                Layout.alignment: Qt.AlignRight
+                                                spacing: 8
+
+                                                Rectangle {
+                                                    width: 60; height: 26; radius: 13
+                                                    color: cancelMouse.containsMouse ? Services.Theme.surfaceVariant : "transparent"
+                                                    Text { anchors.centerIn: parent; text: "Cancel"; font.pixelSize: 11; color: Services.Theme.textSecondary }
+                                                    MouseArea {
+                                                        id: cancelMouse
+                                                        anchors.fill: parent
+                                                        hoverEnabled: true
+                                                        cursorShape: Qt.PointingHandCursor
+                                                        onClicked: root.wifiPasswordTarget = ""
+                                                    }
+                                                }
+
+                                                Rectangle {
+                                                    width: 60; height: 26; radius: 13
+                                                    color: Services.Theme.accent
+                                                    Text { anchors.centerIn: parent; text: "Join"; font.pixelSize: 11; font.bold: true; color: "#0a0a0a" }
+                                                    MouseArea {
+                                                        anchors.fill: parent
+                                                        cursorShape: Qt.PointingHandCursor
+                                                        onClicked: netRow.doJoin()
+                                                    }
+                                                }
+                                            }
                                         }
                                     }
                                 }
@@ -629,10 +801,9 @@ PanelWindow {
                         }
                     }
                 }
-                }
             }
 
-            // ── Bluetooth overlay: full takeover, nutupin seluruh panel ──
+            // ── Bluetooth overlay ──
             Rectangle {
                 id: btOverlay
                 z: 100
@@ -640,7 +811,7 @@ PanelWindow {
                 y: 0
                 width: panel.width
                 height: Services.OverlayManager.btPanelVisible ? panel.height : 0
-                color: Services.Theme.surface
+                color: "transparent"
                 clip: true
 
                 opacity: Services.OverlayManager.btPanelVisible ? 1 : 0
@@ -655,152 +826,248 @@ PanelWindow {
                     anchors.margins: 16
                     spacing: 10
 
+                    // Header Row
                     RowLayout {
                         Layout.fillWidth: true
                         spacing: 10
 
-                        Text {
-                            text: "\uf053"
-                            font.family: "Symbols Nerd Font Mono"
-                            font.pixelSize: 13
-                            color: Services.Theme.textSecondary
+                        // Back Button
+                        Rectangle {
+                            width: 26; height: 26; radius: 13
+                            color: backBtMouse.containsMouse ? Services.Theme.surfaceVariant : "transparent"
+                            Behavior on color { ColorAnimation { duration: 100 } }
+
+                            Text {
+                                anchors.centerIn: parent
+                                text: "\uf053"
+                                font.family: "Symbols Nerd Font Mono"
+                                font.pixelSize: 12
+                                color: Services.Theme.textPrimary
+                            }
                             MouseArea {
+                                id: backBtMouse
                                 anchors.fill: parent
-                                anchors.margins: -8
+                                hoverEnabled: true
                                 cursorShape: Qt.PointingHandCursor
                                 onClicked: Services.OverlayManager.btPanelVisible = false
                             }
                         }
+
                         Text {
-                            text: "Paired Devices"
+                            text: "Bluetooth Devices"
                             color: Services.Theme.textPrimary
                             font.bold: true
                             font.pixelSize: 14
                             Layout.fillWidth: true
                         }
-                        Text {
-                            text: Services.Bluetooth.refreshing ? "Refreshing…" : "\uf021"
-                            font.family: "Symbols Nerd Font Mono"
-                            font.pixelSize: 12
-                            color: Services.Theme.textDisabled
-                            MouseArea { anchors.fill: parent; anchors.margins: -6; onClicked: Services.Bluetooth.listDevices() }
+
+                        // Refresh Button
+                        Rectangle {
+                            width: 26; height: 26; radius: 13
+                            color: refreshBtMouse.containsMouse ? Services.Theme.surfaceVariant : "transparent"
+                            Behavior on color { ColorAnimation { duration: 100 } }
+
+                            Text {
+                                anchors.centerIn: parent
+                                text: Services.Bluetooth.refreshing ? "\uf110" : "\uf021"
+                                font.family: "Symbols Nerd Font Mono"
+                                font.pixelSize: 12
+                                color: Services.Bluetooth.refreshing ? Services.Theme.accent : Services.Theme.textSecondary
+                            }
+                            MouseArea {
+                                id: refreshBtMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: {
+                                    if (Services.Bluetooth.enabled) Services.Bluetooth.listDevices()
+                                }
+                            }
+                        }
+
+                        // Master Toggle Switch
+                        Rectangle {
+                            width: 42; height: 22; radius: 11
+                            color: Services.Bluetooth.enabled ? Services.Theme.accent : Services.Theme.surfaceVariant
+                            Behavior on color { ColorAnimation { duration: 150 } }
+
+                            Rectangle {
+                                width: 18; height: 18; radius: 9
+                                x: Services.Bluetooth.enabled ? parent.width - width - 2 : 2
+                                anchors.verticalCenter: parent.verticalCenter
+                                color: Services.Bluetooth.enabled ? "#0a0a0a" : Services.Theme.textSecondary
+                                Behavior on x { NumberAnimation { duration: 150; easing.type: Easing.OutQuad } }
+                            }
+
+                            MouseArea {
+                                anchors.fill: parent
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: Services.Bluetooth.toggle()
+                            }
                         }
                     }
 
-                Flickable {
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
-                    contentHeight: btOverlayCol.implicitHeight
-                    clip: true
-                    boundsBehavior: Flickable.StopAtBounds
+                    Flickable {
+                        id: btFlickable
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        contentHeight: btOverlayCol.implicitHeight
+                        clip: true
+                        boundsBehavior: Flickable.StopAtBounds
 
-                    ColumnLayout {
-                        id: btOverlayCol
-                        width: parent.width
-                        spacing: 6
+                        ColumnLayout {
+                            id: btOverlayCol
+                            width: btFlickable.width
+                            spacing: 8
 
-                        Text {
-                            visible: Services.Bluetooth.devices.length === 0 && !Services.Bluetooth.refreshing
-                            text: "No paired devices"
-                            color: Services.Theme.textDisabled
-                            font.pixelSize: 11
-                        }
-
-                        Repeater {
-                            model: Services.Bluetooth.devices
-                            delegate: Rectangle {
-                                id: btRow
-                                required property var modelData
+                            // Bluetooth Disabled State Card
+                            Rectangle {
+                                visible: !Services.Bluetooth.enabled
                                 Layout.fillWidth: true
-                                implicitHeight: btRowLayout.implicitHeight + 16
-                                radius: Services.Theme.radiusMd
-                                color: btArea.containsMouse ? Services.Theme.bgHover : "transparent"
-                                Behavior on color { ColorAnimation { duration: 100 } }
+                                implicitHeight: 130
+                                radius: Services.Theme.radiusLg
+                                color: Services.Theme.surfaceVariant
 
-                                MouseArea {
-                                    id: btArea
-                                    anchors.fill: parent
-                                    hoverEnabled: true
-                                }
-
-                                RowLayout {
-                                    id: btRowLayout
-                                    anchors { left: parent.left; right: parent.right; verticalCenter: parent.verticalCenter }
-                                    anchors.margins: 8
-                                    spacing: 10
+                                ColumnLayout {
+                                    anchors.centerIn: parent
+                                    spacing: 8
 
                                     Text {
-                                        text: btRow.modelData.connected ? "\uf294" : "\uf293"
+                                        text: "\uf294"
                                         font.family: "Symbols Nerd Font Mono"
-                                        font.pixelSize: 14
-                                        color: btRow.modelData.connected ? Services.Theme.accent : Services.Theme.textSecondary
+                                        font.pixelSize: 24
+                                        color: Services.Theme.textDisabled
+                                        Layout.alignment: Qt.AlignHCenter
                                     }
-
-                                    ColumnLayout {
-                                        Layout.fillWidth: true
-                                        spacing: 1
-                                        Text {
-                                            text: btRow.modelData.name
-                                            color: Services.Theme.textPrimary
-                                            font.pixelSize: 12
-                                            Layout.fillWidth: true
-                                            elide: Text.ElideRight
-                                        }
-                                        Text {
-                                            text: btRow.modelData.connected ? "Connected" : "Paired"
-                                            color: Services.Theme.textDisabled
-                                            font.pixelSize: 9
-                                        }
+                                    Text {
+                                        text: "Bluetooth is turned off"
+                                        color: Services.Theme.textSecondary
+                                        font.pixelSize: 12
+                                        Layout.alignment: Qt.AlignHCenter
                                     }
-
                                     Rectangle {
-                                        Layout.preferredWidth: 80; Layout.preferredHeight: 26; radius: 13
-                                        color: btRow.modelData.connected ? Services.Theme.surfaceVariant : Services.Theme.accent
+                                        Layout.preferredWidth: 90; Layout.preferredHeight: 28; radius: 14
+                                        color: Services.Theme.accent
+                                        Layout.alignment: Qt.AlignHCenter
+
                                         Text {
                                             anchors.centerIn: parent
-                                            text: btRow.modelData.connected ? "Disconnect" : "Connect"
-                                            font.pixelSize: 9
-                                            color: btRow.modelData.connected ? Services.Theme.textSecondary : "#0a0a0a"
+                                            text: "Turn On"
+                                            font.pixelSize: 11
+                                            font.bold: true
+                                            color: "#0a0a0a"
                                         }
                                         MouseArea {
                                             anchors.fill: parent
                                             cursorShape: Qt.PointingHandCursor
-                                            onClicked: {
-                                                if (btRow.modelData.connected) Services.Bluetooth.disconnectDevice(btRow.modelData.mac)
-                                                else Services.Bluetooth.connectDevice(btRow.modelData.mac)
+                                            onClicked: Services.Bluetooth.toggle()
+                                        }
+                                    }
+                                }
+                            }
+
+                            Text {
+                                visible: Services.Bluetooth.enabled && Services.Bluetooth.devices.length === 0 && !Services.Bluetooth.refreshing
+                                text: "No paired devices found"
+                                color: Services.Theme.textDisabled
+                                font.pixelSize: 11
+                            }
+
+                            Repeater {
+                                model: Services.Bluetooth.enabled ? Services.Bluetooth.devices : []
+                                delegate: Rectangle {
+                                    id: btRow
+                                    required property var modelData
+                                    Layout.fillWidth: true
+                                    implicitHeight: btRowLayout.implicitHeight + 16
+                                    radius: Services.Theme.radiusMd
+                                    color: btArea.containsMouse ? Services.Theme.bgHover : "transparent"
+                                    Behavior on color { ColorAnimation { duration: 100 } }
+
+                                    MouseArea {
+                                        id: btArea
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                    }
+
+                                    RowLayout {
+                                        id: btRowLayout
+                                        anchors { left: parent.left; right: parent.right; verticalCenter: parent.verticalCenter }
+                                        anchors.margins: 8
+                                        spacing: 10
+
+                                        Text {
+                                            text: btRow.modelData.connected ? "\uf294" : "\uf293"
+                                            font.family: "Symbols Nerd Font Mono"
+                                            font.pixelSize: 14
+                                            color: btRow.modelData.connected ? Services.Theme.accent : Services.Theme.textSecondary
+                                        }
+
+                                        ColumnLayout {
+                                            Layout.fillWidth: true
+                                            spacing: 1
+                                            Text {
+                                                text: btRow.modelData.name
+                                                color: Services.Theme.textPrimary
+                                                font.pixelSize: 12
+                                                Layout.fillWidth: true
+                                                elide: Text.ElideRight
+                                            }
+                                            Text {
+                                                text: btRow.modelData.connected ? "Connected" : "Paired"
+                                                color: Services.Theme.textDisabled
+                                                font.pixelSize: 9
                                             }
                                         }
-                                    }
-
-                                    Item {
-                                        Layout.preferredWidth: 22; Layout.preferredHeight: 22
 
                                         Rectangle {
-                                            anchors.fill: parent
-                                            radius: 6
-                                            color: forgetBtHover.containsMouse ? Services.Theme.danger : "transparent"
-                                            Behavior on color { ColorAnimation { duration: 100 } }
+                                            Layout.preferredWidth: 80; Layout.preferredHeight: 26; radius: 13
+                                            color: btRow.modelData.connected ? Services.Theme.surfaceVariant : Services.Theme.accent
+                                            Text {
+                                                anchors.centerIn: parent
+                                                text: btRow.modelData.connected ? "Disconnect" : "Connect"
+                                                font.pixelSize: 9
+                                                color: btRow.modelData.connected ? Services.Theme.textSecondary : "#0a0a0a"
+                                            }
+                                            MouseArea {
+                                                anchors.fill: parent
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: {
+                                                    if (btRow.modelData.connected) Services.Bluetooth.disconnectDevice(btRow.modelData.mac)
+                                                    else Services.Bluetooth.connectDevice(btRow.modelData.mac)
+                                                }
+                                            }
                                         }
-                                        Text {
-                                            anchors.centerIn: parent
-                                            text: "\uf1f8"
-                                            font.family: "Symbols Nerd Font Mono"
-                                            font.pixelSize: 10
-                                            color: forgetBtHover.containsMouse ? "#0a0a0a" : Services.Theme.textDisabled
-                                        }
-                                        MouseArea {
-                                            id: forgetBtHover
-                                            anchors.fill: parent
-                                            hoverEnabled: true
-                                            cursorShape: Qt.PointingHandCursor
-                                            onClicked: Services.Bluetooth.removeDevice(btRow.modelData.mac)
+
+                                        Item {
+                                            Layout.preferredWidth: 22; Layout.preferredHeight: 22
+
+                                            Rectangle {
+                                                anchors.fill: parent
+                                                radius: 6
+                                                color: forgetBtHover.containsMouse ? Services.Theme.danger : "transparent"
+                                                Behavior on color { ColorAnimation { duration: 100 } }
+                                            }
+                                            Text {
+                                                anchors.centerIn: parent
+                                                text: "\uf1f8"
+                                                font.family: "Symbols Nerd Font Mono"
+                                                font.pixelSize: 10
+                                                color: forgetBtHover.containsMouse ? "#0a0a0a" : Services.Theme.textDisabled
+                                            }
+                                            MouseArea {
+                                                id: forgetBtHover
+                                                anchors.fill: parent
+                                                hoverEnabled: true
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: Services.Bluetooth.removeDevice(btRow.modelData.mac)
+                                            }
                                         }
                                     }
                                 }
                             }
                         }
                     }
-                }
                 }
             }
         }

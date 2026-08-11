@@ -19,121 +19,270 @@ PanelWindow {
 
     Component.onCompleted: Services.OverlayManager.register(clipboardWindow)
 
+    property bool isOpen: false
+
     function show() {
         Services.OverlayManager.closeAllExcept(clipboardWindow)
+        hideTimer.stop()
         visible = true
+        isOpen = true
         Services.Clipboard.query = ""
+        Services.Clipboard.filterType = "all"
         searchField.text = ""
         Services.Clipboard.refresh()
         searchField.forceActiveFocus()
         resultList.currentIndex = 0
+        if (resultList.count > 0) {
+            resultList.positionViewAtIndex(0, ListView.Beginning)
+        }
     }
-    function hide() {
-        visible = false
-    }
-    function toggle() { visible ? hide() : show() }
 
+    function hide() {
+        if (!isOpen) return
+        isOpen = false
+        hideTimer.restart()
+    }
+
+    function toggle() { isOpen ? hide() : show() }
+
+    Timer {
+        id: hideTimer
+        interval: 220
+        onTriggered: {
+            clipboardWindow.visible = false
+            Services.Clipboard.query = ""
+        }
+    }
+
+    // Klik di luar panel → tutup
     MouseArea {
         anchors.fill: parent
         onClicked: clipboardWindow.hide()
     }
 
+    // ── Panel ─────────────────────────────────────────────────────────
     Rectangle {
+        id: panel
         anchors.centerIn: parent
+        anchors.verticalCenterOffset: clipboardWindow.isOpen ? -40 : -20
+
+        Behavior on anchors.verticalCenterOffset {
+            NumberAnimation { duration: 240; easing.type: Easing.OutCubic }
+        }
+
         width: 600
-        height: 420
-        radius: Services.Theme.radiusLg
+        height: Math.min(listCol.implicitHeight, 480)
+
+        Behavior on height {
+            NumberAnimation { duration: 240; easing.type: Easing.OutCubic }
+        }
+
+        radius: 16
         color: Services.Theme.surface
         border.color: Services.Theme.border
         border.width: 1
 
+        opacity: clipboardWindow.isOpen ? 1 : 0
+        scale: clipboardWindow.isOpen ? 1 : 0.96
+
+        Behavior on opacity {
+            NumberAnimation { duration: 200; easing.type: Easing.OutCubic }
+        }
+        Behavior on scale {
+            NumberAnimation { duration: 240; easing.type: Easing.OutCubic }
+        }
+
         MouseArea { anchors.fill: parent }
 
         ColumnLayout {
-            anchors.fill: parent
-            anchors.margins: 16
-            spacing: 12
+            id: listCol
+            anchors { left: parent.left; right: parent.right; top: parent.top }
+            spacing: 0
 
-            // search bar
-            Rectangle {
+            // ── Search & Filter Header ────────────────────────────────
+            RowLayout {
                 Layout.fillWidth: true
-                height: 44
-                radius: 10
-                color: "#262626"
-                border.color: searchField.activeFocus ? Services.Theme.borderHighlight : Services.Theme.border
-                border.width: 1
+                Layout.leftMargin: 16; Layout.rightMargin: 16
+                Layout.topMargin: 14; Layout.bottomMargin: 12
+                spacing: 10
 
-                RowLayout {
-                    anchors.fill: parent
-                    anchors.leftMargin: 14
-                    anchors.rightMargin: 14
-                    spacing: 8
+                Text {
+                    text: "\uf0ea"
+                    font.family: "Symbols Nerd Font Mono"
+                    font.pixelSize: 15
+                    color: searchField.activeFocus ? Services.Theme.accent : Services.Theme.textDisabled
+                    Behavior on color { ColorAnimation { duration: 150 } }
+                }
 
-                    Text {
-                        text: "⌕"
-                        font.pixelSize: 16
-                    color: Services.Theme.textDisabled
+                TextField {
+                    id: searchField
+                    Layout.fillWidth: true
+                    background: null
+                    color: Services.Theme.textPrimary
+                    placeholderText: "Search clipboard history..."
+                    placeholderTextColor: Services.Theme.textDisabled
+                    font.pixelSize: 15
+                    leftPadding: 0
+                    rightPadding: 0
+
+                    onTextChanged: {
+                        Services.Clipboard.query = text
+                        resultList.currentIndex = 0
                     }
 
-                    TextField {
-                        id: searchField
-                        Layout.fillWidth: true
-                        Layout.fillHeight: true
-                        background: null
-                        color: Services.Theme.textPrimary
-                        placeholderText: "Search clipboard..."
-                        placeholderTextColor: Services.Theme.textDisabled
-                        onTextChanged: Services.Clipboard.query = text
-
-                        Keys.onPressed: (event) => {
-                            if (event.key === Qt.Key_Down) {
-                                resultList.currentIndex = Math.min(resultList.currentIndex + 1, resultList.count - 1)
-                                event.accepted = true
-                            } else if (event.key === Qt.Key_Up) {
-                                resultList.currentIndex = Math.max(resultList.currentIndex - 1, 0)
-                                event.accepted = true
-                            } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
-                                const selected = Services.Clipboard.filtered()[resultList.currentIndex]
+                    Keys.onPressed: (event) => {
+                        if (event.key === Qt.Key_Down) {
+                            resultList.currentIndex = Math.min(resultList.currentIndex + 1, resultList.count - 1)
+                            event.accepted = true
+                        } else if (event.key === Qt.Key_Up) {
+                            resultList.currentIndex = Math.max(resultList.currentIndex - 1, 0)
+                            event.accepted = true
+                        } else if (event.key === Qt.Key_Tab) {
+                            if (Services.Clipboard.filterType === "all") Services.Clipboard.filterType = "text"
+                            else if (Services.Clipboard.filterType === "text") Services.Clipboard.filterType = "image"
+                            else if (Services.Clipboard.filterType === "image") Services.Clipboard.filterType = "pinned"
+                            else Services.Clipboard.filterType = "all"
+                            resultList.currentIndex = 0
+                            event.accepted = true
+                        } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+                            const list = Services.Clipboard.filtered()
+                            if (list && list.length > resultList.currentIndex) {
+                                const selected = list[resultList.currentIndex]
                                 if (selected) {
                                     Services.Clipboard.select(selected)
                                     clipboardWindow.hide()
                                 }
-                            } else if (event.key === Qt.Key_Delete) {
-                                const toDelete = Services.Clipboard.filtered()[resultList.currentIndex]
+                            }
+                            event.accepted = true
+                        } else if (event.key === Qt.Key_Delete) {
+                            const list = Services.Clipboard.filtered()
+                            if (list && list.length > resultList.currentIndex) {
+                                const toDelete = list[resultList.currentIndex]
                                 if (toDelete) Services.Clipboard.deleteEntry(toDelete)
-                                event.accepted = true
-                            } else if (event.key === Qt.Key_Escape) {
-                                clipboardWindow.hide()
+                            }
+                            event.accepted = true
+                        } else if (event.key === Qt.Key_Escape) {
+                            clipboardWindow.hide()
+                            event.accepted = true
+                        }
+                    }
+                }
+
+                // Clear button
+                Text {
+                    text: "✕"
+                    font.pixelSize: 12
+                    color: clearMouse.containsMouse ? Services.Theme.textPrimary : Services.Theme.textDisabled
+                    visible: searchField.text.length > 0
+                    Layout.alignment: Qt.AlignVCenter
+
+                    MouseArea {
+                        id: clearMouse
+                        anchors.fill: parent
+                        anchors.margins: -4
+                        hoverEnabled: true
+                        onClicked: {
+                            searchField.text = ""
+                            searchField.forceActiveFocus()
+                        }
+                    }
+                }
+
+                // Filter Pill Tabs
+                RowLayout {
+                    spacing: 4
+                    Layout.alignment: Qt.AlignVCenter
+
+                    Repeater {
+                        model: [
+                            { id: "all", label: "All" },
+                            { id: "text", label: "Text" },
+                            { id: "image", label: "Images" },
+                            { id: "pinned", label: "Pinned" }
+                        ]
+
+                        Rectangle {
+                            required property var modelData
+                            height: 24
+                            width: filterText.implicitWidth + 14
+                            radius: 7
+                            color: Services.Clipboard.filterType === modelData.id ? Services.Theme.surfaceVariant : (tabMouse.containsMouse ? Services.Theme.bgHover : "transparent")
+                            border.color: Services.Clipboard.filterType === modelData.id ? Services.Theme.borderHighlight : "transparent"
+                            border.width: 1
+
+                            Behavior on color { ColorAnimation { duration: 120 } }
+
+                            Text {
+                                id: filterText
+                                anchors.centerIn: parent
+                                text: parent.modelData.label
+                                font.pixelSize: 11
+                                font.weight: Services.Clipboard.filterType === parent.modelData.id ? Font.Medium : Font.Normal
+                                color: Services.Clipboard.filterType === parent.modelData.id ? Services.Theme.accent : Services.Theme.textDisabled
+                                Behavior on color { ColorAnimation { duration: 120 } }
+                            }
+
+                            MouseArea {
+                                id: tabMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                onClicked: {
+                                    Services.Clipboard.filterType = parent.modelData.id
+                                    resultList.currentIndex = 0
+                                }
                             }
                         }
                     }
                 }
             }
 
+            // Hairline divider
+            Rectangle {
+                Layout.fillWidth: true
+                height: 1
+                color: Services.Theme.border
+                opacity: 0.6
+            }
+
+            // ── List View ─────────────────────────────────────────────
             ListView {
                 id: resultList
                 Layout.fillWidth: true
-                Layout.fillHeight: true
+                Layout.preferredHeight: count > 0 ? Math.min(contentHeight, 380) : 120
                 clip: true
                 spacing: 2
                 model: Services.Clipboard.filtered()
-                highlightMoveDuration: 80
-                visible: count > 0
+                currentIndex: 0
+                keyNavigationEnabled: false
+                topMargin: 6; bottomMargin: 6
+                leftMargin: 6; rightMargin: 6
 
-                delegate: Rectangle {
+                Behavior on Layout.preferredHeight {
+                    NumberAnimation { duration: 200; easing.type: Easing.OutCubic }
+                }
+
+                highlight: Rectangle {
+                    radius: 10
+                    color: Services.Theme.seurfa
+                    border.color: Services.Theme.borderHighlight
+                    border.width: 1
+                    x: 6
+                    width: resultList.width - 12
+                    z: 1
+                }
+                highlightMoveDuration: 130
+                highlightResizeDuration: 0
+                highlightFollowsCurrentItem: true
+
+                delegate: Item {
                     id: card
                     required property var modelData
                     required property int index
-                    width: resultList.width
-                    height: 48
-                    radius: 8
-                    color: {
-                        if (index === resultList.currentIndex) return Services.Theme.surfaceVariant
-                        if (hoverArea.containsMouse) return Services.Theme.bgHover
-                        return "transparent"
-                    }
+                    width: resultList.width - 12
+                    height: 56
 
                     property bool isImage: Services.Clipboard.isImageEntry(modelData)
+                    property bool isPinnedItem: Services.Clipboard.isPinned(modelData)
                     property string thumbPath: ""
 
                     Process {
@@ -154,84 +303,283 @@ PanelWindow {
                         }
                     }
 
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.leftMargin: 12; anchors.rightMargin: 12
+                        spacing: 12
+                        z: 2
+
+                        // Entry Type Badge / Thumbnail
+                        Item {
+                            Layout.preferredWidth: card.isImage ? 80 : 34
+                            Layout.preferredHeight: card.isImage ? 40 : 34
+                            Layout.alignment: Qt.AlignVCenter
+
+                            // Text badge
+                            Rectangle {
+                                anchors.fill: parent
+                                radius: 8
+                                color: card.index === resultList.currentIndex ? Qt.rgba(255, 255, 255, 0.1) : Qt.rgba(255, 255, 255, 0.05)
+                                visible: !card.isImage
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: "\uf0f6"
+                                    font.family: "Symbols Nerd Font Mono"
+                                    font.pixelSize: 13
+                                    color: card.index === resultList.currentIndex ? Services.Theme.accent : Services.Theme.textDisabled
+                                }
+                            }
+
+                            // Image thumbnail
+                            Rectangle {
+                                anchors.fill: parent
+                                radius: 8
+                                color: card.index === resultList.currentIndex ? Qt.rgba(255, 255, 255, 0.1) : Qt.rgba(255, 255, 255, 0.05)
+                                border.color: Services.Theme.border
+                                border.width: 1
+                                clip: true
+                                visible: card.isImage
+
+                                Image {
+                                    anchors.fill: parent
+                                    source: card.isImage && card.thumbPath.length > 0
+                                        ? "file://" + card.thumbPath : ""
+                                    fillMode: Image.PreserveAspectCrop
+                                    smooth: true
+                                }
+                            }
+                        }
+
+                        // Content Information
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            Layout.alignment: Qt.AlignVCenter
+                            spacing: 1
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 6
+
+                                Text {
+                                    visible: !card.isImage
+                                    text: card.modelData.preview || ""
+                                    color: card.index === resultList.currentIndex ? Services.Theme.accent : Services.Theme.textPrimary
+                                    font.pixelSize: 13
+                                    font.weight: card.index === resultList.currentIndex ? Font.Medium : Font.Normal
+                                    elide: Text.ElideRight
+                                    Layout.fillWidth: true
+                                    maximumLineCount: 1
+                                    Behavior on color { ColorAnimation { duration: 120 } }
+                                }
+
+                                Text {
+                                    visible: card.isImage
+                                    text: "Image Content"
+                                    color: card.index === resultList.currentIndex ? Services.Theme.accent : Services.Theme.textPrimary
+                                    font.pixelSize: 13
+                                    font.weight: card.index === resultList.currentIndex ? Font.Medium : Font.Normal
+                                    Layout.fillWidth: true
+                                    Behavior on color { ColorAnimation { duration: 120 } }
+                                }
+
+                                Text {
+                                    text: "\uf08d"
+                                    font.family: "Symbols Nerd Font Mono"
+                                    font.pixelSize: 10
+                                    color: Services.Theme.accent
+                                    visible: card.isPinnedItem
+                                }
+                            }
+
+                            Text {
+                                visible: !card.isImage
+                                text: {
+                                    const p = card.modelData.preview || ""
+                                    const lines = p.split("\n").length
+                                    const chars = p.length
+                                    return lines > 1 ? (lines + " lines • " + chars + " characters") : (chars + " characters")
+                                }
+                                color: Services.Theme.textSecondary
+                                font.pixelSize: 11
+                                elide: Text.ElideRight
+                                Layout.fillWidth: true
+                            }
+
+                            Text {
+                                visible: card.isImage
+                                text: {
+                                    const dim = card.modelData.preview.match(/\b\d+x\d+\b/)?.[0]
+                                    return dim ? ("Dimensions: " + dim) : "Image entry"
+                                }
+                                color: Services.Theme.textSecondary
+                                font.pixelSize: 11
+                                elide: Text.ElideRight
+                                Layout.fillWidth: true
+                            }
+                        }
+
+                        // Action buttons row (Pin & Delete)
+                        RowLayout {
+                            spacing: 4
+
+                            // Pin action button
+                            Rectangle {
+                                Layout.preferredWidth: 28; Layout.preferredHeight: 28
+                                radius: 7
+                                color: card.isPinnedItem ? Services.Theme.surfaceVariant : (pinArea.containsMouse ? Services.Theme.surfaceVariant : "transparent")
+
+                                Behavior on color { ColorAnimation { duration: 120 } }
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: "\uf08d"
+                                    font.family: "Symbols Nerd Font Mono"
+                                    font.pixelSize: 12
+                                    color: card.isPinnedItem ? Services.Theme.accent : (pinArea.containsMouse ? Services.Theme.textPrimary : Services.Theme.textDisabled)
+                                    Behavior on color { ColorAnimation { duration: 120 } }
+                                }
+
+                                MouseArea {
+                                    id: pinArea
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    onClicked: Services.Clipboard.togglePin(card.modelData)
+                                }
+                            }
+
+                            // Delete action button
+                            Rectangle {
+                                Layout.preferredWidth: 28; Layout.preferredHeight: 28
+                                radius: 7
+                                color: deleteArea.containsMouse ? Services.Theme.surfaceVariant : "transparent"
+
+                                Behavior on color { ColorAnimation { duration: 120 } }
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: "\uf1f8"
+                                    font.family: "Symbols Nerd Font Mono"
+                                    font.pixelSize: 13
+                                    color: deleteArea.containsMouse ? Services.Theme.danger : Services.Theme.textDisabled
+                                    Behavior on color { ColorAnimation { duration: 120 } }
+                                }
+
+                                MouseArea {
+                                    id: deleteArea
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    onClicked: Services.Clipboard.deleteEntry(card.modelData)
+                                }
+                            }
+                        }
+                    }
+
                     MouseArea {
                         id: hoverArea
                         anchors.fill: parent
+                        anchors.rightMargin: 70
                         hoverEnabled: true
+                        onEntered: {
+                            if (resultList.currentIndex !== card.index) {
+                                resultList.currentIndex = card.index
+                            }
+                        }
                         onClicked: {
                             Services.Clipboard.select(card.modelData)
                             clipboardWindow.hide()
                         }
                     }
+                }
 
-                    RowLayout {
-                        anchors.fill: parent
-                        anchors.margins: 8
-                        spacing: 10
+                // Empty state
+                Item {
+                    anchors.fill: parent
+                    visible: resultList.count === 0
 
-                        Image {
-                            visible: card.isImage
-                            source: card.isImage && card.thumbPath.length > 0
-                                ? "file://" + card.thumbPath : ""
-                            fillMode: Image.PreserveAspectCrop
-                            Layout.preferredWidth: 32
-                            Layout.preferredHeight: 32
+                    ColumnLayout {
+                        anchors.centerIn: parent
+                        spacing: 6
+
+                        Text {
+                            text: Services.Clipboard.filterType === "pinned" ? "\uf08d" : "\uf0ea"
+                            font.family: "Symbols Nerd Font Mono"
+                            font.pixelSize: 26
+                            color: Services.Theme.textDisabled
+                            Layout.alignment: Qt.AlignHCenter
                         }
 
                         Text {
-                            visible: !card.isImage
-                            text: card.modelData.preview
-                            color: Services.Theme.textPrimary
-                            font.pixelSize: 14
-                            Layout.fillWidth: true
-                            elide: Text.ElideRight
-                            maximumLineCount: 1
-                        }
-
-                        Text {
-                            visible: card.isImage
-                            text: "Image"
-                            color: Services.Theme.textSecondary
-                            font.pixelSize: 14
-                            Layout.fillWidth: true
-                        }
-
-                        Text {
-                            text: "✕"
-                            color: deleteArea.containsMouse ? Services.Theme.textPrimary : Services.Theme.textDisabled
-                            Layout.preferredWidth: 20
-                            horizontalAlignment: Text.AlignHCenter
-
-                            MouseArea {
-                                id: deleteArea
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                onClicked: Services.Clipboard.deleteEntry(card.modelData)
+                            text: {
+                                if (Services.Clipboard.filterType === "pinned") return "No pinned clipboard items yet"
+                                if (Services.Clipboard.query.length > 0) return "No matching clipboard items"
+                                return "Clipboard history is empty"
                             }
+                            color: Services.Theme.textDisabled
+                            font.pixelSize: 13
+                            Layout.alignment: Qt.AlignHCenter
                         }
                     }
                 }
             }
 
-            ColumnLayout {
+            // ── Footer Keyboard Hints ─────────────────────────────────
+            Rectangle {
                 Layout.fillWidth: true
-                Layout.fillHeight: true
-                visible: resultList.count === 0
-                spacing: 8
+                height: 34
+                color: "transparent"
 
-                Item { Layout.fillHeight: true }
-                Text {
-                    text: "⧉"
-                    font.pixelSize: 32
-                    color: Services.Theme.textDisabled
-                    Layout.alignment: Qt.AlignHCenter
+                Rectangle {
+                    anchors { top: parent.top; left: parent.left; right: parent.right }
+                    height: 1
+                    color: Services.Theme.border
+                    opacity: 0.5
                 }
-                Text {
-                    text: Services.Clipboard.query.length > 0 ? "No matches found" : "Clipboard history is empty"
-                    color: Services.Theme.textSecondary
-                    Layout.alignment: Qt.AlignHCenter
+
+                RowLayout {
+                    anchors.centerIn: parent
+                    spacing: 16
+
+                    RowLayout {
+                        spacing: 4
+                        Rectangle {
+                            width: 18; height: 16; radius: 4
+                            color: Services.Theme.surfaceVariant
+                            Text { anchors.centerIn: parent; text: "↵"; color: Services.Theme.textSecondary; font.pixelSize: 10 }
+                        }
+                        Text { text: "Copy"; color: Services.Theme.textDisabled; font.pixelSize: 11 }
+                    }
+
+                    RowLayout {
+                        spacing: 4
+                        Rectangle {
+                            width: 28; height: 16; radius: 4
+                            color: Services.Theme.surfaceVariant
+                            Text { anchors.centerIn: parent; text: "Tab"; color: Services.Theme.textSecondary; font.pixelSize: 10 }
+                        }
+                        Text { text: "Filter"; color: Services.Theme.textDisabled; font.pixelSize: 11 }
+                    }
+
+                    RowLayout {
+                        spacing: 4
+                        Rectangle {
+                            width: 24; height: 16; radius: 4
+                            color: Services.Theme.surfaceVariant
+                            Text { anchors.centerIn: parent; text: "Del"; color: Services.Theme.textSecondary; font.pixelSize: 10 }
+                        }
+                        Text { text: "Delete"; color: Services.Theme.textDisabled; font.pixelSize: 11 }
+                    }
+
+                    RowLayout {
+                        spacing: 4
+                        Rectangle {
+                            width: 22; height: 16; radius: 4
+                            color: Services.Theme.surfaceVariant
+                            Text { anchors.centerIn: parent; text: "Esc"; color: Services.Theme.textSecondary; font.pixelSize: 10 }
+                        }
+                        Text { text: "Close"; color: Services.Theme.textDisabled; font.pixelSize: 11 }
+                    }
                 }
-                Item { Layout.fillHeight: true }
             }
         }
     }

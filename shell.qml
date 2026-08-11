@@ -1,3 +1,4 @@
+//@ pragma UseQApplication
 //@ pragma IconTheme MacTahoe-dark
 import QtQuick
 import Quickshell

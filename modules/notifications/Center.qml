@@ -15,7 +15,7 @@ PanelWindow {
     visible: Services.Notifications.centerVisible
     WlrLayershell.layer: WlrLayer.Overlay
     WlrLayershell.namespace: "quickshell:notifcenter"
-    WlrLayershell.keyboardFocus: WlrKeyboardFocus.Exclusive
+    WlrLayershell.keyboardFocus: WlrKeyboardFocus.OnDemand
 
     function hide() { Services.Notifications.centerVisible = false }
     function close() { hide() }
@@ -202,12 +202,11 @@ PanelWindow {
                     id: groupCard
                     required property var modelData
                     property var group: modelData
-                    property string groupKey: group.items[0].notifId + "-" + group.items[0].time
                     property bool isMulti: group.items.length > 1
-                    property bool expanded: !isMulti || centerWin.expandedGroups[groupKey] === true
+                    property bool expanded: !isMulti || centerWin.expandedGroups[group.appName] === true
 
                     width: historyView.width - 20
-                    implicitHeight: groupContent.implicitHeight + 18
+                    implicitHeight: groupContent.implicitHeight + 20
                     radius: 12
                     color: centerWin.t.surfaceVariant
                     border.color: group.items[0].urgency === 2 ? centerWin.t.danger : centerWin.t.border
@@ -216,200 +215,337 @@ PanelWindow {
                     ColumnLayout {
                         id: groupContent
                         anchors { left: parent.left; right: parent.right; top: parent.top; margins: 10 }
-                        spacing: 6
+                        spacing: 8
 
-                        // Header — selalu keliatan
-                        Item {
-                            id: headerArea
+                        // ── Group Header Row ────────────────────────────────────
+                        RowLayout {
+                            id: headerRow
                             Layout.fillWidth: true
-                            implicitHeight: headerRow.implicitHeight
+                            spacing: 8
 
-                            RowLayout {
-                                id: headerRow
-                                anchors { left: parent.left; right: parent.right }
-                                spacing: 8
+                            // Clickable header info area (toggles expand/collapse)
+                            MouseArea {
+                                id: headerClickArea
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: 30
+                                hoverEnabled: groupCard.isMulti
+                                cursorShape: groupCard.isMulti ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                onClicked: {
+                                    if (groupCard.isMulti) {
+                                        const copy = Object.assign({}, centerWin.expandedGroups)
+                                        copy[groupCard.group.appName] = !groupCard.expanded
+                                        centerWin.expandedGroups = copy
+                                    }
+                                }
 
-                                // App icon
-                                Item {
-                                    Layout.preferredWidth: 30
-                                    Layout.preferredHeight: 30
-                                    Layout.alignment: Qt.AlignTop
+                                RowLayout {
+                                    anchors.fill: parent
+                                    spacing: 8
+
+                                    // App Icon
+                                    Item {
+                                        Layout.preferredWidth: 26
+                                        Layout.preferredHeight: 26
+                                        Layout.alignment: Qt.AlignVCenter
+
+                                        Rectangle {
+                                            anchors.fill: parent
+                                            radius: 7
+                                            color: centerWin.t.bgHover
+                                            visible: hIcon.status !== Image.Ready
+
+                                            Text {
+                                                anchors.centerIn: parent
+                                                text: (groupCard.group.appName || "?").charAt(0).toUpperCase()
+                                                color: centerWin.t.textSecondary
+                                                font.bold: true
+                                                font.pixelSize: 11
+                                            }
+                                        }
+
+                                        Image {
+                                            id: hIcon
+                                            anchors.fill: parent
+                                            source: {
+                                                const icon = groupCard.group.appIcon
+                                                if (!icon) return ""
+                                                if (icon.startsWith("/") || icon.startsWith("file://") || icon.startsWith("http"))
+                                                    return icon
+                                                return Quickshell.iconPath(icon, true)
+                                            }
+                                            fillMode: Image.PreserveAspectFit
+                                            visible: status === Image.Ready
+                                        }
+                                    }
+
+                                    // App Name & Count Badge
+                                    Text {
+                                        text: groupCard.group.appName
+                                        color: centerWin.t.accent
+                                        font.pixelSize: 12
+                                        font.bold: true
+                                    }
 
                                     Rectangle {
-                                        anchors.fill: parent
+                                        visible: groupCard.isMulti
+                                        height: 16
+                                        implicitWidth: badgeText.implicitWidth + 10
                                         radius: 8
                                         color: centerWin.t.bgHover
-                                        visible: hIcon.status !== Image.Ready
+                                        border.color: centerWin.t.border
+                                        border.width: 1
 
                                         Text {
+                                            id: badgeText
                                             anchors.centerIn: parent
-                                            text: (groupCard.group.appName || "?").charAt(0).toUpperCase()
+                                            text: groupCard.group.items.length
                                             color: centerWin.t.textSecondary
-                                            font.bold: true
-                                            font.pixelSize: 13
-                                        }
-                                    }
-
-                                    Image {
-                                        id: hIcon
-                                        anchors.fill: parent
-                                        source: {
-                                            const icon = groupCard.group.appIcon
-                                            if (!icon) return ""
-                                            if (icon.startsWith("/") || icon.startsWith("file://") || icon.startsWith("http"))
-                                                return icon
-                                            return Quickshell.iconPath(icon, true)
-                                        }
-                                        fillMode: Image.PreserveAspectFit
-                                        visible: status === Image.Ready
-                                    }
-                                }
-
-                                // App name + timestamp + collapsed summary
-                                ColumnLayout {
-                                    Layout.fillWidth: true
-                                    spacing: 2
-
-                                    RowLayout {
-                                        Layout.fillWidth: true
-
-                                        Text {
-                                            text: groupCard.group.appName + (groupCard.isMulti ? "  (" + groupCard.group.items.length + ")" : "")
-                                            color: centerWin.t.accent
-                                            font.pixelSize: 11
-                                            font.bold: true
-                                            Layout.fillWidth: true
-                                        }
-                                        Text {
-                                            text: centerWin.formatTime(groupCard.group.items[0].time)
-                                            color: centerWin.t.textDisabled
                                             font.pixelSize: 10
+                                            font.bold: true
                                         }
                                     }
 
+                                    Item { Layout.fillWidth: true }
+
+                                    // Time of newest item
                                     Text {
-                                        visible: !groupCard.expanded
-                                        text: groupCard.group.items[0].summary
-                                        color: centerWin.t.textPrimary
-                                        font.bold: true
-                                        wrapMode: Text.Wrap
-                                        Layout.fillWidth: true
-                                        font.pixelSize: 12
+                                        text: centerWin.formatTime(groupCard.group.items[0].time)
+                                        color: centerWin.t.textDisabled
+                                        font.pixelSize: 10
+                                        Layout.alignment: Qt.AlignVCenter
                                     }
-                                }
 
-                                // Chevron expand/collapse
-                                Text {
-                                    visible: groupCard.isMulti
-                                    text: groupCard.expanded ? "\uf077" : "\uf078"
-                                    font.family: "Symbols Nerd Font Mono"
-                                    color: centerWin.t.textDisabled
-                                    font.pixelSize: 11
-                                    Layout.alignment: Qt.AlignVCenter
-                                }
-
-                                // Dismiss button ×
-                                Item {
-                                    width: 20; height: 20
-                                    Layout.alignment: Qt.AlignVCenter
-
-                                    Rectangle {
-                                        anchors.fill: parent; radius: 6
-                                        color: dismissBtn.containsMouse ? centerWin.t.bgHover : "transparent"
-                                        Behavior on color { ColorAnimation { duration: 80 } }
-                                    }
+                                    // Chevron expand icon
                                     Text {
-                                        anchors.centerIn: parent
-                                        text: "\u00d7"
-                                        color: dismissBtn.containsMouse ? centerWin.t.textSecondary : centerWin.t.textDisabled
-                                        font.pixelSize: 14
-                                        Behavior on color { ColorAnimation { duration: 80 } }
-                                    }
-                                    MouseArea {
-                                        id: dismissBtn
-                                        anchors.fill: parent; hoverEnabled: true
-                                        onClicked: Services.Notifications.dismissGroupFromCenter(groupCard.group.items)
+                                        visible: groupCard.isMulti
+                                        text: groupCard.expanded ? "\uf077" : "\uf078"
+                                        font.family: "Symbols Nerd Font Mono"
+                                        color: centerWin.t.textDisabled
+                                        font.pixelSize: 11
+                                        Layout.alignment: Qt.AlignVCenter
                                     }
                                 }
                             }
 
-                            MouseArea {
-                                anchors.fill: headerRow
-                                enabled: groupCard.isMulti
-                                onClicked: {
-                                    const copy = Object.assign({}, centerWin.expandedGroups)
-                                    copy[groupCard.groupKey] = !groupCard.expanded
-                                    centerWin.expandedGroups = copy
+                            // Dismiss Group Button × (Distinct from expand area)
+                            Item {
+                                width: 22; height: 22
+                                Layout.alignment: Qt.AlignVCenter
+
+                                Rectangle {
+                                    anchors.fill: parent; radius: 6
+                                    color: groupDismissBtn.containsMouse ? centerWin.t.bgHover : "transparent"
+                                    Behavior on color { ColorAnimation { duration: 80 } }
+                                }
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: "\u00d7"
+                                    color: groupDismissBtn.containsMouse ? centerWin.t.textPrimary : centerWin.t.textDisabled
+                                    font.pixelSize: 15
+                                    font.bold: true
+                                }
+                                MouseArea {
+                                    id: groupDismissBtn
+                                    anchors.fill: parent; hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: {
+                                        Services.Notifications.dismissGroupFromCenter(groupCard.group.items)
+                                    }
                                 }
                             }
                         }
 
-                        // Detail tiap item — keliatan kalau expanded
+                        // ── Collapsed Content Preview (when !groupCard.expanded) ────
+                        ColumnLayout {
+                            visible: !groupCard.expanded
+                            Layout.fillWidth: true
+                            spacing: 6
+
+                            // Primary (latest) item preview
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: 2
+
+                                Text {
+                                    text: groupCard.group.items[0].summary
+                                    color: centerWin.t.textPrimary
+                                    font.bold: true
+                                    font.pixelSize: 12
+                                    wrapMode: Text.Wrap
+                                    Layout.fillWidth: true
+                                }
+
+                                Text {
+                                    visible: (groupCard.group.items[0].body || "").length > 0
+                                    text: groupCard.group.items[0].body
+                                    color: centerWin.t.textSecondary
+                                    font.pixelSize: 11
+                                    maximumLineCount: 2
+                                    elide: Text.ElideRight
+                                    wrapMode: Text.Wrap
+                                    Layout.fillWidth: true
+                                }
+                            }
+
+                            // Stacked preview pill when grouped
+                            Rectangle {
+                                visible: groupCard.isMulti
+                                Layout.fillWidth: true
+                                implicitHeight: stackPreviewRow.implicitHeight + 8
+                                radius: 8
+                                color: centerWin.t.surface
+                                border.color: centerWin.t.border
+                                border.width: 1
+
+                                RowLayout {
+                                    id: stackPreviewRow
+                                    anchors { left: parent.left; right: parent.right; top: parent.top; margins: 4; leftMargin: 8; rightMargin: 8 }
+                                    spacing: 6
+
+                                    Text {
+                                        text: "\uf0c9" // list icon
+                                        font.family: "Symbols Nerd Font Mono"
+                                        color: centerWin.t.textDisabled
+                                        font.pixelSize: 10
+                                    }
+
+                                    Text {
+                                        text: groupCard.group.items[1].summary
+                                        color: centerWin.t.textSecondary
+                                        font.pixelSize: 11
+                                        elide: Text.ElideRight
+                                        Layout.fillWidth: true
+                                    }
+
+                                    Text {
+                                        visible: groupCard.group.items.length > 2
+                                        text: "+" + (groupCard.group.items.length - 1) + " more"
+                                        color: centerWin.t.accentDim
+                                        font.pixelSize: 10
+                                        font.bold: true
+                                    }
+                                }
+                            }
+                        }
+
+                        // ── Expanded Items List (when groupCard.expanded) ──────────
                         ColumnLayout {
                             visible: groupCard.expanded
                             Layout.fillWidth: true
-                            Layout.topMargin: groupCard.isMulti ? 2 : 0
-                            spacing: 10
+                            spacing: 8
 
                             Repeater {
                                 model: groupCard.group.items
-                                delegate: ColumnLayout {
+                                delegate: Rectangle {
                                     id: itemDelegate
                                     required property var modelData
                                     property var notifItem: modelData
+
                                     Layout.fillWidth: true
-                                    spacing: 3
+                                    implicitHeight: itemContent.implicitHeight + 14
+                                    radius: 8
+                                    color: centerWin.t.surface
+                                    border.color: centerWin.t.border
+                                    border.width: 1
 
-                                    Text {
-                                        visible: groupCard.isMulti
-                                        text: itemDelegate.notifItem.summary
-                                        color: centerWin.t.textPrimary
-                                        font.bold: true
-                                        font.pixelSize: 12
-                                        wrapMode: Text.Wrap
-                                        Layout.fillWidth: true
-                                    }
-                                    Text {
-                                        visible: itemDelegate.notifItem.body.length > 0
-                                        text: itemDelegate.notifItem.body
-                                        color: centerWin.t.textSecondary
-                                        font.pixelSize: 12
-                                        wrapMode: Text.Wrap
-                                        Layout.fillWidth: true
-                                    }
+                                    ColumnLayout {
+                                        id: itemContent
+                                        anchors { left: parent.left; right: parent.right; top: parent.top; margins: 8 }
+                                        spacing: 4
 
-                                    RowLayout {
-                                        visible: itemDelegate.notifItem.actions && itemDelegate.notifItem.actions.length > 0
-                                        spacing: 6
-                                        Layout.topMargin: 4
+                                        // Item Header: Summary + Timestamp + Individual Delete Button ×
+                                        RowLayout {
+                                            Layout.fillWidth: true
+                                            spacing: 6
 
-                                        Repeater {
-                                            model: itemDelegate.notifItem.actions
-                                            delegate: Rectangle {
-                                                id: actBtn
-                                                required property string identifier
-                                                required property string text
-                                                radius: 8
-                                                color: actHover.containsMouse ? centerWin.t.bgHover : centerWin.t.surface
-                                                border.color: centerWin.t.border
-                                                border.width: 1
-                                                implicitHeight: 26
-                                                implicitWidth: actLabel.implicitWidth + 18
-                                                Behavior on color { ColorAnimation { duration: 80 } }
+                                            Text {
+                                                text: itemDelegate.notifItem.summary
+                                                color: centerWin.t.textPrimary
+                                                font.bold: true
+                                                font.pixelSize: 12
+                                                wrapMode: Text.Wrap
+                                                Layout.fillWidth: true
+                                            }
 
+                                            Text {
+                                                text: centerWin.formatTime(itemDelegate.notifItem.time)
+                                                color: centerWin.t.textDisabled
+                                                font.pixelSize: 10
+                                                Layout.alignment: Qt.AlignTop
+                                            }
+
+                                            // Individual Dismiss Button ×
+                                            Item {
+                                                width: 18; height: 18
+                                                Layout.alignment: Qt.AlignTop
+
+                                                Rectangle {
+                                                    anchors.fill: parent; radius: 5
+                                                    color: itemDismissBtn.containsMouse ? centerWin.t.bgHover : "transparent"
+                                                    Behavior on color { ColorAnimation { duration: 80 } }
+                                                }
                                                 Text {
-                                                    id: actLabel
                                                     anchors.centerIn: parent
-                                                    text: actBtn.text
-                                                    color: centerWin.t.textPrimary
-                                                    font.pixelSize: 11
+                                                    text: "\u00d7"
+                                                    color: itemDismissBtn.containsMouse ? centerWin.t.textPrimary : centerWin.t.textDisabled
+                                                    font.pixelSize: 13
+                                                    font.bold: true
                                                 }
                                                 MouseArea {
-                                                    id: actHover
-                                                    anchors.fill: parent
-                                                    hoverEnabled: true
-                                                    onClicked: Services.Notifications.invokeAction(
-                                                        itemDelegate.notifItem.notifId, actBtn.identifier)
+                                                    id: itemDismissBtn
+                                                    anchors.fill: parent; hoverEnabled: true
+                                                    cursorShape: Qt.PointingHandCursor
+                                                    onClicked: {
+                                                        Services.Notifications.dismissFromCenter(itemDelegate.notifItem.notifId)
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        // Item Body
+                                        Text {
+                                            visible: (itemDelegate.notifItem.body || "").length > 0
+                                            text: itemDelegate.notifItem.body
+                                            color: centerWin.t.textSecondary
+                                            font.pixelSize: 11
+                                            wrapMode: Text.Wrap
+                                            Layout.fillWidth: true
+                                        }
+
+                                        // Actions Row
+                                        RowLayout {
+                                            visible: itemDelegate.notifItem.actions && itemDelegate.notifItem.actions.length > 0
+                                            spacing: 6
+                                            Layout.topMargin: 4
+
+                                            Repeater {
+                                                model: itemDelegate.notifItem.actions
+                                                delegate: Rectangle {
+                                                    id: actBtn
+                                                    required property string identifier
+                                                    required property string text
+                                                    radius: 6
+                                                    color: actHover.containsMouse ? centerWin.t.bgHover : centerWin.t.surfaceVariant
+                                                    border.color: centerWin.t.border
+                                                    border.width: 1
+                                                    implicitHeight: 24
+                                                    implicitWidth: actLabel.implicitWidth + 14
+                                                    Behavior on color { ColorAnimation { duration: 80 } }
+
+                                                    Text {
+                                                        id: actLabel
+                                                        anchors.centerIn: parent
+                                                        text: actBtn.text
+                                                        color: centerWin.t.textPrimary
+                                                        font.pixelSize: 11
+                                                    }
+                                                    MouseArea {
+                                                        id: actHover
+                                                        anchors.fill: parent; hoverEnabled: true
+                                                        cursorShape: Qt.PointingHandCursor
+                                                        onClicked: Services.Notifications.invokeAction(
+                                                            itemDelegate.notifItem.notifId, actBtn.identifier)
+                                                    }
                                                 }
                                             }
                                         }

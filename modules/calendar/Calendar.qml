@@ -6,6 +6,7 @@ import "../../services" as Services
 
 PanelWindow {
     id: root
+    property string overlayId: "calendar"
 
     anchors { top: true; bottom: true; left: true; right: true }
     color: "transparent"
@@ -13,7 +14,7 @@ PanelWindow {
     visible: Services.OverlayManager.calendarVisible
     WlrLayershell.layer: WlrLayer.Overlay
     WlrLayershell.namespace: "quickshell:calendar"
-    WlrLayershell.keyboardFocus: WlrKeyboardFocus.Exclusive
+    WlrLayershell.keyboardFocus: WlrKeyboardFocus.OnDemand
 
     Item {
         id: escFocus
