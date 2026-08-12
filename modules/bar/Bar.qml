@@ -21,6 +21,21 @@ PanelWindow {
     exclusiveZone: 36
     implicitHeight: 160
 
+    mask: Region {
+        Region {
+            x: 0
+            y: 0
+            width: root.width
+            height: 36
+        }
+        Region {
+            x: (root.width - (dynamicIsland.expanded ? 400 : 160)) / 2
+            y: 0
+            width: dynamicIsland.expanded ? 400 : 160
+            height: dynamicIsland.expanded ? 160 : 36
+        }
+    }
+
     Item {
         id: barContainer
         anchors.fill: parent

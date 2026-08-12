@@ -18,6 +18,10 @@ Item {
     property bool replyMode: false
     property string activeReplyActionId: ""
 
+    // Island visual dimensions for window masking
+    readonly property int islandWidth: island.width
+    readonly property int islandHeight: island.height
+
     // Notification model shortcuts
     readonly property var popupList: Services.Notifications.popupList
     readonly property int notifCount: popupList ? popupList.count : 0
@@ -229,7 +233,7 @@ Item {
         function onNewNotification(entry) {
             root.activeNotifIndex = 0
             root.replyMode = false
-            root.notifTimer.restart()
+            notifTimer.restart()
         }
     }
 

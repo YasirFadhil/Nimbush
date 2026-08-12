@@ -397,7 +397,7 @@ PanelWindow {
                                     }
 
                                     Text {
-                                        text: groupCard.group.items[1].summary
+                                        text: (groupCard.group && groupCard.group.items && groupCard.group.items.length > 1 && groupCard.group.items[1]) ? (groupCard.group.items[1].summary || "") : ""
                                         color: centerWin.t.textSecondary
                                         font.pixelSize: 11
                                         elide: Text.ElideRight
