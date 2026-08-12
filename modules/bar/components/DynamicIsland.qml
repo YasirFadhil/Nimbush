@@ -46,8 +46,12 @@ Item {
         onTriggered: root.sysHudActive = false
     }
 
-    Component.onCompleted: {
-        Qt.callLater(() => root.hudReady = true)
+    Timer {
+        id: hudInitTimer
+        interval: 2000
+        running: true
+        repeat: false
+        onTriggered: root.hudReady = true
     }
 
     // Connections for System Events
@@ -232,7 +236,7 @@ Item {
     Connections {
         target: Services.Mpris
         function onActivePlayerChanged() {
-            if (Services.Mpris.activePlayer && Services.Mpris.activePlayer.isPlaying && root.notifCount === 0) {
+            if (root.hudReady && Services.Mpris.activePlayer && Services.Mpris.activePlayer.isPlaying && root.notifCount === 0) {
                 root.pulse()
             }
         }
