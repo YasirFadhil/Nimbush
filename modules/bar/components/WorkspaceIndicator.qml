@@ -3,6 +3,7 @@ import QtQuick.Layouts
 import Quickshell
 import "../../../services" as Services
 
+// Workspace Indicators (Render 1..5 + any open workspace)
 RowLayout {
     spacing: 8
 
@@ -81,6 +82,10 @@ RowLayout {
                         Layout.preferredWidth: isActive ? 22 : (isOccupied ? 12 : 7)
                         Layout.preferredHeight: 7
                         Layout.alignment: Qt.AlignVCenter
+
+                        Behavior on Layout.preferredWidth {
+                            NumberAnimation { duration: 180 }
+                        }
 
                         Rectangle {
                             anchors.fill: parent

@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Layouts
 import QtQuick.Controls
 import Quickshell
+import Quickshell.Io
 import Quickshell.Wayland
 import "../../services" as Services
 import "." as Local
@@ -20,6 +21,12 @@ PanelWindow {
 
     property string wifiPasswordTarget: ""
     property string wifiPasswordInput: ""
+    property bool audioSinkSelectorOpen: false
+
+    Process {
+        id: pwrProc
+        command: ["quickshell", "ipc", "call", "powermenu", "open"]
+    }
 
     function open() {
         Services.OverlayManager.closeAllExcept(root)
@@ -29,6 +36,7 @@ PanelWindow {
         Services.OverlayManager.controlCenterVisible = false
         Services.OverlayManager.wifiPanelVisible = false
         Services.OverlayManager.btPanelVisible = false
+        Services.OverlayManager.audioPanelVisible = false
     }
     function hide() { close() }
     function show() { open() }
@@ -45,58 +53,60 @@ PanelWindow {
         Keys.onEscapePressed: root.close()
     }
 
-    component ControlSlider: ColumnLayout {
+    // Modern Capsule Slider (Height 38px, filled track, icon inside)
+    component ControlSlider: Rectangle {
         id: sliderRoot
         property string icon: ""
         property real value: 0
         signal moved(real newValue)
 
+        Layout.fillWidth: true
+        implicitHeight: 38
+        radius: Services.Theme.radiusMd
+        color: Services.Theme.surfaceVariant
+        clip: true
+
+        // Active track fill
+        Rectangle {
+            id: fillBar
+            height: parent.height
+            radius: parent.radius
+            color: Services.Theme.accent
+            width: Math.max(38, Math.min(parent.width, sliderRoot.value * parent.width))
+            Behavior on width { NumberAnimation { duration: 80 } }
+        }
+
         RowLayout {
-            Layout.fillWidth: true
+            anchors.fill: parent
+            anchors.leftMargin: 12
+            anchors.rightMargin: 12
             spacing: 8
 
             Text {
                 text: sliderRoot.icon
                 font.family: "Liga SFMono Nerd Font"
                 font.pixelSize: 14
-                color: Services.Theme.textPrimary
+                color: (fillBar.width > 28) ? "#0a0a0a" : Services.Theme.textPrimary
+                Behavior on color { ColorAnimation { duration: 80 } }
             }
 
-            Item {
-                Layout.fillWidth: true
-                Layout.preferredHeight: 22
-
-                Rectangle {
-                    anchors.verticalCenter: parent.verticalCenter
-                    width: parent.width
-                    height: 6
-                    radius: 3
-                    color: Services.Theme.surfaceVariant
-
-                    Rectangle {
-                        height: parent.height
-                        radius: 3
-                        color: Services.Theme.accent
-                        width: Math.max(6, sliderRoot.value * parent.width)
-                        Behavior on width { NumberAnimation { duration: 80 } }
-                    }
-                }
-
-                MouseArea {
-                    anchors.fill: parent
-                    onPressed: (mouse) => sliderRoot.moved(Math.max(0, Math.min(1, mouse.x / width)))
-                    onPositionChanged: (mouse) => {
-                        if (pressed) sliderRoot.moved(Math.max(0, Math.min(1, mouse.x / width)))
-                    }
-                }
-            }
+            Item { Layout.fillWidth: true }
 
             Text {
                 text: Math.round(sliderRoot.value * 100) + "%"
                 font.pixelSize: 11
-                color: Services.Theme.textSecondary
-                Layout.preferredWidth: 30
-                horizontalAlignment: Text.AlignRight
+                font.bold: true
+                color: (fillBar.width > (parent.width - 45)) ? "#0a0a0a" : Services.Theme.textSecondary
+                Behavior on color { ColorAnimation { duration: 80 } }
+            }
+        }
+
+        MouseArea {
+            anchors.fill: parent
+            cursorShape: Qt.PointingHandCursor
+            onPressed: (mouse) => sliderRoot.moved(Math.max(0, Math.min(1, mouse.x / width)))
+            onPositionChanged: (mouse) => {
+                if (pressed) sliderRoot.moved(Math.max(0, Math.min(1, mouse.x / width)))
             }
         }
     }
@@ -149,7 +159,7 @@ PanelWindow {
             anchors.rightMargin: 12
             anchors.topMargin: 12
             width: 340
-            height: (Services.OverlayManager.wifiPanelVisible || Services.OverlayManager.btPanelVisible)
+            height: (Services.OverlayManager.wifiPanelVisible || Services.OverlayManager.btPanelVisible || Services.OverlayManager.audioPanelVisible)
                 ? 480
                 : Math.max(220, Math.min(mainCol.implicitHeight + 32, 640))
             radius: Services.Theme.radiusMd
@@ -169,18 +179,50 @@ PanelWindow {
                 anchors.margins: 16
                 spacing: 12
 
-                opacity: (Services.OverlayManager.wifiPanelVisible || Services.OverlayManager.btPanelVisible) ? 0 : 1
+                opacity: (Services.OverlayManager.wifiPanelVisible || Services.OverlayManager.btPanelVisible || Services.OverlayManager.audioPanelVisible) ? 0 : 1
                 visible: opacity > 0.01
                 Behavior on opacity { NumberAnimation { duration: 150 } }
 
-                Text {
-                    text: "Control Center"
-                    color: Services.Theme.textPrimary
-                    font.bold: true
-                    font.pixelSize: 15
+                // Header with title & Power quick action
+                RowLayout {
+                    Layout.fillWidth: true
+
+                    Text {
+                        text: "Control Center"
+                        color: Services.Theme.textPrimary
+                        font.bold: true
+                        font.pixelSize: 15
+                    }
+
+                    Item { Layout.fillWidth: true }
+
+                    Rectangle {
+                        width: 26; height: 26; radius: 13
+                        color: pwrHover.containsMouse ? Services.Theme.surfaceVariant : "transparent"
+                        Behavior on color { ColorAnimation { duration: 100 } }
+
+                        Text {
+                            anchors.centerIn: parent
+                            text: "\uf011"
+                            font.family: "Symbols Nerd Font Mono"
+                            font.pixelSize: 12
+                            color: pwrHover.containsMouse ? Services.Theme.danger : Services.Theme.textSecondary
+                        }
+
+                        MouseArea {
+                            id: pwrHover
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: {
+                                root.close()
+                                pwrProc.running = true
+                            }
+                        }
+                    }
                 }
 
-                // ── WiFi + Media (baris atas, TETAP kayak sebelumnya) ──
+                // ── WiFi + Media (baris atas) ──
                 RowLayout {
                     Layout.fillWidth: true
                     spacing: 10
@@ -220,20 +262,25 @@ PanelWindow {
                         }
 
                         Rectangle {
-                            width: 18; height: 18; radius: 5
+                            width: 24; height: 24; radius: 12
                             anchors { top: parent.top; right: parent.right; margins: 4 }
-                            color: "transparent"
+                            color: wifiChevronMouse.containsMouse ? (Services.Wifi.enabled ? "#20000000" : "#20ffffff") : "transparent"
+                            Behavior on color { ColorAnimation { duration: 100 } }
 
                             Text {
                                 anchors.centerIn: parent
-                                text: Services.OverlayManager.wifiPanelVisible ? "\uf077" : "\uf078"
+                                text: "\uf078"
                                 font.family: "Symbols Nerd Font Mono"
                                 font.pixelSize: 9
                                 color: Services.Wifi.enabled ? "#0a0a0a" : Services.Theme.textDisabled
+                                rotation: Services.OverlayManager.wifiPanelVisible ? 180 : 0
+                                Behavior on rotation { NumberAnimation { duration: 180; easing.type: Easing.OutQuad } }
                             }
 
                             MouseArea {
+                                id: wifiChevronMouse
                                 anchors.fill: parent
+                                hoverEnabled: true
                                 cursorShape: Qt.PointingHandCursor
                                 onClicked: {
                                     Services.OverlayManager.wifiPanelVisible = !Services.OverlayManager.wifiPanelVisible
@@ -256,7 +303,7 @@ PanelWindow {
 
                     Rectangle {
                         id: btTile
-                        Layout.preferredWidth: 92
+                        Layout.fillWidth: true
                         Layout.preferredHeight: 56
                         radius: Services.Theme.radiusLg
                         color: Services.Bluetooth.enabled ? Services.Theme.accent : Services.Theme.surfaceVariant
@@ -287,20 +334,25 @@ PanelWindow {
                         }
 
                         Rectangle {
-                            width: 18; height: 18; radius: 5
+                            width: 24; height: 24; radius: 12
                             anchors { top: parent.top; right: parent.right; margins: 4 }
-                            color: "transparent"
+                            color: btChevronMouse.containsMouse ? (Services.Bluetooth.enabled ? "#20000000" : "#20ffffff") : "transparent"
+                            Behavior on color { ColorAnimation { duration: 100 } }
 
                             Text {
                                 anchors.centerIn: parent
-                                text: Services.OverlayManager.btPanelVisible ? "\uf077" : "\uf078"
+                                text: "\uf078"
                                 font.family: "Symbols Nerd Font Mono"
                                 font.pixelSize: 8
                                 color: Services.Bluetooth.enabled ? "#0a0a0a" : Services.Theme.textDisabled
+                                rotation: Services.OverlayManager.btPanelVisible ? 180 : 0
+                                Behavior on rotation { NumberAnimation { duration: 180; easing.type: Easing.OutQuad } }
                             }
 
                             MouseArea {
+                                id: btChevronMouse
                                 anchors.fill: parent
+                                hoverEnabled: true
                                 cursorShape: Qt.PointingHandCursor
                                 onClicked: {
                                     Services.OverlayManager.btPanelVisible = !Services.OverlayManager.btPanelVisible
@@ -312,7 +364,7 @@ PanelWindow {
                     }
 
                     Rectangle {
-                        Layout.preferredWidth: 92
+                        Layout.fillWidth: true
                         Layout.preferredHeight: 56
                         radius: Services.Theme.radiusLg
                         color: Services.Notifications.doNotDisturb ? Services.Theme.accent : Services.Theme.surfaceVariant
@@ -344,7 +396,7 @@ PanelWindow {
                     }
 
                     Rectangle {
-                        Layout.preferredWidth: 92
+                        Layout.fillWidth: true
                         Layout.preferredHeight: 56
                         radius: Services.Theme.radiusLg
                         color: Services.PowerProfile.saverEnabled ? Services.Theme.accent : Services.Theme.surfaceVariant
@@ -384,32 +436,128 @@ PanelWindow {
                 }
 
                 ControlCard {
-                    Text {
-                        text: "Display"
-                        font.pixelSize: 11
-                        font.bold: true
-                        color: Services.Theme.textSecondary
-                    }
-                    ControlSlider {
+                    RowLayout {
                         Layout.fillWidth: true
+
+                        Text {
+                            text: "Controls"
+                            font.pixelSize: 11
+                            font.bold: true
+                            color: Services.Theme.textSecondary
+                        }
+
+                        Item { Layout.fillWidth: true }
+
+                        // Audio Output Device Selector Button (Opens sub-panel like WiFi/BT)
+                        Rectangle {
+                            height: 20; radius: 10
+                            color: audioSinkMouse.containsMouse ? Services.Theme.bgHover : "transparent"
+                            implicitWidth: sinkRow.implicitWidth + 12
+                            Behavior on color { ColorAnimation { duration: 100 } }
+
+                            RowLayout {
+                                id: sinkRow
+                                anchors.centerIn: parent
+                                spacing: 4
+
+                                Text {
+                                    text: "\uf025"
+                                    font.family: "Symbols Nerd Font Mono"
+                                    font.pixelSize: 9
+                                    color: Services.Theme.textSecondary
+                                }
+                                Text {
+                                    text: Services.Audio.sinkDescription
+                                    font.pixelSize: 10
+                                    color: Services.Theme.textSecondary
+                                    elide: Text.ElideRight
+                                    Layout.maximumWidth: 120
+                                }
+                                Text {
+                                    text: "\uf078"
+                                    font.family: "Symbols Nerd Font Mono"
+                                    font.pixelSize: 8
+                                    color: Services.Theme.textDisabled
+                                    rotation: Services.OverlayManager.audioPanelVisible ? 180 : 0
+                                    Behavior on rotation { NumberAnimation { duration: 180; easing.type: Easing.OutQuad } }
+                                }
+                            }
+
+                            MouseArea {
+                                id: audioSinkMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: {
+                                    Services.OverlayManager.audioPanelVisible = !Services.OverlayManager.audioPanelVisible
+                                    if (Services.OverlayManager.audioPanelVisible) {
+                                        Services.Audio.refreshSinks()
+                                        Services.OverlayManager.wifiPanelVisible = false
+                                        Services.OverlayManager.btPanelVisible = false
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    ControlSlider {
                         icon: Services.Icons.brightnessIcon(Services.Brightness.percent)
                         value: Services.Brightness.percent
                         onMoved: (v) => Services.Brightness.setPercent(v)
                     }
-                }
 
-                ControlCard {
-                    Text {
-                        text: "Sound"
-                        font.pixelSize: 11
-                        font.bold: true
-                        color: Services.Theme.textSecondary
-                    }
                     ControlSlider {
-                        Layout.fillWidth: true
                         icon: Services.Icons.volumeIcon(Services.Audio.volume, Services.Audio.muted)
                         value: Services.Audio.volume
                         onMoved: (v) => Services.Audio.setVolume(v)
+                    }
+                }
+
+                // System Status Bar Footer
+                Rectangle {
+                    Layout.fillWidth: true
+                    height: 30
+                    radius: Services.Theme.radiusMd
+                    color: Services.Theme.surfaceVariant
+
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.leftMargin: 12
+                        anchors.rightMargin: 12
+                        spacing: 12
+
+                        // Battery Level
+                        RowLayout {
+                            spacing: 4
+                            Text {
+                                text: Services.Power.charging ? "\uf0e7" : "\uf240"
+                                font.family: "Symbols Nerd Font Mono"
+                                font.pixelSize: 11
+                                color: Services.Power.charging ? Services.Theme.success : Services.Theme.textSecondary
+                            }
+                            Text {
+                                text: Math.round(Services.Power.percentage * 100) + "%"
+                                font.pixelSize: 10
+                                font.bold: true
+                                color: Services.Theme.textSecondary
+                            }
+                        }
+
+                        Item { Layout.fillWidth: true }
+
+                        // CPU usage
+                        RowLayout {
+                            spacing: 4
+                            Text { text: "CPU"; font.pixelSize: 9; font.bold: true; color: Services.Theme.textDisabled }
+                            Text { text: Math.round(Services.Sysmon.cpuUsage) + "%"; font.pixelSize: 10; color: Services.Theme.textSecondary }
+                        }
+
+                        // RAM usage
+                        RowLayout {
+                            spacing: 4
+                            Text { text: "RAM"; font.pixelSize: 9; font.bold: true; color: Services.Theme.textDisabled }
+                            Text { text: Math.round(Services.Sysmon.ramUsage) + "%"; font.pixelSize: 10; color: Services.Theme.textSecondary }
+                        }
                     }
                 }
             }
@@ -1062,6 +1210,164 @@ PanelWindow {
                                                 cursorShape: Qt.PointingHandCursor
                                                 onClicked: Services.Bluetooth.removeDevice(btRow.modelData.mac)
                                             }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ── Audio Output overlay ──
+            Rectangle {
+                id: audioOverlay
+                z: 100
+                x: 0
+                y: 0
+                width: panel.width
+                height: Services.OverlayManager.audioPanelVisible ? panel.height : 0
+                color: "transparent"
+                clip: true
+
+                opacity: Services.OverlayManager.audioPanelVisible ? 1 : 0
+                visible: opacity > 0.01
+                Behavior on height { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
+                Behavior on opacity { NumberAnimation { duration: 160 } }
+
+                MouseArea { anchors.fill: parent; onClicked: {} }
+
+                ColumnLayout {
+                    anchors.fill: parent
+                    anchors.margins: 16
+                    spacing: 10
+
+                    // Header Row
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 10
+
+                        // Back Button
+                        Rectangle {
+                            width: 26; height: 26; radius: 13
+                            color: backAudioMouse.containsMouse ? Services.Theme.surfaceVariant : "transparent"
+                            Behavior on color { ColorAnimation { duration: 100 } }
+
+                            Text {
+                                anchors.centerIn: parent
+                                text: "\uf053"
+                                font.family: "Symbols Nerd Font Mono"
+                                font.pixelSize: 12
+                                color: Services.Theme.textPrimary
+                            }
+                            MouseArea {
+                                id: backAudioMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: Services.OverlayManager.audioPanelVisible = false
+                            }
+                        }
+
+                        Text {
+                            text: "Audio Output Devices"
+                            color: Services.Theme.textPrimary
+                            font.bold: true
+                            font.pixelSize: 14
+                            Layout.fillWidth: true
+                        }
+
+                        // Refresh Button
+                        Rectangle {
+                            width: 26; height: 26; radius: 13
+                            color: refreshAudioMouse.containsMouse ? Services.Theme.surfaceVariant : "transparent"
+                            Behavior on color { ColorAnimation { duration: 100 } }
+
+                            Text {
+                                anchors.centerIn: parent
+                                text: "\uf021"
+                                font.family: "Symbols Nerd Font Mono"
+                                font.pixelSize: 12
+                                color: Services.Theme.textSecondary
+                            }
+                            MouseArea {
+                                id: refreshAudioMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: Services.Audio.refreshSinks()
+                            }
+                        }
+                    }
+
+                    Flickable {
+                        id: audioFlickable
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        contentHeight: audioOverlayCol.implicitHeight
+                        clip: true
+                        boundsBehavior: Flickable.StopAtBounds
+
+                        ColumnLayout {
+                            id: audioOverlayCol
+                            width: audioFlickable.width
+                            spacing: 8
+
+                            Repeater {
+                                model: Services.Audio.sinks
+                                delegate: Rectangle {
+                                    id: sinkRow
+                                    required property var modelData
+                                    Layout.fillWidth: true
+                                    implicitHeight: 52
+                                    radius: Services.Theme.radiusMd
+                                    color: sinkRow.modelData.isCurrent ? Services.Theme.accent : (sinkRowArea.containsMouse ? Services.Theme.bgHover : Services.Theme.surfaceVariant)
+                                    Behavior on color { ColorAnimation { duration: 100 } }
+
+                                    MouseArea {
+                                        id: sinkRowArea
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: Services.Audio.setSink(sinkRow.modelData.name)
+                                    }
+
+                                    RowLayout {
+                                        anchors.fill: parent
+                                        anchors.margins: 12
+                                        spacing: 12
+
+                                        Text {
+                                            text: sinkRow.modelData.description.toLowerCase().includes("headphone") ? "\uf025" : "\uf028"
+                                            font.family: "Symbols Nerd Font Mono"
+                                            font.pixelSize: 16
+                                            color: sinkRow.modelData.isCurrent ? "#0a0a0a" : Services.Theme.textPrimary
+                                        }
+
+                                        ColumnLayout {
+                                            Layout.fillWidth: true
+                                            spacing: 2
+                                            Text {
+                                                text: sinkRow.modelData.description
+                                                color: sinkRow.modelData.isCurrent ? "#0a0a0a" : Services.Theme.textPrimary
+                                                font.bold: sinkRow.modelData.isCurrent
+                                                font.pixelSize: 12
+                                                Layout.fillWidth: true
+                                                elide: Text.ElideRight
+                                            }
+                                            Text {
+                                                text: sinkRow.modelData.isCurrent ? "Active Output" : "Click to select"
+                                                color: sinkRow.modelData.isCurrent ? "#333333" : Services.Theme.textDisabled
+                                                font.pixelSize: 9
+                                            }
+                                        }
+
+                                        Text {
+                                            visible: sinkRow.modelData.isCurrent
+                                            text: "\uf00c"
+                                            font.family: "Symbols Nerd Font Mono"
+                                            font.pixelSize: 12
+                                            color: "#0a0a0a"
                                         }
                                     }
                                 }

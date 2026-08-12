@@ -75,9 +75,12 @@ Singleton {
     }
 
     function switchTo(id) {
-        switchProc.command = ["hyprctl", "dispatch", "workspace", '"' + id + '"']
+        if (switchProc.running) {
+            switchProc.running = false
+        }
+        switchProc.command = ["hyprctl", "dispatch", "hl.dsp.focus({ workspace = " + id + " })"]
         switchProc.running = true
-        root.activeWorkspaceId = id
+        root.activeWorkspaceId = parseInt(id) || root.activeWorkspaceId
         root.activeWorkspaceName = String(id)
     }
 

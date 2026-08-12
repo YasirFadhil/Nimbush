@@ -471,7 +471,7 @@ PanelWindow {
 
     // Action Processes
     Process { id: lockProc; command: ["swaylock"] }
-    Process { id: logoutProc; command: ["hyprctl", "dispatch", "exit"] }
+    Process { id: logoutProc; command: ["sh", "-c", "hyprctl dispatch 'hl.dsp.exit()' || loginctl terminate-user $USER"] }
     Process { id: sleepProc; command: ["systemctl", "suspend"] }
     Process { id: rebootProc; command: ["systemctl", "reboot"] }
     Process { id: shutdownProc; command: ["systemctl", "poweroff"] }

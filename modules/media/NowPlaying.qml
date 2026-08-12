@@ -60,7 +60,7 @@ Item {
                     height: card.isPlaying ? 48 : 38
                     Behavior on width  { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
                     Behavior on height { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
-                    radius: 8
+                    radius: card.t.radiusSm
                     color: card.t.surfaceVariant
                     clip: true
                     Layout.alignment: Qt.AlignVCenter

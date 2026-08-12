@@ -77,13 +77,15 @@ RowLayout {
                 text: Services.Icons.powerIcon(Services.Power.charging, Services.Power.percentage * 100)
                 font.family: "Liga SFMono Nerd Font"
                 font.pixelSize: 13
-                color: Services.Theme.textPrimary
+                color: Services.PowerProfile.saverEnabled ? "#ff9800" : Services.Theme.textPrimary
+                Behavior on color { ColorAnimation { duration: 250 } }
             }
             Text {
                 text: Math.round(Services.Power.percentage * 100) + "%"
                 font.family: "Liga SFMono Nerd Font"
                 font.pixelSize: 11
-                color: Services.Theme.textSecondary
+                color: Services.PowerProfile.saverEnabled ? "#ff9800" : Services.Theme.textSecondary
+                Behavior on color { ColorAnimation { duration: 250 } }
             }
         }
     }

@@ -2,6 +2,7 @@
 import QtQuick
 import QtQuick.Layouts
 import Quickshell
+import Quickshell.Io
 import Quickshell.Widgets
 import Quickshell.Services.Mpris
 import "../../../services" as Services
@@ -27,13 +28,42 @@ Item {
     readonly property int notifCount: popupList ? popupList.count : 0
     readonly property bool notifActive: notifCount > 0
 
-    // System HUD Alert State (Mute, DnD, Charging)
+    // System HUD Alert State (Mute, DnD, Charging, Camera)
     property bool sysHudActive: false
     property string sysHudIcon: ""
     property string sysHudTitle: ""
     property string sysHudDetail: ""
     property color sysHudColor: Services.Theme.accent
     property bool hudReady: false
+
+    // Camera Active State & Monitoring
+    property bool cameraActive: false
+
+    Timer {
+        id: cameraPollTimer
+        interval: 1500
+        running: true
+        repeat: true
+        triggeredOnStart: true
+        onTriggered: cameraProc.running = true
+    }
+
+    Process {
+        id: cameraProc
+        command: ["sh", "-c", "[ -n \"$(fuser /dev/video* 2>/dev/null)\" ] && echo \"1\" || echo \"0\""]
+        stdout: SplitParser {
+            onRead: data => {
+                const isActive = data.trim() === "1"
+                root.cameraActive = isActive
+            }
+        }
+    }
+
+    onCameraActiveChanged: {
+        if (cameraActive && hudReady && root.notifCount === 0) {
+            root.showSysHud("󰄀", "Camera Active", "Webcam in use", Services.Theme.success)
+        }
+    }
 
     function showSysHud(icon, title, detail, iconColor) {
         sysHudIcon = icon
@@ -98,14 +128,27 @@ Item {
         }
     }
 
+    Connections {
+        target: Services.PowerProfile
+        function onSaverEnabledChanged() {
+            if (!root.hudReady) return
+            const isSaver = Services.PowerProfile.saverEnabled
+            const icon = "\uf06c"
+            const title = isSaver ? "Power Saver On" : "Power Saver Off"
+            const detail = isSaver ? "Battery saver active" : "Standard performance"
+            root.showSysHud(icon, title, detail, isSaver ? "#ff9800" : Services.Theme.accent)
+        }
+    }
+
     // MPRIS shortcuts
     readonly property var activePlayer: Services.Mpris.activePlayer
     readonly property bool mediaPlaying: activePlayer !== null && activePlayer.isPlaying
     readonly property bool hasMedia: activePlayer !== null && (activePlayer.trackTitle !== "" || mediaPlaying)
 
     readonly property bool expanded: pinned || autoExpanded || notifActive || sysHudActive
+    readonly property bool isMediaPeek: autoExpanded && !pinned && !notifActive && !sysHudActive && hasMedia
 
-    property int autoExpandDuration: 2000
+    property int autoExpandDuration: 2500
     property int notifDuration: 5000
 
     // Safe retrieval of current notification entry
@@ -138,13 +181,41 @@ Item {
     readonly property bool hasNotifBody: currentNotif !== null && currentNotif.body !== undefined && currentNotif.body.length > 0
     readonly property bool hasNotifActions: currentNotif !== null && currentNotif.actions !== undefined && currentNotif.actions.count > 0
 
+    readonly property string currentMediaText: {
+        if (!activePlayer) return ""
+        const title = activePlayer.trackTitle || ""
+        const artist = activePlayer.trackArtist || ""
+        if (title !== "" && artist !== "") return title + " • " + artist
+        return title || artist || "Playing"
+    }
+
+    property string lastTrackText: ""
+    onMediaPlayingChanged: {
+        if (mediaPlaying && currentMediaText !== "") {
+            lastTrackText = currentMediaText
+        }
+    }
+    onCurrentMediaTextChanged: {
+        if (mediaPlaying && currentMediaText !== "") {
+            lastTrackText = currentMediaText
+        }
+    }
+    onExpandedChanged: {
+        if (typeof collapsedText !== "undefined") {
+            collapsedText.x = 0
+        }
+    }
+
     // Island Dimensions
+    readonly property bool showCollapsedText: notifActive || mediaPlaying
+    readonly property int calculatedCollapsedWidth: showCollapsedText ? 180 : 140
     property int collapsedWidth: 140
     property int collapsedHeight: 32
 
     readonly property int calculatedExpandedWidth: {
         if (notifActive) return replyMode ? 390 : 360
         if (sysHudActive) return 280
+        if (isMediaPeek) return 280
         if (hasMedia) return 360
         return 260
     }
@@ -158,6 +229,7 @@ Item {
             return h
         }
         if (sysHudActive) return 54
+        if (isMediaPeek) return 54
         if (hasMedia) return 120
         return 52
     }
@@ -240,7 +312,21 @@ Item {
     Connections {
         target: Services.Mpris
         function onActivePlayerChanged() {
-            if (root.hudReady && Services.Mpris.activePlayer && Services.Mpris.activePlayer.isPlaying && root.notifCount === 0) {
+            if (root.hudReady && Services.Mpris.activePlayer && Services.Mpris.activePlayer.isPlaying && root.notifCount === 0 && !root.pinned) {
+                root.pulse()
+            }
+        }
+    }
+
+    Connections {
+        target: root.activePlayer
+        function onIsPlayingChanged() {
+            if (root.hudReady && root.activePlayer && root.activePlayer.isPlaying && root.notifCount === 0 && !root.pinned) {
+                root.pulse()
+            }
+        }
+        function onTrackTitleChanged() {
+            if (root.hudReady && root.activePlayer && root.activePlayer.isPlaying && root.notifCount === 0 && !root.pinned) {
                 root.pulse()
             }
         }
@@ -259,20 +345,20 @@ Item {
         id: island
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.top: parent.top
-        anchors.topMargin: 4
+        anchors.topMargin: 6
         clip: true
 
-        width: root.expanded ? root.calculatedExpandedWidth : root.collapsedWidth
+        width: root.expanded ? root.calculatedExpandedWidth : root.calculatedCollapsedWidth
         height: root.expanded ? root.calculatedExpandedHeight : root.collapsedHeight
         radius: root.expanded ? Services.Theme.radiusLg : (height / 2)
         color: "#0c0c0c"
         border.color: root.isCritical ? Services.Theme.danger : (root.expanded ? Services.Theme.borderHighlight : "#222222")
         border.width: root.isCritical ? 1.5 : 1
 
-        Behavior on width  { NumberAnimation { duration: 420; easing.type: Easing.OutExpo } }
-        Behavior on height { NumberAnimation { duration: 420; easing.type: Easing.OutExpo } }
-        Behavior on radius { NumberAnimation { duration: 420; easing.type: Easing.OutExpo } }
-        Behavior on border.color { ColorAnimation { duration: 250 } }
+        Behavior on width  { NumberAnimation { duration: 650; easing.type: Easing.OutExpo } }
+        Behavior on height { NumberAnimation { duration: 650; easing.type: Easing.OutExpo } }
+        Behavior on radius { NumberAnimation { duration: 650; easing.type: Easing.OutExpo } }
+        Behavior on border.color { ColorAnimation { duration: 350 } }
 
         MouseArea {
             id: islandMouseArea
@@ -281,13 +367,78 @@ Item {
             onClicked: root.togglePin()
         }
 
+        // ==================== Camera Privacy Indicator (Right Edge) ====================
+        Item {
+            id: cameraIndicator
+            anchors.right: island.right
+            anchors.rightMargin: 10
+            anchors.verticalCenter: island.verticalCenter
+            implicitWidth: 14
+            implicitHeight: 14
+            z: 2
+            visible: (root.cameraActive && root.showCollapsedText) || opacity > 0
+            opacity: (root.cameraActive && root.showCollapsedText) ? 1 : 0
+
+            Behavior on opacity { NumberAnimation { duration: 350; easing.type: Easing.OutQuad } }
+
+            // Blinking Green Privacy Dot
+            Rectangle {
+                anchors.centerIn: parent
+                implicitWidth: 8
+                implicitHeight: 8
+                radius: 4
+                color: Services.Theme.success
+
+                SequentialAnimation on opacity {
+                    running: root.cameraActive
+                    loops: Animation.Infinite
+                    NumberAnimation { from: 1.0; to: 0.25; duration: 700; easing.type: Easing.InOutSine }
+                    NumberAnimation { from: 0.25; to: 1.0; duration: 700; easing.type: Easing.InOutSine }
+                }
+            }
+        }
+
         // ==================== Collapsed State ====================
         RowLayout {
-            anchors.centerIn: parent
+            id: collapsedRow
+            anchors.verticalCenter: parent.verticalCenter
             spacing: 8
             visible: !root.expanded
             opacity: root.expanded ? 0 : 1
-            Behavior on opacity { NumberAnimation { duration: 200 } }
+
+            Behavior on opacity { NumberAnimation { duration: 300 } }
+
+            states: [
+                State {
+                    name: "TEXT_CENTER"
+                    when: root.showCollapsedText || !root.cameraActive
+                    AnchorChanges {
+                        target: collapsedRow
+                        anchors.horizontalCenter: island.horizontalCenter
+                        anchors.right: undefined
+                    }
+                },
+                State {
+                    name: "CAMERA_RIGHT"
+                    when: !root.showCollapsedText && root.cameraActive
+                    AnchorChanges {
+                        target: collapsedRow
+                        anchors.horizontalCenter: undefined
+                        anchors.right: island.right
+                    }
+                    PropertyChanges {
+                        target: collapsedRow
+                        anchors.rightMargin: 12
+                    }
+                }
+            ]
+
+            transitions: [
+                Transition {
+                    AnchorAnimation { duration: 600; easing.type: Easing.OutExpo }
+                    NumberAnimation { properties: "anchors.rightMargin"; duration: 600; easing.type: Easing.OutExpo }
+                }
+            ]
 
             // Animated Status / Music Icon
             Item {
@@ -298,14 +449,45 @@ Item {
                 Text {
                     id: statusIconTxt
                     anchors.centerIn: parent
-                    text: root.notifActive ? "󰂚" : (root.mediaPlaying ? "󰎈" : "●")
+                    text: {
+                        if (root.notifActive) return "󰂚"
+                        if (root.mediaPlaying || collapsedTextContainer.opacity > 0.05) return "󰎈"
+                        return "●"
+                    }
                     font.family: "Liga SFMono Nerd Font"
                     font.pixelSize: 13
-                    color: root.notifActive ? Services.Theme.accent : (root.mediaPlaying ? Services.Theme.success : Services.Theme.textDisabled)
+                    color: {
+                        if (root.notifActive) return Services.Theme.accent
+                        if (root.mediaPlaying || collapsedTextContainer.opacity > 0.05 || root.cameraActive) return Services.Theme.success
+                        return Services.Theme.textDisabled
+                    }
+                    scale: textScale
+
+                    property real textScale: 1.0
+
+                    onTextChanged: {
+                        iconScaleAnim.restart()
+                    }
+
+                    SequentialAnimation {
+                        id: iconScaleAnim
+                        NumberAnimation { target: statusIconTxt; property: "textScale"; to: 0.6; duration: 180; easing.type: Easing.InQuad }
+                        NumberAnimation { target: statusIconTxt; property: "textScale"; to: 1.0; duration: 250; easing.type: Easing.OutBack }
+                    }
+
+                    // Green Blinking when camera active and no music text
+                    SequentialAnimation on opacity {
+                        running: root.cameraActive && !root.showCollapsedText && !root.expanded
+                        loops: Animation.Infinite
+                        NumberAnimation { from: 1.0; to: 0.25; duration: 700; easing.type: Easing.InOutSine }
+                        NumberAnimation { from: 0.25; to: 1.0; duration: 700; easing.type: Easing.InOutSine }
+                    }
+
+                    Behavior on color { ColorAnimation { duration: 350 } }
 
                     RotationAnimation on rotation {
                         from: 0; to: 360
-                        duration: 3000
+                        duration: 4000
                         loops: Animation.Infinite
                         running: root.mediaPlaying && !root.expanded
                     }
@@ -315,33 +497,53 @@ Item {
             // Marquee Scrolling Track Title / Notif Text Container
             Item {
                 id: collapsedTextContainer
-                implicitWidth: collapsedText.text.length > 0 ? Math.min(collapsedText.implicitWidth, 96) : 0
+                readonly property bool showCollapsedText: root.notifActive || root.mediaPlaying
+
+                implicitWidth: showCollapsedText ? Math.min(collapsedText.implicitWidth, 136) : 0
                 implicitHeight: 16
                 clip: true
-                visible: collapsedText.text.length > 0
+                opacity: showCollapsedText ? 1 : 0
+                visible: opacity > 0
                 Layout.alignment: Qt.AlignVCenter
+
+                Behavior on implicitWidth { NumberAnimation { duration: 550; easing.type: Easing.OutExpo } }
+                Behavior on opacity       { NumberAnimation { duration: 350; easing.type: Easing.OutQuad } }
 
                 Text {
                     id: collapsedText
-                    text: root.notifActive ? ("Notif (" + root.notifCount + ")") : (root.mediaPlaying ? (root.activePlayer.trackTitle || "Playing") : "")
+                    text: root.notifActive ? ("Notif (" + root.notifCount + ")") : (root.mediaPlaying ? root.currentMediaText : root.lastTrackText)
                     font.pixelSize: 11
                     font.bold: true
                     color: Services.Theme.textPrimary
 
+                    onTextChanged: {
+                        collapsedText.x = 0
+                        if (marqueeAnim.running) {
+                            marqueeAnim.restart()
+                        }
+                    }
+
                     SequentialAnimation on x {
+                        id: marqueeAnim
                         running: root.mediaPlaying && !root.expanded && collapsedText.implicitWidth > collapsedTextContainer.width
                         loops: Animation.Infinite
 
-                        PauseAnimation { duration: 1200 }
+                        onRunningChanged: {
+                            if (!running) {
+                                collapsedText.x = 0
+                            }
+                        }
+
+                        PauseAnimation { duration: 1500 }
                         NumberAnimation {
                             to: -(collapsedText.implicitWidth - collapsedTextContainer.width + 4)
-                            duration: Math.max(2000, (collapsedText.implicitWidth - collapsedTextContainer.width) * 35)
+                            duration: Math.max(2500, (collapsedText.implicitWidth - collapsedTextContainer.width) * 45)
                             easing.type: Easing.InOutQuad
                         }
-                        PauseAnimation { duration: 1200 }
+                        PauseAnimation { duration: 1500 }
                         NumberAnimation {
                             to: 0
-                            duration: Math.max(2000, (collapsedText.implicitWidth - collapsedTextContainer.width) * 35)
+                            duration: Math.max(2500, (collapsedText.implicitWidth - collapsedTextContainer.width) * 45)
                             easing.type: Easing.InOutQuad
                         }
                     }
@@ -357,7 +559,7 @@ Item {
             visible: root.expanded && root.notifActive
             opacity: visible ? 1 : 0
             z: 1
-            Behavior on opacity { NumberAnimation { duration: 200 } }
+            Behavior on opacity { NumberAnimation { duration: 300 } }
 
             // Header: Icon, AppName, Queue Indicator, Controls & Close
             RowLayout {
@@ -680,7 +882,7 @@ Item {
             visible: root.expanded && !root.notifActive && root.sysHudActive
             opacity: visible ? 1 : 0
             z: 1
-            Behavior on opacity { NumberAnimation { duration: 200 } }
+            Behavior on opacity { NumberAnimation { duration: 300 } }
 
             Rectangle {
                 implicitWidth: 32
@@ -723,15 +925,99 @@ Item {
             }
         }
 
+        // ==================== Expanded: Media Peek (Compact auto-expand on play) ====================
+        RowLayout {
+            anchors.fill: parent
+            anchors.margins: 10
+            spacing: 10
+            visible: root.expanded && !root.notifActive && !root.sysHudActive && root.isMediaPeek
+            opacity: visible ? 1 : 0
+            z: 1
+            Behavior on opacity { NumberAnimation { duration: 300 } }
+
+            // Compact Track Artwork / Icon
+            Rectangle {
+                implicitWidth: 32
+                implicitHeight: 32
+                radius: Services.Theme.radiusSm
+                color: Services.Theme.surfaceVariant
+                clip: true
+                Layout.alignment: Qt.AlignVCenter
+
+                Image {
+                    id: peekArtImg
+                    anchors.fill: parent
+                    source: root.activePlayer ? (root.activePlayer.trackArtUrl || root.activePlayer.artUrl || "") : ""
+                    fillMode: Image.PreserveAspectCrop
+                    visible: status === Image.Ready
+                }
+
+                Text {
+                    anchors.centerIn: parent
+                    text: "󰎈"
+                    font.family: "Liga SFMono Nerd Font"
+                    font.pixelSize: 16
+                    color: Services.Theme.accent
+                    visible: !peekArtImg.visible
+                }
+            }
+
+            // Compact Track Title & Artist
+            ColumnLayout {
+                Layout.fillWidth: true
+                Layout.alignment: Qt.AlignVCenter
+                spacing: 1
+
+                Text {
+                    text: root.activePlayer ? (root.activePlayer.trackTitle || "Playing") : "Playing"
+                    color: Services.Theme.textPrimary
+                    font.pixelSize: 12
+                    font.bold: true
+                    elide: Text.ElideRight
+                    Layout.fillWidth: true
+                }
+
+                Text {
+                    text: root.activePlayer ? (root.activePlayer.trackArtist || root.activePlayer.identity || "Now Playing") : "Now Playing"
+                    color: Services.Theme.textSecondary
+                    font.pixelSize: 10
+                    elide: Text.ElideRight
+                    Layout.fillWidth: true
+                }
+            }
+
+            // Animated Music Status Icon
+            Item {
+                implicitWidth: 24
+                implicitHeight: 24
+                Layout.alignment: Qt.AlignVCenter
+
+                Text {
+                    anchors.centerIn: parent
+                    text: "󰎈"
+                    font.family: "Liga SFMono Nerd Font"
+                    font.pixelSize: 14
+                    color: Services.Theme.success
+
+                    RotationAnimation on rotation {
+                        from: 0; to: 360
+                        duration: 4000
+                        loops: Animation.Infinite
+                        running: root.mediaPlaying && root.isMediaPeek
+                    }
+                }
+            }
+        }
+
         // ==================== Expanded: Media Controls (Full Control) ====================
         ColumnLayout {
             anchors.fill: parent
             anchors.margins: 10
             spacing: 6
-            visible: root.expanded && !root.notifActive && !root.sysHudActive && root.hasMedia
+            visible: root.expanded && !root.notifActive && !root.sysHudActive && !root.isMediaPeek && root.hasMedia
             opacity: visible ? 1 : 0
             z: 1
-            Behavior on opacity { NumberAnimation { duration: 200 } }
+            Behavior on opacity { NumberAnimation { duration: 300 } }
 
             // Row 1: Track Art + Info + Player Badge
             RowLayout {
@@ -742,7 +1028,7 @@ Item {
                 Rectangle {
                     implicitWidth: 40
                     implicitHeight: 40
-                    radius: 8
+                    radius: Services.Theme.radiusMd
                     color: Services.Theme.surfaceVariant
                     clip: true
                     Layout.alignment: Qt.AlignVCenter
@@ -997,7 +1283,7 @@ Item {
             visible: root.expanded && !root.notifActive && !root.sysHudActive && !root.hasMedia
             opacity: visible ? 1 : 0
             z: 1
-            Behavior on opacity { NumberAnimation { duration: 200 } }
+            Behavior on opacity { NumberAnimation { duration: 300 } }
 
             Text {
                 text: "󰐃"
