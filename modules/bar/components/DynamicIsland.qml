@@ -23,6 +23,10 @@ Item {
     readonly property int islandWidth: island.width
     readonly property int islandHeight: island.height
 
+    // Lockscreen compatibility
+    property bool allowOnLockscreen: true
+    readonly property bool lockBlocked: Services.OverlayManager.isLocked
+
     // Notification model shortcuts
     readonly property var popupList: Services.Notifications.popupList
     readonly property int notifCount: popupList ? popupList.count : 0
@@ -38,6 +42,41 @@ Item {
 
     // Camera Active State & Monitoring
     property bool cameraActive: false
+
+    // CapsLock Active State & Monitoring
+    property bool capsLockActive: false
+
+    // NetworkManager / Wi-Fi State Monitoring
+    property bool wifiLastConnected: false
+    property string wifiLastSsid: ""
+
+    // Bluetooth Devices State Monitoring
+    property var btConnectedDevices: ({})
+
+    // Media Stop Animation Choreography
+    property bool mediaStopping: false
+    property bool mediaTextCollapsed: false
+    property bool mediaIconTransformed: false
+
+    Timer {
+        id: mediaStopPhase1Timer
+        interval: 240
+        repeat: false
+        onTriggered: {
+            root.mediaTextCollapsed = true
+            mediaStopPhase2Timer.restart()
+        }
+    }
+
+    Timer {
+        id: mediaStopPhase2Timer
+        interval: 320
+        repeat: false
+        onTriggered: {
+            root.mediaIconTransformed = true
+            root.mediaStopping = false
+        }
+    }
 
     Timer {
         id: cameraPollTimer
@@ -59,10 +98,40 @@ Item {
         }
     }
 
+    Timer {
+        id: capsLockPollTimer
+        interval: 400
+        running: true
+        repeat: true
+        triggeredOnStart: true
+        onTriggered: capsLockProc.running = true
+    }
+
+    Process {
+        id: capsLockProc
+        command: ["sh", "-c", "cat /sys/class/leds/*capslock*/brightness 2>/dev/null | head -n 1"]
+        stdout: SplitParser {
+            onRead: data => {
+                const isActive = data.trim() === "1"
+                if (root.capsLockActive !== isActive) {
+                    root.capsLockActive = isActive
+                }
+            }
+        }
+    }
+
     onCameraActiveChanged: {
         if (cameraActive && hudReady && root.notifCount === 0) {
             root.showSysHud("󰄀", "Camera Active", "Webcam in use", Services.Theme.success)
         }
+    }
+
+    onCapsLockActiveChanged: {
+        if (!hudReady) return
+        const icon = "󰘶"
+        const title = capsLockActive ? "Caps Lock On" : "Caps Lock Off"
+        const detail = capsLockActive ? "Uppercase enabled" : "Standard lowercase"
+        root.showSysHud(icon, title, detail, capsLockActive ? "#ffcc00" : Services.Theme.danger)
     }
 
     function showSysHud(icon, title, detail, iconColor) {
@@ -140,13 +209,129 @@ Item {
         }
     }
 
+    Connections {
+        target: Services.Wifi
+        function onConnectedChanged() {
+            const isConn = Services.Wifi.connected
+            const currentSsid = Services.Wifi.ssid
+
+            if (!root.hudReady) {
+                root.wifiLastConnected = isConn
+                if (currentSsid) root.wifiLastSsid = currentSsid
+                return
+            }
+
+            if (isConn && !root.wifiLastConnected) {
+                const name = currentSsid || root.wifiLastSsid || "Network"
+                root.showSysHud("󰤨", "Wi-Fi Connected", name, Services.Theme.success)
+                if (currentSsid) root.wifiLastSsid = currentSsid
+            } else if (!isConn && root.wifiLastConnected) {
+                const name = root.wifiLastSsid || "Network"
+                root.showSysHud("󰤭", "Wi-Fi Disconnected", name, Services.Theme.danger)
+            }
+            root.wifiLastConnected = isConn
+        }
+
+        function onSsidChanged() {
+            if (Services.Wifi.ssid && Services.Wifi.ssid !== "") {
+                if (root.hudReady && Services.Wifi.connected && root.wifiLastConnected && root.wifiLastSsid !== "" && root.wifiLastSsid !== Services.Wifi.ssid) {
+                    root.showSysHud("󰤨", "Wi-Fi Switched", Services.Wifi.ssid, Services.Theme.accent)
+                }
+                root.wifiLastSsid = Services.Wifi.ssid
+            }
+        }
+
+        function onEnabledChanged() {
+            if (!root.hudReady) return
+            const isEnabled = Services.Wifi.enabled
+            const icon = isEnabled ? "󰤨" : "󰤭"
+            const title = isEnabled ? "Wi-Fi On" : "Wi-Fi Off"
+            const detail = isEnabled ? "Wi-Fi enabled" : "Wi-Fi disabled"
+            root.showSysHud(icon, title, detail, isEnabled ? Services.Theme.accent : Services.Theme.danger)
+        }
+    }
+
+    Connections {
+        target: Services.Bluetooth
+        function onDevicesChanged() {
+            const currentDevices = Services.Bluetooth.devices || []
+            const newMap = {}
+
+            for (let i = 0; i < currentDevices.length; i++) {
+                const dev = currentDevices[i]
+                if (dev && dev.connected) {
+                    newMap[dev.mac] = dev.name || dev.mac
+                }
+            }
+
+            if (!root.hudReady) {
+                root.btConnectedDevices = newMap
+                return
+            }
+
+            // Detect newly connected devices
+            for (const mac in newMap) {
+                if (!root.btConnectedDevices[mac]) {
+                    const devName = newMap[mac]
+                    root.showSysHud("󰂱", "Bluetooth Connected", devName, Services.Theme.success)
+                }
+            }
+
+            // Detect disconnected devices
+            for (const mac in root.btConnectedDevices) {
+                if (!newMap[mac]) {
+                    const devName = root.btConnectedDevices[mac]
+                    root.showSysHud("󰂲", "Bluetooth Disconnected", devName, Services.Theme.danger)
+                }
+            }
+
+            root.btConnectedDevices = newMap
+        }
+
+        function onEnabledChanged() {
+            if (!root.hudReady) return
+            const isEnabled = Services.Bluetooth.enabled
+            if (!isEnabled) {
+                root.btConnectedDevices = {}
+            }
+            const icon = isEnabled ? "󰂯" : "󰂲"
+            const title = isEnabled ? "Bluetooth On" : "Bluetooth Off"
+            const detail = isEnabled ? "Bluetooth enabled" : "Bluetooth disabled"
+            root.showSysHud(icon, title, detail, isEnabled ? Services.Theme.accent : Services.Theme.danger)
+        }
+    }
+
     // MPRIS shortcuts
     readonly property var activePlayer: Services.Mpris.activePlayer
     readonly property bool mediaPlaying: activePlayer !== null && activePlayer.isPlaying
     readonly property bool hasMedia: activePlayer !== null && (activePlayer.trackTitle !== "" || mediaPlaying)
 
-    readonly property bool expanded: pinned || autoExpanded || notifActive || sysHudActive
-    readonly property bool isMediaPeek: autoExpanded && !pinned && !notifActive && !sysHudActive && hasMedia
+    // Lock Pulse State on Lockscreen
+    property bool lockPulse: false
+
+    Timer {
+        id: lockPulseTimer
+        interval: 1800
+        repeat: false
+        onTriggered: root.lockPulse = false
+    }
+
+    Connections {
+        target: Services.OverlayManager
+        function onIsLockedChanged() {
+            if (statusIconTxt) statusIconTxt.rotation = 0
+            if (Services.OverlayManager.isLocked) {
+                root.lockPulse = true
+                lockPulseTimer.restart()
+            } else {
+                root.lockPulse = false
+                lockPulseTimer.stop()
+            }
+        }
+    }
+
+    readonly property bool expanded: (Services.OverlayManager.isLocked && lockPulse) || (!lockBlocked && (pinned || autoExpanded || notifActive || sysHudActive))
+    readonly property bool isMediaPeek: !lockBlocked && autoExpanded && !pinned && !notifActive && !sysHudActive && hasMedia
 
     property int autoExpandDuration: 2500
     property int notifDuration: 5000
@@ -191,8 +376,22 @@ Item {
 
     property string lastTrackText: ""
     onMediaPlayingChanged: {
-        if (mediaPlaying && currentMediaText !== "") {
-            lastTrackText = currentMediaText
+        if (mediaPlaying) {
+            mediaStopPhase1Timer.stop()
+            mediaStopPhase2Timer.stop()
+            root.mediaStopping = false
+            root.mediaTextCollapsed = false
+            root.mediaIconTransformed = false
+            if (currentMediaText !== "") {
+                lastTrackText = currentMediaText
+            }
+        } else {
+            if (root.hudReady && !root.notifActive) {
+                root.mediaStopping = true
+                root.mediaTextCollapsed = false
+                root.mediaIconTransformed = false
+                mediaStopPhase1Timer.restart()
+            }
         }
     }
     onCurrentMediaTextChanged: {
@@ -207,12 +406,13 @@ Item {
     }
 
     // Island Dimensions
-    readonly property bool showCollapsedText: notifActive || mediaPlaying
-    readonly property int calculatedCollapsedWidth: showCollapsedText ? 180 : 140
+    readonly property bool showCollapsedText: !lockBlocked && (notifActive || mediaPlaying)
+    readonly property int calculatedCollapsedWidth: (showCollapsedText || (mediaStopping && !mediaIconTransformed)) ? 180 : 140
     property int collapsedWidth: 140
     property int collapsedHeight: 32
 
     readonly property int calculatedExpandedWidth: {
+        if (Services.OverlayManager.isLocked && lockPulse) return 180
         if (notifActive) return replyMode ? 390 : 360
         if (sysHudActive) return 280
         if (isMediaPeek) return 280
@@ -221,6 +421,7 @@ Item {
     }
 
     readonly property int calculatedExpandedHeight: {
+        if (Services.OverlayManager.isLocked && lockPulse) return 44
         if (notifActive) {
             if (replyMode) return 146
             let h = 72
@@ -343,6 +544,7 @@ Item {
 
     Rectangle {
         id: island
+        z: 2
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.top: parent.top
         anchors.topMargin: 6
@@ -398,32 +600,80 @@ Item {
             }
         }
 
-        // ==================== Collapsed State ====================
+        // ==================== Collapsed & Locked State ====================
         RowLayout {
             id: collapsedRow
             anchors.verticalCenter: parent.verticalCenter
             spacing: 8
-            visible: !root.expanded
-            opacity: root.expanded ? 0 : 1
+            readonly property bool activeState: !root.expanded || (Services.OverlayManager.isLocked && root.lockPulse)
+            visible: activeState || opacity > 0.01
+            opacity: activeState ? 1 : 0
+            scale: activeState ? 1.0 : 0.2
+            transformOrigin: Item.Center
 
-            Behavior on opacity { NumberAnimation { duration: 300 } }
+            Behavior on opacity { NumberAnimation { duration: 350; easing.type: Easing.OutQuad } }
+            Behavior on scale   { NumberAnimation { duration: 550; easing.type: Easing.OutExpo } }
 
             states: [
                 State {
-                    name: "TEXT_CENTER"
-                    when: root.showCollapsedText || !root.cameraActive
+                    name: "LOCKED_EXPANDED"
+                    when: Services.OverlayManager.isLocked && root.lockPulse
                     AnchorChanges {
                         target: collapsedRow
                         anchors.horizontalCenter: island.horizontalCenter
+                        anchors.left: undefined
                         anchors.right: undefined
                     }
                 },
                 State {
-                    name: "CAMERA_RIGHT"
-                    when: !root.showCollapsedText && root.cameraActive
+                    name: "LOCKED_COLLAPSED"
+                    when: Services.OverlayManager.isLocked && !root.lockPulse
                     AnchorChanges {
                         target: collapsedRow
                         anchors.horizontalCenter: undefined
+                        anchors.left: island.left
+                        anchors.right: undefined
+                    }
+                    PropertyChanges {
+                        target: collapsedRow
+                        anchors.leftMargin: 14
+                    }
+                },
+                State {
+                    name: "TEXT_LEFT"
+                    when: !Services.OverlayManager.isLocked && (root.showCollapsedText || (root.mediaStopping && !root.mediaIconTransformed))
+                    AnchorChanges {
+                        target: collapsedRow
+                        anchors.horizontalCenter: undefined
+                        anchors.left: island.left
+                        anchors.right: undefined
+                    }
+                    PropertyChanges {
+                        target: collapsedRow
+                        anchors.leftMargin: 14
+                    }
+                },
+                State {
+                    name: "IDLE_CENTER"
+                    when: !Services.OverlayManager.isLocked && !root.showCollapsedText && !(root.mediaStopping && !root.mediaIconTransformed) && !root.cameraActive
+                    AnchorChanges {
+                        target: collapsedRow
+                        anchors.horizontalCenter: undefined
+                        anchors.left: island.left
+                        anchors.right: undefined
+                    }
+                    PropertyChanges {
+                        target: collapsedRow
+                        anchors.leftMargin: Math.round((island.width - 16) / 2)
+                    }
+                },
+                State {
+                    name: "CAMERA_RIGHT"
+                    when: !Services.OverlayManager.isLocked && (!root.showCollapsedText && !(root.mediaStopping && !root.mediaIconTransformed) && root.cameraActive)
+                    AnchorChanges {
+                        target: collapsedRow
+                        anchors.horizontalCenter: undefined
+                        anchors.left: undefined
                         anchors.right: island.right
                     }
                     PropertyChanges {
@@ -435,10 +685,17 @@ Item {
 
             transitions: [
                 Transition {
-                    AnchorAnimation { duration: 600; easing.type: Easing.OutExpo }
-                    NumberAnimation { properties: "anchors.rightMargin"; duration: 600; easing.type: Easing.OutExpo }
+                    from: "TEXT_LEFT"; to: "IDLE_CENTER"
+                    AnchorAnimation { duration: 650; easing.type: Easing.OutBack; easing.overshoot: 1.4 }
+                    NumberAnimation { properties: "anchors.leftMargin"; duration: 650; easing.type: Easing.OutBack; easing.overshoot: 1.4 }
+                },
+                Transition {
+                    AnchorAnimation { duration: 650; easing.type: Easing.OutExpo }
+                    NumberAnimation { properties: "anchors.rightMargin"; duration: 650; easing.type: Easing.OutExpo }
+                    NumberAnimation { properties: "anchors.leftMargin"; duration: 650; easing.type: Easing.OutExpo }
                 }
             ]
+
 
             // Animated Status / Music Icon
             Item {
@@ -450,15 +707,17 @@ Item {
                     id: statusIconTxt
                     anchors.centerIn: parent
                     text: {
+                        if (Services.OverlayManager.isLocked) return "󰌾"
                         if (root.notifActive) return "󰂚"
-                        if (root.mediaPlaying || collapsedTextContainer.opacity > 0.05) return "󰎈"
+                        if (root.mediaPlaying || (root.mediaStopping && !root.mediaTextCollapsed)) return "󰎈"
                         return "●"
                     }
                     font.family: "Liga SFMono Nerd Font"
                     font.pixelSize: 13
                     color: {
+                        if (Services.OverlayManager.isLocked) return Services.Theme.accent
                         if (root.notifActive) return Services.Theme.accent
-                        if (root.mediaPlaying || collapsedTextContainer.opacity > 0.05 || root.cameraActive) return Services.Theme.success
+                        if (root.mediaPlaying || (root.mediaStopping && !root.mediaTextCollapsed) || root.cameraActive) return Services.Theme.success
                         return Services.Theme.textDisabled
                     }
                     scale: textScale
@@ -471,8 +730,8 @@ Item {
 
                     SequentialAnimation {
                         id: iconScaleAnim
-                        NumberAnimation { target: statusIconTxt; property: "textScale"; to: 0.6; duration: 180; easing.type: Easing.InQuad }
-                        NumberAnimation { target: statusIconTxt; property: "textScale"; to: 1.0; duration: 250; easing.type: Easing.OutBack }
+                        NumberAnimation { target: statusIconTxt; property: "textScale"; to: 0.2; duration: 120; easing.type: Easing.InQuad }
+                        NumberAnimation { target: statusIconTxt; property: "textScale"; to: 1.0; duration: 380; easing.type: Easing.OutBack }
                     }
 
                     // Green Blinking when camera active and no music text
@@ -489,15 +748,36 @@ Item {
                         from: 0; to: 360
                         duration: 4000
                         loops: Animation.Infinite
-                        running: root.mediaPlaying && !root.expanded
+                        running: !Services.OverlayManager.isLocked && root.mediaPlaying && !root.expanded
+                        onRunningChanged: {
+                            if (!running) {
+                                statusIconTxt.rotation = 0
+                            }
+                        }
                     }
                 }
+            }
+
+            // Lock Pulse Text ("Locked")
+            Text {
+                id: lockedPulseText
+                text: "Locked"
+                font.pixelSize: 12
+                font.bold: true
+                color: Services.Theme.textPrimary
+                visible: Services.OverlayManager.isLocked && (root.lockPulse || opacity > 0.01)
+                opacity: Services.OverlayManager.isLocked && root.lockPulse ? 1 : 0
+                scale: Services.OverlayManager.isLocked && root.lockPulse ? 1 : 0.8
+                Layout.alignment: Qt.AlignVCenter
+
+                Behavior on opacity { NumberAnimation { duration: 350; easing.type: Easing.OutQuad } }
+                Behavior on scale   { NumberAnimation { duration: 350; easing.type: Easing.OutQuad } }
             }
 
             // Marquee Scrolling Track Title / Notif Text Container
             Item {
                 id: collapsedTextContainer
-                readonly property bool showCollapsedText: root.notifActive || root.mediaPlaying
+                readonly property bool showCollapsedText: !Services.OverlayManager.isLocked && (root.notifActive || root.mediaPlaying)
 
                 implicitWidth: showCollapsedText ? Math.min(collapsedText.implicitWidth, 136) : 0
                 implicitHeight: 16
@@ -506,8 +786,8 @@ Item {
                 visible: opacity > 0
                 Layout.alignment: Qt.AlignVCenter
 
-                Behavior on implicitWidth { NumberAnimation { duration: 550; easing.type: Easing.OutExpo } }
-                Behavior on opacity       { NumberAnimation { duration: 350; easing.type: Easing.OutQuad } }
+                Behavior on implicitWidth { NumberAnimation { duration: 220; easing.type: Easing.OutExpo } }
+                Behavior on opacity       { NumberAnimation { duration: 180; easing.type: Easing.OutQuad } }
 
                 Text {
                     id: collapsedText
@@ -556,10 +836,16 @@ Item {
             anchors.fill: parent
             anchors.margins: 10
             spacing: 4
-            visible: root.expanded && root.notifActive
-            opacity: visible ? 1 : 0
+            readonly property bool activeState: !Services.OverlayManager.isLocked && root.expanded && root.notifActive
+            visible: activeState || opacity > 0.01
+            opacity: activeState ? 1 : 0
+            scale: activeState ? 1.0 : 0.15
+            transformOrigin: Item.Center
+            enabled: activeState
             z: 1
-            Behavior on opacity { NumberAnimation { duration: 300 } }
+
+            Behavior on opacity { NumberAnimation { duration: 350; easing.type: Easing.OutQuad } }
+            Behavior on scale   { NumberAnimation { duration: 550; easing.type: Easing.OutExpo } }
 
             // Header: Icon, AppName, Queue Indicator, Controls & Close
             RowLayout {
@@ -874,15 +1160,21 @@ Item {
             }
         }
 
-        // ==================== Expanded: System HUD Alert (Mute, DnD, Charging) ====================
+        // ==================== Expanded: System HUD Alert (Mute, DnD, Charging, CapsLock) ====================
         RowLayout {
             anchors.fill: parent
             anchors.margins: 10
             spacing: 10
-            visible: root.expanded && !root.notifActive && root.sysHudActive
-            opacity: visible ? 1 : 0
+            readonly property bool activeState: (root.sysHudTitle.includes("Caps Lock") || !Services.OverlayManager.isLocked) && root.expanded && !root.notifActive && root.sysHudActive
+            visible: activeState || opacity > 0.01
+            opacity: activeState ? 1 : 0
+            scale: activeState ? 1.0 : 0.15
+            transformOrigin: Item.Center
+            enabled: activeState
             z: 1
-            Behavior on opacity { NumberAnimation { duration: 300 } }
+
+            Behavior on opacity { NumberAnimation { duration: 350; easing.type: Easing.OutQuad } }
+            Behavior on scale   { NumberAnimation { duration: 550; easing.type: Easing.OutExpo } }
 
             Rectangle {
                 implicitWidth: 32
@@ -894,9 +1186,20 @@ Item {
                 Text {
                     anchors.centerIn: parent
                     text: root.sysHudIcon
-                    font.family: "Liga SFMono Nerd Font"
+                    font.family: "Symbols Nerd Font Mono"
                     font.pixelSize: 15
                     color: root.sysHudColor
+                }
+
+                // Red Cross overlay when Caps Lock is Off
+                Text {
+                    anchors.centerIn: parent
+                    text: "✕"
+                    font.family: "Symbols Nerd Font Mono"
+                    font.pixelSize: 12
+                    font.bold: true
+                    color: Services.Theme.danger
+                    visible: root.sysHudTitle === "Caps Lock Off"
                 }
             }
 
@@ -930,10 +1233,16 @@ Item {
             anchors.fill: parent
             anchors.margins: 10
             spacing: 10
-            visible: root.expanded && !root.notifActive && !root.sysHudActive && root.isMediaPeek
-            opacity: visible ? 1 : 0
+            readonly property bool activeState: !Services.OverlayManager.isLocked && root.expanded && !root.notifActive && !root.sysHudActive && root.isMediaPeek
+            visible: activeState || opacity > 0.01
+            opacity: activeState ? 1 : 0
+            scale: activeState ? 1.0 : 0.15
+            transformOrigin: Item.Center
+            enabled: activeState
             z: 1
-            Behavior on opacity { NumberAnimation { duration: 300 } }
+
+            Behavior on opacity { NumberAnimation { duration: 350; easing.type: Easing.OutQuad } }
+            Behavior on scale   { NumberAnimation { duration: 550; easing.type: Easing.OutExpo } }
 
             // Compact Track Artwork / Icon
             Rectangle {
@@ -1014,10 +1323,16 @@ Item {
             anchors.fill: parent
             anchors.margins: 10
             spacing: 6
-            visible: root.expanded && !root.notifActive && !root.sysHudActive && !root.isMediaPeek && root.hasMedia
-            opacity: visible ? 1 : 0
+            readonly property bool activeState: !Services.OverlayManager.isLocked && root.expanded && !root.notifActive && !root.sysHudActive && !root.isMediaPeek && root.hasMedia
+            visible: activeState || opacity > 0.01
+            opacity: activeState ? 1 : 0
+            scale: activeState ? 1.0 : 0.15
+            transformOrigin: Item.Center
+            enabled: activeState
             z: 1
-            Behavior on opacity { NumberAnimation { duration: 300 } }
+
+            Behavior on opacity { NumberAnimation { duration: 350; easing.type: Easing.OutQuad } }
+            Behavior on scale   { NumberAnimation { duration: 550; easing.type: Easing.OutExpo } }
 
             // Row 1: Track Art + Info + Player Badge
             RowLayout {
@@ -1280,10 +1595,16 @@ Item {
             anchors.fill: parent
             anchors.margins: 10
             spacing: 8
-            visible: root.expanded && !root.notifActive && !root.sysHudActive && !root.hasMedia
-            opacity: visible ? 1 : 0
+            readonly property bool activeState: root.expanded && !root.notifActive && !root.sysHudActive && !root.hasMedia
+            visible: activeState || opacity > 0.01
+            opacity: activeState ? 1 : 0
+            scale: activeState ? 1.0 : 0.15
+            transformOrigin: Item.Center
+            enabled: activeState
             z: 1
-            Behavior on opacity { NumberAnimation { duration: 300 } }
+
+            Behavior on opacity { NumberAnimation { duration: 350; easing.type: Easing.OutQuad } }
+            Behavior on scale   { NumberAnimation { duration: 550; easing.type: Easing.OutExpo } }
 
             Text {
                 text: "󰐃"
@@ -1301,6 +1622,39 @@ Item {
             }
         }
     }
+
+    // ==================== CapsLock Satellite Dot (Right of Island) ====================
+    Rectangle {
+        id: capsLockDot
+        anchors.left: island.right
+        anchors.leftMargin: (root.capsLockActive && !root.expanded) ? 8 : -32
+        anchors.verticalCenter: island.verticalCenter
+        implicitWidth: 32
+        implicitHeight: 32
+        radius: 16
+        color: "#0c0c0c"
+        border.color: "#222222"
+        border.width: 1
+        z: 1
+        visible: root.capsLockActive || opacity > 0 || scale > 0
+
+        opacity: (root.capsLockActive && !root.expanded) ? 1 : 0
+        scale: (root.capsLockActive && !root.expanded) ? 1 : 0
+
+        Behavior on opacity { NumberAnimation { duration: 350; easing.type: Easing.OutCubic } }
+        Behavior on scale   { NumberAnimation { duration: 500; easing.type: Easing.OutBack } }
+        Behavior on anchors.leftMargin { NumberAnimation { duration: 550; easing.type: Easing.OutBack } }
+
+        // CapsLock Icon
+        Text {
+            anchors.centerIn: parent
+            text: "󰘶"
+            font.family: "Symbols Nerd Font Mono"
+            font.pixelSize: 13
+            color: "#ffcc00"
+        }
+    }
+
 }
 
 

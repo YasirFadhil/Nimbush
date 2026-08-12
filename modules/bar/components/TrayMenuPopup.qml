@@ -22,6 +22,7 @@ PanelWindow {
     WlrLayershell.keyboardFocus: WlrKeyboardFocus.OnDemand
 
     function openAt(item, xPos) {
+        Services.OverlayManager.closeAllExcept(root)
         targetX = xPos
         activeItem = item
     }
@@ -114,81 +115,186 @@ PanelWindow {
                         id: menuItem
                         required property var modelData
                         required property int index
+                        property bool expanded: false
 
                         Layout.fillWidth: true
-                        Layout.preferredHeight: modelData.isSeparator ? 9 : 30
+                        Layout.preferredHeight: modelData.isSeparator ? 9 : (30 + (expanded && subMenuOpener.children ? subMenuColumn.implicitHeight + 4 : 0))
 
-                        // Separator Line
-                        Rectangle {
-                            anchors.centerIn: parent
-                            width: parent.width
-                            height: 1
-                            color: Services.Theme.border
-                            visible: menuItem.modelData.isSeparator
+                        Behavior on Layout.preferredHeight { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
+
+                        QsMenuOpener {
+                            id: subMenuOpener
+                            menu: menuItem.modelData.hasChildren && menuItem.expanded ? menuItem.modelData : null
                         }
 
-                        // Regular Menu Entry
-                        Rectangle {
+                        ColumnLayout {
                             anchors.fill: parent
-                            visible: !menuItem.modelData.isSeparator
-                            radius: Services.Theme.radiusSm
-                            color: itemMouseArea.containsMouse && menuItem.modelData.enabled ? Services.Theme.surfaceVariant : "transparent"
-                            border.color: itemMouseArea.containsMouse && menuItem.modelData.enabled ? Services.Theme.borderHighlight : "transparent"
-                            border.width: 1
+                            spacing: 4
 
-                            RowLayout {
-                                anchors.fill: parent
-                                anchors.leftMargin: 8
-                                anchors.rightMargin: 8
-                                spacing: 8
+                            // Separator Line
+                            Rectangle {
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: 1
+                                Layout.alignment: Qt.AlignVCenter
+                                color: Services.Theme.border
+                                visible: menuItem.modelData.isSeparator
+                            }
 
-                                // Checkbox / Radio state icon
-                                Text {
-                                    visible: menuItem.modelData.buttonType !== 0
-                                    text: menuItem.modelData.checkState === 2 ? "✓" : " "
-                                    font.family: "Liga SFMono Nerd Font"
-                                    font.pixelSize: 12
-                                    font.bold: true
-                                    color: Services.Theme.accent
+                            // Main Entry Row
+                            Rectangle {
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: 30
+                                visible: !menuItem.modelData.isSeparator
+                                radius: Services.Theme.radiusSm
+                                color: itemMouseArea.containsMouse && menuItem.modelData.enabled ? Services.Theme.surfaceVariant : "transparent"
+                                border.color: itemMouseArea.containsMouse && menuItem.modelData.enabled ? Services.Theme.borderHighlight : "transparent"
+                                border.width: 1
+
+                                RowLayout {
+                                    anchors.fill: parent
+                                    anchors.leftMargin: 8
+                                    anchors.rightMargin: 8
+                                    spacing: 8
+
+                                    // Checkbox / Radio state icon
+                                    Text {
+                                        visible: menuItem.modelData.buttonType !== 0
+                                        text: menuItem.modelData.checkState === 2 ? "✓" : " "
+                                        font.family: "Liga SFMono Nerd Font"
+                                        font.pixelSize: 12
+                                        font.bold: true
+                                        color: Services.Theme.accent
+                                    }
+
+                                    // Entry Icon
+                                    IconImage {
+                                        visible: menuItem.modelData.icon && menuItem.modelData.icon.length > 0
+                                        Layout.preferredWidth: 14
+                                        Layout.preferredHeight: 14
+                                        source: menuItem.modelData.icon || ""
+                                    }
+
+                                    // Entry Label
+                                    Text {
+                                        Layout.fillWidth: true
+                                        text: menuItem.modelData.text ? menuItem.modelData.text.replace(/&/g, "") : ""
+                                        font.family: "Liga SFMono Nerd Font"
+                                        font.pixelSize: 12
+                                        color: menuItem.modelData.enabled ? Services.Theme.textPrimary : Services.Theme.textDisabled
+                                        elide: Text.ElideRight
+                                    }
+
+                                    // Submenu Arrow
+                                    Text {
+                                        visible: menuItem.modelData.hasChildren
+                                        text: "›"
+                                        font.family: "Liga SFMono Nerd Font"
+                                        font.pixelSize: 14
+                                        color: Services.Theme.textSecondary
+                                        rotation: menuItem.expanded ? 90 : 0
+                                        Behavior on rotation { NumberAnimation { duration: 150 } }
+                                    }
                                 }
 
-                                // Entry Icon
-                                IconImage {
-                                    visible: menuItem.modelData.icon && menuItem.modelData.icon.length > 0
-                                    Layout.preferredWidth: 14
-                                    Layout.preferredHeight: 14
-                                    source: menuItem.modelData.icon || ""
-                                }
-
-                                // Entry Label
-                                Text {
-                                    Layout.fillWidth: true
-                                    text: menuItem.modelData.text ? menuItem.modelData.text.replace(/&/g, "") : ""
-                                    font.family: "Liga SFMono Nerd Font"
-                                    font.pixelSize: 12
-                                    color: menuItem.modelData.enabled ? Services.Theme.textPrimary : Services.Theme.textDisabled
-                                    elide: Text.ElideRight
-                                }
-
-                                // Submenu Arrow
-                                Text {
-                                    visible: menuItem.modelData.hasChildren
-                                    text: "›"
-                                    font.family: "Liga SFMono Nerd Font"
-                                    font.pixelSize: 14
-                                    color: Services.Theme.textSecondary
+                                MouseArea {
+                                    id: itemMouseArea
+                                    anchors.fill: parent
+                                    enabled: menuItem.modelData.enabled
+                                    hoverEnabled: true
+                                    cursorShape: menuItem.modelData.enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                    onClicked: {
+                                        if (menuItem.modelData.hasChildren) {
+                                            menuItem.expanded = !menuItem.expanded
+                                        } else {
+                                            menuItem.modelData.triggered()
+                                            root.close()
+                                        }
+                                    }
                                 }
                             }
 
-                            MouseArea {
-                                id: itemMouseArea
-                                anchors.fill: parent
-                                enabled: menuItem.modelData.enabled
-                                hoverEnabled: true
-                                cursorShape: menuItem.modelData.enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                                onClicked: {
-                                    menuItem.modelData.triggered()
-                                    root.close()
+                            // Submenu Items (Expanded Inline)
+                            ColumnLayout {
+                                id: subMenuColumn
+                                Layout.fillWidth: true
+                                Layout.leftMargin: 12
+                                visible: menuItem.expanded && subMenuOpener.children !== null
+                                spacing: 2
+
+                                Repeater {
+                                    model: subMenuOpener.children
+
+                                    Item {
+                                        id: subItem
+                                        required property var modelData
+                                        required property int index
+
+                                        Layout.fillWidth: true
+                                        Layout.preferredHeight: modelData.isSeparator ? 9 : 28
+
+                                        // Separator Line for Submenu
+                                        Rectangle {
+                                            anchors.centerIn: parent
+                                            width: parent.width
+                                            height: 1
+                                            color: Services.Theme.border
+                                            visible: subItem.modelData.isSeparator
+                                        }
+
+                                        // Submenu Entry Row
+                                        Rectangle {
+                                            anchors.fill: parent
+                                            visible: !subItem.modelData.isSeparator
+                                            radius: Services.Theme.radiusSm
+                                            color: subItemMouseArea.containsMouse && subItem.modelData.enabled ? Services.Theme.surfaceVariant : "transparent"
+                                            border.color: subItemMouseArea.containsMouse && subItem.modelData.enabled ? Services.Theme.borderHighlight : "transparent"
+                                            border.width: 1
+
+                                            RowLayout {
+                                                anchors.fill: parent
+                                                anchors.leftMargin: 6
+                                                anchors.rightMargin: 6
+                                                spacing: 6
+
+                                                Text {
+                                                    visible: subItem.modelData.buttonType !== 0
+                                                    text: subItem.modelData.checkState === 2 ? "✓" : " "
+                                                    font.family: "Liga SFMono Nerd Font"
+                                                    font.pixelSize: 11
+                                                    font.bold: true
+                                                    color: Services.Theme.accent
+                                                }
+
+                                                IconImage {
+                                                    visible: subItem.modelData.icon && subItem.modelData.icon.length > 0
+                                                    Layout.preferredWidth: 12
+                                                    Layout.preferredHeight: 12
+                                                    source: subItem.modelData.icon || ""
+                                                }
+
+                                                Text {
+                                                    Layout.fillWidth: true
+                                                    text: subItem.modelData.text ? subItem.modelData.text.replace(/&/g, "") : ""
+                                                    font.family: "Liga SFMono Nerd Font"
+                                                    font.pixelSize: 11
+                                                    color: subItem.modelData.enabled ? Services.Theme.textPrimary : Services.Theme.textDisabled
+                                                    elide: Text.ElideRight
+                                                }
+                                            }
+
+                                            MouseArea {
+                                                id: subItemMouseArea
+                                                anchors.fill: parent
+                                                enabled: subItem.modelData.enabled
+                                                hoverEnabled: true
+                                                cursorShape: subItem.modelData.enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                                onClicked: {
+                                                    subItem.modelData.triggered()
+                                                    root.close()
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }

@@ -64,18 +64,10 @@ PanelWindow {
     Rectangle {
         id: panel
         anchors.centerIn: parent
-        anchors.verticalCenterOffset: clipboardWindow.isOpen ? -40 : -20
-
-        Behavior on anchors.verticalCenterOffset {
-            NumberAnimation { duration: 240; easing.type: Easing.OutCubic }
-        }
+        anchors.verticalCenterOffset: -40
 
         width: 600
-        height: Math.min(listCol.implicitHeight, 480)
-
-        Behavior on height {
-            NumberAnimation { duration: 240; easing.type: Easing.OutCubic }
-        }
+        height: 480
 
         radius: 16
         color: Services.Theme.surface
@@ -96,7 +88,7 @@ PanelWindow {
 
         ColumnLayout {
             id: listCol
-            anchors { left: parent.left; right: parent.right; top: parent.top }
+            anchors.fill: parent
             spacing: 0
 
             // ── Search & Filter Header ────────────────────────────────
@@ -155,10 +147,14 @@ PanelWindow {
                             }
                             event.accepted = true
                         } else if (event.key === Qt.Key_Delete) {
-                            const list = Services.Clipboard.filtered()
-                            if (list && list.length > resultList.currentIndex) {
-                                const toDelete = list[resultList.currentIndex]
-                                if (toDelete) Services.Clipboard.deleteEntry(toDelete)
+                            if (event.modifiers & Qt.ShiftModifier) {
+                                Services.Clipboard.clearAll()
+                            } else {
+                                const list = Services.Clipboard.filtered()
+                                if (list && list.length > resultList.currentIndex) {
+                                    const toDelete = list[resultList.currentIndex]
+                                    if (toDelete) Services.Clipboard.deleteEntry(toDelete)
+                                }
                             }
                             event.accepted = true
                         } else if (event.key === Qt.Key_Escape) {
@@ -234,6 +230,36 @@ PanelWindow {
                         }
                     }
                 }
+
+                // Clear History Button
+                Rectangle {
+                    height: 24
+                    width: 24
+                    radius: 7
+                    color: clearHistMouse.containsMouse ? Services.Theme.surfaceVariant : "transparent"
+                    border.color: clearHistMouse.containsMouse ? Services.Theme.danger : "transparent"
+                    border.width: 1
+                    Layout.alignment: Qt.AlignVCenter
+
+                    Behavior on color { ColorAnimation { duration: 120 } }
+                    Behavior on border.color { ColorAnimation { duration: 120 } }
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "\uf1f8"
+                        font.family: "Symbols Nerd Font Mono"
+                        font.pixelSize: 12
+                        color: clearHistMouse.containsMouse ? Services.Theme.danger : Services.Theme.textDisabled
+                        Behavior on color { ColorAnimation { duration: 120 } }
+                    }
+
+                    MouseArea {
+                        id: clearHistMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        onClicked: Services.Clipboard.clearAll()
+                    }
+                }
             }
 
             // Hairline divider
@@ -248,7 +274,7 @@ PanelWindow {
             ListView {
                 id: resultList
                 Layout.fillWidth: true
-                Layout.preferredHeight: count > 0 ? Math.min(contentHeight, 380) : 120
+                Layout.fillHeight: true
                 clip: true
                 spacing: 2
                 model: Services.Clipboard.filtered()
@@ -256,10 +282,6 @@ PanelWindow {
                 keyNavigationEnabled: false
                 topMargin: 6; bottomMargin: 6
                 leftMargin: 6; rightMargin: 6
-
-                Behavior on Layout.preferredHeight {
-                    NumberAnimation { duration: 200; easing.type: Easing.OutCubic }
-                }
 
                 highlight: Rectangle {
                     radius: 10
@@ -568,6 +590,16 @@ PanelWindow {
                             Text { anchors.centerIn: parent; text: "Del"; color: Services.Theme.textSecondary; font.pixelSize: 10 }
                         }
                         Text { text: "Delete"; color: Services.Theme.textDisabled; font.pixelSize: 11 }
+                    }
+
+                    RowLayout {
+                        spacing: 4
+                        Rectangle {
+                            width: 52; height: 16; radius: 4
+                            color: Services.Theme.surfaceVariant
+                            Text { anchors.centerIn: parent; text: "Shift+Del"; color: Services.Theme.textSecondary; font.pixelSize: 10 }
+                        }
+                        Text { text: "Clear All"; color: Services.Theme.textDisabled; font.pixelSize: 11 }
                     }
 
                     RowLayout {

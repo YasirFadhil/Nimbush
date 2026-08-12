@@ -8,6 +8,7 @@ Singleton {
 
     property bool enabled: false
     property var devices: []
+    property var tempDevices: []
     property bool refreshing: false
     property int statusIndex: 0
 
@@ -41,11 +42,12 @@ Singleton {
     }
 
     function checkNextStatus() {
-        if (root.statusIndex >= root.devices.length) {
+        if (root.statusIndex >= root.tempDevices.length) {
+            root.devices = root.tempDevices
             root.refreshing = false
             return
         }
-        infoProc.command = ["bluetoothctl", "info", root.devices[root.statusIndex].mac]
+        infoProc.command = ["bluetoothctl", "info", root.tempDevices[root.statusIndex].mac]
         infoProc.running = true
     }
 
@@ -78,7 +80,7 @@ Singleton {
         }
         onRunningChanged: { if (running) buffer = [] }
         onExited: {
-            root.devices = pairedProc.buffer
+            root.tempDevices = pairedProc.buffer
             root.statusIndex = 0
             root.checkNextStatus()
         }
@@ -94,9 +96,9 @@ Singleton {
         }
         onRunningChanged: { if (running) foundConnected = false }
         onExited: {
-            const arr = root.devices.slice()
-            if (arr[root.statusIndex]) arr[root.statusIndex].connected = infoProc.foundConnected
-            root.devices = arr
+            if (root.tempDevices[root.statusIndex]) {
+                root.tempDevices[root.statusIndex].connected = infoProc.foundConnected
+            }
             root.statusIndex++
             root.checkNextStatus()
         }

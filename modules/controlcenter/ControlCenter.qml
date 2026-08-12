@@ -17,7 +17,7 @@ PanelWindow {
     visible: Services.OverlayManager.controlCenterVisible
     WlrLayershell.layer: WlrLayer.Overlay
     WlrLayershell.namespace: "quickshell:controlcenter"
-    WlrLayershell.keyboardFocus: WlrKeyboardFocus.OnDemand
+    WlrLayershell.keyboardFocus: Services.OverlayManager.isLocked ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.OnDemand
 
     property string wifiPasswordTarget: ""
     property string wifiPasswordInput: ""

@@ -5,6 +5,7 @@ import QtQuick
 Singleton {
     id: root
     property var _windows: []
+    property bool isLocked: false
     property bool controlCenterVisible: false
     property bool wifiPanelVisible: false
     property bool btPanelVisible: false
@@ -39,3 +40,4 @@ Singleton {
         }
     }
 }
+

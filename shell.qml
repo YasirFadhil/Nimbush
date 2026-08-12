@@ -12,6 +12,7 @@ import "modules/powermenu" as PowerMenu
 import "modules/bar" as Bar
 import "modules/controlcenter" as ControlCenter
 import "modules/calendar" as CalendarModule
+import "modules/lockscreen" as LockscreenModule
 
 ShellRoot {
     // Notif.Popup {} // dimatiin — notif sekarang lewat DynamicIsland
@@ -24,6 +25,7 @@ ShellRoot {
     Bar.Bar {}
     ControlCenter.ControlCenter { id: controlCenter }
     CalendarModule.Calendar {}
+    LockscreenModule.Lockscreen { id: lockscreenWindow }
 
 
     Connections {
@@ -50,24 +52,35 @@ ShellRoot {
     // ── Launcher ─────────────────────────────────────────────────────────────
     IpcHandler {
         target: "launcher"
-        function toggle(): void { launcherWindow.toggle() }
-        function show():   void { launcherWindow.show() }
+        function toggle(): void { if (!Services.OverlayManager.isLocked) launcherWindow.toggle() }
+        function show():   void { if (!Services.OverlayManager.isLocked) launcherWindow.show() }
         function hide():   void { launcherWindow.hide() }
     }
 
     // ── Clipboard ────────────────────────────────────────────────────────────
     IpcHandler {
         target: "clipboard"
-        function toggle(): void { clipboardWindow.toggle() }
-        function show():   void { clipboardWindow.show() }
+        function toggle(): void { if (!Services.OverlayManager.isLocked) clipboardWindow.toggle() }
+        function show():   void { if (!Services.OverlayManager.isLocked) clipboardWindow.show() }
         function hide():   void { clipboardWindow.hide() }
     }
 
     // ── Power menu ───────────────────────────────────────────────────────────
     IpcHandler {
         target: "powermenu"
-        function toggle() { powerMenu.menuVisible ? powerMenu.close() : powerMenu.open() }
+        function toggle() { (powerMenu.menuVisible ? powerMenu.close() : powerMenu.open()) }
         function open()   { powerMenu.open() }
         function close()  { powerMenu.close() }
     }
+
+    // ── Lockscreen ───────────────────────────────────────────────────────────
+    IpcHandler {
+        target: "lockscreen"
+        function toggle() { lockscreenWindow.toggle() }
+        function show()   { lockscreenWindow.show() }
+        function hide()   { lockscreenWindow.hide() }
+        function lock()   { lockscreenWindow.lock() }
+    }
 }
+
+
