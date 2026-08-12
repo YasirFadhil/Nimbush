@@ -7,6 +7,8 @@ import Quickshell.Services.Notifications
 Singleton {
     id: root
 
+    signal newNotification(var entry)
+
     property bool doNotDisturb: false
     property bool centerVisible: false
     property alias popupList: popupModel
@@ -44,6 +46,7 @@ Singleton {
 
             if (!root.doNotDisturb) {
                 popupModel.insert(0, entry)
+                root.newNotification(entry)
                 const timeout = notif.urgency === NotificationUrgency.Critical ? 0
                     : (notif.expireTimeout > 0 ? notif.expireTimeout : 5000)
                 if (timeout > 0) {
@@ -95,11 +98,14 @@ Singleton {
         }
     }
 
-    function invokeAction(notifId, actionId) {
+    function invokeAction(notifId, actionId, text) {
         for (const n of server.trackedNotifications.values) {
             if (n.id === notifId) {
                 const action = n.actions.find(a => a.identifier === actionId)
-                if (action) action.invoke()
+                if (action) {
+                    if (text !== undefined && text !== "") action.invoke(text)
+                    else action.invoke()
+                }
                 break
             }
         }

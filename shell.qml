@@ -14,10 +14,10 @@ import "modules/controlcenter" as ControlCenter
 import "modules/calendar" as CalendarModule
 
 ShellRoot {
-    Notif.Popup {}
+    // Notif.Popup {} // dimatiin — notif sekarang lewat DynamicIsland
     Osd.Osd {}
     Notif.Center {}
-    Osd.PowerOsd {}
+    // Osd.PowerOsd {} // dimatiin — status charging sekarang lewat DynamicIsland
     Launcher.Launcher  { id: launcherWindow }
     Clipboard.ClipboardHistory { id: clipboardWindow }
     PowerMenu.PowerMenu { id: powerMenu }

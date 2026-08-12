@@ -16,16 +16,20 @@ PanelWindow {
 
     color: "transparent"
     WlrLayershell.namespace: "quickshell:bar"
+    WlrLayershell.keyboardFocus: dynamicIsland.replyMode ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
 
-    exclusiveZone: implicitHeight
-    implicitHeight: 36
+    exclusiveZone: 36
+    implicitHeight: 160
 
     Item {
         id: barContainer
         anchors.fill: parent
 
         RowLayout {
-            anchors.fill: parent
+            anchors.top: parent.top
+            anchors.left: parent.left
+            anchors.right: parent.right
+            height: 36
             anchors.leftMargin: 12
             anchors.rightMargin: 12
             anchors.topMargin: 4
@@ -42,7 +46,14 @@ PanelWindow {
 
             Components.StatusTray {
                 Layout.alignment: Qt.AlignVCenter
+                collapseNear: dynamicIsland.expanded
             }
-        }
+          }
+          
+          Components.DynamicIsland {
+            id: dynamicIsland
+            anchors.fill: parent
+            z: 999
+          }
     }
 }

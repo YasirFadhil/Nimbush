@@ -4,7 +4,6 @@ import QtQuick.Controls
 import Quickshell
 import Quickshell.Wayland
 import "../../services" as Services
-import "../media" as Media
 
 PanelWindow {
     id: centerWin
@@ -32,6 +31,14 @@ PanelWindow {
 
     // key: notifId item pertama di grup -> bool
     property var expandedGroups: ({})
+
+    function isReplyAction(act) {
+        if (!act) return false
+        const id = (act.identifier || "").toLowerCase()
+        const txt = (act.text || "").toLowerCase()
+        return id.includes("reply") || id.includes("inline") || id.includes("respond") ||
+               txt.includes("reply") || txt.includes("balas") || txt.includes("jawab") || txt.includes("respond")
+    }
 
     function formatTime(ts) {
         const d = new Date(ts)
@@ -157,26 +164,6 @@ PanelWindow {
             Rectangle {
                 Layout.fillWidth: true; height: 1
                 color: centerWin.t.border; opacity: 0.5
-            }
-
-            // ── Now Playing (floats between header & list) ─────────────
-            Media.NowPlaying {
-                Layout.fillWidth: true
-                Layout.topMargin: Services.Mpris.activePlayer !== null ? 4 : 0
-                Layout.bottomMargin: Services.Mpris.activePlayer !== null ? 2 : 0
-            }
-
-
-            // ── Separator antara player dan notif list ──────────────
-            Rectangle {
-                Layout.fillWidth: true
-                Layout.leftMargin: 14
-                Layout.rightMargin: 14
-                // Height 0 saat tidak ada player → tidak ada jarak kosong
-                height: Services.Mpris.activePlayer !== null ? 1 : 0
-                color: centerWin.t.border
-                opacity: 0.45
-                Behavior on height { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
             }
 
             // ── Notification list ───────────────────────────────────
@@ -440,6 +427,8 @@ PanelWindow {
                                     id: itemDelegate
                                     required property var modelData
                                     property var notifItem: modelData
+                                    property bool replyMode: false
+                                    property string activeReplyActionId: ""
 
                                     Layout.fillWidth: true
                                     implicitHeight: itemContent.implicitHeight + 14
@@ -514,12 +503,14 @@ PanelWindow {
 
                                         // Actions Row
                                         RowLayout {
-                                            visible: itemDelegate.notifItem.actions && itemDelegate.notifItem.actions.length > 0
+                                            readonly property var actList: itemDelegate.notifItem.actions
+                                            readonly property int actCount: actList ? (actList.count !== undefined ? actList.count : (actList.length !== undefined ? actList.length : 0)) : 0
+                                            visible: actCount > 0 && !itemDelegate.replyMode
                                             spacing: 6
                                             Layout.topMargin: 4
 
                                             Repeater {
-                                                model: itemDelegate.notifItem.actions
+                                                model: parent.actList
                                                 delegate: Rectangle {
                                                     id: actBtn
                                                     required property string identifier
@@ -543,8 +534,133 @@ PanelWindow {
                                                         id: actHover
                                                         anchors.fill: parent; hoverEnabled: true
                                                         cursorShape: Qt.PointingHandCursor
-                                                        onClicked: Services.Notifications.invokeAction(
-                                                            itemDelegate.notifItem.notifId, actBtn.identifier)
+                                                        onClicked: {
+                                                            if (centerWin.isReplyAction(actBtn)) {
+                                                                itemDelegate.activeReplyActionId = actBtn.identifier
+                                                                itemDelegate.replyMode = true
+                                                                Qt.callLater(() => cardReplyInput.forceActiveFocus())
+                                                            } else {
+                                                                Services.Notifications.invokeAction(
+                                                                    itemDelegate.notifItem.notifId, actBtn.identifier)
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        // Type Zone (Inline Reply Mode for Center)
+                                        ColumnLayout {
+                                            visible: itemDelegate.replyMode
+                                            Layout.fillWidth: true
+                                            spacing: 6
+                                            Layout.topMargin: 4
+
+                                            Rectangle {
+                                                Layout.fillWidth: true
+                                                implicitHeight: 32
+                                                radius: 8
+                                                color: centerWin.t.bgHover
+                                                border.color: cardReplyInput.activeFocus ? centerWin.t.accent : centerWin.t.border
+                                                border.width: 1
+
+                                                TextInput {
+                                                    id: cardReplyInput
+                                                    anchors.fill: parent
+                                                    anchors.margins: 6
+                                                    color: centerWin.t.textPrimary
+                                                    font.pixelSize: 12
+                                                    clip: true
+                                                    focus: itemDelegate.replyMode
+
+                                                    Text {
+                                                        text: "Tulis balasan..."
+                                                        color: centerWin.t.textDisabled
+                                                        font.pixelSize: 12
+                                                        visible: cardReplyInput.text.length === 0 && !cardReplyInput.activeFocus
+                                                    }
+
+                                                    Keys.onReturnPressed: {
+                                                        if (cardReplyInput.text.trim().length > 0) {
+                                                            Services.Notifications.invokeAction(
+                                                                itemDelegate.notifItem.notifId,
+                                                                itemDelegate.activeReplyActionId,
+                                                                cardReplyInput.text.trim()
+                                                            )
+                                                            itemDelegate.replyMode = false
+                                                            cardReplyInput.text = ""
+                                                        }
+                                                    }
+                                                }
+                                            }
+
+                                            RowLayout {
+                                                Layout.fillWidth: true
+                                                spacing: 8
+
+                                                Item { Layout.fillWidth: true }
+
+                                                // Cancel Button
+                                                Rectangle {
+                                                    implicitHeight: 22
+                                                    implicitWidth: cancelTxt.implicitWidth + 14
+                                                    radius: 6
+                                                    color: cancelMouse.containsMouse ? centerWin.t.bgHover : centerWin.t.surfaceVariant
+
+                                                    Text {
+                                                        id: cancelTxt
+                                                        anchors.centerIn: parent
+                                                        text: "Batal"
+                                                        color: centerWin.t.textSecondary
+                                                        font.pixelSize: 10
+                                                        font.bold: true
+                                                    }
+
+                                                    MouseArea {
+                                                        id: cancelMouse
+                                                        anchors.fill: parent
+                                                        hoverEnabled: true
+                                                        cursorShape: Qt.PointingHandCursor
+                                                        onClicked: {
+                                                            itemDelegate.replyMode = false
+                                                            cardReplyInput.text = ""
+                                                        }
+                                                    }
+                                                }
+
+                                                // Send Button
+                                                Rectangle {
+                                                    implicitHeight: 22
+                                                    implicitWidth: sendTxt.implicitWidth + 14
+                                                    radius: 6
+                                                    color: sendMouse.containsMouse ? Qt.lighter(centerWin.t.accent, 1.1) : centerWin.t.accent
+
+                                                    Text {
+                                                        id: sendTxt
+                                                        anchors.centerIn: parent
+                                                        text: "Kirim 󰏲"
+                                                        font.family: "Liga SFMono Nerd Font"
+                                                        color: "#0a0a0a"
+                                                        font.pixelSize: 10
+                                                        font.bold: true
+                                                    }
+
+                                                    MouseArea {
+                                                        id: sendMouse
+                                                        anchors.fill: parent
+                                                        hoverEnabled: true
+                                                        cursorShape: Qt.PointingHandCursor
+                                                        onClicked: {
+                                                            if (cardReplyInput.text.trim().length > 0) {
+                                                                Services.Notifications.invokeAction(
+                                                                    itemDelegate.notifItem.notifId,
+                                                                    itemDelegate.activeReplyActionId,
+                                                                    cardReplyInput.text.trim()
+                                                                )
+                                                                itemDelegate.replyMode = false
+                                                                cardReplyInput.text = ""
+                                                            }
+                                                        }
                                                     }
                                                 }
                                             }

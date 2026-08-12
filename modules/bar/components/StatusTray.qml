@@ -4,11 +4,23 @@ import "../../../services" as Services
 import "." as Components
 
 RowLayout {
+    id: root
     spacing: 8
+
+    property bool collapseNear: false
 
     // System Tray App Icons
     Components.SystemTrayIcons {
         trayMenuPopup: trayMenuPopup
+
+        opacity: root.collapseNear ? 0 : 1
+
+        transform: Translate {
+            x: root.collapseNear ? 32 : 0
+            Behavior on x { NumberAnimation { duration: 420; easing.type: Easing.OutExpo } }
+        }
+
+        Behavior on opacity { NumberAnimation { duration: 280; easing.type: Easing.OutQuad } }
     }
 
     Components.TrayMenuPopup {
