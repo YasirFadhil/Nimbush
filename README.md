@@ -3,20 +3,60 @@
 This repository contains my personal Wayland desktop environment configuration.
 
 ## What is this?
+
 This is not a traditional command-line shell. It is a Wayland UI shell built with **Quickshell**, which handles panels, widgets, notifications, and menus for my desktop.
 
 ## Components
-* **Quickshell**: The core UI framework.
-* **Hyprland**: Supported Wayland compositors.
-* **wlogout**: Custom power menu styling.
+
+- **Quickshell**: The core UI framework.
+- **Hyprland**: Supported Wayland compositor.
+
+## Dependencies
+
+Before running Quickshell, ensure the following dependencies are installed on your system:
+
+### Core Framework & Compositor
+
+- **Quickshell** (`quickshell-git` / `quickshell`)
+- **Hyprland** (`hyprland`)
+
+### System Utilities & Services
+
+- **NetworkManager** (`networkmanager` / `nmcli`) – Wi-Fi and network management
+- **BlueZ** (`bluez`, `bluez-utils` / `bluetoothctl`) – Bluetooth management
+- **PipeWire / PulseAudio** (`libpulse` / `pactl`) – Audio volume & sink control
+- **Brightnessctl** (`brightnessctl`) – Screen brightness control
+- **Cliphist** & **wl-clipboard** (`cliphist`, `wl-clipboard`) – Clipboard history & selection handling
+- **Power Profiles Daemon** (`power-profiles-daemon`) – Power profile mode switcher
+- **UPower** (`upower`) – Battery & power monitoring
+- **socat** (`socat`) – Hyprland IPC socket listener for workspaces
+- **psmisc** (`psmisc` / `fuser`) – Camera active status detection for Dynamic Island
+
+### Fonts
+
+- **Nerd Fonts Symbols** (`ttf-nerd-fonts-symbols-mono` / `ttf-jetbrains-mono-nerd`) – UI icons (`Symbols Nerd Font Mono`)
 
 ## Installation & Setup
 
-First, clone the repository and move it to your Quickshell configuration directory:
+### Quick Install (Automated)
+
+Clone the repository and run the installation script:
 
 ```bash
-git clone https://github.com/YasirFadhil/Shell.git
-mv Shell ~/.config/quickshell
+git clone https://github.com/YasirFadhil/Shell.git ~/.config/quickshell
+cd ~/.config/quickshell
+./install.sh
+```
+
+The script will handle directory setup, verify required CLI commands, and check system services.
+
+### Manual Setup
+
+If you prefer to set up manually:
+
+```bash
+git clone https://github.com/YasirFadhil/Shell.git ~/.config/quickshell
+qs -c ~/.config/quickshell
 ```
 
 ### Hyprland Configuration (Hyprland 0.55+)
@@ -33,6 +73,7 @@ end)
 hl.bind(mainMod .. " + SPACE", hl.dsp.exec_cmd("qs ipc call launcher toggle"))
 hl.bind(mainMod .. " + V", hl.dsp.exec_cmd("qs ipc call clipboard toggle"))
 hl.bind(mainMod .. " + P", hl.dsp.exec_cmd("qs ipc call powermenu toggle"))
+hl.bind(mainMod .. " + L", hl.dsp.exec_cmd("qs ipc call lockscreen toggle"))
 
 -- Layer Rules
 hl.layer_rule({ match = { namespace = "quickshell:bar" }, blur = true })
@@ -42,12 +83,15 @@ hl.layer_rule({ match = { namespace = "quickshell:controlcenter" }, blur = true,
 hl.layer_rule({ match = { namespace = "quickshell:notifcenter" },   blur = true, ignore_alpha = 0 })
 hl.layer_rule({ match = { namespace = "quickshell:calendar" },      blur = true, ignore_alpha = 0 })
 hl.layer_rule({ match = { namespace = "quickshell:hud" },      blur = true, ignore_alpha = 0 })
+hl.layer_rule({ match = { namespace = "^quickshell:.*$" }, blur = true, ignore_alpha = 0 })
 ```
 
 ## DISCLAIMER: FULL VIBE CODED
-Please be warned: this entire repository is **full vibe coded**. 
-* There are no strict architectural patterns.
-* Zero best practices are guaranteed.
-* The code was written purely based on what worked and looked good at the time.
+
+Please be warned: this entire repository is **full vibe coded**.
+
+- There are no strict architectural patterns.
+- Zero best practices are guaranteed.
+- The code was written purely based on what worked and looked good at the time.
 
 Use or copy this code at your own risk.

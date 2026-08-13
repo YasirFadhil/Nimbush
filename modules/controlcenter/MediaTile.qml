@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Layouts
+import QtQuick.Effects
 import Quickshell.Services.Mpris
 import "../../services" as Services
 
@@ -10,7 +11,7 @@ Rectangle {
     readonly property bool isPlaying: player?.isPlaying ?? false
 
     Layout.fillWidth: true
-    implicitHeight: 92
+    implicitHeight: 88
     radius: Services.Theme.radiusLg
     color: Services.Theme.surfaceVariant
     clip: true
@@ -22,10 +23,11 @@ Rectangle {
 
         // Artwork / avatar
         Rectangle {
-            width: 60; height: 60
+            width: 56; height: 56
             radius: Services.Theme.radiusMd
             color: Services.Theme.surface
-            clip: true
+            antialiasing: true
+            smooth: true
             Layout.alignment: Qt.AlignVCenter
 
             Text {
@@ -43,19 +45,44 @@ Rectangle {
                 anchors.fill: parent
                 source: card.hasPlayer ? (card.player?.trackArtUrl ?? "") : ""
                 fillMode: Image.PreserveAspectCrop
-                visible: status === Image.Ready
+                smooth: true
+                mipmap: true
+                antialiasing: true
+                visible: false
+            }
+            MultiEffect {
+                anchors.fill: artImg
+                source: artImg
+                maskEnabled: true
+                maskSource: artMask
+                visible: card.hasPlayer && artImg.status === Image.Ready
+            }
+            Item {
+                id: artMask
+                anchors.fill: artImg
+                visible: false
+                layer.enabled: true
+                layer.smooth: true
+                layer.samples: 8
+                Rectangle {
+                    anchors.fill: parent
+                    radius: Services.Theme.radiusMd
+                    color: "black"
+                    antialiasing: true
+                    smooth: true
+                }
             }
         }
 
         ColumnLayout {
             Layout.fillWidth: true
             Layout.alignment: Qt.AlignVCenter
-            spacing: 4
+            spacing: 2
 
             Text {
                 text: card.hasPlayer ? (card.player?.trackTitle || "\u2014") : "Nothing Playing"
                 color: card.hasPlayer ? Services.Theme.textPrimary : Services.Theme.textDisabled
-                font.pixelSize: 13
+                font.pixelSize: 12
                 font.bold: true
                 elide: Text.ElideRight
                 Layout.fillWidth: true
@@ -63,7 +90,7 @@ Rectangle {
             Text {
                 text: card.hasPlayer ? (card.player?.trackArtist || "") : "No media session"
                 color: Services.Theme.textSecondary
-                font.pixelSize: 11
+                font.pixelSize: 10
                 elide: Text.ElideRight
                 Layout.fillWidth: true
                 visible: card.hasPlayer ? text.length > 0 : true
@@ -71,26 +98,55 @@ Rectangle {
 
             RowLayout {
                 spacing: 4
-                Layout.topMargin: 4
+                Layout.topMargin: 2
                 visible: card.hasPlayer
 
-                Item {
-                    width: 24; height: 24
+                Rectangle {
+                    width: 24; height: 24; radius: 12
+                    color: prevHover.containsMouse ? Services.Theme.bgHover : "transparent"
                     opacity: (card.player?.canGoPrevious ?? false) ? 1 : 0.3
-                    Text { anchors.centerIn: parent; text: "\uf04a"; font.family: "Symbols Nerd Font Mono"; font.pixelSize: 11; color: Services.Theme.textSecondary }
-                    MouseArea { anchors.fill: parent; enabled: card.player?.canGoPrevious ?? false; onClicked: card.player.previous() }
+                    Behavior on color { ColorAnimation { duration: 100 } }
+
+                    Text { anchors.centerIn: parent; text: "\uf04a"; font.family: "Symbols Nerd Font Mono"; font.pixelSize: 10; color: Services.Theme.textSecondary }
+                    MouseArea {
+                        id: prevHover
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        enabled: card.player?.canGoPrevious ?? false
+                        onClicked: card.player.previous()
+                    }
                 }
                 Rectangle {
-                    width: 26; height: 26; radius: 8
-                    color: Services.Theme.accent
-                    Text { anchors.centerIn: parent; text: card.isPlaying ? "\uf04c" : "\uf04b"; font.family: "Symbols Nerd Font Mono"; font.pixelSize: 11; color: "#0a0a0a" }
-                    MouseArea { anchors.fill: parent; enabled: card.player?.canTogglePlaying ?? true; onClicked: card.player.togglePlaying() }
+                    width: 26; height: 26; radius: 13
+                    color: playHover.containsMouse ? "#ffffff" : Services.Theme.accent
+                    Behavior on color { ColorAnimation { duration: 100 } }
+
+                    Text { anchors.centerIn: parent; text: card.isPlaying ? "\uf04c" : "\uf04b"; font.family: "Symbols Nerd Font Mono"; font.pixelSize: 10; color: "#0a0a0a" }
+                    MouseArea {
+                        id: playHover
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        enabled: card.player?.canTogglePlaying ?? true
+                        onClicked: card.player.togglePlaying()
+                    }
                 }
-                Item {
-                    width: 24; height: 24
+                Rectangle {
+                    width: 24; height: 24; radius: 12
+                    color: nextHover.containsMouse ? Services.Theme.bgHover : "transparent"
                     opacity: (card.player?.canGoNext ?? false) ? 1 : 0.3
-                    Text { anchors.centerIn: parent; text: "\uf04e"; font.family: "Symbols Nerd Font Mono"; font.pixelSize: 11; color: Services.Theme.textSecondary }
-                    MouseArea { anchors.fill: parent; enabled: card.player?.canGoNext ?? false; onClicked: card.player.next() }
+                    Behavior on color { ColorAnimation { duration: 100 } }
+
+                    Text { anchors.centerIn: parent; text: "\uf04e"; font.family: "Symbols Nerd Font Mono"; font.pixelSize: 10; color: Services.Theme.textSecondary }
+                    MouseArea {
+                        id: nextHover
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        enabled: card.player?.canGoNext ?? false
+                        onClicked: card.player.next()
+                    }
                 }
             }
         }

@@ -7,6 +7,8 @@ import Quickshell.Services.Notifications
 Singleton {
     id: root
 
+    signal newNotification(var entry)
+
     property bool doNotDisturb: false
     property bool centerVisible: false
     property alias popupList: popupModel
@@ -44,8 +46,9 @@ Singleton {
 
             if (!root.doNotDisturb) {
                 popupModel.insert(0, entry)
-                const timeout = notif.urgency === NotificationUrgency.Critical ? 0
-                    : (notif.expireTimeout > 0 ? notif.expireTimeout : 5000)
+                root.newNotification(entry)
+                const timeout = notif.expireTimeout > 0 ? notif.expireTimeout
+                    : (notif.urgency === NotificationUrgency.Critical ? 7000 : 5000)
                 if (timeout > 0) {
                     dismissTimer.createObject(root, { notifId: notif.id, interval: timeout }).start()
                 }
@@ -95,11 +98,14 @@ Singleton {
         }
     }
 
-    function invokeAction(notifId, actionId) {
+    function invokeAction(notifId, actionId, text) {
         for (const n of server.trackedNotifications.values) {
             if (n.id === notifId) {
                 const action = n.actions.find(a => a.identifier === actionId)
-                if (action) action.invoke()
+                if (action) {
+                    if (text !== undefined && text !== "") action.invoke(text)
+                    else action.invoke()
+                }
                 break
             }
         }
@@ -122,9 +128,49 @@ Singleton {
 
     // Hapus semua notif dalam satu group dari history
     function dismissGroupFromCenter(items) {
-        for (let i = 0; i < items.length; i++)
-            removeFromHistory(items[i].notifId)
+        if (!items) return
+        const ids = []
+        const count = items.length !== undefined ? items.length : items.count
+        for (let i = 0; i < count; i++) {
+            const item = items.get ? items.get(i) : items[i]
+            if (item && item.notifId !== undefined)
+                ids.push(item.notifId)
+        }
+        for (let i = 0; i < ids.length; i++) {
+            removeFromHistory(ids[i])
+        }
     }
 
     function clearHistory() { historyModel.clear() }
+
+    property int nextSystemNotifId: 900000
+
+    function addSystemNotification(entry) {
+        if (!entry) return -1
+        const id = entry.notifId || (++nextSystemNotifId)
+        const fullEntry = {
+            notifId: id,
+            appName: entry.appName || "System Warning",
+            appIcon: entry.appIcon || "battery-caution",
+            summary: entry.summary || "",
+            body: entry.body || "",
+            image: entry.image || "",
+            urgency: entry.urgency !== undefined ? entry.urgency : 2,
+            time: Date.now(),
+            actions: entry.actions || []
+        }
+
+        historyModel.insert(0, fullEntry)
+
+        if (!root.doNotDisturb) {
+            popupModel.insert(0, fullEntry)
+            root.newNotification(fullEntry)
+            const timeout = entry.expireTimeout > 0 ? entry.expireTimeout
+                : (fullEntry.urgency === 2 ? 6000 : 5000)
+            if (timeout > 0) {
+                dismissTimer.createObject(root, { notifId: id, interval: timeout }).start()
+            }
+        }
+        return id
+    }
 }

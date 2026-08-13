@@ -64,6 +64,14 @@ Singleton {
         triggeredOnStart: true
         onTriggered: root.refresh()
     }
+    
+    Timer {
+      id: autoRescanTimer
+      interval: 15000  // 15 detik, sesuain
+      running: true
+      repeat: true
+      onTriggered: root.scan()  // panggil fungsi scan yang sama dipake tombol manual
+    }
 
     // Radio on/off
     Process {

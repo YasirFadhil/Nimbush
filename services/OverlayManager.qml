@@ -5,12 +5,15 @@ import QtQuick
 Singleton {
     id: root
     property var _windows: []
+    property bool isLocked: false
     property bool controlCenterVisible: false
     property bool wifiPanelVisible: false
     property bool btPanelVisible: false
+    property bool audioPanelVisible: false
     property bool calendarVisible: false
 
     signal launcherToggleRequested()
+    signal dashboardToggleRequested()
 
     function register(win) {
         _windows.push(win)
@@ -31,9 +34,11 @@ Singleton {
             controlCenterVisible = false
             wifiPanelVisible = false
             btPanelVisible = false
+            audioPanelVisible = false
         }
         if (except !== "calendar") {
             calendarVisible = false
         }
     }
 }
+

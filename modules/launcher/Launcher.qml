@@ -20,7 +20,6 @@ PanelWindow {
 
     property bool isOpen: false
 
-
     function show() {
         Services.OverlayManager.closeAllExcept(launcherWindow)
         hideTimer.stop()
@@ -30,17 +29,26 @@ PanelWindow {
         searchField.text = ""
         searchField.forceActiveFocus()
         resultList.currentIndex = 0
+        if (resultList.count > 0) {
+            resultList.positionViewAtIndex(0, ListView.Beginning)
+        }
     }
+
     function hide() {
         if (!isOpen) return
         isOpen = false
         hideTimer.restart()
     }
+
     function toggle() { isOpen ? hide() : show() }
 
     Timer {
-        id: hideTimer; interval: 200
-        onTriggered: { launcherWindow.visible = false; Services.Applications.query = "" }
+        id: hideTimer
+        interval: 220
+        onTriggered: {
+            launcherWindow.visible = false
+            Services.Applications.query = ""
+        }
     }
 
     // Klik di luar panel → tutup
@@ -53,39 +61,42 @@ PanelWindow {
     Rectangle {
         id: panel
         anchors.centerIn: parent
-        anchors.verticalCenterOffset: {
-            if (!launcherWindow.isOpen) return 16          // animasi masuk dari bawah
-            if (searchField.text.length > 0) return 0     // center saat searching
-            return -90                                     // naik saat idle/kosong
-        }
+        anchors.verticalCenterOffset: launcherWindow.isOpen ? -40 : -20
+
         Behavior on anchors.verticalCenterOffset {
-            SmoothedAnimation { duration: 300; easing.type: Easing.OutQuint }
+            NumberAnimation { duration: 240; easing.type: Easing.OutCubic }
         }
 
         width: 520
-        height: Math.min(listCol.implicitHeight, 480)
+        height: Math.min(listCol.implicitHeight, 460)
+
         Behavior on height {
-            SmoothedAnimation { duration: 260; easing.type: Easing.OutQuint }
+            NumberAnimation { duration: 220; easing.type: Easing.OutCubic }
         }
 
-        radius: 14
+        radius: 16
         color: Services.Theme.surface
         border.color: Services.Theme.border
         border.width: 1
 
         opacity: launcherWindow.isOpen ? 1 : 0
-        scale:   launcherWindow.isOpen ? 1 : 0.97
-        Behavior on opacity { NumberAnimation { duration: 180 } }
-        Behavior on scale   { NumberAnimation { duration: 260; easing.type: Easing.OutExpo } }
+        scale: launcherWindow.isOpen ? 1 : 0.96
 
-        MouseArea { anchors.fill: parent; onClicked: {} }
+        Behavior on opacity {
+            NumberAnimation { duration: 200; easing.type: Easing.OutCubic }
+        }
+        Behavior on scale {
+            NumberAnimation { duration: 240; easing.type: Easing.OutCubic }
+        }
+
+        MouseArea { anchors.fill: parent }
 
         ColumnLayout {
             id: listCol
             anchors { left: parent.left; right: parent.right; top: parent.top }
             spacing: 0
 
-            // ── Search ────────────────────────────────────────────────
+            // ── Search Bar ────────────────────────────────────────────
             RowLayout {
                 Layout.fillWidth: true
                 Layout.leftMargin: 16; Layout.rightMargin: 16
@@ -94,8 +105,10 @@ PanelWindow {
 
                 Text {
                     text: "\uf002"
-                    font.family: "Symbols Nerd Font Mono"; font.pixelSize: 13
-                    color: Services.Theme.textDisabled
+                    font.family: "Symbols Nerd Font Mono"
+                    font.pixelSize: 14
+                    color: searchField.activeFocus ? Services.Theme.accent : Services.Theme.textDisabled
+                    Behavior on color { ColorAnimation { duration: 150 } }
                 }
 
                 TextField {
@@ -103,13 +116,17 @@ PanelWindow {
                     Layout.fillWidth: true
                     background: null
                     color: Services.Theme.textPrimary
-                    placeholderText: "Spotlight Search..."
+                    placeholderText: "Search applications..."
                     placeholderTextColor: Services.Theme.textDisabled
                     font.pixelSize: 15
+                    leftPadding: 0
+                    rightPadding: 0
+
                     onTextChanged: {
                         Services.Applications.query = text
                         resultList.currentIndex = 0
                     }
+
                     Keys.onPressed: (event) => {
                         if (event.key === Qt.Key_Down) {
                             resultList.currentIndex = Math.min(resultList.currentIndex + 1, resultList.count - 1)
@@ -118,77 +135,119 @@ PanelWindow {
                             resultList.currentIndex = Math.max(resultList.currentIndex - 1, 0)
                             event.accepted = true
                         } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
-                            const app = resultList.model[resultList.currentIndex]
-                            if (app) { app.execute(); launcherWindow.hide() }
+                            const apps = resultList.model
+                            if (apps && apps.length > resultList.currentIndex) {
+                                const app = apps[resultList.currentIndex]
+                                if (app) { app.execute(); launcherWindow.hide() }
+                            }
                             event.accepted = true
                         } else if (event.key === Qt.Key_Escape) {
                             launcherWindow.hide(); event.accepted = true
                         }
                     }
                 }
+
+                // Clear button
+                Text {
+                    text: "✕"
+                    font.pixelSize: 12
+                    color: clearMouse.containsMouse ? Services.Theme.textPrimary : Services.Theme.textDisabled
+                    visible: searchField.text.length > 0
+                    Layout.alignment: Qt.AlignVCenter
+
+                    MouseArea {
+                        id: clearMouse
+                        anchors.fill: parent
+                        anchors.margins: -4
+                        hoverEnabled: true
+                        onClicked: {
+                            searchField.text = ""
+                            searchField.forceActiveFocus()
+                        }
+                    }
+                }
             }
 
-            // Hairline divider — muncul saat ada teks
+            // Hairline divider
             Rectangle {
-                Layout.fillWidth: true; height: 1
+                Layout.fillWidth: true
+                height: 1
                 color: Services.Theme.border
-                opacity: searchField.text.length > 0 ? 1 : 0
-                Behavior on opacity { NumberAnimation { duration: 150 } }
+                opacity: searchField.text.length > 0 ? 0.6 : 0
+
+                Behavior on opacity {
+                    NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
+                }
             }
 
             // ── List ──────────────────────────────────────────────────
             ListView {
                 id: resultList
                 Layout.fillWidth: true
-                // Hanya tampil saat ada query
-                Layout.preferredHeight: searchField.text.length > 0
-                    ? Math.min(contentHeight, 420) : 0
+                Layout.preferredHeight: searchField.text.length > 0 ? (count > 0 ? Math.min(contentHeight, 380) : 100) : 0
+                opacity: searchField.text.length > 0 ? 1 : 0
+                visible: opacity > 0
                 clip: true
-                spacing: 0
+                spacing: 2
                 model: Services.Applications.filtered()
                 currentIndex: 0
                 keyNavigationEnabled: false
                 topMargin: 6; bottomMargin: 6
                 leftMargin: 6; rightMargin: 6
 
+                Behavior on Layout.preferredHeight {
+                    NumberAnimation { duration: 220; easing.type: Easing.OutCubic }
+                }
+                Behavior on opacity {
+                    NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
+                }
+
                 highlight: Rectangle {
-                    radius: 8; color: Services.Theme.surfaceVariant
-                    x: 0; width: resultList.width
+                    radius: 10
+                    color: Services.Theme.seurfa
+                    x: 6
+                    border.color: Services.Theme.borderHighlight
+                    border.width: 1
+                    width: resultList.width - 12
+                    z: 1
                 }
                 highlightMoveDuration: 130
                 highlightResizeDuration: 0
-                highlightMoveVelocity: -1
+                highlightFollowsCurrentItem: true
 
                 delegate: Item {
                     id: appItem
                     required property var modelData
                     required property int index
                     width: resultList.width - 12
-                    height: 44
+                    height: 48
 
                     RowLayout {
-                        anchors {
-                            fill: parent
-                            leftMargin: 14; rightMargin: 14
-                        }
-                        spacing: 10
+                        anchors.fill: parent
+                        anchors.leftMargin: 12; anchors.rightMargin: 12
+                        spacing: 12
+                        z: 2
 
-                        // Icon
+                        // App Icon
                         Item {
-                            Layout.preferredWidth: 26; Layout.preferredHeight: 26
+                            Layout.preferredWidth: 30; Layout.preferredHeight: 30
                             Layout.alignment: Qt.AlignVCenter
 
                             Rectangle {
-                                anchors.fill: parent; radius: 6
-                                color: Services.Theme.surfaceVariant
+                                anchors.fill: parent
+                                radius: 8
+                                color: appItem.index === resultList.currentIndex ? Qt.rgba(255, 255, 255, 0.1) : Qt.rgba(255, 255, 255, 0.05)
                                 visible: ico.status !== Image.Ready
+
                                 Text {
                                     anchors.centerIn: parent
                                     text: (appItem.modelData.name || "?").charAt(0).toUpperCase()
-                                    color: Services.Theme.textDisabled
-                                    font.pixelSize: 12; font.bold: true
+                                    color: appItem.index === resultList.currentIndex ? Services.Theme.accent : Services.Theme.textDisabled
+                                    font.pixelSize: 13
+                                    font.bold: true
                                 }
                             }
+
                             Image {
                                 id: ico
                                 anchors.fill: parent
@@ -201,35 +260,80 @@ PanelWindow {
                                 fillMode: Image.PreserveAspectFit
                                 visible: status === Image.Ready
                                 smooth: true
+                                mipmap: true
                             }
                         }
 
-                        // Name
-                        Text {
-                            text: appItem.modelData.name || ""
-                            color: Services.Theme.textPrimary
-                            font.pixelSize: 13
-                            elide: Text.ElideRight
+                        // App Name & Description
+                        ColumnLayout {
                             Layout.fillWidth: true
+                            Layout.alignment: Qt.AlignVCenter
+                            spacing: 1
+
+                            Text {
+                                text: appItem.modelData.name || ""
+                                color: appItem.index === resultList.currentIndex ? Services.Theme.accent : Services.Theme.textPrimary
+                                font.pixelSize: 13
+                                font.weight: appItem.index === resultList.currentIndex ? Font.Medium : Font.Normal
+                                elide: Text.ElideRight
+                                Layout.fillWidth: true
+                                Behavior on color { ColorAnimation { duration: 120 } }
+                            }
+
+                            Text {
+                                property string subText: appItem.modelData.description || appItem.modelData.comment || ""
+                                text: (subText.length > 0 && subText !== appItem.modelData.name) ? subText : "Application"
+                                color: Services.Theme.textSecondary
+                                font.pixelSize: 11
+                                elide: Text.ElideRight
+                                Layout.fillWidth: true
+                            }
                         }
                     }
 
                     MouseArea {
-                        anchors.fill: parent; hoverEnabled: true
-                        onEntered: resultList.currentIndex = appItem.index
-                        onClicked: { appItem.modelData.execute(); launcherWindow.hide() }
+                        id: hoverArea
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        onEntered: {
+                            if (resultList.currentIndex !== appItem.index) {
+                                resultList.currentIndex = appItem.index
+                            }
+                        }
+                        onClicked: {
+                            appItem.modelData.execute()
+                            launcherWindow.hide()
+                        }
                     }
                 }
 
                 // Empty state
-                Text {
-                    anchors.centerIn: parent
-                    text: "No results"
-                    color: Services.Theme.textDisabled
-                    font.pixelSize: 12
+                Item {
+                    anchors.fill: parent
                     visible: resultList.count === 0
+
+                    ColumnLayout {
+                        anchors.centerIn: parent
+                        spacing: 6
+
+                        Text {
+                            text: "\uf002"
+                            font.family: "Symbols Nerd Font Mono"
+                            font.pixelSize: 24
+                            color: Services.Theme.textDisabled
+                            Layout.alignment: Qt.AlignHCenter
+                        }
+
+                        Text {
+                            text: "No applications found"
+                            color: Services.Theme.textDisabled
+                            font.pixelSize: 13
+                            Layout.alignment: Qt.AlignHCenter
+                        }
+                    }
                 }
             }
         }
     }
 }
+

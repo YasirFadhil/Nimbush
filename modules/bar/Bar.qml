@@ -16,22 +16,40 @@ PanelWindow {
 
     color: "transparent"
     WlrLayershell.namespace: "quickshell:bar"
+    WlrLayershell.keyboardFocus: dynamicIsland.replyMode ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
 
-    // Reserve space for the bar (no floating margin — flush against top edge)
-    exclusiveZone: implicitHeight
-    implicitHeight: 30
+    exclusiveZone: 36
+    implicitHeight: 160
 
-    Rectangle {
-        id: barBg
+    mask: Region {
+        Region {
+            x: 0
+            y: 0
+            width: root.width
+            height: 36
+        }
+        Region {
+            x: (root.width - (dynamicIsland.expanded ? 400 : Math.max(160, dynamicIsland.calculatedCollapsedWidth + 20))) / 2
+            y: 0
+            width: dynamicIsland.expanded ? 400 : Math.max(160, dynamicIsland.calculatedCollapsedWidth + 20)
+            height: dynamicIsland.expanded ? 160 : 36
+        }
+    }
+
+    Item {
+        id: barContainer
         anchors.fill: parent
-        radius: 0
-        // color: Services.Theme.bgElevated
-        color: "transparent"
 
         RowLayout {
-            anchors.fill: parent
-            anchors.leftMargin: 16
-            anchors.rightMargin: 16
+            anchors.top: parent.top
+            anchors.left: parent.left
+            anchors.right: parent.right
+            height: 36
+            anchors.leftMargin: 12
+            anchors.rightMargin: 12
+            anchors.topMargin: 4
+            anchors.bottomMargin: 4
+            spacing: 12
 
             Components.WorkspaceIndicator {
                 Layout.alignment: Qt.AlignVCenter
@@ -43,10 +61,14 @@ PanelWindow {
 
             Components.StatusTray {
                 Layout.alignment: Qt.AlignVCenter
+                collapseNear: dynamicIsland.expanded
             }
-        }
-
-        // Sibling of RowLayout, anchored directly to the bar so it stays
-        // absolute-center regardless of left/right section widths.
+          }
+          
+          Components.DynamicIsland {
+            id: dynamicIsland
+            anchors.fill: parent
+            z: 999
+          }
     }
 }

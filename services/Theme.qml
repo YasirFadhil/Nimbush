@@ -9,7 +9,9 @@ QtObject {
 
     // Surface
     readonly property color surface:        "#b31e1e1e"   // card background (~70% opaque)
+    readonly property color surfaced:       "#1e1e1e"
     readonly property color surfaceVariant: "#b3272727"   // inner card / item hover (~70% opaque)
+    readonly property color seurfa:         '#1b272727'
 
     // Text
     readonly property color textPrimary:   "#e8e8e8"

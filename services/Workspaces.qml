@@ -74,37 +74,70 @@ Singleton {
         }
     }
 
-    // ---- live updates via hyprland event socket ----
-    // Event names/payloads per Hyprland IPC docs (0.55+). If these stop
-    // matching (Hyprland bumps event format), check `hyprctl` docs or
-    // `socat -U - UNIX-CONNECT:$XDG_RUNTIME_DIR/hypr/.../.socket2.sock`
-    // manually to see the raw event lines.
-    Process {
-    id: socatProc
-    command: ["sh", "-c", "socat -U - UNIX-CONNECT:$XDG_RUNTIME_DIR/hypr/$HYPRLAND_INSTANCE_SIGNATURE/.socket2.sock"]
-    running: true
-    stdout: SplitParser {
-        splitMarker: "\n"
-        onRead: data => {
-            const line = data.trim()
-            console.log("[Workspaces] event:", line)
+    function switchTo(id) {
+        if (switchProc.running) {
+            switchProc.running = false
+        }
+        switchProc.command = ["hyprctl", "dispatch", "hl.dsp.focus({ workspace = " + id + " })"]
+        switchProc.running = true
+        root.activeWorkspaceId = parseInt(id) || root.activeWorkspaceId
+        root.activeWorkspaceName = String(id)
+    }
 
-            if (line.startsWith("workspacev2>>")) {
-                const parts = line.substring("workspacev2>>".length).split(",")
-                root.activeWorkspaceId = parseInt(parts[0])
-                root.activeWorkspaceName = parts[0]
-            } else if (line.startsWith("createworkspacev2>>") || line.startsWith("destroyworkspacev2>>")) {
-                root.refreshWorkspaceList()
-            } else if (line.startsWith("activewindow>>")) {
-                const rest = line.substring("activewindow>>".length)
-                const commaIdx = rest.indexOf(",")
-                root.activeWindowTitle = commaIdx >= 0 ? rest.substring(commaIdx + 1) : ""
+    Process {
+        id: switchProc
+        running: false
+    }
+
+    function refreshActiveWindow() {
+        windowProc.output = ""
+        windowProc.running = true
+    }
+
+    // ---- live updates via hyprland event socket ----
+    Process {
+        id: socatProc
+        command: ["sh", "-c", "socat -U - UNIX-CONNECT:$XDG_RUNTIME_DIR/hypr/$HYPRLAND_INSTANCE_SIGNATURE/.socket2.sock"]
+        running: true
+        stdout: SplitParser {
+            splitMarker: "\n"
+            onRead: data => {
+                const line = data.trim()
+                if (!line) return
+
+                if (line.startsWith("workspacev2>>")) {
+                    const parts = line.substring("workspacev2>>".length).split(",")
+                    root.activeWorkspaceId = parseInt(parts[0]) || 1
+                    root.activeWorkspaceName = parts[0]
+                    root.refreshActiveWindow()
+                } else if (line.startsWith("workspace>>")) {
+                    const ws = line.substring("workspace>>".length)
+                    root.activeWorkspaceId = parseInt(ws) || 1
+                    root.activeWorkspaceName = ws
+                    root.refreshActiveWindow()
+                } else if (line.startsWith("focusedmon>>")) {
+                    const parts = line.substring("focusedmon>>".length).split(",")
+                    if (parts.length > 1) {
+                        root.activeWorkspaceId = parseInt(parts[1]) || 1
+                        root.activeWorkspaceName = parts[1]
+                        root.refreshActiveWindow()
+                    }
+                } else if (line.startsWith("createworkspacev2>>") || line.startsWith("createworkspace>>")
+                        || line.startsWith("destroyworkspacev2>>") || line.startsWith("destroyworkspace>>")
+                        || line.startsWith("renameworkspace>>")) {
+                    root.refreshWorkspaceList()
+                } else if (line.startsWith("activewindow>>")) {
+                    const rest = line.substring("activewindow>>".length)
+                    const commaIdx = rest.indexOf(",")
+                    root.activeWindowTitle = commaIdx >= 0 ? rest.substring(commaIdx + 1) : ""
+                } else if (line.startsWith("activewindowv2>>")) {
+                    root.refreshActiveWindow()
+                }
             }
         }
+        stderr: SplitParser {
+            onRead: data => {}
+        }
+        onExited: (exitCode) => console.warn("[Workspaces] socat process exited, code:", exitCode)
     }
-    stderr: SplitParser {
-        onRead: data => console.warn("[Workspaces] socat stderr:", data)
-    }
-    onExited: (exitCode) => console.warn("[Workspaces] socat process exited, code:", exitCode)
-}
 }

@@ -8,6 +8,7 @@ Singleton {
 
     property bool enabled: false
     property var devices: []
+    property var tempDevices: []
     property bool refreshing: false
     property int statusIndex: 0
 
@@ -41,11 +42,12 @@ Singleton {
     }
 
     function checkNextStatus() {
-        if (root.statusIndex >= root.devices.length) {
+        if (root.statusIndex >= root.tempDevices.length) {
+            root.devices = root.tempDevices
             root.refreshing = false
             return
         }
-        infoProc.command = ["bluetoothctl", "info", root.devices[root.statusIndex].mac]
+        infoProc.command = ["bluetoothctl", "info", root.tempDevices[root.statusIndex].mac]
         infoProc.running = true
     }
 
@@ -78,7 +80,7 @@ Singleton {
         }
         onRunningChanged: { if (running) buffer = [] }
         onExited: {
-            root.devices = pairedProc.buffer
+            root.tempDevices = pairedProc.buffer
             root.statusIndex = 0
             root.checkNextStatus()
         }
@@ -87,16 +89,37 @@ Singleton {
     Process {
         id: infoProc
         property bool foundConnected: false
+        property int foundBattery: -1
+        property string foundIcon: ""
         stdout: SplitParser {
             onRead: data => {
-                if (data.trim().startsWith("Connected: yes")) infoProc.foundConnected = true
+                const line = data.trim()
+                if (line.startsWith("Connected: yes")) infoProc.foundConnected = true
+
+                const batMatch = line.match(/Battery Percentage:\s*(?:0x[0-9a-fA-F]+\s*\()?(\d+)\)?%?/)
+                if (batMatch) {
+                    infoProc.foundBattery = parseInt(batMatch[1])
+                }
+
+                const iconMatch = line.match(/^Icon:\s*(.+)$/)
+                if (iconMatch) {
+                    infoProc.foundIcon = iconMatch[1].trim()
+                }
             }
         }
-        onRunningChanged: { if (running) foundConnected = false }
+        onRunningChanged: {
+            if (running) {
+                foundConnected = false
+                foundBattery = -1
+                foundIcon = ""
+            }
+        }
         onExited: {
-            const arr = root.devices.slice()
-            if (arr[root.statusIndex]) arr[root.statusIndex].connected = infoProc.foundConnected
-            root.devices = arr
+            if (root.tempDevices[root.statusIndex]) {
+                root.tempDevices[root.statusIndex].connected = infoProc.foundConnected
+                root.tempDevices[root.statusIndex].battery = infoProc.foundBattery
+                root.tempDevices[root.statusIndex].icon = infoProc.foundIcon
+            }
             root.statusIndex++
             root.checkNextStatus()
         }
