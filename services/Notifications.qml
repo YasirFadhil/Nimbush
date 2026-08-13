@@ -47,8 +47,8 @@ Singleton {
             if (!root.doNotDisturb) {
                 popupModel.insert(0, entry)
                 root.newNotification(entry)
-                const timeout = notif.urgency === NotificationUrgency.Critical ? 0
-                    : (notif.expireTimeout > 0 ? notif.expireTimeout : 5000)
+                const timeout = notif.expireTimeout > 0 ? notif.expireTimeout
+                    : (notif.urgency === NotificationUrgency.Critical ? 7000 : 5000)
                 if (timeout > 0) {
                     dismissTimer.createObject(root, { notifId: notif.id, interval: timeout }).start()
                 }
@@ -142,4 +142,35 @@ Singleton {
     }
 
     function clearHistory() { historyModel.clear() }
+
+    property int nextSystemNotifId: 900000
+
+    function addSystemNotification(entry) {
+        if (!entry) return -1
+        const id = entry.notifId || (++nextSystemNotifId)
+        const fullEntry = {
+            notifId: id,
+            appName: entry.appName || "System Warning",
+            appIcon: entry.appIcon || "battery-caution",
+            summary: entry.summary || "",
+            body: entry.body || "",
+            image: entry.image || "",
+            urgency: entry.urgency !== undefined ? entry.urgency : 2,
+            time: Date.now(),
+            actions: entry.actions || []
+        }
+
+        historyModel.insert(0, fullEntry)
+
+        if (!root.doNotDisturb) {
+            popupModel.insert(0, fullEntry)
+            root.newNotification(fullEntry)
+            const timeout = entry.expireTimeout > 0 ? entry.expireTimeout
+                : (fullEntry.urgency === 2 ? 6000 : 5000)
+            if (timeout > 0) {
+                dismissTimer.createObject(root, { notifId: id, interval: timeout }).start()
+            }
+        }
+        return id
+    }
 }

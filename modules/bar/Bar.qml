@@ -29,9 +29,9 @@ PanelWindow {
             height: 36
         }
         Region {
-            x: (root.width - (dynamicIsland.expanded ? 400 : 160)) / 2
+            x: (root.width - (dynamicIsland.expanded ? 400 : Math.max(160, dynamicIsland.calculatedCollapsedWidth + 20))) / 2
             y: 0
-            width: dynamicIsland.expanded ? 400 : 160
+            width: dynamicIsland.expanded ? 400 : Math.max(160, dynamicIsland.calculatedCollapsedWidth + 20)
             height: dynamicIsland.expanded ? 160 : 36
         }
     }

@@ -37,10 +37,11 @@ Singleton {
     // sama gaya sama icon lain yang udah kebukti render bener di project ini)
     function powerIcon(charging, percentage) {
         if (charging) return "\uf0e7"
-        if (percentage >= 80) return "\uf240"
-        if (percentage >= 55) return "\uf241"
-        if (percentage >= 30) return "\uf242"
-        if (percentage >= 10) return "\uf243"
+        var p = (percentage > 0 && percentage <= 1) ? percentage * 100 : percentage
+        if (p >= 75) return "\uf240"
+        if (p >= 50) return "\uf241"
+        if (p >= 25) return "\uf242"
+        if (p >= 10) return "\uf243"
         return "\uf244"
     }
 }

@@ -237,14 +237,14 @@ PanelWindow {
                         text: Services.Icons.powerIcon(Services.Power.charging, Math.round((Services.Power.percentage || 0) * 100))
                         font.family: "Symbols Nerd Font Mono"
                         font.pixelSize: 11
-                        color: Services.Power.charging ? Services.Theme.success : Services.Theme.textPrimary
+                        color: Services.Power.charging ? Services.Theme.success : (Services.Power.isLow ? "#ff4444" : Services.Theme.textPrimary)
                     }
 
                     Text {
                         text: Math.round((Services.Power.percentage || 0) * 100) + "%"
                         font.pixelSize: 11
                         font.bold: true
-                        color: Services.Theme.textPrimary
+                        color: Services.Power.isLow ? "#ff4444" : Services.Theme.textPrimary
                     }
                 }
 

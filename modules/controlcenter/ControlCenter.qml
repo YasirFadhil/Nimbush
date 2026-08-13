@@ -530,16 +530,16 @@ PanelWindow {
                         RowLayout {
                             spacing: 4
                             Text {
-                                text: Services.Power.charging ? "\uf0e7" : "\uf240"
+                                text: Services.Icons.powerIcon(Services.Power.charging, Services.Power.percentage * 100)
                                 font.family: "Symbols Nerd Font Mono"
                                 font.pixelSize: 11
-                                color: Services.Power.charging ? Services.Theme.success : Services.Theme.textSecondary
+                                color: Services.Power.charging ? Services.Theme.success : (Services.Power.isLow ? "#ff4444" : Services.Theme.textSecondary)
                             }
                             Text {
                                 text: Math.round(Services.Power.percentage * 100) + "%"
                                 font.pixelSize: 10
                                 font.bold: true
-                                color: Services.Theme.textSecondary
+                                color: Services.Power.isLow ? "#ff4444" : Services.Theme.textSecondary
                             }
                         }
 
@@ -1162,7 +1162,7 @@ PanelWindow {
                                                 elide: Text.ElideRight
                                             }
                                             Text {
-                                                text: btRow.modelData.connected ? "Connected" : "Paired"
+                                                text: btRow.modelData.connected ? (btRow.modelData.battery !== undefined && btRow.modelData.battery >= 0 ? "Connected • " + btRow.modelData.battery + "%" : "Connected") : "Paired"
                                                 color: Services.Theme.textDisabled
                                                 font.pixelSize: 9
                                             }
