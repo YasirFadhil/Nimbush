@@ -3,7 +3,7 @@ import QtQuick
 import Quickshell
 
 Singleton {
-    readonly property string volOff:  "\u{f0581}"
+    readonly property string volOff:  "\u{f0e08}"
     readonly property string volLow:  "\u{f057f}"
     readonly property string volMed:  "\u{f0580}"
     readonly property string volHigh: "\u{f057e}"
@@ -46,8 +46,8 @@ Singleton {
     }
 
     // Dashboard & System icons
-    readonly property string cpu:    "\u{f0140}"
-    readonly property string ram:    "\u{f061a}"
+    readonly property string cpu:    "\uf2db"         // nf-fa-microchip
+    readonly property string ram:    "\udb81\ude1a"    // nf-md-memory
     readonly property string disk:   "\uf0a0"
     readonly property string temp:   "\uf2c9"
     readonly property string kernel: "\uf17c"

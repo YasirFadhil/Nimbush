@@ -10,6 +10,7 @@ Singleton {
     property bool wifiPanelVisible: false
     property bool btPanelVisible: false
     property bool audioPanelVisible: false
+    property bool updatePanelVisible: false
     property bool calendarVisible: false
 
     signal launcherToggleRequested()
@@ -35,6 +36,7 @@ Singleton {
             wifiPanelVisible = false
             btPanelVisible = false
             audioPanelVisible = false
+            updatePanelVisible = false
         }
         if (except !== "calendar") {
             calendarVisible = false

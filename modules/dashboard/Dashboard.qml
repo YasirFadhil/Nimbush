@@ -48,25 +48,23 @@ PanelWindow {
         onTriggered: root.visible = false
     }
 
-    // Keyboard handler (Esc to close)
     Item {
         id: keyFocus
         focus: root.isOpen
         Keys.onEscapePressed: root.close()
     }
 
-    // Fullscreen Backdrop (Click outside to close)
     MouseArea {
         anchors.fill: parent
         onClicked: root.close()
 
-        // ── Dropdown Panel attached to Top-Left under Bar ─────────────────
+        // ── Panel ──────────────────────────────────────────────────────────
         Rectangle {
             id: panel
             anchors { top: parent.top; left: parent.left }
             anchors.leftMargin: 12
             anchors.topMargin: 12
-            width: 380
+            width: 360
             implicitHeight: mainCol.implicitHeight + 32
 
             radius: Services.Theme.radiusLg
@@ -77,34 +75,111 @@ PanelWindow {
 
             opacity: root.isOpen ? 1 : 0
             transform: Translate {
-                y: root.isOpen ? 0 : -20
+                y: root.isOpen ? 0 : -16
                 Behavior on y { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
             }
-
             Behavior on opacity { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
 
-            // Block click propagation to backdrop
-            MouseArea {
-                anchors.fill: parent
-                onClicked: {}
+            MouseArea { anchors.fill: parent; onClicked: {} }
+
+            // Reusable metric card component (2-col grid)
+            component MetricCard: Rectangle {
+                id: card
+                property string iconGlyph: ""
+                property string label: ""
+                property string valueText: ""
+                property real progress: 0.0
+                property bool critical: false
+                property string iconFont: "Symbols Nerd Font Mono"
+
+                Layout.fillWidth: true
+                implicitHeight: 58
+                radius: Services.Theme.radiusMd
+                color: Services.Theme.surfaceVariant
+
+                ColumnLayout {
+                    anchors.fill: parent
+                    anchors.margins: 10
+                    spacing: 7
+
+                    // Row: icon + label + value
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 7
+
+                        // Icon bubble
+                        Rectangle {
+                            width: 22; height: 22; radius: 6
+                            color: card.critical ? Qt.rgba(0.54, 0.32, 0.32, 0.25) : Qt.rgba(0.83, 0.83, 0.83, 0.1)
+                            Behavior on color { ColorAnimation { duration: 300 } }
+
+                            Text {
+                                anchors.centerIn: parent
+                                text: card.iconGlyph
+                                font.family: card.iconFont
+                                font.pixelSize: 11
+                                color: card.critical ? Services.Theme.danger : Services.Theme.accent
+                                Behavior on color { ColorAnimation { duration: 300 } }
+                            }
+                        }
+
+                        Text {
+                            text: card.label
+                            font.pixelSize: 10
+                            font.bold: true
+                            color: Services.Theme.textPrimary
+                        }
+
+                        Item { Layout.fillWidth: true }
+
+                        Text {
+                            text: card.valueText
+                            font.pixelSize: 10
+                            font.bold: true
+                            color: card.critical ? Services.Theme.danger : Services.Theme.textSecondary
+                            Behavior on color { ColorAnimation { duration: 300 } }
+                        }
+                    }
+
+                    // Progress bar track
+                    Rectangle {
+                        Layout.fillWidth: true
+                        height: 5
+                        radius: 3
+                        color: Qt.rgba(0.1, 0.1, 0.1, 0.6)
+                        clip: true
+
+                        // Fill
+                        Rectangle {
+                            height: parent.height
+                            width: Math.max(0, Math.min(parent.width, parent.width * card.progress))
+                            radius: parent.radius
+                            color: card.critical ? Services.Theme.danger : Services.Theme.accent
+                            Behavior on width { NumberAnimation { duration: 350; easing.type: Easing.OutCubic } }
+                            Behavior on color { ColorAnimation { duration: 300 } }
+                        }
+                    }
+                }
             }
 
+            // ── Main Column ────────────────────────────────────────────────
             ColumnLayout {
                 id: mainCol
                 anchors.fill: parent
                 anchors.margins: 16
                 spacing: 14
 
-                // ── Header: User Avatar & Distro Badge ──────────────────
+                // ── Header ──────────────────────────────────────────────────
                 RowLayout {
                     Layout.fillWidth: true
                     spacing: 12
 
-                    // Avatar Image or Fallback Glyph
+                    // Avatar
                     Rectangle {
-                        width: 48; height: 48; radius: 14
+                        width: 46; height: 46
+                        radius: 23
                         color: Services.Theme.surfaceVariant
-                        border.color: Services.Theme.border
+                        border.color: Services.Theme.borderHighlight
                         border.width: 1
                         antialiasing: true
                         smooth: true
@@ -118,19 +193,18 @@ PanelWindow {
                             visible: false
                             smooth: true
                             mipmap: true
-                            antialiasing: true
                         }
 
                         MultiEffect {
                             anchors.fill: avatarImg
                             source: avatarImg
                             maskEnabled: true
-                            maskSource: dashAvatarMask
+                            maskSource: avatarMask
                             visible: avatarImg.status === Image.Ready
                         }
 
                         Item {
-                            id: dashAvatarMask
+                            id: avatarMask
                             anchors.fill: avatarImg
                             visible: false
                             layer.enabled: true
@@ -138,10 +212,9 @@ PanelWindow {
                             layer.samples: 8
                             Rectangle {
                                 anchors.fill: parent
-                                radius: 13
+                                radius: 22
                                 color: "black"
                                 antialiasing: true
-                                smooth: true
                             }
                         }
 
@@ -150,58 +223,64 @@ PanelWindow {
                             visible: avatarImg.status !== Image.Ready
                             text: Services.OsInfo.logoGlyph !== "" ? Services.OsInfo.logoGlyph : "\uf007"
                             font.family: "Symbols Nerd Font Mono"
-                            font.pixelSize: 22
+                            font.pixelSize: 20
                             color: Services.Theme.accent
                         }
                     }
 
+                    // User info
                     ColumnLayout {
-                        spacing: 2
+                        spacing: 3
                         Layout.fillWidth: true
 
                         Text {
-                            text: Services.OsInfo.username.length > 0 ? Services.OsInfo.username : "User Profile"
-                            font.pixelSize: 15
+                            text: Services.OsInfo.username.length > 0 ? Services.OsInfo.username : "User"
+                            font.pixelSize: 16
                             font.weight: Font.Bold
                             color: Services.Theme.textPrimary
                             elide: Text.ElideRight
                         }
 
                         RowLayout {
-                            spacing: 6
+                            spacing: 5
+
                             Text {
                                 text: Services.OsInfo.hostname.length > 0 ? "@" + Services.OsInfo.hostname : ""
-                                font.pixelSize: 11
+                                font.pixelSize: 10
                                 color: Services.Theme.textSecondary
-                                elide: Text.ElideRight
                             }
+
                             Text {
-                                text: "•"
-                                font.pixelSize: 11
+                                visible: Services.OsInfo.hostname.length > 0 && Services.OsInfo.distroName.length > 0
+                                text: "·"
+                                font.pixelSize: 10
                                 color: Services.Theme.textDisabled
                             }
+
                             Text {
                                 text: Services.OsInfo.distroName.length > 0 ? Services.OsInfo.distroName : "Linux"
-                                font.pixelSize: 11
+                                font.pixelSize: 10
                                 color: Services.Theme.accent
                                 elide: Text.ElideRight
                             }
                         }
                     }
 
-                    // Close Button
+                    // Close button
                     Rectangle {
                         width: 26; height: 26; radius: 13
-                        color: closeMouse.containsMouse ? Services.Theme.surfaceVariant : Services.Theme.bgHover
-                        border.color: Services.Theme.border
+                        color: closeMouse.containsMouse ? Services.Theme.surfaceVariant : "transparent"
+                        border.color: closeMouse.containsMouse ? Services.Theme.border : "transparent"
                         border.width: 1
+                        Behavior on color { ColorAnimation { duration: 100 } }
 
                         Text {
                             anchors.centerIn: parent
                             text: Services.Icons.close
                             font.family: "Symbols Nerd Font Mono"
                             font.pixelSize: 11
-                            color: Services.Theme.textSecondary
+                            color: closeMouse.containsMouse ? Services.Theme.textPrimary : Services.Theme.textDisabled
+                            Behavior on color { ColorAnimation { duration: 100 } }
                         }
 
                         MouseArea {
@@ -214,325 +293,244 @@ PanelWindow {
                     }
                 }
 
-                // Hairline Divider
+                // ── Divider ──────────────────────────────────────────────────
                 Rectangle {
                     Layout.fillWidth: true
                     height: 1
                     color: Services.Theme.border
-                    opacity: 0.8
+                    opacity: 0.7
                 }
 
-                // ── System Info / Performance Metrics (RAM, Disk, CPU, Temp) ────
+                // ── System Performance Section ────────────────────────────────
                 ColumnLayout {
                     Layout.fillWidth: true
-                    spacing: 8
+                    spacing: 10
 
+                    // Section label
                     RowLayout {
                         Layout.fillWidth: true
+
                         Text {
                             text: "System Performance"
-                            font.pixelSize: 11
+                            font.pixelSize: 10
                             font.bold: true
-                            color: Services.Theme.textSecondary
+                            font.letterSpacing: 0.5
+                            color: Services.Theme.textDisabled
                         }
-                    }
 
-                    // 1. CPU Usage Card
-                    Rectangle {
-                        Layout.fillWidth: true
-                        implicitHeight: 52
-                        radius: Services.Theme.radiusMd
-                        color: Services.Theme.surfaceVariant
+                        Item { Layout.fillWidth: true }
 
-                        ColumnLayout {
-                            anchors.fill: parent
-                            anchors.margins: 10
-                            spacing: 6
-
-                            RowLayout {
-                                Layout.fillWidth: true
-                                spacing: 8
-                                Text {
-                                    text: Services.Icons.cpu
-                                    font.family: "Symbols Nerd Font Mono"
-                                    font.pixelSize: 13
-                                    color: Services.Theme.accent
-                                }
-                                Text {
-                                    text: "CPU Usage"
-                                    font.pixelSize: 11
-                                    font.bold: true
-                                    color: Services.Theme.textPrimary
-                                }
-                                Item { Layout.fillWidth: true }
-                                Text {
-                                    text: Math.round(Services.Sysmon.cpuUsage) + "%"
-                                    font.pixelSize: 11
-                                    font.bold: true
-                                    color: Services.Theme.accent
-                                }
-                            }
-
-                            Rectangle {
-                                Layout.fillWidth: true
-                                height: 5
-                                radius: 2.5
-                                color: Services.Theme.surfaced
-                                clip: true
-
-                                Rectangle {
-                                    height: parent.height
-                                    width: Math.max(0, Math.min(parent.width, parent.width * (Services.Sysmon.cpuUsage / 100.0)))
-                                    radius: 2.5
-                                    color: Services.Sysmon.cpuUsage > 85 ? Services.Theme.danger : Services.Theme.accent
-                                    Behavior on width { NumberAnimation { duration: 300; easing.type: Easing.OutCubic } }
-                                }
+                        // Live indicator dot
+                        Rectangle {
+                            width: 6; height: 6; radius: 3
+                            color: Services.Theme.success
+                            SequentialAnimation on opacity {
+                                loops: Animation.Infinite
+                                NumberAnimation { to: 0.3; duration: 900; easing.type: Easing.InOutSine }
+                                NumberAnimation { to: 1.0; duration: 900; easing.type: Easing.InOutSine }
                             }
                         }
                     }
 
-                    // 2. RAM Usage Card
-                    Rectangle {
+                    // Row 1: CPU + RAM
+                    RowLayout {
                         Layout.fillWidth: true
-                        implicitHeight: 52
-                        radius: Services.Theme.radiusMd
-                        color: Services.Theme.surfaceVariant
+                        spacing: 8
 
-                        ColumnLayout {
-                            anchors.fill: parent
-                            anchors.margins: 10
-                            spacing: 6
+                        MetricCard {
+                            iconGlyph: Services.Icons.cpu
+                            label: "CPU"
+                            valueText: Math.round(Services.Sysmon.cpuUsage) + "%"
+                            progress: Services.Sysmon.cpuUsage / 100.0
+                            critical: Services.Sysmon.cpuUsage > 85
+                        }
 
-                            RowLayout {
-                                Layout.fillWidth: true
-                                spacing: 8
-                                Text {
-                                    text: Services.Icons.ram
-                                    font.family: "Symbols Nerd Font Mono"
-                                    font.pixelSize: 13
-                                    color: Services.Theme.accent
-                                }
-                                Text {
-                                    text: "RAM Usage"
-                                    font.pixelSize: 11
-                                    font.bold: true
-                                    color: Services.Theme.textPrimary
-                                }
-                                Item { Layout.fillWidth: true }
-                                Text {
-                                    text: (Services.Sysmon.ramUsedStr.length > 0 ? Services.Sysmon.ramUsedStr + " / " + Services.Sysmon.ramTotalStr + " (" : "") + Math.round(Services.Sysmon.ramUsage) + "%" + (Services.Sysmon.ramUsedStr.length > 0 ? ")" : "")
-                                    font.pixelSize: 10
-                                    color: Services.Theme.textSecondary
-                                }
-                            }
-
-                            Rectangle {
-                                Layout.fillWidth: true
-                                height: 5
-                                radius: 2.5
-                                color: Services.Theme.surfaced
-                                clip: true
-
-                                Rectangle {
-                                    height: parent.height
-                                    width: Math.max(0, Math.min(parent.width, parent.width * (Services.Sysmon.ramUsage / 100.0)))
-                                    radius: 2.5
-                                    color: Services.Sysmon.ramUsage > 85 ? Services.Theme.danger : Services.Theme.accent
-                                    Behavior on width { NumberAnimation { duration: 300; easing.type: Easing.OutCubic } }
-                                }
-                            }
+                        MetricCard {
+                            iconGlyph: Services.Icons.ram
+                            iconFont: "Liga SFMono Nerd Font"
+                            label: "RAM"
+                            valueText: Services.Sysmon.ramUsedStr.length > 0
+                                       ? Services.Sysmon.ramUsedStr + "/" + Services.Sysmon.ramTotalStr
+                                       : Math.round(Services.Sysmon.ramUsage) + "%"
+                            progress: Services.Sysmon.ramUsage / 100.0
+                            critical: Services.Sysmon.ramUsage > 85
                         }
                     }
 
-                    // 3. Disk Storage Card
-                    Rectangle {
+                    // Row 2: Disk + Temp
+                    RowLayout {
                         Layout.fillWidth: true
-                        implicitHeight: 52
-                        radius: Services.Theme.radiusMd
-                        color: Services.Theme.surfaceVariant
+                        spacing: 8
 
-                        ColumnLayout {
-                            anchors.fill: parent
-                            anchors.margins: 10
-                            spacing: 6
-
-                            RowLayout {
-                                Layout.fillWidth: true
-                                spacing: 8
-                                Text {
-                                    text: Services.Icons.disk
-                                    font.family: "Symbols Nerd Font Mono"
-                                    font.pixelSize: 13
-                                    color: Services.Theme.accent
-                                }
-                                Text {
-                                    text: "Disk Storage"
-                                    font.pixelSize: 11
-                                    font.bold: true
-                                    color: Services.Theme.textPrimary
-                                }
-                                Item { Layout.fillWidth: true }
-                                Text {
-                                    text: (Services.Sysmon.diskUsedStr.length > 0 ? Services.Sysmon.diskUsedStr + " / " + Services.Sysmon.diskTotalStr + " (" : "") + Math.round(Services.Sysmon.diskUsage) + "%" + (Services.Sysmon.diskUsedStr.length > 0 ? ")" : "")
-                                    font.pixelSize: 10
-                                    color: Services.Theme.textSecondary
-                                }
-                            }
-
-                            Rectangle {
-                                Layout.fillWidth: true
-                                height: 5
-                                radius: 2.5
-                                color: Services.Theme.surfaced
-                                clip: true
-
-                                Rectangle {
-                                    height: parent.height
-                                    width: Math.max(0, Math.min(parent.width, parent.width * (Services.Sysmon.diskUsage / 100.0)))
-                                    radius: 2.5
-                                    color: Services.Sysmon.diskUsage > 90 ? Services.Theme.danger : Services.Theme.accent
-                                    Behavior on width { NumberAnimation { duration: 300; easing.type: Easing.OutCubic } }
-                                }
-                            }
+                        MetricCard {
+                            iconGlyph: Services.Icons.disk
+                            label: "Disk"
+                            valueText: Services.Sysmon.diskUsedStr.length > 0
+                                       ? Services.Sysmon.diskUsedStr + "/" + Services.Sysmon.diskTotalStr
+                                       : Math.round(Services.Sysmon.diskUsage) + "%"
+                            progress: Services.Sysmon.diskUsage / 100.0
+                            critical: Services.Sysmon.diskUsage > 90
                         }
-                    }
 
-                    // 4. CPU Temp Card
-                    Rectangle {
-                        Layout.fillWidth: true
-                        implicitHeight: 52
-                        radius: Services.Theme.radiusMd
-                        color: Services.Theme.surfaceVariant
-
-                        ColumnLayout {
-                            anchors.fill: parent
-                            anchors.margins: 10
-                            spacing: 6
-
-                            RowLayout {
-                                Layout.fillWidth: true
-                                spacing: 8
-                                Text {
-                                    text: Services.Icons.temp
-                                    font.family: "Symbols Nerd Font Mono"
-                                    font.pixelSize: 13
-                                    color: Services.Theme.accent
-                                }
-                                Text {
-                                    text: "CPU Temp"
-                                    font.pixelSize: 11
-                                    font.bold: true
-                                    color: Services.Theme.textPrimary
-                                }
-                                Item { Layout.fillWidth: true }
-                                Text {
-                                    text: Math.round(Services.Sysmon.cpuTemp) + "°C"
-                                    font.pixelSize: 11
-                                    font.bold: true
-                                    color: Services.Sysmon.cpuTemp > 75 ? Services.Theme.danger : Services.Theme.accent
-                                }
-                            }
-
-                            Rectangle {
-                                Layout.fillWidth: true
-                                height: 5
-                                radius: 2.5
-                                color: Services.Theme.surfaced
-                                clip: true
-
-                                Rectangle {
-                                    height: parent.height
-                                    width: Math.max(0, Math.min(parent.width, parent.width * (Services.Sysmon.cpuTemp / 100.0)))
-                                    radius: 2.5
-                                    color: Services.Sysmon.cpuTemp > 75 ? Services.Theme.danger : Services.Theme.accent
-                                    Behavior on width { NumberAnimation { duration: 300; easing.type: Easing.OutCubic } }
-                                }
-                            }
+                        MetricCard {
+                            iconGlyph: Services.Icons.temp
+                            label: "Temp"
+                            valueText: Math.round(Services.Sysmon.cpuTemp) + "°C"
+                            progress: Math.min(1.0, Services.Sysmon.cpuTemp / 100.0)
+                            critical: Services.Sysmon.cpuTemp > 75
                         }
                     }
                 }
 
-                // ── Additional System Details Grid ──────────────────────────
+                // ── System Details Card ───────────────────────────────────────
                 Rectangle {
                     Layout.fillWidth: true
-                    implicitHeight: detailsCol.implicitHeight + 16
+                    implicitHeight: detailGrid.implicitHeight + 20
                     radius: Services.Theme.radiusMd
                     color: Services.Theme.surfaceVariant
 
-                    ColumnLayout {
-                        id: detailsCol
+                    GridLayout {
+                        id: detailGrid
                         anchors.fill: parent
                         anchors.margins: 10
-                        spacing: 6
+                        columns: 2
+                        columnSpacing: 8
+                        rowSpacing: 8
 
-                        // Kernel & Uptime Row
+                        // Kernel
                         RowLayout {
-                            Layout.fillWidth: true
-                            spacing: 8
-
-                            RowLayout {
-                                Layout.fillWidth: true
-                                spacing: 6
-                                Text { text: Services.Icons.kernel; font.family: "Symbols Nerd Font Mono"; font.pixelSize: 12; color: Services.Theme.accent }
-                                Text { text: "Kernel"; font.pixelSize: 10; color: Services.Theme.textDisabled }
-                                Text { text: Services.OsInfo.kernel.length > 0 ? Services.OsInfo.kernel : "-"; font.pixelSize: 10; color: Services.Theme.textPrimary; elide: Text.ElideRight; Layout.fillWidth: true }
+                            spacing: 6
+                            Text {
+                                text: Services.Icons.kernel
+                                font.family: "Symbols Nerd Font Mono"
+                                font.pixelSize: 11
+                                color: Services.Theme.accent
                             }
-
-                            RowLayout {
+                            Text {
+                                text: "Kernel"
+                                font.pixelSize: 10
+                                color: Services.Theme.textDisabled
+                                font.bold: true
+                            }
+                            Text {
+                                text: Services.OsInfo.kernel.length > 0 ? Services.OsInfo.kernel : "-"
+                                font.pixelSize: 10
+                                color: Services.Theme.textPrimary
+                                elide: Text.ElideRight
                                 Layout.fillWidth: true
-                                spacing: 6
-                                Text { text: Services.Icons.uptime; font.family: "Symbols Nerd Font Mono"; font.pixelSize: 12; color: Services.Theme.accent }
-                                Text { text: "Uptime"; font.pixelSize: 10; color: Services.Theme.textDisabled }
-                                Text { text: Services.Sysmon.uptimeStr.length > 0 ? Services.Sysmon.uptimeStr : "-"; font.pixelSize: 10; color: Services.Theme.textPrimary; elide: Text.ElideRight; Layout.fillWidth: true }
                             }
                         }
 
-                        // Shell & Battery Row
+                        // Uptime
                         RowLayout {
-                            Layout.fillWidth: true
-                            spacing: 8
-
-                            RowLayout {
-                                Layout.fillWidth: true
-                                spacing: 6
-                                Text { text: Services.Icons.shell; font.family: "Symbols Nerd Font Mono"; font.pixelSize: 12; color: Services.Theme.accent }
-                                Text { text: "Shell"; font.pixelSize: 10; color: Services.Theme.textDisabled }
-                                Text { text: Services.OsInfo.shellName.length > 0 ? Services.OsInfo.shellName : "-"; font.pixelSize: 10; color: Services.Theme.textPrimary; elide: Text.ElideRight; Layout.fillWidth: true }
+                            spacing: 6
+                            Text {
+                                text: Services.Icons.uptime
+                                font.family: "Symbols Nerd Font Mono"
+                                font.pixelSize: 11
+                                color: Services.Theme.accent
                             }
-
-                            RowLayout {
+                            Text {
+                                text: "Uptime"
+                                font.pixelSize: 10
+                                color: Services.Theme.textDisabled
+                                font.bold: true
+                            }
+                            Text {
+                                text: Services.Sysmon.uptimeStr.length > 0 ? Services.Sysmon.uptimeStr : "-"
+                                font.pixelSize: 10
+                                color: Services.Theme.textPrimary
+                                elide: Text.ElideRight
                                 Layout.fillWidth: true
-                                spacing: 6
-                                visible: Services.Power.ready && !isNaN(Services.Power.percentage) && Services.Power.percentage > 0
-                                Text {
-                                    text: Services.Icons.powerIcon(Services.Power.charging, Services.Power.percentage * 100)
-                                    font.family: "Symbols Nerd Font Mono"
-                                    font.pixelSize: 12
-                                    color: Services.Power.charging ? Services.Theme.success : (Services.Power.isLow ? Services.Theme.danger : Services.Theme.accent)
-                                }
-                                Text { text: "Power"; font.pixelSize: 10; color: Services.Theme.textDisabled }
-                                Text { text: Math.round(Services.Power.percentage * 100) + "%"; font.pixelSize: 10; color: Services.Theme.textPrimary; elide: Text.ElideRight; Layout.fillWidth: true }
+                            }
+                        }
+
+                        // Shell
+                        RowLayout {
+                            spacing: 6
+                            Text {
+                                text: Services.Icons.shell
+                                font.family: "Symbols Nerd Font Mono"
+                                font.pixelSize: 11
+                                color: Services.Theme.accent
+                            }
+                            Text {
+                                text: "Shell"
+                                font.pixelSize: 10
+                                color: Services.Theme.textDisabled
+                                font.bold: true
+                            }
+                            Text {
+                                text: Services.OsInfo.shellName.length > 0 ? Services.OsInfo.shellName : "-"
+                                font.pixelSize: 10
+                                color: Services.Theme.textPrimary
+                                elide: Text.ElideRight
+                                Layout.fillWidth: true
+                            }
+                        }
+
+                        // Power / Battery
+                        RowLayout {
+                            visible: Services.Power.ready && !isNaN(Services.Power.percentage) && Services.Power.percentage > 0
+                            spacing: 6
+                            Text {
+                                text: Services.Icons.powerIcon(Services.Power.charging, Services.Power.percentage * 100)
+                                font.family: "Symbols Nerd Font Mono"
+                                font.pixelSize: 11
+                                color: Services.Power.charging ? Services.Theme.success : (Services.Power.isLow ? Services.Theme.danger : Services.Theme.accent)
+                                Behavior on color { ColorAnimation { duration: 250 } }
+                            }
+                            Text {
+                                text: "Power"
+                                font.pixelSize: 10
+                                color: Services.Theme.textDisabled
+                                font.bold: true
+                            }
+                            Text {
+                                text: Math.round(Services.Power.percentage * 100) + "%"
+                                font.pixelSize: 10
+                                color: Services.Theme.textPrimary
+                                elide: Text.ElideRight
+                                Layout.fillWidth: true
                             }
                         }
                     }
                 }
 
-                // ── Quick Actions Row (Lock & Power Menu) ────────────────────
+                // ── Action Buttons ────────────────────────────────────────────
                 RowLayout {
                     Layout.fillWidth: true
                     spacing: 8
 
+                    // Lock Screen
                     Rectangle {
                         Layout.fillWidth: true
-                        implicitHeight: 34
-                        radius: Services.Theme.radiusSm
+                        implicitHeight: 38
+                        radius: Services.Theme.radiusMd
                         color: lockMouse.containsMouse ? Services.Theme.bgHover : Services.Theme.surfaceVariant
+                        border.color: lockMouse.containsMouse ? Services.Theme.borderHighlight : "transparent"
+                        border.width: 1
+                        Behavior on color { ColorAnimation { duration: 120 } }
 
                         RowLayout {
                             anchors.centerIn: parent
-                            spacing: 6
-                            Text { text: Services.Icons.lock; font.family: "Symbols Nerd Font Mono"; font.pixelSize: 12; color: Services.Theme.textSecondary }
-                            Text { text: "Lock Screen"; font.pixelSize: 11; color: Services.Theme.textPrimary }
+                            spacing: 7
+
+                            Text {
+                                text: Services.Icons.lock
+                                font.family: "Symbols Nerd Font Mono"
+                                font.pixelSize: 13
+                                color: lockMouse.containsMouse ? Services.Theme.textPrimary : Services.Theme.textSecondary
+                                Behavior on color { ColorAnimation { duration: 120 } }
+                            }
+
+                            Text {
+                                text: "Lock Screen"
+                                font.pixelSize: 11
+                                font.bold: true
+                                color: lockMouse.containsMouse ? Services.Theme.textPrimary : Services.Theme.textSecondary
+                                Behavior on color { ColorAnimation { duration: 120 } }
+                            }
                         }
 
                         MouseArea {
@@ -547,17 +545,34 @@ PanelWindow {
                         }
                     }
 
+                    // Power Menu
                     Rectangle {
                         Layout.fillWidth: true
-                        implicitHeight: 34
-                        radius: Services.Theme.radiusSm
-                        color: pwrMouse.containsMouse ? Services.Theme.bgHover : Services.Theme.surfaceVariant
+                        implicitHeight: 38
+                        radius: Services.Theme.radiusMd
+                        color: pwrMouse.containsMouse ? Qt.rgba(0.54, 0.32, 0.32, 0.35) : Services.Theme.surfaceVariant
+                        border.color: pwrMouse.containsMouse ? Services.Theme.danger : "transparent"
+                        border.width: 1
+                        Behavior on color { ColorAnimation { duration: 120 } }
 
                         RowLayout {
                             anchors.centerIn: parent
-                            spacing: 6
-                            Text { text: Services.Icons.power; font.family: "Symbols Nerd Font Mono"; font.pixelSize: 12; color: Services.Theme.danger }
-                            Text { text: "Power Menu"; font.pixelSize: 11; color: Services.Theme.textPrimary }
+                            spacing: 7
+
+                            Text {
+                                text: Services.Icons.power
+                                font.family: "Symbols Nerd Font Mono"
+                                font.pixelSize: 13
+                                color: Services.Theme.danger
+                            }
+
+                            Text {
+                                text: "Power Menu"
+                                font.pixelSize: 11
+                                font.bold: true
+                                color: pwrMouse.containsMouse ? Services.Theme.textPrimary : Services.Theme.textSecondary
+                                Behavior on color { ColorAnimation { duration: 120 } }
+                            }
                         }
 
                         MouseArea {

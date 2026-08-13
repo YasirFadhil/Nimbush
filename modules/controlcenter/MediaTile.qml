@@ -11,19 +11,23 @@ Rectangle {
     readonly property bool isPlaying: player?.isPlaying ?? false
 
     Layout.fillWidth: true
-    implicitHeight: 88
+    implicitHeight: 84
     radius: Services.Theme.radiusLg
     color: Services.Theme.surfaceVariant
+    border.color: isPlaying ? Services.Theme.borderHighlight : "transparent"
+    border.width: isPlaying ? 1 : 0
     clip: true
+
+    Behavior on border.color { ColorAnimation { duration: 150 } }
 
     RowLayout {
         anchors.fill: parent
         anchors.margins: 12
-        spacing: 10
+        spacing: 12
 
-        // Artwork / avatar
+        // Artwork / avatar container
         Rectangle {
-            width: 56; height: 56
+            width: 60; height: 60
             radius: Services.Theme.radiusMd
             color: Services.Theme.surface
             antialiasing: true
@@ -33,8 +37,9 @@ Rectangle {
             Text {
                 anchors.centerIn: parent
                 text: card.hasPlayer
-                    ? (card.player?.trackArtist ?? card.player?.trackTitle ?? "\u266a").charAt(0).toUpperCase()
-                    : "\u266a"
+                    ? (card.player?.trackArtist ?? card.player?.trackTitle ?? "\uf001").charAt(0).toUpperCase()
+                    : "\uf001"
+                font.family: "Symbols Nerd Font Mono"
                 color: Services.Theme.textDisabled
                 font.pixelSize: 20
                 font.bold: true
@@ -80,7 +85,7 @@ Rectangle {
             spacing: 2
 
             Text {
-                text: card.hasPlayer ? (card.player?.trackTitle || "\u2014") : "Nothing Playing"
+                text: card.hasPlayer ? (card.player?.trackTitle || "Playing Media") : "No Active Media"
                 color: card.hasPlayer ? Services.Theme.textPrimary : Services.Theme.textDisabled
                 font.pixelSize: 12
                 font.bold: true
@@ -88,17 +93,16 @@ Rectangle {
                 Layout.fillWidth: true
             }
             Text {
-                text: card.hasPlayer ? (card.player?.trackArtist || "") : "No media session"
+                text: card.hasPlayer ? (card.player?.trackArtist || (card.player?.identity || "Unknown")) : "Idle player session"
                 color: Services.Theme.textSecondary
                 font.pixelSize: 10
                 elide: Text.ElideRight
                 Layout.fillWidth: true
-                visible: card.hasPlayer ? text.length > 0 : true
             }
 
             RowLayout {
-                spacing: 4
-                Layout.topMargin: 2
+                spacing: 6
+                Layout.topMargin: 4
                 visible: card.hasPlayer
 
                 Rectangle {

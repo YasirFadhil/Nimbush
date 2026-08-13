@@ -17,7 +17,7 @@ Rectangle {
         spacing: 6
 
         Text {
-            text: "󰘚"
+            text: Services.Icons.cpu
             font.family: "Liga SFMono Nerd Font"
             font.pixelSize: 13
             color: Services.Theme.textPrimary
