@@ -487,7 +487,7 @@ Item {
     property int collapsedHeight: 32
 
     readonly property int calculatedExpandedWidth: {
-        if (Services.OverlayManager.isLocked && lockPulse) return 180
+        if (Services.OverlayManager.isLocked && root.expanded) return 180
         if (notifActive) return replyMode ? 390 : 360
         if (sysHudActive) return 280
         if (isMediaPeek) return 280
@@ -496,7 +496,7 @@ Item {
     }
 
     readonly property int calculatedExpandedHeight: {
-        if (Services.OverlayManager.isLocked && lockPulse) return 44
+        if (Services.OverlayManager.isLocked && root.expanded) return 44
         if (notifActive) {
             if (replyMode) return 146
             let h = 72
@@ -647,6 +647,31 @@ Item {
             onClicked: root.togglePin()
         }
 
+        // Dedicated Centered Locked State View (Visible ONLY when expanded)
+        RowLayout {
+            id: lockedCenteredRow
+            anchors.centerIn: parent
+            spacing: 6
+            z: 10
+            visible: Services.OverlayManager.isLocked && root.expanded && !root.notifActive && !root.sysHudActive
+
+            Text {
+                text: "󰌾"
+                font.family: "Liga SFMono Nerd Font"
+                font.pixelSize: 13
+                color: Services.Theme.accent
+                Layout.alignment: Qt.AlignVCenter
+            }
+
+            Text {
+                text: "Locked"
+                font.pixelSize: 11
+                font.bold: true
+                color: Services.Theme.textPrimary
+                Layout.alignment: Qt.AlignVCenter
+            }
+        }
+
         // ==================== Camera Privacy Indicator (Right Edge) ====================
         Item {
             id: cameraIndicator
@@ -686,7 +711,7 @@ Item {
             implicitHeight: 16
             z: 3
 
-            readonly property bool activeState: !root.expanded || (Services.OverlayManager.isLocked && root.lockPulse)
+            readonly property bool activeState: !root.expanded
             visible: activeState || opacity > 0.01
             opacity: activeState ? 1 : 0
             scale: activeState ? 1.0 : 0.2
@@ -830,7 +855,7 @@ Item {
             z: 3
 
             readonly property bool showCollapsedText: !Services.OverlayManager.isLocked && (root.notifActive || root.mediaPlaying)
-            readonly property bool activeState: !root.expanded && (showCollapsedText || (Services.OverlayManager.isLocked && root.lockPulse))
+            readonly property bool activeState: !Services.OverlayManager.isLocked && !root.expanded && showCollapsedText
 
             clip: true
             opacity: activeState ? 1 : 0
@@ -840,7 +865,7 @@ Item {
 
             Text {
                 id: collapsedText
-                text: Services.OverlayManager.isLocked && root.lockPulse ? "Locked" : (root.notifActive ? ("Notif (" + root.notifCount + ")") : (root.mediaPlaying ? root.currentMediaText : root.lastTrackText))
+                text: Services.OverlayManager.isLocked ? "Locked" : (root.notifActive ? ("Notif (" + root.notifCount + ")") : (root.mediaPlaying ? root.currentMediaText : root.lastTrackText))
                 font.pixelSize: 11
                 font.bold: true
                 color: Services.Theme.textPrimary

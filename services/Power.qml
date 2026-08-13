@@ -10,6 +10,7 @@ Singleton {
     property bool ready: false
     property bool charging: isChargingState(UPower.displayDevice.state)
     property real percentage: UPower.displayDevice.percentage
+    readonly property bool isWarning: !charging && ready && !isNaN(percentage) && (percentage * 100 <= 15)
     readonly property bool isLow: !charging && ready && !isNaN(percentage) && (percentage * 100 <= 10)
 
     property bool warn20Sent: false
@@ -94,7 +95,12 @@ Singleton {
     Component.onCompleted: {
         Qt.callLater(() => {
             root.ready = true
-            root.checkBatteryWarnings()
+            if (!isNaN(root.percentage)) {
+                const initialPct = Math.round(root.percentage * 100)
+                if (initialPct <= 20) root.warn20Sent = true
+                if (initialPct <= 10) root.warn10Sent = true
+                if (initialPct <= 5)  root.warn5Sent = true
+            }
         })
     }
 }

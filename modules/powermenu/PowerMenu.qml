@@ -260,7 +260,7 @@ PanelWindow {
                                 text: Services.Icons.powerIcon(Services.Power.charging, Services.Power.percentage * 100) + " " + Math.round(Services.Power.percentage * 100) + "%"
                                 font.family: "Symbols Nerd Font Mono"
                                 font.pixelSize: 11
-                                color: Services.Power.isLow ? "#ff4444" : Services.Theme.textSecondary
+                                color: Services.Power.isLow ? "#ff4444" : (Services.Power.isWarning ? "#e06c75" : Services.Theme.textSecondary)
                             }
                         }
                     }

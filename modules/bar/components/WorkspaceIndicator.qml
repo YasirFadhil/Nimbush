@@ -39,8 +39,15 @@ RowLayout {
 
                 MouseArea {
                     anchors.fill: parent
+                    acceptedButtons: Qt.LeftButton | Qt.RightButton
                     cursorShape: Qt.PointingHandCursor
-                    onClicked: Services.OverlayManager.launcherToggleRequested()
+                    onClicked: (mouse) => {
+                        if (mouse.button === Qt.LeftButton) {
+                            Services.OverlayManager.dashboardToggleRequested()
+                        } else if (mouse.button === Qt.RightButton) {
+                            Services.OverlayManager.launcherToggleRequested()
+                        }
+                    }
                 }
             }
 

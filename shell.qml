@@ -13,6 +13,7 @@ import "modules/bar" as Bar
 import "modules/controlcenter" as ControlCenter
 import "modules/calendar" as CalendarModule
 import "modules/lockscreen" as LockscreenModule
+import "modules/dashboard" as DashboardModule
 
 ShellRoot {
     // Notif.Popup {} // dimatiin — notif sekarang lewat DynamicIsland
@@ -20,6 +21,7 @@ ShellRoot {
     Notif.Center {}
     // Osd.PowerOsd {} // dimatiin — status charging sekarang lewat DynamicIsland
     Launcher.Launcher  { id: launcherWindow }
+    DashboardModule.Dashboard { id: dashboardWindow }
     Clipboard.ClipboardHistory { id: clipboardWindow }
     PowerMenu.PowerMenu { id: powerMenu }
     Bar.Bar {}
@@ -31,6 +33,7 @@ ShellRoot {
     Connections {
         target: Services.OverlayManager
         function onLauncherToggleRequested() { launcherWindow.toggle() }
+        function onDashboardToggleRequested() { dashboardWindow.toggle() }
     }
 
     // ── Notification center (history panel) ──────────────────────────────────
@@ -47,6 +50,14 @@ ShellRoot {
         function toggle() { controlCenter.toggle() }
         function show()   { controlCenter.show() }
         function hide()   { controlCenter.hide() }
+    }
+
+    // ── Dashboard ────────────────────────────────────────────────────────────
+    IpcHandler {
+        target: "dashboard"
+        function toggle(): void { if (!Services.OverlayManager.isLocked) dashboardWindow.toggle() }
+        function show():   void { if (!Services.OverlayManager.isLocked) dashboardWindow.show() }
+        function hide():   void { dashboardWindow.hide() }
     }
 
     // ── Launcher ─────────────────────────────────────────────────────────────

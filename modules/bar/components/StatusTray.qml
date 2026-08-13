@@ -65,29 +65,9 @@ RowLayout {
         implicitHeight: 28
         implicitWidth: batLayout.implicitWidth + 20
         radius: 14
-        color: Services.Power.isLow ? "#2d1616" : Services.Theme.surface
-        border.color: Services.Power.isLow ? "#ff4444" : Services.Theme.border
+        color: Services.Theme.surface
+        border.color: Services.Theme.border
         border.width: 1
-
-        Behavior on color { ColorAnimation { duration: 250 } }
-        Behavior on border.color { ColorAnimation { duration: 250 } }
-
-        SequentialAnimation {
-            id: blinkAnim
-            running: Services.Power.isLow
-            loops: Animation.Infinite
-            NumberAnimation { target: batPill; property: "opacity"; to: 0.25; duration: 500; easing.type: Easing.InOutQuad }
-            NumberAnimation { target: batPill; property: "opacity"; to: 1.0; duration: 500; easing.type: Easing.InOutQuad }
-        }
-
-        Connections {
-            target: Services.Power
-            function onIsLowChanged() {
-                if (!Services.Power.isLow) {
-                    batPill.opacity = 1.0
-                }
-            }
-        }
 
         RowLayout {
             id: batLayout
@@ -95,17 +75,35 @@ RowLayout {
             spacing: 6
 
             Text {
+                id: batIconText
                 text: Services.Icons.powerIcon(Services.Power.charging, Services.Power.percentage * 100)
                 font.family: "Liga SFMono Nerd Font"
                 font.pixelSize: 13
-                color: Services.Power.isLow ? "#ff4444" : (Services.PowerProfile.saverEnabled ? "#ff9800" : Services.Theme.textPrimary)
+                color: Services.Power.isLow ? "#ff4444" : (Services.Power.isWarning ? "#e06c75" : (Services.PowerProfile.saverEnabled ? "#ff9800" : Services.Theme.textPrimary))
                 Behavior on color { ColorAnimation { duration: 250 } }
+
+                SequentialAnimation {
+                    id: blinkAnim
+                    running: Services.Power.isLow
+                    loops: Animation.Infinite
+                    NumberAnimation { target: batIconText; property: "opacity"; to: 0.2; duration: 500; easing.type: Easing.InOutQuad }
+                    NumberAnimation { target: batIconText; property: "opacity"; to: 1.0; duration: 500; easing.type: Easing.InOutQuad }
+                }
+
+                Connections {
+                    target: Services.Power
+                    function onIsLowChanged() {
+                        if (!Services.Power.isLow) {
+                            batIconText.opacity = 1.0
+                        }
+                    }
+                }
             }
             Text {
                 text: Math.round(Services.Power.percentage * 100) + "%"
                 font.family: "Liga SFMono Nerd Font"
                 font.pixelSize: 11
-                color: Services.Power.isLow ? "#ff4444" : (Services.PowerProfile.saverEnabled ? "#ff9800" : Services.Theme.textSecondary)
+                color: Services.Power.isLow ? "#ff4444" : (Services.Power.isWarning ? "#e06c75" : (Services.PowerProfile.saverEnabled ? "#ff9800" : Services.Theme.textSecondary))
                 Behavior on color { ColorAnimation { duration: 250 } }
             }
         }

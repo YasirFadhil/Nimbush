@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Layouts
+import QtQuick.Effects
 import Quickshell
 import Quickshell.Io
 import Quickshell.Wayland
@@ -237,14 +238,14 @@ PanelWindow {
                         text: Services.Icons.powerIcon(Services.Power.charging, Math.round((Services.Power.percentage || 0) * 100))
                         font.family: "Symbols Nerd Font Mono"
                         font.pixelSize: 11
-                        color: Services.Power.charging ? Services.Theme.success : (Services.Power.isLow ? "#ff4444" : Services.Theme.textPrimary)
+                        color: Services.Power.charging ? Services.Theme.success : (Services.Power.isLow ? "#ff4444" : (Services.Power.isWarning ? "#e06c75" : Services.Theme.textPrimary))
                     }
 
                     Text {
                         text: Math.round((Services.Power.percentage || 0) * 100) + "%"
                         font.pixelSize: 11
                         font.bold: true
-                        color: Services.Power.isLow ? "#ff4444" : Services.Theme.textPrimary
+                        color: Services.Power.isLow ? "#ff4444" : (Services.Power.isWarning ? "#e06c75" : Services.Theme.textPrimary)
                     }
                 }
 
@@ -341,24 +342,52 @@ PanelWindow {
                 spacing: 16
                 Behavior on anchors.bottomMargin { NumberAnimation { duration: 420; easing.type: Easing.OutCubic } }
 
-                // Circular User Picture Avatar (Using .face image with fallback)
+                // Rounded User Picture Avatar (Using .face image with MultiEffect mask)
                 Rectangle {
                     Layout.alignment: Qt.AlignHCenter
-                    width: 84; height: 84; radius: 42
+                    width: 84; height: 84; radius: 22
                     color: Services.Theme.surfaceVariant
                     border.color: pwTextInput.activeFocus ? Services.Theme.accent : Services.Theme.borderHighlight
                     border.width: 2
-                    clip: true
+                    antialiasing: true
+                    smooth: true
                     Behavior on border.color { ColorAnimation { duration: 150 } }
 
                     Image {
                         id: userAvatarImg
                         anchors.fill: parent
-                        source: "file:///home/" + (root.username || "yasirfadhil") + "/.face"
+                        anchors.margins: 2
+                        source: Services.OsInfo.avatarPath.length > 0 ? Services.OsInfo.avatarPath : ("file:///home/" + (root.username || "yasirfadhil") + "/.face")
                         fillMode: Image.PreserveAspectCrop
                         asynchronous: true
                         smooth: true
-                        visible: status === Image.Ready
+                        mipmap: true
+                        antialiasing: true
+                        visible: false
+                    }
+
+                    MultiEffect {
+                        anchors.fill: userAvatarImg
+                        source: userAvatarImg
+                        maskEnabled: true
+                        maskSource: avatarMask
+                        visible: userAvatarImg.status === Image.Ready
+                    }
+
+                    Item {
+                        id: avatarMask
+                        anchors.fill: userAvatarImg
+                        visible: false
+                        layer.enabled: true
+                        layer.smooth: true
+                        layer.samples: 8
+                        Rectangle {
+                            anchors.fill: parent
+                            radius: 20
+                            color: "black"
+                            antialiasing: true
+                            smooth: true
+                        }
                     }
 
                     Text {
@@ -367,8 +396,20 @@ PanelWindow {
                         font.family: "Symbols Nerd Font Mono"
                         font.pixelSize: 34
                         color: Services.Theme.textPrimary
-                        visible: !userAvatarImg.visible
+                        visible: userAvatarImg.status !== Image.Ready
                     }
+                }
+
+                // Username Label
+                Text {
+                    Layout.alignment: Qt.AlignHCenter
+                    text: Services.OsInfo.username.length > 0 ? Services.OsInfo.username : root.username
+                    color: Services.Theme.textPrimary
+                    font.pixelSize: 17
+                    font.weight: Font.Bold
+                    font.letterSpacing: 0.3
+                    style: Text.Outline
+                    styleColor: "#40000000"
                 }
 
                 // Translucent Password Input Pill

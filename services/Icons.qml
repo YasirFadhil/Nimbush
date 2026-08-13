@@ -44,4 +44,17 @@ Singleton {
         if (p >= 10) return "\uf243"
         return "\uf244"
     }
+
+    // Dashboard & System icons
+    readonly property string cpu:    "\u{f0140}"
+    readonly property string ram:    "\u{f061a}"
+    readonly property string disk:   "\uf0a0"
+    readonly property string temp:   "\uf2c9"
+    readonly property string kernel: "\uf17c"
+    readonly property string uptime: "\uf017"
+    readonly property string shell:  "\uf120"
+    readonly property string lock:   "\uf023"
+    readonly property string power:  "\uf011"
+    readonly property string close:  "\uf00d"
+    readonly property string dash:   "\uf0e4"
 }

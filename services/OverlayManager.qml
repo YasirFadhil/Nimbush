@@ -13,6 +13,7 @@ Singleton {
     property bool calendarVisible: false
 
     signal launcherToggleRequested()
+    signal dashboardToggleRequested()
 
     function register(win) {
         _windows.push(win)

@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Layouts
+import QtQuick.Effects
 import Quickshell.Services.Mpris
 import "../../services" as Services
 
@@ -25,7 +26,8 @@ Rectangle {
             width: 56; height: 56
             radius: Services.Theme.radiusMd
             color: Services.Theme.surface
-            clip: true
+            antialiasing: true
+            smooth: true
             Layout.alignment: Qt.AlignVCenter
 
             Text {
@@ -43,7 +45,32 @@ Rectangle {
                 anchors.fill: parent
                 source: card.hasPlayer ? (card.player?.trackArtUrl ?? "") : ""
                 fillMode: Image.PreserveAspectCrop
-                visible: status === Image.Ready
+                smooth: true
+                mipmap: true
+                antialiasing: true
+                visible: false
+            }
+            MultiEffect {
+                anchors.fill: artImg
+                source: artImg
+                maskEnabled: true
+                maskSource: artMask
+                visible: card.hasPlayer && artImg.status === Image.Ready
+            }
+            Item {
+                id: artMask
+                anchors.fill: artImg
+                visible: false
+                layer.enabled: true
+                layer.smooth: true
+                layer.samples: 8
+                Rectangle {
+                    anchors.fill: parent
+                    radius: Services.Theme.radiusMd
+                    color: "black"
+                    antialiasing: true
+                    smooth: true
+                }
             }
         }
 

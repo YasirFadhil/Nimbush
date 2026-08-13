@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Layouts
+import QtQuick.Effects
 import Quickshell.Services.Mpris
 import "../../services" as Services
 
@@ -62,7 +63,8 @@ Item {
                     Behavior on height { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
                     radius: card.t.radiusSm
                     color: card.t.surfaceVariant
-                    clip: true
+                    antialiasing: true
+                    smooth: true
                     Layout.alignment: Qt.AlignVCenter
 
                     Text {
@@ -78,7 +80,32 @@ Item {
                         anchors.fill: parent
                         source: card.player?.trackArtUrl ?? ""
                         fillMode: Image.PreserveAspectCrop
-                        visible: status === Image.Ready
+                        smooth: true
+                        mipmap: true
+                        antialiasing: true
+                        visible: false
+                    }
+                    MultiEffect {
+                        anchors.fill: artImg
+                        source: artImg
+                        maskEnabled: true
+                        maskSource: npArtMask
+                        visible: artImg.status === Image.Ready
+                    }
+                    Item {
+                        id: npArtMask
+                        anchors.fill: artImg
+                        visible: false
+                        layer.enabled: true
+                        layer.smooth: true
+                        layer.samples: 8
+                        Rectangle {
+                            anchors.fill: parent
+                            radius: card.t.radiusSm
+                            color: "black"
+                            antialiasing: true
+                            smooth: true
+                        }
                     }
                 }
 
