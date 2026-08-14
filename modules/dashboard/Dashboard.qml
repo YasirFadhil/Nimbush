@@ -90,7 +90,7 @@ PanelWindow {
                 property string valueText: ""
                 property real progress: 0.0
                 property bool critical: false
-                property string iconFont: "Symbols Nerd Font Mono"
+                property string iconFont: Services.Theme.fontSymbols
 
                 Layout.fillWidth: true
                 implicitHeight: 58
@@ -222,7 +222,7 @@ PanelWindow {
                             anchors.centerIn: parent
                             visible: avatarImg.status !== Image.Ready
                             text: Services.OsInfo.logoGlyph !== "" ? Services.OsInfo.logoGlyph : "\uf007"
-                            font.family: "Symbols Nerd Font Mono"
+                            font.family: Services.Theme.fontSymbols
                             font.pixelSize: 20
                             color: Services.Theme.accent
                         }
@@ -277,7 +277,7 @@ PanelWindow {
                         Text {
                             anchors.centerIn: parent
                             text: Services.Icons.close
-                            font.family: "Symbols Nerd Font Mono"
+                            font.family: Services.Theme.fontSymbols
                             font.pixelSize: 11
                             color: closeMouse.containsMouse ? Services.Theme.textPrimary : Services.Theme.textDisabled
                             Behavior on color { ColorAnimation { duration: 100 } }
@@ -347,7 +347,7 @@ PanelWindow {
 
                         MetricCard {
                             iconGlyph: Services.Icons.ram
-                            iconFont: "Liga SFMono Nerd Font"
+                            iconFont: Services.Theme.fontMono
                             label: "RAM"
                             valueText: Services.Sysmon.ramUsedStr.length > 0
                                        ? Services.Sysmon.ramUsedStr + "/" + Services.Sysmon.ramTotalStr
@@ -402,7 +402,7 @@ PanelWindow {
                             spacing: 6
                             Text {
                                 text: Services.Icons.kernel
-                                font.family: "Symbols Nerd Font Mono"
+                                font.family: Services.Theme.fontSymbols
                                 font.pixelSize: 11
                                 color: Services.Theme.accent
                             }
@@ -426,7 +426,7 @@ PanelWindow {
                             spacing: 6
                             Text {
                                 text: Services.Icons.uptime
-                                font.family: "Symbols Nerd Font Mono"
+                                font.family: Services.Theme.fontSymbols
                                 font.pixelSize: 11
                                 color: Services.Theme.accent
                             }
@@ -450,7 +450,7 @@ PanelWindow {
                             spacing: 6
                             Text {
                                 text: Services.Icons.shell
-                                font.family: "Symbols Nerd Font Mono"
+                                font.family: Services.Theme.fontSymbols
                                 font.pixelSize: 11
                                 color: Services.Theme.accent
                             }
@@ -475,7 +475,7 @@ PanelWindow {
                             spacing: 6
                             Text {
                                 text: Services.Icons.powerIcon(Services.Power.charging, Services.Power.percentage * 100)
-                                font.family: "Symbols Nerd Font Mono"
+                                font.family: Services.Theme.fontSymbols
                                 font.pixelSize: 11
                                 color: Services.Power.charging ? Services.Theme.success : (Services.Power.isLow ? Services.Theme.danger : Services.Theme.accent)
                                 Behavior on color { ColorAnimation { duration: 250 } }
@@ -518,7 +518,7 @@ PanelWindow {
 
                             Text {
                                 text: Services.Icons.lock
-                                font.family: "Symbols Nerd Font Mono"
+                                font.family: Services.Theme.fontSymbols
                                 font.pixelSize: 13
                                 color: lockMouse.containsMouse ? Services.Theme.textPrimary : Services.Theme.textSecondary
                                 Behavior on color { ColorAnimation { duration: 120 } }
@@ -561,7 +561,7 @@ PanelWindow {
 
                             Text {
                                 text: Services.Icons.power
-                                font.family: "Symbols Nerd Font Mono"
+                                font.family: Services.Theme.fontSymbols
                                 font.pixelSize: 13
                                 color: Services.Theme.danger
                             }

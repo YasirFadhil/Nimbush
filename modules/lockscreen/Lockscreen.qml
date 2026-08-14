@@ -236,7 +236,7 @@ PanelWindow {
 
                     Text {
                         text: Services.Icons.powerIcon(Services.Power.charging, Math.round((Services.Power.percentage || 0) * 100))
-                        font.family: "Symbols Nerd Font Mono"
+                        font.family: Services.Theme.fontSymbols
                         font.pixelSize: 11
                         color: Services.Power.charging ? Services.Theme.success : (Services.Power.isLow ? "#ff4444" : (Services.Power.isWarning ? "#e06c75" : Services.Theme.textPrimary))
                     }
@@ -258,8 +258,8 @@ PanelWindow {
 
                 // Control Center Toggle Icon
                 Text {
-                    text: "\uf1de"
-                    font.family: "Symbols Nerd Font Mono"
+                    text: Services.Icons.sliders
+                    font.family: Services.Theme.fontSymbols
                     font.pixelSize: 12
                     color: Services.OverlayManager.controlCenterVisible ? Services.Theme.accent : Services.Theme.textPrimary
                 }
@@ -325,7 +325,7 @@ PanelWindow {
                 Text {
                     Layout.alignment: Qt.AlignHCenter
                     text: root.timeStr
-                    color: "#ffffff"
+                    color: Services.Theme.white
                     font.pixelSize: 96
                     font.weight: Font.Bold
                     font.family: "SF Pro Display, Inter, Sans-Serif"
@@ -392,8 +392,8 @@ PanelWindow {
 
                     Text {
                         anchors.centerIn: parent
-                        text: "\uf007"
-                        font.family: "Symbols Nerd Font Mono"
+                        text: Services.Icons.user
+                        font.family: Services.Theme.fontSymbols
                         font.pixelSize: 34
                         color: Services.Theme.textPrimary
                         visible: userAvatarImg.status !== Image.Ready
@@ -463,8 +463,8 @@ PanelWindow {
 
                             Text {
                                 anchors.centerIn: parent
-                                text: root.showPassword ? "\uf06e" : "\uf070"
-                                font.family: "Symbols Nerd Font Mono"
+                                text: root.showPassword ? Services.Icons.eyeOpen : Services.Icons.eyeClosed
+                                font.family: Services.Theme.fontSymbols
                                 font.pixelSize: 11
                                 color: Services.Theme.textSecondary
                             }
@@ -481,13 +481,13 @@ PanelWindow {
                         // Submit Button
                         Rectangle {
                             width: 28; height: 28; radius: 14
-                            color: submitMouse.containsMouse ? "#ffffff" : (root.passwordInput.length > 0 ? Services.Theme.accent : Services.Theme.surfaceVariant)
+                            color: submitMouse.containsMouse ? Services.Theme.white : (root.passwordInput.length > 0 ? Services.Theme.accent : Services.Theme.surfaceVariant)
                             Behavior on color { ColorAnimation { duration: 100 } }
 
                             Text {
                                 anchors.centerIn: parent
-                                text: "\uf061"
-                                font.family: "Symbols Nerd Font Mono"
+                                text: Services.Icons.arrowRight
+                                font.family: Services.Theme.fontSymbols
                                 font.pixelSize: 11
                                 color: root.passwordInput.length > 0 ? "#000000" : Services.Theme.textDisabled
                             }
@@ -543,8 +543,8 @@ PanelWindow {
                                 spacing: 8
 
                                 Text {
-                                    text: "\uf0a2"
-                                    font.family: "Symbols Nerd Font Mono"
+                                    text: Services.Icons.bell
+                                    font.family: Services.Theme.fontSymbols
                                     font.pixelSize: 11
                                     color: Services.Theme.accent
                                 }
@@ -601,8 +601,8 @@ PanelWindow {
                     spacing: 6
 
                     Text {
-                        text: "\u266a"
-                        font.family: "Symbols Nerd Font Mono"
+                        text: Services.Icons.musicNote
+                        font.family: Services.Theme.fontSymbols
                         font.pixelSize: 11
                         color: Services.Theme.accent
                     }
@@ -623,8 +623,8 @@ PanelWindow {
 
                         Text {
                             anchors.centerIn: parent
-                            text: root.isPlaying ? "\uf04c" : "\uf04b"
-                            font.family: "Symbols Nerd Font Mono"
+                            text: Services.Icons.mediaPlayPause(root.isPlaying)
+                            font.family: Services.Theme.fontSymbols
                             font.pixelSize: 9
                             color: smallPlayMouse.containsMouse ? "#000000" : Services.Theme.textPrimary
                         }

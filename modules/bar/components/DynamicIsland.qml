@@ -122,6 +122,48 @@ Item {
         }
     }
 
+    // ── USB Plug/Unplug Sound Feedback ───────────────────────────────────────
+    // Monitor udev USB events and play freedesktop device-added/removed sounds.
+    // Filter to UDEV (processed) events only on usb_device (not hub ports).
+    property bool usbSoundReady: false
+    property string lastUsbAction: ""
+    Timer {
+        id: usbSoundThrottle
+        interval: 800   // debounce — USB enumeration fires many events at once
+        repeat: false
+        onTriggered: {
+            if (root.lastUsbAction === "add")
+                Services.SoundFeedback.playDeviceAdded()
+            else if (root.lastUsbAction === "remove")
+                Services.SoundFeedback.playDeviceRemoved()
+            root.lastUsbAction = ""
+        }
+    }
+
+    Process {
+        id: usbMonitorProc
+        // udevadm --property emits blocks like:
+        //   UDEV  [...]
+        //   ACTION=add
+        //   DEVTYPE=usb_device
+        // We grab ACTION= lines and DEVTYPE= lines, filter only usb_device actions.
+        command: ["sh", "-c",
+            "udevadm monitor --udev --subsystem-match=usb --property 2>/dev/null" +
+            " | stdbuf -oL awk '/^ACTION=/{act=$0} /^DEVTYPE=usb_device/{print act}'" +
+            " | stdbuf -oL sed 's/ACTION=//'"]
+        running: true
+        stdout: SplitParser {
+            onRead: data => {
+                if (!root.hudReady) return
+                const action = data.trim()
+                if (action === "add" || action === "remove") {
+                    root.lastUsbAction = action
+                    usbSoundThrottle.restart()
+                }
+            }
+        }
+    }
+
     onCameraActiveChanged: {
         if (cameraActive && hudReady && root.notifCount === 0) {
             root.showSysHud("󰄀", "Camera Active", "Webcam in use", Services.Theme.success)
@@ -133,7 +175,7 @@ Item {
         const icon = "󰘶"
         const title = capsLockActive ? "Caps Lock On" : "Caps Lock Off"
         const detail = capsLockActive ? "Uppercase enabled" : "Standard lowercase"
-        root.showSysHud(icon, title, detail, capsLockActive ? "#ffcc00" : Services.Theme.danger)
+        root.showSysHud(icon, title, detail, capsLockActive ? Services.Theme.alertYellow : Services.Theme.danger)
     }
 
     function showSysHud(icon, title, detail, iconColor, customDuration) {
@@ -154,7 +196,7 @@ Item {
 
     Timer {
         id: hudInitTimer
-        interval: 2000
+        interval: 800
         running: true
         repeat: false
         onTriggered: {
@@ -195,7 +237,7 @@ Item {
             root.lastAudioMuted = isMuted
 
             const vol = Services.Audio.volume || 0
-            const icon = Services.Icons.volumeIcon(vol, isMuted)
+            const icon = Services.Icons.volumeIcon(vol, isMuted, Services.Audio.isHeadphone, Services.Audio.isTws)
             const title = isMuted ? "Audio Muted" : "Audio Unmuted"
             const detail = Math.round(vol * 100) + "%"
             root.showSysHud(icon, title, detail, isMuted ? Services.Theme.danger : Services.Theme.success)
@@ -232,6 +274,9 @@ Item {
             const title = isCharging ? "Charging" : "Discharging"
             const detail = pct + "%"
             root.showSysHud(icon, title, detail, isCharging ? Services.Theme.success : Services.Theme.accent)
+            // Sound feedback for charge/discharge
+            if (isCharging) Services.SoundFeedback.playPowerPlug()
+            else Services.SoundFeedback.playPowerUnplug()
         }
 
         function onBatteryWarning(level, title, message) {
@@ -247,7 +292,7 @@ Item {
         function onSaverEnabledChanged() {
             if (!root.hudReady) return
             const isSaver = Services.PowerProfile.saverEnabled
-            const icon = "\uf06c"
+            const icon = Services.Icons.tree
             const title = isSaver ? "Power Saver On" : "Power Saver Off"
             const detail = isSaver ? "Battery saver active" : "Standard performance"
             root.showSysHud(icon, title, detail, isSaver ? "#ff9800" : Services.Theme.accent)
@@ -629,14 +674,14 @@ Item {
         width: root.expanded ? root.calculatedExpandedWidth : root.calculatedCollapsedWidth
         height: root.expanded ? root.calculatedExpandedHeight : root.collapsedHeight
         radius: root.expanded ? Services.Theme.radiusLg : (height / 2)
-        color: "#0c0c0c"
-        border.color: root.isCritical ? Services.Theme.danger : (root.expanded ? Services.Theme.borderHighlight : "#222222")
+        color: Services.Theme.bgPure
+        border.color: root.isCritical ? Services.Theme.danger : (root.expanded ? Services.Theme.borderHighlight : Services.Theme.borderSubtle)
         border.width: root.isCritical ? 1.5 : 1
 
-        Behavior on width  { NumberAnimation { duration: 650; easing.type: Easing.OutExpo } }
-        Behavior on height { NumberAnimation { duration: 650; easing.type: Easing.OutExpo } }
-        Behavior on radius { NumberAnimation { duration: 650; easing.type: Easing.OutExpo } }
-        Behavior on border.color { ColorAnimation { duration: 350 } }
+        Behavior on width  { NumberAnimation { duration: 380; easing.type: Easing.OutExpo } }
+        Behavior on height { NumberAnimation { duration: 380; easing.type: Easing.OutExpo } }
+        Behavior on radius { NumberAnimation { duration: 380; easing.type: Easing.OutExpo } }
+        Behavior on border.color { ColorAnimation { duration: 200 } }
 
         MouseArea {
             id: islandMouseArea
@@ -657,7 +702,7 @@ Item {
 
             Text {
                 text: "󰌾"
-                font.family: "Liga SFMono Nerd Font"
+                font.family: Services.Theme.fontMono
                 font.pixelSize: 13
                 color: Services.Theme.accent
                 Layout.alignment: Qt.AlignVCenter
@@ -778,13 +823,13 @@ Item {
             transitions: [
                 Transition {
                     from: "ICON_LEFT"; to: "IDLE_CENTER"
-                    AnchorAnimation { duration: 650; easing.type: Easing.OutBack; easing.overshoot: 1.4 }
-                    NumberAnimation { properties: "anchors.leftMargin"; duration: 650; easing.type: Easing.OutBack; easing.overshoot: 1.4 }
+                    AnchorAnimation { duration: 320; easing.type: Easing.OutBack; easing.overshoot: 1.4 }
+                    NumberAnimation { properties: "anchors.leftMargin"; duration: 320; easing.type: Easing.OutBack; easing.overshoot: 1.4 }
                 },
                 Transition {
-                    AnchorAnimation { duration: 650; easing.type: Easing.OutExpo }
-                    NumberAnimation { properties: "anchors.rightMargin"; duration: 650; easing.type: Easing.OutExpo }
-                    NumberAnimation { properties: "anchors.leftMargin"; duration: 650; easing.type: Easing.OutExpo }
+                    AnchorAnimation { duration: 320; easing.type: Easing.OutExpo }
+                    NumberAnimation { properties: "anchors.rightMargin"; duration: 320; easing.type: Easing.OutExpo }
+                    NumberAnimation { properties: "anchors.leftMargin"; duration: 320; easing.type: Easing.OutExpo }
                 }
             ]
 
@@ -797,7 +842,7 @@ Item {
                     if (root.mediaPlaying || (root.mediaStopping && !root.mediaTextCollapsed)) return "󰎈"
                     return "●"
                 }
-                font.family: "Liga SFMono Nerd Font"
+                font.family: Services.Theme.fontMono
                 font.pixelSize: 13
                 color: {
                     if (Services.OverlayManager.isLocked) return Services.Theme.accent
@@ -945,7 +990,7 @@ Item {
                     Text {
                         anchors.centerIn: parent
                         text: "󰂚"
-                        font.family: "Liga SFMono Nerd Font"
+                        font.family: Services.Theme.fontMono
                         font.pixelSize: 14
                         color: Services.Theme.accent
                         visible: !appIconImg.visible
@@ -1213,8 +1258,8 @@ Item {
                             id: sendTxt
                             anchors.centerIn: parent
                             text: "Kirim 󰏲"
-                            font.family: "Liga SFMono Nerd Font"
-                            color: "#0a0a0a"
+                            font.family: Services.Theme.fontMono
+                            color: Services.Theme.bgDeep
                             font.pixelSize: 10
                             font.bold: true
                         }
@@ -1263,7 +1308,7 @@ Item {
                 Text {
                     anchors.centerIn: parent
                     text: root.sysHudIcon
-                    font.family: "Symbols Nerd Font Mono"
+                    font.family: Services.Theme.fontSymbols
                     font.pixelSize: 15
                     color: root.sysHudColor
                 }
@@ -1272,7 +1317,7 @@ Item {
                 Text {
                     anchors.centerIn: parent
                     text: "✕"
-                    font.family: "Symbols Nerd Font Mono"
+                    font.family: Services.Theme.fontSymbols
                     font.pixelSize: 12
                     font.bold: true
                     color: Services.Theme.danger
@@ -1341,7 +1386,7 @@ Item {
                 Text {
                     anchors.centerIn: parent
                     text: "󰎈"
-                    font.family: "Liga SFMono Nerd Font"
+                    font.family: Services.Theme.fontMono
                     font.pixelSize: 16
                     color: Services.Theme.accent
                     visible: !peekArtImg.visible
@@ -1381,7 +1426,7 @@ Item {
                 Text {
                     anchors.centerIn: parent
                     text: "󰎈"
-                    font.family: "Liga SFMono Nerd Font"
+                    font.family: Services.Theme.fontMono
                     font.pixelSize: 14
                     color: Services.Theme.success
 
@@ -1436,7 +1481,7 @@ Item {
                     Text {
                         anchors.centerIn: parent
                         text: "󰎈"
-                        font.family: "Liga SFMono Nerd Font"
+                        font.family: Services.Theme.fontMono
                         font.pixelSize: 20
                         color: Services.Theme.accent
                         visible: !albumArtImg.visible
@@ -1566,8 +1611,8 @@ Item {
                     Rectangle { anchors.fill: parent; radius: 6; color: shArea.containsMouse ? Services.Theme.surfaceVariant : "transparent" }
                     Text {
                         anchors.centerIn: parent
-                        text: "\uf074"
-                        font.family: "Symbols Nerd Font Mono"
+                        text: Services.Icons.mediaShuffle
+                        font.family: Services.Theme.fontSymbols
                         font.pixelSize: 11
                         color: (root.activePlayer?.shuffle ?? false) ? Services.Theme.accent : Services.Theme.textSecondary
                     }
@@ -1587,8 +1632,8 @@ Item {
                     Rectangle { anchors.fill: parent; radius: 6; color: prvArea.containsMouse ? Services.Theme.surfaceVariant : "transparent" }
                     Text {
                         anchors.centerIn: parent
-                        text: "\uf04a"
-                        font.family: "Symbols Nerd Font Mono"
+                        text: Services.Icons.mediaPrev
+                        font.family: Services.Theme.fontSymbols
                         font.pixelSize: 12
                         color: Services.Theme.textPrimary
                     }
@@ -1607,10 +1652,10 @@ Item {
 
                     Text {
                         anchors.centerIn: parent
-                        text: root.mediaPlaying ? "\uf04c" : "\uf04b"
-                        font.family: "Symbols Nerd Font Mono"
+                        text: Services.Icons.mediaPlayPause(root.mediaPlaying)
+                        font.family: Services.Theme.fontSymbols
                         font.pixelSize: 12
-                        color: "#0a0a0a"
+                        color: Services.Theme.bgDeep
                     }
                     MouseArea {
                         id: playArea; anchors.fill: parent; hoverEnabled: true
@@ -1626,8 +1671,8 @@ Item {
                     Rectangle { anchors.fill: parent; radius: 6; color: nxtArea.containsMouse ? Services.Theme.surfaceVariant : "transparent" }
                     Text {
                         anchors.centerIn: parent
-                        text: "\uf04e"
-                        font.family: "Symbols Nerd Font Mono"
+                        text: Services.Icons.mediaNext
+                        font.family: Services.Theme.fontSymbols
                         font.pixelSize: 12
                         color: Services.Theme.textPrimary
                     }
@@ -1647,9 +1692,9 @@ Item {
                     Rectangle { anchors.fill: parent; radius: 6; color: rpArea.containsMouse ? Services.Theme.surfaceVariant : "transparent" }
                     Text {
                         anchors.centerIn: parent
-                        font.family: "Symbols Nerd Font Mono"
+                        font.family: Services.Theme.fontSymbols
                         font.pixelSize: 11
-                        text: (root.activePlayer?.loop ?? MprisLoopState.None) === MprisLoopState.Track ? "\uf365" : "\uf364"
+                        text: (root.activePlayer?.loop ?? MprisLoopState.None) === MprisLoopState.Track ? Services.Icons.mediaLoopOne : Services.Icons.mediaLoopAll
                         color: (root.activePlayer?.loop ?? MprisLoopState.None) !== MprisLoopState.None ? Services.Theme.accent : Services.Theme.textSecondary
                     }
                     MouseArea {
@@ -1679,8 +1724,8 @@ Item {
         implicitWidth: 32
         implicitHeight: 32
         radius: 16
-        color: "#0c0c0c"
-        border.color: "#222222"
+        color: Services.Theme.bgPure
+        border.color: Services.Theme.borderSubtle
         border.width: 1
         z: 1
         visible: root.capsLockActive || opacity > 0 || scale > 0
@@ -1696,9 +1741,9 @@ Item {
         Text {
             anchors.centerIn: parent
             text: "󰘶"
-            font.family: "Symbols Nerd Font Mono"
+            font.family: Services.Theme.fontSymbols
             font.pixelSize: 13
-            color: "#ffcc00"
+            color: Services.Theme.alertYellow
         }
     }
 

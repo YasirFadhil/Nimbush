@@ -45,15 +45,15 @@ RowLayout {
             spacing: 6
 
             Text {
-                text: Services.Icons.volumeIcon(Services.Audio.volume, Services.Audio.muted)
-                font.family: "Liga SFMono Nerd Font"
-                font.pixelSize: 13
+                text: Services.Icons.volumeIcon(Services.Audio.volume, Services.Audio.muted, Services.Audio.isHeadphone, Services.Audio.isTws)
+                font.family: Services.Theme.fontMono
+                font.pixelSize: Services.Theme.fontSizeXl
                 color: Services.Theme.textPrimary
             }
             Text {
                 text: Math.round(Services.Audio.volume * 100) + "%"
-                font.family: "Liga SFMono Nerd Font"
-                font.pixelSize: 11
+                font.family: Services.Theme.fontMono
+                font.pixelSize: Services.Theme.fontSizeMd
                 color: Services.Theme.textSecondary
             }
         }
@@ -77,8 +77,8 @@ RowLayout {
             Text {
                 id: batIconText
                 text: Services.Icons.powerIcon(Services.Power.charging, Services.Power.percentage * 100)
-                font.family: "Liga SFMono Nerd Font"
-                font.pixelSize: 13
+                font.family: Services.Theme.fontMono
+                font.pixelSize: Services.Theme.fontSizeXl
                 color: Services.Power.isLow ? "#ff4444" : (Services.Power.isWarning ? "#e06c75" : (Services.PowerProfile.saverEnabled ? "#ff9800" : Services.Theme.textPrimary))
                 Behavior on color { ColorAnimation { duration: 250 } }
 
@@ -101,8 +101,8 @@ RowLayout {
             }
             Text {
                 text: Math.round(Services.Power.percentage * 100) + "%"
-                font.family: "Liga SFMono Nerd Font"
-                font.pixelSize: 11
+                font.family: Services.Theme.fontMono
+                font.pixelSize: Services.Theme.fontSizeMd
                 color: Services.Power.isLow ? "#ff4444" : (Services.Power.isWarning ? "#e06c75" : (Services.PowerProfile.saverEnabled ? "#ff9800" : Services.Theme.textSecondary))
                 Behavior on color { ColorAnimation { duration: 250 } }
             }

@@ -19,11 +19,11 @@ PanelWindow {
     property string uptimeStr: ""
 
     readonly property var actions: [
-        { label: "Lock",      sublabel: "Lock screen",    icon: "\u{f033e}", proc: lockProc,     key: "1", danger: false, instant: true },
-        { label: "Logout",    sublabel: "Exit session",   icon: "\u{f0343}", proc: logoutProc,   key: "2", danger: false, instant: false },
-        { label: "Sleep",     sublabel: "Suspend system", icon: "\u{f04b2}", proc: sleepProc,    key: "3", danger: false, instant: true },
-        { label: "Reboot",    sublabel: "Restart PC",     icon: "\u{f0709}", proc: rebootProc,   key: "4", danger: true,  instant: false },
-        { label: "Power Off", sublabel: "Turn off PC",    icon: "\u{f0425}", proc: shutdownProc, key: "5", danger: true,  instant: false }
+        { label: "Lock",      sublabel: "Lock screen",    icon: Services.Icons.pmLock,     proc: lockProc,     key: "1", danger: false, instant: true },
+        { label: "Logout",    sublabel: "Exit session",   icon: Services.Icons.pmLogout,   proc: logoutProc,   key: "2", danger: false, instant: false },
+        { label: "Sleep",     sublabel: "Suspend system", icon: Services.Icons.pmSleep,    proc: sleepProc,    key: "3", danger: false, instant: true },
+        { label: "Reboot",    sublabel: "Restart PC",     icon: Services.Icons.pmReboot,   proc: rebootProc,   key: "4", danger: true,  instant: false },
+        { label: "Power Off", sublabel: "Turn off PC",    icon: Services.Icons.pmShutdown, proc: shutdownProc, key: "5", danger: true,  instant: false }
     ]
 
     function open() {
@@ -158,7 +158,7 @@ PanelWindow {
 
         Rectangle {
             anchors.fill: parent
-            color: "#99000000"
+            color: Services.Theme.overlayDim
             opacity: root.isOpen ? 1 : 0
             Behavior on opacity { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
         }
@@ -212,8 +212,8 @@ PanelWindow {
                         Text {
                             anchors.centerIn: parent
                             text: Services.OsInfo.logoGlyph
-                            font.family: "Symbols Nerd Font Mono"
-                            font.pixelSize: 20
+                            font.family: Services.Theme.fontSymbols
+                            font.pixelSize: Services.Theme.fontSize6xl
                             color: Services.Theme.accent
                         }
                     }
@@ -225,7 +225,7 @@ PanelWindow {
 
                         Text {
                             text: root.username !== "" ? "Goodbye, " + root.username : "Power Options"
-                            font.pixelSize: 15
+                            font.pixelSize: Services.Theme.fontSize3xl
                             font.weight: Font.Bold
                             color: Services.Theme.textPrimary
                         }
@@ -234,32 +234,32 @@ PanelWindow {
                             spacing: 6
                             Text {
                                 text: (root.username !== "" && root.hostname !== "") ? (root.username + "@" + root.hostname) : "System Controls"
-                                font.pixelSize: 11
+                                font.pixelSize: Services.Theme.fontSizeMd
                                 color: Services.Theme.textSecondary
                             }
                             Text {
                                 visible: root.uptimeStr !== ""
                                 text: "•"
-                                font.pixelSize: 11
+                                font.pixelSize: Services.Theme.fontSizeMd
                                 color: Services.Theme.textDisabled
                             }
                             Text {
                                 visible: root.uptimeStr !== ""
                                 text: "up " + root.uptimeStr
-                                font.pixelSize: 11
+                                font.pixelSize: Services.Theme.fontSizeMd
                                 color: Services.Theme.textSecondary
                             }
                             Text {
                                 visible: Services.Power.ready && !isNaN(Services.Power.percentage) && Services.Power.percentage > 0
                                 text: "•"
-                                font.pixelSize: 11
+                                font.pixelSize: Services.Theme.fontSizeMd
                                 color: Services.Theme.textDisabled
                             }
                             Text {
                                 visible: Services.Power.ready && !isNaN(Services.Power.percentage) && Services.Power.percentage > 0
                                 text: Services.Icons.powerIcon(Services.Power.charging, Services.Power.percentage * 100) + " " + Math.round(Services.Power.percentage * 100) + "%"
-                                font.family: "Symbols Nerd Font Mono"
-                                font.pixelSize: 11
+                                font.family: Services.Theme.fontSymbols
+                                font.pixelSize: Services.Theme.fontSizeMd
                                 color: Services.Power.isLow ? "#ff4444" : (Services.Power.isWarning ? "#e06c75" : Services.Theme.textSecondary)
                             }
                         }
@@ -274,9 +274,9 @@ PanelWindow {
 
                         Text {
                             anchors.centerIn: parent
-                            text: "\u{f05ad}"
-                            font.family: "Symbols Nerd Font Mono"
-                            font.pixelSize: 14
+                            text: Services.Icons.reboot
+                            font.family: Services.Theme.fontSymbols
+                            font.pixelSize: Services.Theme.fontSize2xl
                             color: Services.Theme.textSecondary
                         }
 
@@ -344,8 +344,8 @@ PanelWindow {
                             Text {
                                 anchors.centerIn: parent
                                 text: root.actions[root.pendingActionIndex >= 0 ? root.pendingActionIndex : 0].icon
-                                font.family: "Symbols Nerd Font Mono"
-                                font.pixelSize: 22
+                                font.family: Services.Theme.fontSymbols
+                                font.pixelSize: Services.Theme.fontSize7xl
                                 color: root.actions[root.pendingActionIndex >= 0 ? root.pendingActionIndex : 0].danger ? Services.Theme.danger : Services.Theme.accent
                             }
                         }
@@ -354,13 +354,13 @@ PanelWindow {
                             spacing: 2
                             Text {
                                 text: root.actions[root.pendingActionIndex >= 0 ? root.pendingActionIndex : 0].label + " System?"
-                                font.pixelSize: 16
+                                font.pixelSize: Services.Theme.fontSize4xl
                                 font.weight: Font.Bold
                                 color: Services.Theme.textPrimary
                             }
                             Text {
                                 text: "Executing automatically in " + root.countdownSeconds + " second" + (root.countdownSeconds > 1 ? "s..." : "...")
-                                font.pixelSize: 12
+                                font.pixelSize: Services.Theme.fontSizeLg
                                 color: Services.Theme.textSecondary
                             }
                         }
@@ -400,19 +400,19 @@ PanelWindow {
                                 spacing: 8
                                 Text {
                                     text: "Confirm Now"
-                                    font.pixelSize: 13
+                                    font.pixelSize: Services.Theme.fontSizeXl
                                     font.weight: Font.DemiBold
-                                    color: root.actions[root.pendingActionIndex >= 0 ? root.pendingActionIndex : 0].danger ? "#ffffff" : "#111111"
+                                    color: root.actions[root.pendingActionIndex >= 0 ? root.pendingActionIndex : 0].danger ? Services.Theme.white : Services.Theme.bgOnAccent
                                 }
                                 Rectangle {
                                     width: 44; height: 18; radius: 4
-                                    color: root.actions[root.pendingActionIndex >= 0 ? root.pendingActionIndex : 0].danger ? "#5e2424" : "#b0b0b0"
+                                    color: root.actions[root.pendingActionIndex >= 0 ? root.pendingActionIndex : 0].danger ? Services.Theme.dangerDeep : Services.Theme.textOnSafe
                                     Text {
                                         anchors.centerIn: parent
                                         text: "↵ Enter"
-                                        font.pixelSize: 9
+                                        font.pixelSize: Services.Theme.fontSizeXs
                                         font.weight: Font.Bold
-                                        color: root.actions[root.pendingActionIndex >= 0 ? root.pendingActionIndex : 0].danger ? "#ffffff" : "#111111"
+                                        color: root.actions[root.pendingActionIndex >= 0 ? root.pendingActionIndex : 0].danger ? Services.Theme.white : Services.Theme.bgOnAccent
                                     }
                                 }
                             }
@@ -440,7 +440,7 @@ PanelWindow {
                                 spacing: 8
                                 Text {
                                     text: "Cancel"
-                                    font.pixelSize: 13
+                                    font.pixelSize: Services.Theme.fontSizeXl
                                     color: Services.Theme.textPrimary
                                 }
                                 Rectangle {
@@ -449,7 +449,7 @@ PanelWindow {
                                     Text {
                                         anchors.centerIn: parent
                                         text: "Esc"
-                                        font.pixelSize: 9
+                                        font.pixelSize: Services.Theme.fontSizeXs
                                         color: Services.Theme.textSecondary
                                     }
                                 }
@@ -542,9 +542,9 @@ PanelWindow {
             Text {
                 anchors.centerIn: parent
                 text: pCard.cardKey
-                font.pixelSize: 10
+                font.pixelSize: Services.Theme.fontSizeSm
                 font.weight: Font.Bold
-                color: isSelected ? (isDangerAction ? "#ffffff" : "#111111") : Services.Theme.textSecondary
+                color: isSelected ? (isDangerAction ? Services.Theme.white : Services.Theme.bgOnAccent) : Services.Theme.textSecondary
             }
         }
 
@@ -563,8 +563,8 @@ PanelWindow {
                 Text {
                     anchors.centerIn: parent
                     text: pCard.cardIcon
-                    font.family: "Symbols Nerd Font Mono"
-                    font.pixelSize: 22
+                    font.family: Services.Theme.fontSymbols
+                    font.pixelSize: Services.Theme.fontSize7xl
                     color: isSelected ? (isDangerAction ? Services.Theme.danger : Services.Theme.accent) : Services.Theme.textPrimary
                     Behavior on color { ColorAnimation { duration: 120 } }
                 }
@@ -574,7 +574,7 @@ PanelWindow {
             Text {
                 Layout.alignment: Qt.AlignHCenter
                 text: pCard.cardLabel
-                font.pixelSize: 12
+                font.pixelSize: Services.Theme.fontSizeLg
                 font.weight: Font.DemiBold
                 color: isSelected ? Services.Theme.textPrimary : Services.Theme.textSecondary
                 Behavior on color { ColorAnimation { duration: 120 } }
@@ -584,7 +584,7 @@ PanelWindow {
             Text {
                 Layout.alignment: Qt.AlignHCenter
                 text: pCard.cardSublabel
-                font.pixelSize: 9
+                font.pixelSize: Services.Theme.fontSizeXs
                 color: Services.Theme.textDisabled
                 elide: Text.ElideRight
                 Layout.maximumWidth: parent.width - 16

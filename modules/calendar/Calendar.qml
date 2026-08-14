@@ -89,8 +89,8 @@ PanelWindow {
                     }
 
                     Text {
-                        text: "\uf053"
-                        font.family: "Symbols Nerd Font Mono"
+                        text: Services.Icons.chevLeft
+                        font.family: Services.Theme.fontSymbols
                         font.pixelSize: 12
                         color: Services.Theme.textSecondary
                         MouseArea {
@@ -100,8 +100,8 @@ PanelWindow {
                         }
                     }
                     Text {
-                        text: "\uf054"
-                        font.family: "Symbols Nerd Font Mono"
+                        text: Services.Icons.chevRight
+                        font.family: Services.Theme.fontSymbols
                         font.pixelSize: 12
                         color: Services.Theme.textSecondary
                         MouseArea {
@@ -150,7 +150,7 @@ PanelWindow {
                                 anchors.centerIn: parent
                                 text: modelData > 0 ? modelData : ""
                                 font.pixelSize: 11
-                                color: isToday ? "#0a0a0a" : Services.Theme.textPrimary
+                                color: isToday ? Services.Theme.bgDeep : Services.Theme.textPrimary
                             }
                         }
                     }

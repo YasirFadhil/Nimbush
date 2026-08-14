@@ -17,16 +17,17 @@ Rectangle {
         spacing: 6
 
         Text {
-            text: Services.Icons.cpu
-            font.family: "Liga SFMono Nerd Font"
-            font.pixelSize: 13
+          text: Services.Icons.cpu
+            font.family: Services.Theme.fontSymbols
+            // font.family: Services.Theme.fontMono
+            font.pixelSize: Services.Theme.fontSizeXl
             color: Services.Theme.textPrimary
         }
 
         Text {
             text: Math.round(Services.Sysmon.cpuUsage) + "%"
-            font.family: "Liga SFMono Nerd Font"
-            font.pixelSize: 11
+            font.family: Services.Theme.fontMono
+            font.pixelSize: Services.Theme.fontSizeMd
             color: Services.Theme.textSecondary
         }
     }

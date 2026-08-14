@@ -41,7 +41,7 @@ PanelWindow {
     Rectangle {
         anchors.fill: parent
         radius: 20
-        color: "#1e1e1e"
+        color: Services.Theme.surfaced
 
         ColumnLayout {
             anchors.centerIn: parent
@@ -49,18 +49,18 @@ PanelWindow {
 
             Text {
                 text: powerOsd.icon
-                font.family: "Symbols Nerd Font Mono"
-                font.pixelSize: 36
-                color: "#cdd6f4"
+                font.family: Services.Theme.fontSymbols
+                font.pixelSize: Services.Theme.fontSizeXxl
+                color: Services.Theme.accentBlue
                 Layout.alignment: Qt.AlignHCenter
             }
 
             Text {
                 text: powerOsd.statusText
-                font.family: "Symbols Nerd Font Mono"
-                font.pixelSize: 13
+                font.family: Services.Theme.fontSymbols
+                font.pixelSize: Services.Theme.fontSizeXl
                 font.bold: true
-                color: "#cdd6f4"
+                color: Services.Theme.accentBlue
                 Layout.alignment: Qt.AlignHCenter
             }
         }

@@ -63,8 +63,8 @@ Rectangle {
                     anchors.centerIn: parent
                     visible: !trayImg.visible || trayImg.status === Image.Error
                     text: "󰍹"
-                    font.family: "Liga SFMono Nerd Font"
-                    font.pixelSize: 12
+                    font.family: Services.Theme.fontMono
+                    font.pixelSize: Services.Theme.fontSizeLg
                     color: Services.Theme.textSecondary
                 }
 

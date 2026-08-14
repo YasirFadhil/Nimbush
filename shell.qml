@@ -16,10 +16,10 @@ import "modules/lockscreen" as LockscreenModule
 import "modules/dashboard" as DashboardModule
 
 ShellRoot {
-    // Notif.Popup {} // dimatiin — notif sekarang lewat DynamicIsland
+    // Notif.Popup {} // Disabled — notifications are now routed through DynamicIsland
     Osd.Osd {}
     Notif.Center {}
-    // Osd.PowerOsd {} // dimatiin — status charging sekarang lewat DynamicIsland
+    // Osd.PowerOsd {} // Disabled — charging status is now shown in DynamicIsland
     Launcher.Launcher  { id: launcherWindow }
     DashboardModule.Dashboard { id: dashboardWindow }
     Clipboard.ClipboardHistory { id: clipboardWindow }

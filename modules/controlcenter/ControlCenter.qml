@@ -88,9 +88,9 @@ PanelWindow {
 
             Text {
                 text: sliderRoot.icon
-                font.family: "Liga SFMono Nerd Font"
+                font.family: Services.Theme.fontMono
                 font.pixelSize: 14
-                color: (fillBar.width > 28) ? "#0a0a0a" : Services.Theme.textPrimary
+                color: (fillBar.width > 28) ? Services.Theme.bgDeep : Services.Theme.textPrimary
                 Behavior on color { ColorAnimation { duration: 80 } }
             }
 
@@ -100,7 +100,7 @@ PanelWindow {
                 text: Math.round(sliderRoot.value * 100) + "%"
                 font.pixelSize: 11
                 font.bold: true
-                color: (fillBar.width > (parent.width - 45)) ? "#0a0a0a" : Services.Theme.textSecondary
+                color: (fillBar.width > (parent.width - 45)) ? Services.Theme.bgDeep : Services.Theme.textSecondary
                 Behavior on color { ColorAnimation { duration: 80 } }
             }
         }
@@ -130,7 +130,7 @@ PanelWindow {
         }
     }
 
-    // Signal strength ala macOS — 4 bar naik tinggi, keisi sesuai persentase
+    // Signal strength macOS-style — 4 ascending bars filled according to percentage
     component SignalBars: Item {
         id: bars
         property int signal: 0   // 0-100
@@ -165,7 +165,6 @@ PanelWindow {
             width: 340
             height: 530
             radius: Services.Theme.radiusMd
-            // Background selalu Theme.surface agar Hyprland blur pada layer rule tetap aktif
             color: Services.Theme.surface
             border.color: Services.Theme.border
             border.width: 1
@@ -217,7 +216,7 @@ PanelWindow {
                             Text {
                                 id: headerBatIcon
                                 text: Services.Icons.powerIcon(Services.Power.charging, Services.Power.percentage * 100)
-                                font.family: "Liga SFMono Nerd Font"
+                                font.family: Services.Theme.fontMono
                                 font.pixelSize: 11
                                 color: Services.Power.charging ? Services.Theme.success : (Services.Power.isLow ? "#ff4444" : (Services.Power.isWarning ? "#e06c75" : (Services.PowerProfile.saverEnabled ? "#ff9800" : Services.Theme.textPrimary)))
                                 Behavior on color { ColorAnimation { duration: 250 } }
@@ -231,7 +230,7 @@ PanelWindow {
                             }
                             Text {
                                 text: Math.round(Services.Power.percentage * 100) + "%"
-                                font.family: "Liga SFMono Nerd Font"
+                                font.family: Services.Theme.fontMono
                                 font.pixelSize: 10
                                 font.bold: true
                                 color: Services.Power.isLow ? "#ff4444" : (Services.Power.isWarning ? "#e06c75" : (Services.PowerProfile.saverEnabled ? "#ff9800" : Services.Theme.textSecondary))
@@ -256,8 +255,8 @@ PanelWindow {
 
                         Text {
                             anchors.centerIn: parent
-                            text: Services.ShellUpdate.isPulling ? "\uf110" : (Services.ShellUpdate.isChecking ? "\uf021" : "\uf063")
-                            font.family: "Symbols Nerd Font Mono"
+                            text: Services.Icons.updateIcon(Services.ShellUpdate.isPulling, Services.ShellUpdate.isChecking)
+                            font.family: Services.Theme.fontSymbols
                             font.pixelSize: 12
                             color: Services.ShellUpdate.hasUpdate ? Services.Theme.accent : (updateBtnMouse.containsMouse ? Services.Theme.textPrimary : Services.Theme.textSecondary)
                             rotation: Services.OverlayManager.updatePanelVisible ? 180 : 0
@@ -299,8 +298,8 @@ PanelWindow {
 
                         Text {
                             anchors.centerIn: parent
-                            text: "\uf011"
-                            font.family: "Symbols Nerd Font Mono"
+                            text: Services.Icons.power
+                            font.family: Services.Theme.fontSymbols
                             font.pixelSize: 12
                             color: pwrHover.containsMouse ? Services.Theme.danger : Services.Theme.textSecondary
                         }
@@ -363,10 +362,10 @@ PanelWindow {
 
                                     Text {
                                         anchors.centerIn: parent
-                                        text: "\uf1eb"
-                                        font.family: "Symbols Nerd Font Mono"
+                                        text: Services.Icons.wifi
+                                        font.family: Services.Theme.fontSymbols
                                         font.pixelSize: 18
-                                        color: Services.Wifi.enabled ? "#0a0a0a" : Services.Theme.textPrimary
+                                        color: Services.Wifi.enabled ? Services.Theme.bgDeep : Services.Theme.textPrimary
                                     }
 
                                     MouseArea {
@@ -406,7 +405,7 @@ PanelWindow {
                                                 font.bold: true
                                                 elide: Text.ElideRight
                                                 Layout.fillWidth: true
-                                                color: Services.Wifi.enabled ? "#0a0a0a" : Services.Theme.textPrimary
+                                                color: Services.Wifi.enabled ? Services.Theme.bgDeep : Services.Theme.textPrimary
                                             }
                                             Text {
                                                 text: Services.OverlayManager.wifiPanelVisible
@@ -424,10 +423,10 @@ PanelWindow {
                                             color: refreshWifiMouse.containsMouse ? "#30000000" : "transparent"
                                             Text {
                                                 anchors.centerIn: parent
-                                                text: Services.Wifi.scanning ? "\uf110" : "\uf021"
-                                                font.family: "Symbols Nerd Font Mono"
+                                                text: Services.Icons.refreshOrSpinIcon(Services.Wifi.scanning)
+                                                font.family: Services.Theme.fontSymbols
                                                 font.pixelSize: 11
-                                                color: "#0a0a0a"
+                                                color: Services.Theme.bgDeep
                                             }
                                             MouseArea {
                                                 id: refreshWifiMouse
@@ -440,10 +439,10 @@ PanelWindow {
 
                                         // Collapse / Chevron Icon
                                         Text {
-                                            text: "\uf078"
-                                            font.family: "Symbols Nerd Font Mono"
+                                            text: Services.Icons.chevDown
+                                            font.family: Services.Theme.fontSymbols
                                             font.pixelSize: 10
-                                            color: Services.Wifi.enabled ? "#0a0a0a" : Services.Theme.textDisabled
+                                            color: Services.Wifi.enabled ? Services.Theme.bgDeep : Services.Theme.textDisabled
                                             rotation: Services.OverlayManager.wifiPanelVisible ? 180 : 0
                                             Behavior on rotation { NumberAnimation { duration: 220; easing.type: Easing.OutQuad } }
                                         }
@@ -481,7 +480,7 @@ PanelWindow {
                                         visible: !Services.Wifi.enabled
                                         text: "Wi-Fi is turned off"
                                         font.pixelSize: 11
-                                        color: Services.Wifi.enabled ? "#0a0a0a" : Services.Theme.textDisabled
+                                        color: Services.Wifi.enabled ? Services.Theme.bgDeep : Services.Theme.textDisabled
                                         Layout.alignment: Qt.AlignHCenter
                                     }
 
@@ -538,10 +537,10 @@ PanelWindow {
                                                             spacing: 8
 
                                                             Text {
-                                                                text: netRow.modelData.security.length > 0 ? "\uf023" : "\uf09c"
-                                                                font.family: "Symbols Nerd Font Mono"
+                                                                text: Services.Icons.wifiSecurityIcon(netRow.modelData.security.length > 0)
+                                                                font.family: Services.Theme.fontSymbols
                                                                 font.pixelSize: 11
-                                                                color: Services.Wifi.enabled ? "#0a0a0a" : Services.Theme.textSecondary
+                                                                color: Services.Wifi.enabled ? Services.Theme.bgDeep : Services.Theme.textSecondary
                                                             }
 
                                                             ColumnLayout {
@@ -552,7 +551,7 @@ PanelWindow {
                                                                     text: netRow.modelData.ssid
                                                                     font.pixelSize: 11
                                                                     font.bold: netRow.modelData.inUse
-                                                                    color: Services.Wifi.enabled ? "#0a0a0a" : Services.Theme.textPrimary
+                                                                    color: Services.Wifi.enabled ? Services.Theme.bgDeep : Services.Theme.textPrimary
                                                                     Layout.fillWidth: true
                                                                     elide: Text.ElideRight
                                                                 }
@@ -580,10 +579,10 @@ PanelWindow {
                                                         }
                                                         Text {
                                                             anchors.centerIn: parent
-                                                            text: "\uf1f8"
-                                                            font.family: "Symbols Nerd Font Mono"
+                                                            text: Services.Icons.trash
+                                                            font.family: Services.Theme.fontSymbols
                                                             font.pixelSize: 10
-                                                            color: Services.Wifi.enabled ? "#0a0a0a" : Services.Theme.textDisabled
+                                                            color: Services.Wifi.enabled ? Services.Theme.bgDeep : Services.Theme.textDisabled
                                                         }
                                                         MouseArea {
                                                             id: forgetHover
@@ -613,7 +612,7 @@ PanelWindow {
                                                             text: root.wifiPasswordInput
                                                             echoMode: TextInput.Password
                                                             font.pixelSize: 11
-                                                            color: Services.Wifi.enabled ? "#0a0a0a" : Services.Theme.textPrimary
+                                                            color: Services.Wifi.enabled ? Services.Theme.bgDeep : Services.Theme.textPrimary
                                                             verticalAlignment: TextInput.AlignVCenter
                                                             onTextChanged: root.wifiPasswordInput = text
                                                             Keys.onReturnPressed: {
@@ -669,10 +668,10 @@ PanelWindow {
 
                                     Text {
                                         anchors.centerIn: parent
-                                        text: "\uf294"
-                                        font.family: "Symbols Nerd Font Mono"
+                                        text: Services.Icons.bluetooth
+                                        font.family: Services.Theme.fontSymbols
                                         font.pixelSize: 18
-                                        color: Services.Bluetooth.enabled ? "#0a0a0a" : Services.Theme.textPrimary
+                                        color: Services.Bluetooth.enabled ? Services.Theme.bgDeep : Services.Theme.textPrimary
                                     }
 
                                     MouseArea {
@@ -710,7 +709,7 @@ PanelWindow {
                                                 font.bold: true
                                                 elide: Text.ElideRight
                                                 Layout.fillWidth: true
-                                                color: Services.Bluetooth.enabled ? "#0a0a0a" : Services.Theme.textPrimary
+                                                color: Services.Bluetooth.enabled ? Services.Theme.bgDeep : Services.Theme.textPrimary
                                             }
                                             Text {
                                                 text: Services.OverlayManager.btPanelVisible
@@ -728,10 +727,10 @@ PanelWindow {
                                             color: refreshBtMouse.containsMouse ? "#30000000" : "transparent"
                                             Text {
                                                 anchors.centerIn: parent
-                                                text: Services.Bluetooth.refreshing ? "\uf110" : "\uf021"
-                                                font.family: "Symbols Nerd Font Mono"
+                                                text: Services.Icons.refreshOrSpinIcon(Services.Bluetooth.refreshing)
+                                                font.family: Services.Theme.fontSymbols
                                                 font.pixelSize: 11
-                                                color: "#0a0a0a"
+                                                color: Services.Theme.bgDeep
                                             }
                                             MouseArea {
                                                 id: refreshBtMouse
@@ -744,10 +743,10 @@ PanelWindow {
 
                                         // Collapse / Chevron Icon
                                         Text {
-                                            text: "\uf078"
-                                            font.family: "Symbols Nerd Font Mono"
+                                            text: Services.Icons.chevDown
+                                            font.family: Services.Theme.fontSymbols
                                             font.pixelSize: 10
-                                            color: Services.Bluetooth.enabled ? "#0a0a0a" : Services.Theme.textDisabled
+                                            color: Services.Bluetooth.enabled ? Services.Theme.bgDeep : Services.Theme.textDisabled
                                             rotation: Services.OverlayManager.btPanelVisible ? 180 : 0
                                             Behavior on rotation { NumberAnimation { duration: 220; easing.type: Easing.OutQuad } }
                                         }
@@ -785,7 +784,7 @@ PanelWindow {
                                         visible: !Services.Bluetooth.enabled
                                         text: "Bluetooth is turned off"
                                         font.pixelSize: 11
-                                        color: Services.Bluetooth.enabled ? "#0a0a0a" : Services.Theme.textDisabled
+                                        color: Services.Bluetooth.enabled ? Services.Theme.bgDeep : Services.Theme.textDisabled
                                         Layout.alignment: Qt.AlignHCenter
                                     }
 
@@ -825,17 +824,17 @@ PanelWindow {
                                                     spacing: 8
 
                                                     Text {
-                                                        text: btItem.modelData.connected ? "\uf294" : "\uf293"
-                                                        font.family: "Symbols Nerd Font Mono"
+                                                        text: Services.Icons.btIcon(btItem.modelData.connected)
+                                                        font.family: Services.Theme.fontSymbols
                                                         font.pixelSize: 12
-                                                        color: Services.Bluetooth.enabled ? "#0a0a0a" : Services.Theme.textPrimary
+                                                        color: Services.Bluetooth.enabled ? Services.Theme.bgDeep : Services.Theme.textPrimary
                                                     }
 
                                                     Text {
                                                         text: btItem.modelData.name
                                                         font.pixelSize: 11
                                                         font.bold: btItem.modelData.connected
-                                                        color: Services.Bluetooth.enabled ? "#0a0a0a" : Services.Theme.textPrimary
+                                                        color: Services.Bluetooth.enabled ? Services.Theme.bgDeep : Services.Theme.textPrimary
                                                         Layout.fillWidth: true
                                                         elide: Text.ElideRight
                                                     }
@@ -886,10 +885,10 @@ PanelWindow {
 
                                 Text {
                                     anchors.centerIn: parent
-                                    text: "\uf186"
-                                    font.family: "Symbols Nerd Font Mono"
+                                    text: Services.Icons.moon
+                                    font.family: Services.Theme.fontSymbols
                                     font.pixelSize: 18
-                                    color: Services.Notifications.doNotDisturb ? "#0a0a0a" : Services.Theme.textPrimary
+                                    color: Services.Notifications.doNotDisturb ? Services.Theme.bgDeep : Services.Theme.textPrimary
                                 }
 
                                 MouseArea {
@@ -909,10 +908,10 @@ PanelWindow {
 
                                 Text {
                                     anchors.centerIn: parent
-                                    text: "\uf06c"
-                                    font.family: "Symbols Nerd Font Mono"
+                                    text: Services.Icons.tree
+                                    font.family: Services.Theme.fontSymbols
                                     font.pixelSize: 18
-                                    color: Services.PowerProfile.saverEnabled ? "#0a0a0a" : Services.Theme.textPrimary
+                                    color: Services.PowerProfile.saverEnabled ? Services.Theme.bgDeep : Services.Theme.textPrimary
                                 }
 
                                 MouseArea {
@@ -932,8 +931,8 @@ PanelWindow {
 
                                 Text {
                                     anchors.centerIn: parent
-                                    text: "\uf030"
-                                    font.family: "Symbols Nerd Font Mono"
+                                    text: Services.Icons.camera
+                                    font.family: Services.Theme.fontSymbols
                                     font.pixelSize: 18
                                     color: ssMouse.containsMouse ? Services.Theme.accent : Services.Theme.textPrimary
                                 }
@@ -960,10 +959,10 @@ PanelWindow {
 
                                 Text {
                                     anchors.centerIn: parent
-                                    text: Services.Audio.muted ? "\uf466" : "\uf028"
-                                    font.family: "Symbols Nerd Font Mono"
+                                    text: Services.Audio.muted ? Services.Icons.volMute : Services.Icons.speaker
+                                    font.family: Services.Theme.fontSymbols
                                     font.pixelSize: 18
-                                    color: Services.Audio.muted ? "#0a0a0a" : Services.Theme.textPrimary
+                                    color: Services.Audio.muted ? Services.Theme.bgDeep : Services.Theme.textPrimary
                                 }
 
                                 MouseArea {
@@ -1029,8 +1028,8 @@ PanelWindow {
                                 spacing: 4
 
                                 Text {
-                                    text: "\uf025"
-                                    font.family: "Symbols Nerd Font Mono"
+                                    text: Services.Icons.headphone
+                                    font.family: Services.Theme.fontSymbols
                                     font.pixelSize: 9
                                     color: Services.Theme.textSecondary
                                 }
@@ -1042,8 +1041,8 @@ PanelWindow {
                                     Layout.maximumWidth: 120
                                 }
                                 Text {
-                                    text: "\uf078"
-                                    font.family: "Symbols Nerd Font Mono"
+                                    text: Services.Icons.chevDown
+                                    font.family: Services.Theme.fontSymbols
                                     font.pixelSize: 8
                                     color: Services.Theme.textDisabled
                                     rotation: Services.OverlayManager.audioPanelVisible ? 180 : 0
@@ -1075,7 +1074,7 @@ PanelWindow {
                     }
 
                     ControlSlider {
-                        icon: Services.Icons.volumeIcon(Services.Audio.volume, Services.Audio.muted)
+                        icon: Services.Icons.volumeIcon(Services.Audio.volume, Services.Audio.muted, Services.Audio.isHeadphone, Services.Audio.isTws)
                         value: Services.Audio.volume
                         onMoved: (v) => Services.Audio.setVolume(v)
                     }
@@ -1097,7 +1096,7 @@ PanelWindow {
                         // CPU
                         RowLayout {
                             spacing: 4
-                            Text { text: "\uf2db"; font.family: "Symbols Nerd Font Mono"; font.pixelSize: 10; color: Services.Theme.accent }
+                            Text { text: Services.Icons.cpu; font.family: Services.Theme.fontSymbols; font.pixelSize: 10; color: Services.Theme.accent }
                             Text { text: Math.round(Services.Sysmon.cpuUsage) + "%"; font.pixelSize: 10; font.bold: true; color: Services.Theme.textSecondary }
                         }
 
@@ -1106,7 +1105,7 @@ PanelWindow {
                         // RAM
                         RowLayout {
                             spacing: 4
-                            Text { text: "\uf538"; font.family: "Symbols Nerd Font Mono"; font.pixelSize: 10; color: Services.Theme.accent }
+                            Text { text: Services.Icons.ram; font.family: Services.Theme.fontSymbols; font.pixelSize: 10; color: Services.Theme.accent }
                             Text { text: Math.round(Services.Sysmon.ramUsage) + "%"; font.pixelSize: 10; font.bold: true; color: Services.Theme.textSecondary }
                         }
 
@@ -1116,7 +1115,7 @@ PanelWindow {
                         RowLayout {
                             spacing: 4
                             visible: Services.Sysmon.cpuTemp > 0
-                            Text { text: "\uf2c9"; font.family: "Symbols Nerd Font Mono"; font.pixelSize: 10; color: Services.Theme.accent }
+                            Text { text: Services.Icons.temp; font.family: Services.Theme.fontSymbols; font.pixelSize: 10; color: Services.Theme.accent }
                             Text { text: Math.round(Services.Sysmon.cpuTemp) + "°C"; font.pixelSize: 10; font.bold: true; color: Services.Theme.textSecondary }
                         }
 
@@ -1125,14 +1124,13 @@ PanelWindow {
                         // Disk
                         RowLayout {
                             spacing: 4
-                            Text { text: "\uf0a0"; font.family: "Symbols Nerd Font Mono"; font.pixelSize: 10; color: Services.Theme.accent }
+                            Text { text: Services.Icons.disk; font.family: Services.Theme.fontSymbols; font.pixelSize: 10; color: Services.Theme.accent }
                             Text { text: Math.round(Services.Sysmon.diskUsage) + "%"; font.pixelSize: 10; font.bold: true; color: Services.Theme.textSecondary }
                         }
                     }
                 }
         }
 
-        // ── Full Panel Overlay Card ("Nimpa" Over Main Panel) ──
             Rectangle {
                 id: fullPanelOverlay
                 z: 100
@@ -1167,8 +1165,8 @@ PanelWindow {
 
                             Text {
                                 anchors.centerIn: parent
-                                text: "\uf053"
-                                font.family: "Symbols Nerd Font Mono"
+                                text: Services.Icons.chevLeft
+                                font.family: Services.Theme.fontSymbols
                                 font.pixelSize: 12
                                 color: Services.Theme.textPrimary
                             }
@@ -1211,8 +1209,8 @@ PanelWindow {
 
                             Text {
                                 anchors.centerIn: parent
-                                text: (Services.OverlayManager.wifiPanelVisible && Services.Wifi.scanning) || (Services.OverlayManager.btPanelVisible && Services.Bluetooth.refreshing) ? "\uf110" : "\uf021"
-                                font.family: "Symbols Nerd Font Mono"
+                                text: Services.Icons.refreshOrSpinIcon((Services.OverlayManager.wifiPanelVisible && Services.Wifi.scanning) || (Services.OverlayManager.btPanelVisible && Services.Bluetooth.refreshing))
+                                font.family: Services.Theme.fontSymbols
                                 font.pixelSize: 12
                                 color: Services.Theme.textSecondary
                             }
@@ -1230,7 +1228,6 @@ PanelWindow {
                             }
                         }
 
-                        // Power Toggle Switch (for WiFi / Bluetooth)
                         Rectangle {
                             width: 38; height: 20; radius: 10
                             visible: Services.OverlayManager.wifiPanelVisible || Services.OverlayManager.btPanelVisible
@@ -1242,7 +1239,7 @@ PanelWindow {
                                 width: 16; height: 16; radius: 8
                                 anchors.verticalCenter: parent.verticalCenter
                                 x: (Services.OverlayManager.wifiPanelVisible ? Services.Wifi.enabled : Services.Bluetooth.enabled) ? parent.width - width - 2 : 2
-                                color: (Services.OverlayManager.wifiPanelVisible ? Services.Wifi.enabled : Services.Bluetooth.enabled) ? "#0a0a0a" : Services.Theme.textDisabled
+                                color: (Services.OverlayManager.wifiPanelVisible ? Services.Wifi.enabled : Services.Bluetooth.enabled) ? Services.Theme.bgDeep : Services.Theme.textDisabled
                                 Behavior on x { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
                             }
 
@@ -1338,8 +1335,8 @@ PanelWindow {
                                                         spacing: 8
 
                                                         Text {
-                                                            text: netRow.modelData.security.length > 0 ? "\uf023" : "\uf09c"
-                                                            font.family: "Symbols Nerd Font Mono"
+                                                            text: Services.Icons.wifiSecurityIcon(netRow.modelData.security.length > 0)
+                                                            font.family: Services.Theme.fontSymbols
                                                             font.pixelSize: 11
                                                             color: netRow.modelData.inUse ? Services.Theme.accent : Services.Theme.textSecondary
                                                         }
@@ -1380,10 +1377,10 @@ PanelWindow {
                                                     }
                                                     Text {
                                                         anchors.centerIn: parent
-                                                        text: "\uf1f8"
-                                                        font.family: "Symbols Nerd Font Mono"
+                                                        text: Services.Icons.trash
+                                                        font.family: Services.Theme.fontSymbols
                                                         font.pixelSize: 10
-                                                        color: forgetHover.containsMouse ? "#0a0a0a" : Services.Theme.textDisabled
+                                                        color: forgetHover.containsMouse ? Services.Theme.bgDeep : Services.Theme.textDisabled
                                                     }
                                                     MouseArea {
                                                         id: forgetHover
@@ -1480,8 +1477,8 @@ PanelWindow {
                                                 spacing: 10
 
                                                 Text {
-                                                    text: btRow.modelData.connected ? "\uf294" : "\uf293"
-                                                    font.family: "Symbols Nerd Font Mono"
+                                                    text: Services.Icons.btIcon(btRow.modelData.connected)
+                                                    font.family: Services.Theme.fontSymbols
                                                     font.pixelSize: 14
                                                     color: btRow.modelData.connected ? Services.Theme.accent : Services.Theme.textSecondary
                                                 }
@@ -1516,7 +1513,7 @@ PanelWindow {
                                                         text: btRow.modelData.connected ? "Disconnect" : "Connect"
                                                         font.pixelSize: 9
                                                         font.bold: true
-                                                        color: btRow.modelData.connected ? Services.Theme.textPrimary : "#0a0a0a"
+                                                        color: btRow.modelData.connected ? Services.Theme.textPrimary : Services.Theme.bgDeep
                                                     }
                                                 }
                                             }
@@ -1555,15 +1552,15 @@ PanelWindow {
                                             spacing: 10
 
                                             Text {
-                                                text: sinkRow.modelData.description.toLowerCase().includes("headphone") ? "\uf025" : "\uf028"
-                                                font.family: "Symbols Nerd Font Mono"
+                                                text: Services.Icons.sinkIcon(sinkRow.modelData.description)
+                                                font.family: Services.Theme.fontSymbols
                                                 font.pixelSize: 14
-                                                color: sinkRow.modelData.isCurrent ? "#0a0a0a" : Services.Theme.textPrimary
+                                                color: sinkRow.modelData.isCurrent ? Services.Theme.bgDeep : Services.Theme.textPrimary
                                             }
 
                                             Text {
                                                 text: sinkRow.modelData.description
-                                                color: sinkRow.modelData.isCurrent ? "#0a0a0a" : Services.Theme.textPrimary
+                                                color: sinkRow.modelData.isCurrent ? Services.Theme.bgDeep : Services.Theme.textPrimary
                                                 font.bold: sinkRow.modelData.isCurrent
                                                 font.pixelSize: 11
                                                 Layout.fillWidth: true
@@ -1572,10 +1569,10 @@ PanelWindow {
 
                                             Text {
                                                 visible: sinkRow.modelData.isCurrent
-                                                text: "\uf00c"
-                                                font.family: "Symbols Nerd Font Mono"
+                                                text: Services.Icons.check
+                                                font.family: Services.Theme.fontSymbols
                                                 font.pixelSize: 11
-                                                color: "#0a0a0a"
+                                                color: Services.Theme.bgDeep
                                             }
                                         }
                                     }
@@ -1606,7 +1603,7 @@ PanelWindow {
                                         text: Services.ShellUpdate.isPulling ? "Updating..." : "Update Now"
                                         font.bold: true
                                         font.pixelSize: 11
-                                        color: "#0a0a0a"
+                                        color: Services.Theme.bgDeep
                                     }
 
                                     MouseArea {

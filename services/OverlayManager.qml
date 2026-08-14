@@ -20,9 +20,9 @@ Singleton {
         _windows.push(win)
     }
 
-    // except bisa berupa window object (PowerMenu/Launcher/NotifCenter dst)
-    // ATAU string id ("controlCenter"/"calendar"/"notifCenter") — dicocokkan
-    // ke property overlayId kalau window itu punya.
+    // 'except' can be a window object (PowerMenu/Launcher/NotifCenter etc.)
+    // OR a string id ("controlCenter"/"calendar"/"notifCenter") — matched
+    // against the overlayId property if the window possesses it.
     function closeAllExcept(except) {
         for (let i = 0; i < _windows.length; i++) {
             const w = _windows[i]

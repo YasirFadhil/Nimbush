@@ -51,7 +51,7 @@ PanelWindow {
         }
     }
 
-    // Klik di luar panel → tutup
+    // Click outside panel → close
     MouseArea {
         anchors.fill: parent
         onClicked: launcherWindow.hide()
@@ -104,9 +104,9 @@ PanelWindow {
                 spacing: 10
 
                 Text {
-                    text: "\uf002"
-                    font.family: "Symbols Nerd Font Mono"
-                    font.pixelSize: 14
+                    text: Services.Icons.search
+                    font.family: Services.Theme.fontSymbols
+                    font.pixelSize: Services.Theme.fontSize2xl
                     color: searchField.activeFocus ? Services.Theme.accent : Services.Theme.textDisabled
                     Behavior on color { ColorAnimation { duration: 150 } }
                 }
@@ -118,7 +118,7 @@ PanelWindow {
                     color: Services.Theme.textPrimary
                     placeholderText: "Search applications..."
                     placeholderTextColor: Services.Theme.textDisabled
-                    font.pixelSize: 15
+                    font.pixelSize: Services.Theme.fontSize3xl
                     leftPadding: 0
                     rightPadding: 0
 
@@ -150,7 +150,7 @@ PanelWindow {
                 // Clear button
                 Text {
                     text: "✕"
-                    font.pixelSize: 12
+                    font.pixelSize: Services.Theme.fontSizeLg
                     color: clearMouse.containsMouse ? Services.Theme.textPrimary : Services.Theme.textDisabled
                     visible: searchField.text.length > 0
                     Layout.alignment: Qt.AlignVCenter
@@ -204,7 +204,7 @@ PanelWindow {
 
                 highlight: Rectangle {
                     radius: 10
-                    color: Services.Theme.seurfa
+                    color: Services.Theme.surfaceSolid
                     x: 6
                     border.color: Services.Theme.borderHighlight
                     border.width: 1
@@ -243,7 +243,7 @@ PanelWindow {
                                     anchors.centerIn: parent
                                     text: (appItem.modelData.name || "?").charAt(0).toUpperCase()
                                     color: appItem.index === resultList.currentIndex ? Services.Theme.accent : Services.Theme.textDisabled
-                                    font.pixelSize: 13
+                                    font.pixelSize: Services.Theme.fontSizeXl
                                     font.bold: true
                                 }
                             }
@@ -273,7 +273,7 @@ PanelWindow {
                             Text {
                                 text: appItem.modelData.name || ""
                                 color: appItem.index === resultList.currentIndex ? Services.Theme.accent : Services.Theme.textPrimary
-                                font.pixelSize: 13
+                                font.pixelSize: Services.Theme.fontSizeXl
                                 font.weight: appItem.index === resultList.currentIndex ? Font.Medium : Font.Normal
                                 elide: Text.ElideRight
                                 Layout.fillWidth: true
@@ -284,7 +284,7 @@ PanelWindow {
                                 property string subText: appItem.modelData.description || appItem.modelData.comment || ""
                                 text: (subText.length > 0 && subText !== appItem.modelData.name) ? subText : "Application"
                                 color: Services.Theme.textSecondary
-                                font.pixelSize: 11
+                                font.pixelSize: Services.Theme.fontSizeMd
                                 elide: Text.ElideRight
                                 Layout.fillWidth: true
                             }
@@ -317,9 +317,9 @@ PanelWindow {
                         spacing: 6
 
                         Text {
-                            text: "\uf002"
-                            font.family: "Symbols Nerd Font Mono"
-                            font.pixelSize: 24
+                            text: Services.Icons.search
+                            font.family: Services.Theme.fontSymbols
+                            font.pixelSize: Services.Theme.fontSize8xl
                             color: Services.Theme.textDisabled
                             Layout.alignment: Qt.AlignHCenter
                         }
@@ -327,7 +327,7 @@ PanelWindow {
                         Text {
                             text: "No applications found"
                             color: Services.Theme.textDisabled
-                            font.pixelSize: 13
+                            font.pixelSize: Services.Theme.fontSizeXl
                             Layout.alignment: Qt.AlignHCenter
                         }
                     }

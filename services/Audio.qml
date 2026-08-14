@@ -11,6 +11,29 @@ Singleton {
     readonly property bool muted: sink?.audio?.muted ?? true
     readonly property string sinkDescription: sink?.description ?? sink?.name ?? "Default Output"
 
+    // true when sink is a Bluetooth TWS / wireless earbuds (bluez_output.*)
+    readonly property bool isTws: {
+        const name = (sink?.name ?? "").toLowerCase()
+        return name.includes("bluez")
+    }
+
+    // true when sink is a wired headphone/headset/jack output
+    readonly property bool isHeadphone: {
+        const name = (sink?.name ?? "").toLowerCase()
+        const desc = (sink?.description ?? "").toLowerCase()
+        const combined = name + " " + desc
+        return !root.isTws && (
+               combined.includes("headphone") ||
+               combined.includes("headset")   ||
+               combined.includes("earphone")  ||
+               combined.includes("earbuds")   ||
+               combined.includes("tws")        ||
+               combined.includes("a2dp")      ||
+               combined.includes("hfp")       ||
+               combined.includes("hsp")       ||
+               combined.includes("jack"))
+    }
+
     property var sinks: []
 
     PwObjectTracker { objects: [sink] }
