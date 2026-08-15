@@ -14,9 +14,12 @@ import "modules/controlcenter" as ControlCenter
 import "modules/calendar" as CalendarModule
 import "modules/lockscreen" as LockscreenModule
 import "modules/dashboard" as DashboardModule
+import "modules/wallpaper" as WallpaperModule
 
 ShellRoot {
+    WallpaperModule.Wallpaper {}
     // Notif.Popup {} // Disabled — notifications are now routed through DynamicIsland
+
     Osd.Osd {}
     Notif.Center {}
     // Osd.PowerOsd {} // Disabled — charging status is now shown in DynamicIsland

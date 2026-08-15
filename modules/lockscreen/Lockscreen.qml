@@ -178,11 +178,12 @@ PanelWindow {
         Image {
             id: bgImage
             anchors.fill: parent
-            source: "file:///home/yasirfadhil/Pictures/background_zoomed.png"
+            source: "file://" + (Quickshell.env("HOME") || "/home/yasirfadhil") + "/.config/quickshell/assets/wallpapers/background_zoomed.png"
             fillMode: Image.PreserveAspectCrop
             asynchronous: true
             smooth: true
         }
+
 
         Rectangle {
             anchors.fill: parent

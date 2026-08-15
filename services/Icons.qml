@@ -36,6 +36,11 @@ Singleton {
     readonly property string power:  "\uf011"
     readonly property string close:  "\uf00d"
     readonly property string dash:   "\uf0e4"
+    readonly property string image:  "\uf03e"
+    readonly property string upload: "\uf093"
+    readonly property string folder: "\uf07c"
+    readonly property string plus:   "\uf067"
+
 
     // ── Wifi ────────────────────────────────────────────────────────────────────
     readonly property string wifi:     "\uf1eb"   // nf-fa-wifi

@@ -948,7 +948,6 @@ PanelWindow {
                                     }
                                 }
                             }
-
                             // Audio Mute Tile
                             Rectangle {
                                 Layout.fillWidth: true

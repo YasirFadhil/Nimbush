@@ -497,6 +497,194 @@ PanelWindow {
                     }
                 }
 
+                // ── Wallpaper Picker Section ──────────────────────────────────
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 8
+
+                    // Section header
+                    RowLayout {
+                        Layout.fillWidth: true
+
+                        RowLayout {
+                            spacing: 6
+                            Text {
+                                text: Services.Icons.image
+                                font.family: Services.Theme.fontSymbols
+                                font.pixelSize: 11
+                                color: Services.Theme.accent
+                            }
+                            Text {
+                                text: "Wallpaper"
+                                font.pixelSize: 10
+                                font.bold: true
+                                font.letterSpacing: 0.5
+                                color: Services.Theme.textDisabled
+                            }
+                        }
+
+                        Item { Layout.fillWidth: true }
+
+                        // Upload custom button
+                        Rectangle {
+                            height: 24
+                            implicitWidth: customBtnRow.implicitWidth + 14
+                            radius: 12
+                            color: customBtnMouse.containsMouse ? Services.Theme.bgHover : Services.Theme.surfaceVariant
+                            border.color: customBtnMouse.containsMouse ? Services.Theme.borderHighlight : Qt.rgba(1, 1, 1, 0.08)
+                            border.width: 1
+                            Behavior on color { ColorAnimation { duration: 120 } }
+
+                            RowLayout {
+                                id: customBtnRow
+                                anchors.centerIn: parent
+                                spacing: 4
+
+                                Text {
+                                    text: Services.Wallpaper.isPicking ? Services.Icons.spinner : Services.Icons.plus
+                                    font.family: Services.Theme.fontSymbols
+                                    font.pixelSize: 10
+                                    color: Services.Theme.accent
+                                }
+
+                                Text {
+                                    text: "Custom..."
+                                    font.pixelSize: 10
+                                    font.bold: true
+                                    color: Services.Theme.textPrimary
+                                }
+                            }
+
+                            MouseArea {
+                                id: customBtnMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: Services.Wallpaper.pickCustomWallpaper()
+                            }
+                        }
+                    }
+
+                    // Wallpapers Carousel / Horizontal Scroll
+                    Flickable {
+                        Layout.fillWidth: true
+                        implicitHeight: 68
+                        contentWidth: wallRow.implicitWidth
+                        contentHeight: 68
+                        clip: true
+                        boundsBehavior: Flickable.StopAtBounds
+
+                        RowLayout {
+                            id: wallRow
+                            spacing: 8
+
+                            Repeater {
+                                model: Services.Wallpaper.allWallpapers
+
+                                delegate: Rectangle {
+                                    id: wallCard
+                                    property var itemData: modelData
+                                    property bool isActive: Services.Wallpaper.currentWallpaper === itemData.path
+
+                                    width: 96
+                                    height: 64
+                                    radius: Services.Theme.radiusSm
+                                    color: Services.Theme.surfaceVariant
+                                    border.color: isActive ? Services.Theme.accent : (cardMouse.containsMouse ? Services.Theme.borderHighlight : Qt.rgba(1, 1, 1, 0.1))
+                                    border.width: isActive ? 2 : 1
+                                    clip: true
+
+                                    Behavior on border.color { ColorAnimation { duration: 150 } }
+
+                                    // Wallpaper Image Preview
+                                    Image {
+                                        anchors.fill: parent
+                                        source: "file://" + itemData.path
+                                        fillMode: Image.PreserveAspectCrop
+                                        smooth: true
+                                        mipmap: true
+                                        opacity: cardMouse.containsMouse || isActive ? 1.0 : 0.82
+                                        Behavior on opacity { NumberAnimation { duration: 150 } }
+                                    }
+
+                                    // Dark gradient overlay for text readability
+                                    Rectangle {
+                                        anchors.fill: parent
+                                        color: "transparent"
+                                        gradient: Gradient {
+                                            GradientStop { position: 0.0; color: "transparent" }
+                                            GradientStop { position: 1.0; color: Qt.rgba(0, 0, 0, 0.65) }
+                                        }
+                                    }
+
+                                    // Active Checkmark Badge
+                                    Rectangle {
+                                        visible: isActive
+                                        anchors.top: parent.top
+                                        anchors.right: parent.right
+                                        anchors.margins: 4
+                                        width: 18; height: 18; radius: 9
+                                        color: Services.Theme.accent
+
+                                        Text {
+                                            anchors.centerIn: parent
+                                            text: Services.Icons.check
+                                            font.family: Services.Theme.fontSymbols
+                                            font.pixelSize: 9
+                                            color: "#ffffff"
+                                        }
+                                    }
+
+                                    // Delete custom wallpaper button (on hover)
+                                    Rectangle {
+                                        visible: itemData.isCustom && cardMouse.containsMouse && !isActive
+                                        anchors.top: parent.top
+                                        anchors.right: parent.right
+                                        anchors.margins: 4
+                                        width: 18; height: 18; radius: 9
+                                        color: Qt.rgba(0, 0, 0, 0.7)
+
+                                        Text {
+                                            anchors.centerIn: parent
+                                            text: Services.Icons.trash
+                                            font.family: Services.Theme.fontSymbols
+                                            font.pixelSize: 9
+                                            color: Services.Theme.danger
+                                        }
+
+                                        MouseArea {
+                                            anchors.fill: parent
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: Services.Wallpaper.removeCustomWallpaper(itemData.path)
+                                        }
+                                    }
+
+                                    // Wallpaper Name
+                                    Text {
+                                        anchors.left: parent.left
+                                        anchors.right: parent.right
+                                        anchors.bottom: parent.bottom
+                                        anchors.margins: 6
+                                        text: itemData.name
+                                        font.pixelSize: 9
+                                        font.bold: isActive
+                                        color: isActive ? "#ffffff" : Services.Theme.textPrimary
+                                        elide: Text.ElideRight
+                                    }
+
+                                    MouseArea {
+                                        id: cardMouse
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: Services.Wallpaper.setWallpaper(itemData.path)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
                 // ── Action Buttons ────────────────────────────────────────────
                 RowLayout {
                     Layout.fillWidth: true
