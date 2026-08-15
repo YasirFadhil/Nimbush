@@ -32,8 +32,8 @@ RowLayout {
                     id: logoText
                     anchors.centerIn: parent
                     text: Services.OsInfo.logoGlyph
-                    font.family: "Liga SFMono Nerd Font"
-                    font.pixelSize: 15
+                    font.family: Services.Theme.fontMono
+                    font.pixelSize: Services.Theme.fontSize3xl
                     color: Services.Theme.accent
                 }
 
@@ -135,8 +135,8 @@ RowLayout {
             anchors.centerIn: parent
             width: parent.width - 20
             text: Services.Workspaces.activeWindowTitle
-            font.family: "Liga SFMono Nerd Font"
-            font.pixelSize: 12
+            font.family: Services.Theme.fontMono
+            font.pixelSize: Services.Theme.fontSizeLg
             color: Services.Theme.textSecondary
             elide: Text.ElideRight
         }

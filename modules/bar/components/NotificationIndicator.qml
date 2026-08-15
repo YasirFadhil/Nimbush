@@ -13,8 +13,8 @@ RowLayout {
             id: bellText
             anchors.fill: parent
             text: Services.Notifications.doNotDisturb ? "󰂛" : "󰂚"
-            font.family: "Liga SFMono Nerd Font"
-            font.pixelSize: 14
+            font.family: Services.Theme.fontMono
+            font.pixelSize: Services.Theme.fontSize2xl
             color: Services.Theme.textPrimary
         }
 
@@ -32,8 +32,8 @@ RowLayout {
     Text {
         visible: Services.Notifications.historyList.count > 0
         text: Services.Notifications.historyList.count
-        font.family: "Liga SFMono Nerd Font"
-        font.pixelSize: 11
+        font.family: Services.Theme.fontMono
+        font.pixelSize: Services.Theme.fontSizeMd
         color: Services.Theme.accent
     }
 }

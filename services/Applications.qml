@@ -9,12 +9,12 @@ Singleton {
     property string query: ""
 
     function filtered() {
-        // Selalu sort abjad; saat ada query, starts-with naik ke atas
+        // Always sort alphabetically; when query is present, starts-with takes priority
         const q = query.toLowerCase().trim()
-        const list = appList.slice() // copy agar tidak mutate
+        const list = appList.slice() // copy to avoid mutating original list
 
         if (q.length === 0) {
-            // Semua app, urut abjad
+            // All apps, sorted alphabetically
             return list.sort((a, b) => a.name.localeCompare(b.name))
         }
 
@@ -23,7 +23,7 @@ Singleton {
             const desc = (app.description || "").toLowerCase()
             return name.indexOf(q) !== -1 || desc.indexOf(q) !== -1
         }).sort((a, b) => {
-            // Prioritas: nama yang mulai dengan query naik ke atas
+            // Priority: names starting with the query float to top
             const aStarts = a.name.toLowerCase().startsWith(q)
             const bStarts = b.name.toLowerCase().startsWith(q)
             if (aStarts && !bStarts) return -1

@@ -92,8 +92,8 @@ PanelWindow {
                     Text {
                         Layout.fillWidth: true
                         text: root.activeItem ? (root.activeItem.title || root.activeItem.id || "") : ""
-                        font.family: "Liga SFMono Nerd Font"
-                        font.pixelSize: 12
+                        font.family: Services.Theme.fontMono
+                        font.pixelSize: Services.Theme.fontSizeLg
                         font.bold: true
                         color: Services.Theme.textSecondary
                         elide: Text.ElideRight
@@ -160,8 +160,8 @@ PanelWindow {
                                     Text {
                                         visible: menuItem.modelData.buttonType !== 0
                                         text: menuItem.modelData.checkState === 2 ? "✓" : " "
-                                        font.family: "Liga SFMono Nerd Font"
-                                        font.pixelSize: 12
+                                        font.family: Services.Theme.fontMono
+                                        font.pixelSize: Services.Theme.fontSizeLg
                                         font.bold: true
                                         color: Services.Theme.accent
                                     }
@@ -178,8 +178,8 @@ PanelWindow {
                                     Text {
                                         Layout.fillWidth: true
                                         text: menuItem.modelData.text ? menuItem.modelData.text.replace(/&/g, "") : ""
-                                        font.family: "Liga SFMono Nerd Font"
-                                        font.pixelSize: 12
+                                        font.family: Services.Theme.fontMono
+                                        font.pixelSize: Services.Theme.fontSizeLg
                                         color: menuItem.modelData.enabled ? Services.Theme.textPrimary : Services.Theme.textDisabled
                                         elide: Text.ElideRight
                                     }
@@ -188,8 +188,8 @@ PanelWindow {
                                     Text {
                                         visible: menuItem.modelData.hasChildren
                                         text: "›"
-                                        font.family: "Liga SFMono Nerd Font"
-                                        font.pixelSize: 14
+                                        font.family: Services.Theme.fontMono
+                                        font.pixelSize: Services.Theme.fontSize2xl
                                         color: Services.Theme.textSecondary
                                         rotation: menuItem.expanded ? 90 : 0
                                         Behavior on rotation { NumberAnimation { duration: 150 } }
@@ -259,8 +259,8 @@ PanelWindow {
                                                 Text {
                                                     visible: subItem.modelData.buttonType !== 0
                                                     text: subItem.modelData.checkState === 2 ? "✓" : " "
-                                                    font.family: "Liga SFMono Nerd Font"
-                                                    font.pixelSize: 11
+                                                    font.family: Services.Theme.fontMono
+                                                    font.pixelSize: Services.Theme.fontSizeMd
                                                     font.bold: true
                                                     color: Services.Theme.accent
                                                 }
@@ -275,8 +275,8 @@ PanelWindow {
                                                 Text {
                                                     Layout.fillWidth: true
                                                     text: subItem.modelData.text ? subItem.modelData.text.replace(/&/g, "") : ""
-                                                    font.family: "Liga SFMono Nerd Font"
-                                                    font.pixelSize: 11
+                                                    font.family: Services.Theme.fontMono
+                                                    font.pixelSize: Services.Theme.fontSizeMd
                                                     color: subItem.modelData.enabled ? Services.Theme.textPrimary : Services.Theme.textDisabled
                                                     elide: Text.ElideRight
                                                 }

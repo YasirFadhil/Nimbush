@@ -67,10 +67,10 @@ Singleton {
     
     Timer {
       id: autoRescanTimer
-      interval: 15000  // 15 detik, sesuain
+      interval: 15000  // 15 seconds periodic rescan
       running: true
       repeat: true
-      onTriggered: root.scan()  // panggil fungsi scan yang sama dipake tombol manual
+      onTriggered: root.scan()  // trigger the same scan function as manual refresh button
     }
 
     // Radio on/off
@@ -118,14 +118,14 @@ Singleton {
         }
     }
 
-    // Manual rescan (dipicu tombol refresh)
+    // Manual rescan (triggered by refresh button)
     Process {
         id: rescanProc
         command: ["nmcli", "dev", "wifi", "rescan"]
         onExited: listProc.running = true
     }
 
-    // List semua network yang kelihatan
+    // List all visible networks
     Process {
         id: listProc
         command: ["nmcli", "-t", "-f", "IN-USE,SSID,SECURITY,SIGNAL", "dev", "wifi", "list", "--rescan", "no"]
@@ -168,7 +168,7 @@ Singleton {
     Process { id: disconnectProc; onExited: root.refresh() }
     Process { id: toggleProc; onExited: root.refresh() }
 
-    // Daftar profil WiFi yang udah pernah disave (buat badge "Saved" + fitur forget)
+    // Saved WiFi connection profiles (for "Saved" badge + forget connection feature)
     Process {
         id: savedProc
         command: ["nmcli", "-t", "-f", "NAME,TYPE", "connection", "show"]

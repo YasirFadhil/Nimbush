@@ -15,8 +15,8 @@ Rectangle {
     Text {
         id: clockText
         anchors.centerIn: parent
-        font.family: "Liga SFMono Nerd Font"
-        font.pixelSize: 12
+        font.family: Services.Theme.fontMono
+        font.pixelSize: Services.Theme.fontSizeLg
         font.weight: Font.Bold
         color: Services.Theme.textPrimary
 

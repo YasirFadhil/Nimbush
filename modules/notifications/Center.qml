@@ -574,7 +574,7 @@ PanelWindow {
                                         id: sSendTxt
                                         anchors.centerIn: parent
                                         text: "Send 󰏲"
-                                        color: "#0a0a0a"
+                                        color: Services.Theme.bgDeep
                                         font.pixelSize: 10
                                         font.bold: true
                                     }
@@ -1129,7 +1129,7 @@ PanelWindow {
                                                         id: sendTxt
                                                         anchors.centerIn: parent
                                                         text: "Send 󰏲"
-                                                        color: "#0a0a0a"
+                                                        color: Services.Theme.bgDeep
                                                         font.pixelSize: 10
                                                         font.bold: true
                                                     }

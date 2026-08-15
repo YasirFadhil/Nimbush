@@ -54,7 +54,7 @@ PanelWindow {
         }
     }
 
-    // Klik di luar panel → tutup
+    // Click outside panel → close
     MouseArea {
         anchors.fill: parent
         onClicked: clipboardWindow.hide()
@@ -99,9 +99,9 @@ PanelWindow {
                 spacing: 10
 
                 Text {
-                    text: "\uf0ea"
-                    font.family: "Symbols Nerd Font Mono"
-                    font.pixelSize: 15
+                    text: Services.Icons.clipboard
+                    font.family: Services.Theme.fontSymbols
+                    font.pixelSize: Services.Theme.fontSize3xl
                     color: searchField.activeFocus ? Services.Theme.accent : Services.Theme.textDisabled
                     Behavior on color { ColorAnimation { duration: 150 } }
                 }
@@ -113,7 +113,7 @@ PanelWindow {
                     color: Services.Theme.textPrimary
                     placeholderText: "Search clipboard history..."
                     placeholderTextColor: Services.Theme.textDisabled
-                    font.pixelSize: 15
+                    font.pixelSize: Services.Theme.fontSize3xl
                     leftPadding: 0
                     rightPadding: 0
 
@@ -167,7 +167,7 @@ PanelWindow {
                 // Clear button
                 Text {
                     text: "✕"
-                    font.pixelSize: 12
+                    font.pixelSize: Services.Theme.fontSizeLg
                     color: clearMouse.containsMouse ? Services.Theme.textPrimary : Services.Theme.textDisabled
                     visible: searchField.text.length > 0
                     Layout.alignment: Qt.AlignVCenter
@@ -212,7 +212,7 @@ PanelWindow {
                                 id: filterText
                                 anchors.centerIn: parent
                                 text: parent.modelData.label
-                                font.pixelSize: 11
+                                font.pixelSize: Services.Theme.fontSizeMd
                                 font.weight: Services.Clipboard.filterType === parent.modelData.id ? Font.Medium : Font.Normal
                                 color: Services.Clipboard.filterType === parent.modelData.id ? Services.Theme.accent : Services.Theme.textDisabled
                                 Behavior on color { ColorAnimation { duration: 120 } }
@@ -246,9 +246,9 @@ PanelWindow {
 
                     Text {
                         anchors.centerIn: parent
-                        text: "\uf1f8"
-                        font.family: "Symbols Nerd Font Mono"
-                        font.pixelSize: 12
+                        text: Services.Icons.trash
+                        font.family: Services.Theme.fontSymbols
+                        font.pixelSize: Services.Theme.fontSizeLg
                         color: clearHistMouse.containsMouse ? Services.Theme.danger : Services.Theme.textDisabled
                         Behavior on color { ColorAnimation { duration: 120 } }
                     }
@@ -285,7 +285,7 @@ PanelWindow {
 
                 highlight: Rectangle {
                     radius: 10
-                    color: Services.Theme.seurfa
+                    color: Services.Theme.surfaceSolid
                     border.color: Services.Theme.borderHighlight
                     border.width: 1
                     x: 6
@@ -346,9 +346,9 @@ PanelWindow {
 
                                 Text {
                                     anchors.centerIn: parent
-                                    text: "\uf0f6"
-                                    font.family: "Symbols Nerd Font Mono"
-                                    font.pixelSize: 13
+                                    text: Services.Icons.file
+                                    font.family: Services.Theme.fontSymbols
+                                    font.pixelSize: Services.Theme.fontSizeXl
                                     color: card.index === resultList.currentIndex ? Services.Theme.accent : Services.Theme.textDisabled
                                 }
                             }
@@ -387,7 +387,7 @@ PanelWindow {
                                     visible: !card.isImage
                                     text: card.modelData.preview || ""
                                     color: card.index === resultList.currentIndex ? Services.Theme.accent : Services.Theme.textPrimary
-                                    font.pixelSize: 13
+                                    font.pixelSize: Services.Theme.fontSizeXl
                                     font.weight: card.index === resultList.currentIndex ? Font.Medium : Font.Normal
                                     elide: Text.ElideRight
                                     Layout.fillWidth: true
@@ -399,16 +399,16 @@ PanelWindow {
                                     visible: card.isImage
                                     text: "Image Content"
                                     color: card.index === resultList.currentIndex ? Services.Theme.accent : Services.Theme.textPrimary
-                                    font.pixelSize: 13
+                                    font.pixelSize: Services.Theme.fontSizeXl
                                     font.weight: card.index === resultList.currentIndex ? Font.Medium : Font.Normal
                                     Layout.fillWidth: true
                                     Behavior on color { ColorAnimation { duration: 120 } }
                                 }
 
                                 Text {
-                                    text: "\uf08d"
-                                    font.family: "Symbols Nerd Font Mono"
-                                    font.pixelSize: 10
+                                    text: Services.Icons.pin
+                                    font.family: Services.Theme.fontSymbols
+                                    font.pixelSize: Services.Theme.fontSizeSm
                                     color: Services.Theme.accent
                                     visible: card.isPinnedItem
                                 }
@@ -423,7 +423,7 @@ PanelWindow {
                                     return lines > 1 ? (lines + " lines • " + chars + " characters") : (chars + " characters")
                                 }
                                 color: Services.Theme.textSecondary
-                                font.pixelSize: 11
+                                font.pixelSize: Services.Theme.fontSizeMd
                                 elide: Text.ElideRight
                                 Layout.fillWidth: true
                             }
@@ -435,7 +435,7 @@ PanelWindow {
                                     return dim ? ("Dimensions: " + dim) : "Image entry"
                                 }
                                 color: Services.Theme.textSecondary
-                                font.pixelSize: 11
+                                font.pixelSize: Services.Theme.fontSizeMd
                                 elide: Text.ElideRight
                                 Layout.fillWidth: true
                             }
@@ -455,9 +455,9 @@ PanelWindow {
 
                                 Text {
                                     anchors.centerIn: parent
-                                    text: "\uf08d"
-                                    font.family: "Symbols Nerd Font Mono"
-                                    font.pixelSize: 12
+                                    text: Services.Icons.pin
+                                    font.family: Services.Theme.fontSymbols
+                                    font.pixelSize: Services.Theme.fontSizeLg
                                     color: card.isPinnedItem ? Services.Theme.accent : (pinArea.containsMouse ? Services.Theme.textPrimary : Services.Theme.textDisabled)
                                     Behavior on color { ColorAnimation { duration: 120 } }
                                 }
@@ -480,9 +480,9 @@ PanelWindow {
 
                                 Text {
                                     anchors.centerIn: parent
-                                    text: "\uf1f8"
-                                    font.family: "Symbols Nerd Font Mono"
-                                    font.pixelSize: 13
+                                    text: Services.Icons.trash
+                                    font.family: Services.Theme.fontSymbols
+                                    font.pixelSize: Services.Theme.fontSizeXl
                                     color: deleteArea.containsMouse ? Services.Theme.danger : Services.Theme.textDisabled
                                     Behavior on color { ColorAnimation { duration: 120 } }
                                 }
@@ -524,9 +524,9 @@ PanelWindow {
                         spacing: 6
 
                         Text {
-                            text: Services.Clipboard.filterType === "pinned" ? "\uf08d" : "\uf0ea"
-                            font.family: "Symbols Nerd Font Mono"
-                            font.pixelSize: 26
+                            text: Services.Clipboard.filterType === "pinned" ? Services.Icons.pin : Services.Icons.clipboard
+                            font.family: Services.Theme.fontSymbols
+                            font.pixelSize: Services.Theme.fontSize9xl
                             color: Services.Theme.textDisabled
                             Layout.alignment: Qt.AlignHCenter
                         }
@@ -538,7 +538,7 @@ PanelWindow {
                                 return "Clipboard history is empty"
                             }
                             color: Services.Theme.textDisabled
-                            font.pixelSize: 13
+                            font.pixelSize: Services.Theme.fontSizeXl
                             Layout.alignment: Qt.AlignHCenter
                         }
                     }
@@ -567,9 +567,9 @@ PanelWindow {
                         Rectangle {
                             width: 18; height: 16; radius: 4
                             color: Services.Theme.surfaceVariant
-                            Text { anchors.centerIn: parent; text: "↵"; color: Services.Theme.textSecondary; font.pixelSize: 10 }
+                            Text { anchors.centerIn: parent; text: "↵"; color: Services.Theme.textSecondary; font.pixelSize: Services.Theme.fontSizeSm }
                         }
-                        Text { text: "Copy"; color: Services.Theme.textDisabled; font.pixelSize: 11 }
+                        Text { text: "Copy"; color: Services.Theme.textDisabled; font.pixelSize: Services.Theme.fontSizeMd }
                     }
 
                     RowLayout {
@@ -577,9 +577,9 @@ PanelWindow {
                         Rectangle {
                             width: 28; height: 16; radius: 4
                             color: Services.Theme.surfaceVariant
-                            Text { anchors.centerIn: parent; text: "Tab"; color: Services.Theme.textSecondary; font.pixelSize: 10 }
+                            Text { anchors.centerIn: parent; text: "Tab"; color: Services.Theme.textSecondary; font.pixelSize: Services.Theme.fontSizeSm }
                         }
-                        Text { text: "Filter"; color: Services.Theme.textDisabled; font.pixelSize: 11 }
+                        Text { text: "Filter"; color: Services.Theme.textDisabled; font.pixelSize: Services.Theme.fontSizeMd }
                     }
 
                     RowLayout {
@@ -587,9 +587,9 @@ PanelWindow {
                         Rectangle {
                             width: 24; height: 16; radius: 4
                             color: Services.Theme.surfaceVariant
-                            Text { anchors.centerIn: parent; text: "Del"; color: Services.Theme.textSecondary; font.pixelSize: 10 }
+                            Text { anchors.centerIn: parent; text: "Del"; color: Services.Theme.textSecondary; font.pixelSize: Services.Theme.fontSizeSm }
                         }
-                        Text { text: "Delete"; color: Services.Theme.textDisabled; font.pixelSize: 11 }
+                        Text { text: "Delete"; color: Services.Theme.textDisabled; font.pixelSize: Services.Theme.fontSizeMd }
                     }
 
                     RowLayout {
@@ -597,9 +597,9 @@ PanelWindow {
                         Rectangle {
                             width: 52; height: 16; radius: 4
                             color: Services.Theme.surfaceVariant
-                            Text { anchors.centerIn: parent; text: "Shift+Del"; color: Services.Theme.textSecondary; font.pixelSize: 10 }
+                            Text { anchors.centerIn: parent; text: "Shift+Del"; color: Services.Theme.textSecondary; font.pixelSize: Services.Theme.fontSizeSm }
                         }
-                        Text { text: "Clear All"; color: Services.Theme.textDisabled; font.pixelSize: 11 }
+                        Text { text: "Clear All"; color: Services.Theme.textDisabled; font.pixelSize: Services.Theme.fontSizeMd }
                     }
 
                     RowLayout {
@@ -607,9 +607,9 @@ PanelWindow {
                         Rectangle {
                             width: 22; height: 16; radius: 4
                             color: Services.Theme.surfaceVariant
-                            Text { anchors.centerIn: parent; text: "Esc"; color: Services.Theme.textSecondary; font.pixelSize: 10 }
+                            Text { anchors.centerIn: parent; text: "Esc"; color: Services.Theme.textSecondary; font.pixelSize: Services.Theme.fontSizeSm }
                         }
-                        Text { text: "Close"; color: Services.Theme.textDisabled; font.pixelSize: 11 }
+                        Text { text: "Close"; color: Services.Theme.textDisabled; font.pixelSize: Services.Theme.fontSizeMd }
                     }
                 }
             }

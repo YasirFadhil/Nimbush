@@ -8,8 +8,8 @@ Item {
     id: card
     visible: Services.Mpris.activePlayer !== null
     
-    // implicitHeight (bukan height) yang di-baca ColumnLayout untuk sizing
-    // Behavior di sini = layout space-nya juga ikut animasi smooth
+    // implicitHeight (instead of height) read by ColumnLayout for sizing
+    // Behavior here allows smooth animation for layout space
     implicitHeight: visible ? (card.isPlaying ? 160 : 62) : 0
     height: implicitHeight
     Behavior on implicitHeight { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
@@ -47,7 +47,7 @@ Item {
 
         ColumnLayout {
             anchors { fill: parent; margins: 12 }
-            // spacing lebih kecil saat compact biar pas di 62px
+            // smaller spacing when compact to fit in 62px
             spacing: card.isPlaying ? 8 : 4
 
             // ── Row 1: Artwork + Info + (compact play button) ─────────
@@ -115,13 +115,13 @@ Item {
                     Layout.alignment: Qt.AlignVCenter
                     spacing: 2
 
-                    // Player identity badge — hanya saat playing, benar-benar collapse
+                    // Player identity badge — playing state only, completely collapsed when idle
                     Rectangle {
                         height: 14
                         implicitWidth: Math.min(badgeTxt.implicitWidth + 10, 80)
                         radius: 4
                         color: card.t.surfaceVariant
-                        // visible false = tidak makan layout space sama sekali
+                        // visible false = consumes no layout space at all
                         visible: card.isPlaying && (card.player?.identity ?? "").length > 0
 
                         Text {
@@ -151,8 +151,7 @@ Item {
                         font.pixelSize: 10
                         elide: Text.ElideRight
                         Layout.fillWidth: true
-                        // Sembunyikan artist saat compact jika title terlalu panjang
-                        // (biarkan title breathing room)
+                        // Hide artist when compact if title is too long (give title breathing room)
                         visible: text.length > 0
                         opacity: card.isPlaying ? 1 : 0.7
                     }
@@ -169,9 +168,9 @@ Item {
 
                     Text {
                         anchors.centerIn: parent
-                        text: "\uf04b"
-                        font.family: "Symbols Nerd Font Mono"; font.pixelSize: 11
-                        color: "#0a0a0a"
+                        text: Services.Icons.mediaPlay
+                        font.family: Services.Theme.fontSymbols; font.pixelSize: Services.Theme.fontSizeMd
+                        color: Services.Theme.bgDeep
                     }
                     MouseArea {
                         id: compactPlay; anchors.fill: parent; hoverEnabled: true
@@ -267,7 +266,7 @@ Item {
                     width: 32; height: 32
                     opacity: (card.player?.shuffleSupported ?? false) ? 1 : 0.2
                     Rectangle { anchors.fill: parent; radius: 8; color: shArea.containsMouse ? card.t.surfaceVariant : "transparent"; Behavior on color { ColorAnimation { duration: 80 } } }
-                    Text { anchors.centerIn: parent; text: "\uf074"; font.family: "Symbols Nerd Font Mono"; font.pixelSize: 12; color: (card.player?.shuffle ?? false) ? card.t.accent : card.t.textSecondary }
+                    Text { anchors.centerIn: parent; text: Services.Icons.mediaShuffle; font.family: Services.Theme.fontSymbols; font.pixelSize: Services.Theme.fontSizeLg; color: (card.player?.shuffle ?? false) ? card.t.accent : card.t.textSecondary }
                     MouseArea { id: shArea; anchors.fill: parent; hoverEnabled: true; enabled: card.player?.shuffleSupported ?? false; onClicked: card.player.shuffle = !card.player.shuffle }
                 }
 
@@ -278,7 +277,7 @@ Item {
                     width: 32; height: 32
                     opacity: (card.player?.canGoPrevious ?? false) ? 1 : 0.3
                     Rectangle { anchors.fill: parent; radius: 8; color: prvArea.containsMouse ? card.t.surfaceVariant : "transparent"; Behavior on color { ColorAnimation { duration: 80 } } }
-                    Text { anchors.centerIn: parent; text: "\uf04a"; font.family: "Symbols Nerd Font Mono"; font.pixelSize: 13; color: card.t.textSecondary }
+                    Text { anchors.centerIn: parent; text: Services.Icons.mediaPrev; font.family: Services.Theme.fontSymbols; font.pixelSize: Services.Theme.fontSizeXl; color: card.t.textSecondary }
                     MouseArea { id: prvArea; anchors.fill: parent; hoverEnabled: true; enabled: card.player?.canGoPrevious ?? false; onClicked: card.player.previous() }
                 }
 
@@ -291,9 +290,9 @@ Item {
 
                     Text {
                         anchors.centerIn: parent
-                        text: card.isPlaying ? "\uf04c" : "\uf04b"
-                        font.family: "Symbols Nerd Font Mono"; font.pixelSize: 14
-                        color: "#0a0a0a"
+                        text: Services.Icons.mediaPlayPause(card.isPlaying)
+                        font.family: Services.Theme.fontSymbols; font.pixelSize: Services.Theme.fontSize2xl
+                        color: Services.Theme.bgDeep
                     }
                     MouseArea { id: playArea; anchors.fill: parent; hoverEnabled: true; enabled: card.player?.canTogglePlaying ?? true; onClicked: card.player.togglePlaying() }
                 }
@@ -303,7 +302,7 @@ Item {
                     width: 32; height: 32
                     opacity: (card.player?.canGoNext ?? false) ? 1 : 0.3
                     Rectangle { anchors.fill: parent; radius: 8; color: nxtArea.containsMouse ? card.t.surfaceVariant : "transparent"; Behavior on color { ColorAnimation { duration: 80 } } }
-                    Text { anchors.centerIn: parent; text: "\uf04e"; font.family: "Symbols Nerd Font Mono"; font.pixelSize: 13; color: card.t.textSecondary }
+                    Text { anchors.centerIn: parent; text: Services.Icons.mediaNext; font.family: Services.Theme.fontSymbols; font.pixelSize: Services.Theme.fontSizeXl; color: card.t.textSecondary }
                     MouseArea { id: nxtArea; anchors.fill: parent; hoverEnabled: true; enabled: card.player?.canGoNext ?? false; onClicked: card.player.next() }
                 }
 
@@ -316,8 +315,8 @@ Item {
                     Rectangle { anchors.fill: parent; radius: 8; color: rpArea.containsMouse ? card.t.surfaceVariant : "transparent"; Behavior on color { ColorAnimation { duration: 80 } } }
                     Text {
                         anchors.centerIn: parent
-                        font.family: "Symbols Nerd Font Mono"; font.pixelSize: 12
-                        text: (card.player?.loop ?? MprisLoopState.None) === MprisLoopState.Track ? "\uf365" : "\uf364"
+                        font.family: Services.Theme.fontSymbols; font.pixelSize: Services.Theme.fontSizeLg
+                        text: (card.player?.loop ?? MprisLoopState.None) === MprisLoopState.Track ? Services.Icons.mediaLoopOne : Services.Icons.mediaLoopAll
                         color: (card.player?.loop ?? MprisLoopState.None) !== MprisLoopState.None ? card.t.accent : card.t.textSecondary
                     }
                     MouseArea {

@@ -17,18 +17,34 @@ PanelWindow {
 
     property real value: 0
     property string icon: ""
+    // Guard: suppress signals that fire during quickshell init/reload
+    property bool osdReady: false
+    Timer {
+        id: osdInitTimer
+        interval: 400
+        running: true
+        repeat: false
+        onTriggered: osd.osdReady = true
+    }
 
     Timer { id: hideTimer; interval: 1500; onTriggered: osd.visible = false }
 
-    function show(v, ic) { value = v; icon = ic; visible = true; hideTimer.restart() }
+    function show(v, ic) {
+        if (!osd.osdReady) return
+        value = v; icon = ic; visible = true; hideTimer.restart()
+    }
 
     Connections {
       target: Services.Audio
       function onVolumeChanged() {
-        osd.show(Services.Audio.volume, Services.Icons.volumeIcon(Services.Audio.volume, Services.Audio.muted))
+        if (!osd.osdReady) return
+        osd.show(Services.Audio.volume, Services.Icons.volumeIcon(Services.Audio.volume, Services.Audio.muted, Services.Audio.isHeadphone, Services.Audio.isTws))
+        Services.SoundFeedback.playVolumeChange()
       }
       function onMutedChanged() {
-        osd.show(Services.Audio.volume, Services.Icons.volumeIcon(Services.Audio.volume, Services.Audio.muted))
+        if (!osd.osdReady) return
+        osd.show(Services.Audio.volume, Services.Icons.volumeIcon(Services.Audio.volume, Services.Audio.muted, Services.Audio.isHeadphone, Services.Audio.isTws))
+        Services.SoundFeedback.playVolumeChange()
       }
     }
     
@@ -36,6 +52,7 @@ PanelWindow {
       target: Services.Brightness
       function onPercentChanged() {
         osd.show(Services.Brightness.percent, Services.Icons.brightnessIcon(Services.Brightness.percent))
+        // No sound feedback for brightness — only volume, notifications, USB, and charge/discharge
       }
     }
 
@@ -50,8 +67,8 @@ PanelWindow {
             spacing: 12
             Text {
               text: osd.icon
-              font.family: "Symbols Nerd Font Mono"   // ganti sesuai output fc-list tadi
-              font.pixelSize: 22
+              font.family: Services.Theme.fontSymbols
+              font.pixelSize: Services.Theme.fontSize7xl
               color: Services.Theme.textPrimary
             }
             Rectangle {

@@ -56,7 +56,10 @@ Singleton {
         running: true
         repeat: true
         triggeredOnStart: true
-        onTriggered: root.refresh()
+        onTriggered: {
+            root.refresh()       // update enabled/power state
+            root.listDevices()   // update connected devices list for HUD detection
+        }
     }
 
     Process {
@@ -64,6 +67,22 @@ Singleton {
         command: ["sh", "-c", "bluetoothctl show | grep Powered"]
         stdout: SplitParser {
             onRead: data => root.enabled = data.trim().endsWith("yes")
+        }
+    }
+
+    // Live monitor: detect connect/disconnect events instantly via BlueZ D-Bus signals
+    Process {
+        id: btEventMonitor
+        command: ["sh", "-c",
+            "dbus-monitor --system \"type='signal',interface='org.freedesktop.DBus.Properties'," +
+            "member='PropertiesChanged',path_namespace='/org/bluez'\" 2>/dev/null" +
+            " | stdbuf -oL grep -o '\"Connected\"'"]
+        running: true
+        stdout: SplitParser {
+            onRead: data => {
+                // PropertiesChanged with "Connected" key → refresh device list immediately
+                root.listDevices()
+            }
         }
     }
 

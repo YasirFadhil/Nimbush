@@ -28,7 +28,7 @@ Singleton {
         persistenceSupported: true
 
         onNotification: notif => {
-            notif.tracked = true // biar gak keburu di-GC, kita yg atur lifetime-nya
+            notif.tracked = true // track notification object to prevent GC and manage lifecycle manually
 
             const entry = {
                 notifId: notif.id,
@@ -47,6 +47,16 @@ Singleton {
             if (!root.doNotDisturb) {
                 popupModel.insert(0, entry)
                 root.newNotification(entry)
+
+                // Play Freedesktop sound based on urgency:
+                // Critical (2) → dialog-error, Low (0) → dialog-information, else → message-new-instant
+                if (notif.urgency === NotificationUrgency.Critical)
+                    SoundFeedback.playError()
+                else if (notif.urgency === NotificationUrgency.Low)
+                    SoundFeedback.playInfo()
+                else
+                    SoundFeedback.playNotification()
+
                 const timeout = notif.expireTimeout > 0 ? notif.expireTimeout
                     : (notif.urgency === NotificationUrgency.Critical ? 7000 : 5000)
                 if (timeout > 0) {
@@ -55,7 +65,7 @@ Singleton {
             }
 
             notif.closed.connect(() => {
-                // App closed the notif externally — hanya hapus popup, biarkan di history
+                // App closed the notification externally — remove popup only, keep in history
                 root.removePopup(notif.id)
             })
         }
@@ -67,7 +77,7 @@ Singleton {
             property int notifId
             repeat: false
             onTriggered: {
-                // Timeout habis — hanya hapus popup (toast), notif tetap di history
+                // Timeout expired — remove popup toast only, notification remains in history
                 root.removePopup(notifId)
                 destroy()
             }
@@ -121,12 +131,12 @@ Singleton {
         removeFromHistory(notifId)
     }
 
-    // Hapus notif dari history Center saja (dipanggil user dari Center UI)
+    // Remove notification from Center history only (called by user from Center UI)
     function dismissFromCenter(notifId) {
         removeFromHistory(notifId)
     }
 
-    // Hapus semua notif dalam satu group dari history
+    // Remove all notifications in a group from history
     function dismissGroupFromCenter(items) {
         if (!items) return
         const ids = []

@@ -11,19 +11,23 @@ Rectangle {
     readonly property bool isPlaying: player?.isPlaying ?? false
 
     Layout.fillWidth: true
-    implicitHeight: 88
+    implicitHeight: 84
     radius: Services.Theme.radiusLg
     color: Services.Theme.surfaceVariant
+    border.color: isPlaying ? Services.Theme.borderHighlight : "transparent"
+    border.width: isPlaying ? 1 : 0
     clip: true
+
+    Behavior on border.color { ColorAnimation { duration: 150 } }
 
     RowLayout {
         anchors.fill: parent
         anchors.margins: 12
-        spacing: 10
+        spacing: 12
 
-        // Artwork / avatar
+        // Artwork / avatar container
         Rectangle {
-            width: 56; height: 56
+            width: 60; height: 60
             radius: Services.Theme.radiusMd
             color: Services.Theme.surface
             antialiasing: true
@@ -33,10 +37,11 @@ Rectangle {
             Text {
                 anchors.centerIn: parent
                 text: card.hasPlayer
-                    ? (card.player?.trackArtist ?? card.player?.trackTitle ?? "\u266a").charAt(0).toUpperCase()
-                    : "\u266a"
+                    ? (card.player?.trackArtist ?? card.player?.trackTitle ?? Services.Icons.music).charAt(0).toUpperCase()
+                    : Services.Icons.music
+                font.family: Services.Theme.fontSymbols
                 color: Services.Theme.textDisabled
-                font.pixelSize: 20
+                font.pixelSize: Services.Theme.fontSize6xl
                 font.bold: true
                 visible: !card.hasPlayer || artImg.status !== Image.Ready
             }
@@ -67,7 +72,7 @@ Rectangle {
                 Rectangle {
                     anchors.fill: parent
                     radius: Services.Theme.radiusMd
-                    color: "black"
+                    color: Services.Theme.bgDeep
                     antialiasing: true
                     smooth: true
                 }
@@ -80,25 +85,24 @@ Rectangle {
             spacing: 2
 
             Text {
-                text: card.hasPlayer ? (card.player?.trackTitle || "\u2014") : "Nothing Playing"
+                text: card.hasPlayer ? (card.player?.trackTitle || "Playing Media") : "No Active Media"
                 color: card.hasPlayer ? Services.Theme.textPrimary : Services.Theme.textDisabled
-                font.pixelSize: 12
+                font.pixelSize: Services.Theme.fontSizeLg
                 font.bold: true
                 elide: Text.ElideRight
                 Layout.fillWidth: true
             }
             Text {
-                text: card.hasPlayer ? (card.player?.trackArtist || "") : "No media session"
+                text: card.hasPlayer ? (card.player?.trackArtist || (card.player?.identity || "Unknown")) : "Idle player session"
                 color: Services.Theme.textSecondary
-                font.pixelSize: 10
+                font.pixelSize: Services.Theme.fontSizeSm
                 elide: Text.ElideRight
                 Layout.fillWidth: true
-                visible: card.hasPlayer ? text.length > 0 : true
             }
 
             RowLayout {
-                spacing: 4
-                Layout.topMargin: 2
+                spacing: 6
+                Layout.topMargin: 4
                 visible: card.hasPlayer
 
                 Rectangle {
@@ -107,7 +111,7 @@ Rectangle {
                     opacity: (card.player?.canGoPrevious ?? false) ? 1 : 0.3
                     Behavior on color { ColorAnimation { duration: 100 } }
 
-                    Text { anchors.centerIn: parent; text: "\uf04a"; font.family: "Symbols Nerd Font Mono"; font.pixelSize: 10; color: Services.Theme.textSecondary }
+                    Text { anchors.centerIn: parent; text: Services.Icons.mediaPrev; font.family: Services.Theme.fontSymbols; font.pixelSize: Services.Theme.fontSizeSm; color: Services.Theme.textSecondary }
                     MouseArea {
                         id: prevHover
                         anchors.fill: parent
@@ -119,10 +123,10 @@ Rectangle {
                 }
                 Rectangle {
                     width: 26; height: 26; radius: 13
-                    color: playHover.containsMouse ? "#ffffff" : Services.Theme.accent
+                    color: playHover.containsMouse ? Services.Theme.white : Services.Theme.accent
                     Behavior on color { ColorAnimation { duration: 100 } }
 
-                    Text { anchors.centerIn: parent; text: card.isPlaying ? "\uf04c" : "\uf04b"; font.family: "Symbols Nerd Font Mono"; font.pixelSize: 10; color: "#0a0a0a" }
+                    Text { anchors.centerIn: parent; text: Services.Icons.mediaPlayPause(card.isPlaying); font.family: Services.Theme.fontSymbols; font.pixelSize: Services.Theme.fontSizeSm; color: Services.Theme.bgDeep }
                     MouseArea {
                         id: playHover
                         anchors.fill: parent
@@ -138,7 +142,7 @@ Rectangle {
                     opacity: (card.player?.canGoNext ?? false) ? 1 : 0.3
                     Behavior on color { ColorAnimation { duration: 100 } }
 
-                    Text { anchors.centerIn: parent; text: "\uf04e"; font.family: "Symbols Nerd Font Mono"; font.pixelSize: 10; color: Services.Theme.textSecondary }
+                    Text { anchors.centerIn: parent; text: Services.Icons.mediaNext; font.family: Services.Theme.fontSymbols; font.pixelSize: Services.Theme.fontSizeSm; color: Services.Theme.textSecondary }
                     MouseArea {
                         id: nextHover
                         anchors.fill: parent
