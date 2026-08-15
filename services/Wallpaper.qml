@@ -98,14 +98,34 @@ Singleton {
         setWallpaper(filePath)
     }
 
+    function toBase64(str) {
+        if (!str) return ""
+        const bytes = []
+        for (let i = 0; i < str.length; i++) {
+            const code = str.charCodeAt(i)
+            if (code < 128) {
+                bytes.push(code)
+            } else if (code < 2048) {
+                bytes.push((code >> 6) | 192, (code & 63) | 128)
+            } else if ((code & 0xFC00) === 0xD800 && i + 1 < str.length && (str.charCodeAt(i + 1) & 0xFC00) === 0xDC00) {
+                const surrogate = ((code & 0x03FF) << 10) + (str.charCodeAt(++i) & 0x03FF) + 0x10000
+                bytes.push((surrogate >> 18) | 240, ((surrogate >> 12) & 63) | 128, ((surrogate >> 6) & 63) | 128, (surrogate & 63) | 128)
+            } else {
+                bytes.push((code >> 12) | 224, ((code >> 6) & 63) | 128, (code & 63) | 128)
+            }
+        }
+        return Qt.btoa(bytes)
+    }
+
     function saveConfig() {
         var data = {
             currentWallpaper: currentWallpaper,
             customWallpapers: customWallpapers
         }
         var jsonStr = JSON.stringify(data)
+        var b64 = toBase64(jsonStr)
         saveConfigProc.running = false
-        saveConfigProc.command = ["sh", "-c", "mkdir -p $(dirname \"" + configPath + "\") && cat << 'EOF' > \"" + configPath + "\"\n" + jsonStr + "\nEOF"]
+        saveConfigProc.command = ["sh", "-c", "mkdir -p ~/.cache/quickshell && echo '" + b64 + "' | base64 -d > \"" + configPath + "\""]
         saveConfigProc.running = true
     }
 

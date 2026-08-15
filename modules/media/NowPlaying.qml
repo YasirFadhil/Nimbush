@@ -80,6 +80,9 @@ Item {
                         anchors.fill: parent
                         source: card.player?.trackArtUrl ?? ""
                         fillMode: Image.PreserveAspectCrop
+                        asynchronous: true
+                        cache: true
+                        sourceSize: Qt.size(100, 100)
                         smooth: true
                         mipmap: true
                         antialiasing: true

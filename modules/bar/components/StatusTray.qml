@@ -13,24 +13,31 @@ RowLayout {
     Components.SystemTrayIcons {
         trayMenuPopup: trayMenuPopup
 
-        opacity: root.collapseNear ? 0 : 1
+        opacity: (Services.OverlayManager.isLocked || root.collapseNear) ? 0 : 1
 
         transform: Translate {
-            x: root.collapseNear ? 32 : 0
-            Behavior on x { NumberAnimation { duration: 420; easing.type: Easing.OutExpo } }
+            x: Services.OverlayManager.isLocked ? 35 : (root.collapseNear ? 32 : 0)
+            Behavior on x { NumberAnimation { duration: 350; easing.type: Services.OverlayManager.isLocked ? Easing.OutCubic : Easing.InCubic } }
         }
 
-        Behavior on opacity { NumberAnimation { duration: 280; easing.type: Easing.OutQuad } }
+        Behavior on opacity { NumberAnimation { duration: 350; easing.type: Services.OverlayManager.isLocked ? Easing.OutCubic : Easing.InCubic } }
     }
 
     Components.TrayMenuPopup {
         id: trayMenuPopup
     }
 
-    // CPU Usage
-    Components.SysmonIndicator {}
+    // CPU Usage (Hides on Lock)
+    Components.SysmonIndicator {
+        opacity: Services.OverlayManager.isLocked ? 0.0 : 1.0
+        transform: Translate {
+            x: Services.OverlayManager.isLocked ? 35 : 0
+            Behavior on x { NumberAnimation { duration: 350; easing.type: Services.OverlayManager.isLocked ? Easing.OutCubic : Easing.InCubic } }
+        }
+        Behavior on opacity { NumberAnimation { duration: 350; easing.type: Services.OverlayManager.isLocked ? Easing.OutCubic : Easing.InCubic } }
+    }
 
-    // Volume Pill
+    // Volume Pill (Hides on Lock)
     Rectangle {
         implicitHeight: 28
         implicitWidth: volLayout.implicitWidth + 20
@@ -38,6 +45,12 @@ RowLayout {
         color: Services.Theme.surface
         border.color: Services.Theme.border
         border.width: 1
+        opacity: Services.OverlayManager.isLocked ? 0.0 : 1.0
+        transform: Translate {
+            x: Services.OverlayManager.isLocked ? 35 : 0
+            Behavior on x { NumberAnimation { duration: 350; easing.type: Services.OverlayManager.isLocked ? Easing.OutCubic : Easing.InCubic } }
+        }
+        Behavior on opacity { NumberAnimation { duration: 350; easing.type: Services.OverlayManager.isLocked ? Easing.OutCubic : Easing.InCubic } }
 
         RowLayout {
             id: volLayout
@@ -59,7 +72,7 @@ RowLayout {
         }
     }
 
-    // Battery Pill
+    // Battery Pill (Stays Visible & Morphs Seamlessly into Lockscreen)
     Rectangle {
         id: batPill
         implicitHeight: 28
@@ -109,7 +122,7 @@ RowLayout {
         }
     }
 
-    // Notification Bell & Control Center Pill
+    // Notification Bell & Control Center Pill (Stays Visible & Morphs Seamlessly into Lockscreen)
     Rectangle {
         implicitHeight: 28
         implicitWidth: ctrlLayout.implicitWidth + 20
@@ -136,6 +149,13 @@ RowLayout {
         }
     }
 
-    // Clock & Date Pill
-    Components.ClockCenter {}
+    // Clock & Date Pill (Hides on Lock as Lockscreen Has Large Clock)
+    Components.ClockCenter {
+        opacity: Services.OverlayManager.isLocked ? 0.0 : 1.0
+        transform: Translate {
+            x: Services.OverlayManager.isLocked ? 35 : 0
+            Behavior on x { NumberAnimation { duration: 350; easing.type: Services.OverlayManager.isLocked ? Easing.OutCubic : Easing.InCubic } }
+        }
+        Behavior on opacity { NumberAnimation { duration: 350; easing.type: Services.OverlayManager.isLocked ? Easing.OutCubic : Easing.InCubic } }
+    }
 }

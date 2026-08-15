@@ -50,6 +50,9 @@ Rectangle {
                 anchors.fill: parent
                 source: card.hasPlayer ? (card.player?.trackArtUrl ?? "") : ""
                 fillMode: Image.PreserveAspectCrop
+                asynchronous: true
+                cache: true
+                sourceSize: Qt.size(140, 140)
                 smooth: true
                 mipmap: true
                 antialiasing: true

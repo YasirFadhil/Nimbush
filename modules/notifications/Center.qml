@@ -319,6 +319,9 @@ PanelWindow {
                                         return Quickshell.iconPath(icon, true)
                                     }
                                     fillMode: Image.PreserveAspectFit
+                                    asynchronous: true
+                                    cache: true
+                                    sourceSize: Qt.size(32, 32)
                                     visible: status === Image.Ready
                                 }
                             }
@@ -408,6 +411,9 @@ PanelWindow {
                                 Layout.preferredWidth: 40
                                 Layout.preferredHeight: 40
                                 fillMode: Image.PreserveAspectCrop
+                                asynchronous: true
+                                cache: true
+                                sourceSize: Qt.size(80, 80)
                                 clip: true
                                 Layout.alignment: Qt.AlignTop
                             }
@@ -665,6 +671,9 @@ PanelWindow {
                                                 return Quickshell.iconPath(icon, true)
                                             }
                                             fillMode: Image.PreserveAspectFit
+                                            asynchronous: true
+                                            cache: true
+                                            sourceSize: Qt.size(32, 32)
                                             visible: status === Image.Ready
                                         }
                                     }
@@ -791,6 +800,9 @@ PanelWindow {
                                     Layout.preferredWidth: 42
                                     Layout.preferredHeight: 42
                                     fillMode: Image.PreserveAspectCrop
+                                    asynchronous: true
+                                    cache: true
+                                    sourceSize: Qt.size(84, 84)
                                     clip: true
                                     Layout.alignment: Qt.AlignTop
                                 }
@@ -916,6 +928,9 @@ PanelWindow {
                                                 Layout.preferredWidth: 40
                                                 Layout.preferredHeight: 40
                                                 fillMode: Image.PreserveAspectCrop
+                                                asynchronous: true
+                                                cache: true
+                                                sourceSize: Qt.size(80, 80)
                                                 clip: true
                                                 Layout.alignment: Qt.AlignTop
                                             }

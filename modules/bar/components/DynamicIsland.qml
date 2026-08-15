@@ -425,32 +425,8 @@ Item {
     readonly property bool mediaPlaying: activePlayer !== null && activePlayer.isPlaying
     readonly property bool hasMedia: activePlayer !== null && (activePlayer.trackTitle !== "" || mediaPlaying)
 
-    // Lock Pulse State on Lockscreen
-    property bool lockPulse: false
-
-    Timer {
-        id: lockPulseTimer
-        interval: 1800
-        repeat: false
-        onTriggered: root.lockPulse = false
-    }
-
-    Connections {
-        target: Services.OverlayManager
-        function onIsLockedChanged() {
-            if (statusIconTxt) statusIconTxt.rotation = 0
-            if (Services.OverlayManager.isLocked) {
-                root.lockPulse = true
-                lockPulseTimer.restart()
-            } else {
-                root.lockPulse = false
-                lockPulseTimer.stop()
-            }
-        }
-    }
-
     readonly property bool hasExpandContent: notifActive || sysHudActive || hasMedia
-    readonly property bool expanded: (Services.OverlayManager.isLocked && lockPulse) || (!lockBlocked && hasExpandContent && (pinned || autoExpanded || notifActive || sysHudActive))
+    readonly property bool expanded: !lockBlocked && hasExpandContent && (pinned || autoExpanded || notifActive || sysHudActive)
     readonly property bool isMediaPeek: !lockBlocked && autoExpanded && !pinned && !notifActive && !sysHudActive && hasMedia
 
     property int autoExpandDuration: 2500
@@ -532,7 +508,6 @@ Item {
     property int collapsedHeight: 32
 
     readonly property int calculatedExpandedWidth: {
-        if (Services.OverlayManager.isLocked && root.expanded) return 180
         if (notifActive) return replyMode ? 390 : 360
         if (sysHudActive) return 280
         if (isMediaPeek) return 280
@@ -541,7 +516,6 @@ Item {
     }
 
     readonly property int calculatedExpandedHeight: {
-        if (Services.OverlayManager.isLocked && root.expanded) return 44
         if (notifActive) {
             if (replyMode) return 146
             let h = 72
@@ -692,30 +666,7 @@ Item {
             onClicked: root.togglePin()
         }
 
-        // Dedicated Centered Locked State View (Visible ONLY when expanded)
-        RowLayout {
-            id: lockedCenteredRow
-            anchors.centerIn: parent
-            spacing: 6
-            z: 10
-            visible: Services.OverlayManager.isLocked && root.expanded && !root.notifActive && !root.sysHudActive
 
-            Text {
-                text: "󰌾"
-                font.family: Services.Theme.fontMono
-                font.pixelSize: 13
-                color: Services.Theme.accent
-                Layout.alignment: Qt.AlignVCenter
-            }
-
-            Text {
-                text: "Locked"
-                font.pixelSize: 11
-                font.bold: true
-                color: Services.Theme.textPrimary
-                Layout.alignment: Qt.AlignVCenter
-            }
-        }
 
         // ==================== Camera Privacy Indicator (Right Edge) ====================
         Item {
@@ -782,7 +733,7 @@ Item {
                 },
                 State {
                     name: "LOCKED_COLLAPSED"
-                    when: Services.OverlayManager.isLocked && !root.lockPulse
+                    when: Services.OverlayManager.isLocked
                     AnchorChanges {
                         target: statusIconContainer
                         anchors.horizontalCenter: undefined
@@ -796,7 +747,7 @@ Item {
                 },
                 State {
                     name: "IDLE_CENTER"
-                    when: (!Services.OverlayManager.isLocked && !root.showCollapsedText && !(root.mediaStopping && !root.mediaIconTransformed) && !root.cameraActive) || (Services.OverlayManager.isLocked && root.lockPulse)
+                    when: !Services.OverlayManager.isLocked && !root.showCollapsedText && !(root.mediaStopping && !root.mediaIconTransformed) && !root.cameraActive
                     AnchorChanges {
                         target: statusIconContainer
                         anchors.horizontalCenter: island.horizontalCenter
@@ -1380,6 +1331,9 @@ Item {
                     anchors.fill: parent
                     source: root.activePlayer ? (root.activePlayer.trackArtUrl || root.activePlayer.artUrl || "") : ""
                     fillMode: Image.PreserveAspectCrop
+                    asynchronous: true
+                    cache: true
+                    sourceSize: Qt.size(64, 64)
                     visible: status === Image.Ready
                 }
 
@@ -1475,6 +1429,9 @@ Item {
                         anchors.fill: parent
                         source: root.activePlayer ? (root.activePlayer.trackArtUrl || root.activePlayer.artUrl || "") : ""
                         fillMode: Image.PreserveAspectCrop
+                        asynchronous: true
+                        cache: true
+                        sourceSize: Qt.size(80, 80)
                         visible: status === Image.Ready
                     }
 

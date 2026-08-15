@@ -53,6 +53,12 @@ PanelWindow {
 
             Components.WorkspaceIndicator {
                 Layout.alignment: Qt.AlignVCenter
+                opacity: Services.OverlayManager.isLocked ? 0.0 : 1.0
+                transform: Translate {
+                    x: Services.OverlayManager.isLocked ? -40 : 0
+                    Behavior on x { NumberAnimation { duration: 350; easing.type: Services.OverlayManager.isLocked ? Easing.OutCubic : Easing.InCubic } }
+                }
+                Behavior on opacity { NumberAnimation { duration: 350; easing.type: Services.OverlayManager.isLocked ? Easing.OutCubic : Easing.InCubic } }
             }
 
             Item {

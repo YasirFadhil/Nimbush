@@ -37,21 +37,29 @@ Singleton {
         }
     }
 
-    // CPU usage via two /proc/stat samples 1s apart
+    property real _prevTotal: 0
+    property real _prevIdle: 0
+
+    // CPU usage via single /proc/stat read calculated over timer interval
     Process {
         id: cpuProc
-        command: ["sh", "-c",
-            "read _ u n s i io irq sirq _ < /proc/stat; " +
-            "t1=$((u+n+s+i+io+irq+sirq)); i1=$i; sleep 1; " +
-            "read _ u n s i io irq sirq _ < /proc/stat; " +
-            "t2=$((u+n+s+i+io+irq+sirq)); i2=$i; " +
-            "dt=$((t2-t1)); di=$((i2-i1)); " +
-            "[ $dt -gt 0 ] && echo $(( (100*(dt-di))/dt )) || echo 0"
-        ]
+        command: ["sh", "-c", "read _ u n s i io irq sirq _ < /proc/stat; echo \"$((u+n+s+i+io+irq+sirq))|$i\""]
         stdout: SplitParser {
             onRead: data => {
-                const v = parseFloat(data)
-                if (!isNaN(v)) root.cpuUsage = v
+                const parts = data.trim().split("|")
+                if (parts.length >= 2) {
+                    const total = parseFloat(parts[0])
+                    const idle = parseFloat(parts[1])
+                    if (root._prevTotal > 0) {
+                        const totalDiff = total - root._prevTotal
+                        const idleDiff = idle - root._prevIdle
+                        if (totalDiff > 0) {
+                            root.cpuUsage = Math.round(((totalDiff - idleDiff) / totalDiff) * 100)
+                        }
+                    }
+                    root._prevTotal = total
+                    root._prevIdle = idle
+                }
             }
         }
     }

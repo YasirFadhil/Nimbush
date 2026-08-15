@@ -23,6 +23,7 @@ Singleton {
     readonly property string brigMed:   "\udb80\udcdf"
     readonly property string brigMedUp: "\udb80\udcdd"
     readonly property string brigFull:  "\udb80\udce0"
+    readonly property string sun:       "\udb80\udce0"
 
     // ── System / Dashboard ──────────────────────────────────────────────────────
     readonly property string cpu:    "\uf2db"         // nf-fa-microchip
