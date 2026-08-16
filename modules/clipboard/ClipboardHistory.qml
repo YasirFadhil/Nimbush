@@ -277,7 +277,7 @@ PanelWindow {
                 Layout.fillHeight: true
                 clip: true
                 spacing: 2
-                model: Services.Clipboard.filtered()
+                model: Services.Clipboard.filteredEntries
                 currentIndex: 0
                 keyNavigationEnabled: false
                 topMargin: 6; bottomMargin: 6
@@ -368,6 +368,9 @@ PanelWindow {
                                     source: card.isImage && card.thumbPath.length > 0
                                         ? "file://" + card.thumbPath : ""
                                     fillMode: Image.PreserveAspectCrop
+                                    asynchronous: true
+                                    cache: true
+                                    sourceSize: Qt.size(160, 100)
                                     smooth: true
                                 }
                             }

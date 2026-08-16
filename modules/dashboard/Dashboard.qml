@@ -190,6 +190,9 @@ PanelWindow {
                             anchors.margins: 1
                             source: Services.OsInfo.avatarPath
                             fillMode: Image.PreserveAspectCrop
+                            asynchronous: true
+                            cache: true
+                            sourceSize: Qt.size(90, 90)
                             visible: false
                             smooth: true
                             mipmap: true
@@ -601,6 +604,9 @@ PanelWindow {
                                         anchors.fill: parent
                                         source: "file://" + itemData.path
                                         fillMode: Image.PreserveAspectCrop
+                                        asynchronous: true
+                                        cache: true
+                                        sourceSize: Qt.size(160, 90)
                                         smooth: true
                                         mipmap: true
                                         opacity: cardMouse.containsMouse || isActive ? 1.0 : 0.82

@@ -11,6 +11,12 @@ Singleton {
     property var pinnedPreviews: []
     property var pinnedIds: pinnedPreviews
     property var _buffer: []
+    property var filteredEntries: []
+
+    onEntriesChanged: updateFiltered()
+    onFilterTypeChanged: updateFiltered()
+    onQueryChanged: updateFiltered()
+    onPinnedPreviewsChanged: updateFiltered()
 
     Process {
         id: loadPinnedProc
@@ -56,7 +62,6 @@ Singleton {
         }
     }
 
-    // fix: reusable Process instead of Qt.createQmlObject tiap panggil
     Process { id: selectProc }
     Process {
         id: deleteProc
@@ -68,9 +73,28 @@ Singleton {
         listProc.running = true
     }
 
+    function toBase64(str) {
+        if (!str) return ""
+        const bytes = []
+        for (let i = 0; i < str.length; i++) {
+            const code = str.charCodeAt(i)
+            if (code < 128) {
+                bytes.push(code)
+            } else if (code < 2048) {
+                bytes.push((code >> 6) | 192, (code & 63) | 128)
+            } else if ((code & 0xFC00) === 0xD800 && i + 1 < str.length && (str.charCodeAt(i + 1) & 0xFC00) === 0xDC00) {
+                const surrogate = ((code & 0x03FF) << 10) + (str.charCodeAt(++i) & 0x03FF) + 0x10000
+                bytes.push((surrogate >> 18) | 240, ((surrogate >> 12) & 63) | 128, ((surrogate >> 6) & 63) | 128, (surrogate & 63) | 128)
+            } else {
+                bytes.push((code >> 12) | 224, ((code >> 6) & 63) | 128, (code & 63) | 128)
+            }
+        }
+        return Qt.btoa(bytes)
+    }
+
     function savePinned() {
         const jsonStr = JSON.stringify(pinnedPreviews)
-        const b64 = Qt.btoa(jsonStr)
+        const b64 = toBase64(jsonStr)
         savePinnedProc.command = ["sh", "-c", "mkdir -p ~/.cache/quickshell && echo '" + b64 + "' | base64 -d > ~/.cache/quickshell/clipboard_pinned.json"]
         savePinnedProc.running = true
     }
@@ -91,26 +115,29 @@ Singleton {
         return entry && entry.preview ? pinnedPreviews.indexOf(entry.preview) !== -1 : false
     }
 
-    function filtered() {
-        let list = entries
-        if (filterType === "text") {
-            list = list.filter(e => !isImageEntry(e))
-        } else if (filterType === "image") {
-            list = list.filter(e => isImageEntry(e))
-        } else if (filterType === "pinned") {
+    function updateFiltered() {
+        let list = entries || []
+        if (filterType === "pinned") {
             list = list.filter(e => isPinned(e))
+        } else if (filterType === "text") {
+            list = list.filter(e => !isPinned(e) && !isImageEntry(e))
+        } else if (filterType === "image") {
+            list = list.filter(e => !isPinned(e) && isImageEntry(e))
+        } else {
+            // "all": only unpinned items
+            list = list.filter(e => !isPinned(e))
         }
+
         if (query.length > 0) {
             const q = query.toLowerCase()
             list = list.filter(e => e.preview.toLowerCase().indexOf(q) !== -1)
         }
 
-        if (filterType !== "pinned") {
-            const pinnedList = list.filter(e => isPinned(e))
-            const unpinnedList = list.filter(e => !isPinned(e))
-            return pinnedList.concat(unpinnedList)
-        }
-        return list
+        filteredEntries = list
+    }
+
+    function filtered() {
+        return filteredEntries
     }
 
     function select(entry) {
@@ -133,9 +160,9 @@ Singleton {
         }
         const unpinned = entries.filter(e => !isPinned(e))
         if (unpinned.length === 0) return
-        const ids = unpinned.map(e => e.id).join("\n")
-        const b64 = Qt.btoa(ids)
-        clearAllProc.command = ["sh", "-c", "echo '" + b64 + "' | base64 -d | while read -r id; do [ -n \"$id\" ] && cliphist delete-query \"$id\"; done"]
+        const lines = unpinned.map(e => e.id + "\t" + e.preview).join("\n")
+        const b64 = toBase64(lines)
+        clearAllProc.command = ["sh", "-c", "echo '" + b64 + "' | base64 -d | cliphist delete"]
         clearAllProc.running = true
     }
 
@@ -149,7 +176,9 @@ Singleton {
                 savePinned()
             }
         }
-        deleteProc.command = ["cliphist", "delete-query", entry.id]
+        const line = entry.id + "\t" + entry.preview
+        const b64 = toBase64(line)
+        deleteProc.command = ["sh", "-c", "echo '" + b64 + "' | base64 -d | cliphist delete"]
         deleteProc.running = true
     }
 

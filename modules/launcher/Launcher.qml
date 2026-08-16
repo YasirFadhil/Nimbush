@@ -189,7 +189,7 @@ PanelWindow {
                 visible: opacity > 0
                 clip: true
                 spacing: 2
-                model: Services.Applications.filtered()
+                model: Services.Applications.filteredApps
                 currentIndex: 0
                 keyNavigationEnabled: false
                 topMargin: 6; bottomMargin: 6
@@ -258,6 +258,9 @@ PanelWindow {
                                     return Quickshell.iconPath(s, true)
                                 }
                                 fillMode: Image.PreserveAspectFit
+                                asynchronous: true
+                                cache: true
+                                sourceSize: Qt.size(32, 32)
                                 visible: status === Image.Ready
                                 smooth: true
                                 mipmap: true

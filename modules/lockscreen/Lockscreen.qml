@@ -4,53 +4,74 @@ import QtQuick.Effects
 import Quickshell
 import Quickshell.Io
 import Quickshell.Wayland
+import Quickshell.Services.Pam
 import Quickshell.Services.Mpris
 import "../../services" as Services
 import "../bar/components" as BarComponents
 
-PanelWindow {
+Scope {
     id: root
 
-    property bool isLocked: false
-    property bool lockVisible: false
+    property bool isLocked: sessionLock.locked
+    property bool lockVisible: sessionLock.locked
     property string passwordInput: ""
+    property string pendingPassword: ""
     property bool showPassword: false
     property bool isError: false
     property string errorMessage: ""
+    property bool isAuthenticating: false
 
     property string timeStr: "00:00"
     property string dateStr: ""
     property string username: "user"
     property string hostname: "host"
     property bool capsLockOn: false
+    property bool isRevealed: false
 
     readonly property var player: Services.Mpris.activePlayer
     readonly property bool hasPlayer: player !== null && (player?.trackTitle ?? "").length > 0
     readonly property bool isPlaying: player?.isPlaying ?? false
     readonly property int notifCount: Services.Notifications.popupList ? Services.Notifications.popupList.count : 0
 
+
+
+    Timer {
+        id: revealTimer
+        interval: 50
+        onTriggered: root.isRevealed = true
+    }
+
+    Timer {
+        id: unlockTimer
+        interval: 220
+        onTriggered: {
+            Services.OverlayManager.isLocked = false
+            sessionLock.locked = false
+        }
+    }
+
     function open() {
         Services.OverlayManager.isLocked = true
         Services.OverlayManager.closeAllExcept(root)
-        hideTimer.stop()
         passwordInput = ""
+        pendingPassword = ""
         isError = false
         errorMessage = ""
         showPassword = false
-        lockVisible = true
-        isLocked = true
+        isAuthenticating = false
+        isRevealed = false
         updateTime()
-        userInfoProc.running = true
-        pwTextInput.forceActiveFocus()
+        sessionLock.locked = true
+        revealTimer.start()
     }
 
     function close() {
         if (isLocked) {
-            triggerShake("Password required")
+            triggerShake("Password required!")
             return
         }
         Services.OverlayManager.isLocked = false
-        lockVisible = false
+        sessionLock.locked = false
     }
 
     function lock() { open() }
@@ -58,10 +79,13 @@ PanelWindow {
     function hide() {
         if (!isLocked) {
             Services.OverlayManager.isLocked = false
-            lockVisible = false
+            sessionLock.locked = false
         }
     }
-    function toggle() { if (!isLocked) open() }
+    function toggle() {
+        if (isLocked) close()
+        else open()
+    }
 
     function updateTime() {
         const now = new Date()
@@ -69,59 +93,57 @@ PanelWindow {
         if (hours === 0) hours = 12
         const minutes = String(now.getMinutes()).padStart(2, "0")
         timeStr = hours + ":" + minutes
-        dateStr = Qt.formatDateTime(now, "dddd, d MMMM")
+        dateStr = Qt.formatDateTime(now, "dddd, MMMM d")
     }
 
     function authenticate() {
-        if (passwordInput.trim().length === 0) {
+        if (isAuthenticating) return
+        const pw = passwordInput.trim()
+        if (pw.length === 0) {
             triggerShake("Enter password")
             return
         }
-        unlockSuccess()
+        isAuthenticating = true
+        pendingPassword = passwordInput
+        if (pam.active && pam.responseRequired) {
+            pam.respond(pendingPassword)
+            pendingPassword = ""
+        } else {
+            if (pam.active) pam.abort()
+            pam.start()
+        }
     }
 
     function triggerShake(msg) {
         isError = true
-        errorMessage = msg || "Incorrect password"
-        shakeAnim.restart()
+        errorMessage = msg || "Incorrect password!"
+        isAuthenticating = false
+        pendingPassword = ""
         passwordInput = ""
-        pwTextInput.forceActiveFocus()
+        if (pam.active) pam.abort()
+        if (typeof shakeAnim !== "undefined" && shakeAnim) shakeAnim.restart()
     }
 
     function unlockSuccess() {
         isError = false
         errorMessage = ""
         passwordInput = ""
-        isLocked = false
-        Services.OverlayManager.isLocked = false
-        hideTimer.interval = 350
-        hideTimer.restart()
+        pendingPassword = ""
+        isAuthenticating = false
+        isRevealed = false
+        unlockTimer.start()
     }
-
-    visible: lockVisible
 
     Component.onCompleted: {
         Services.OverlayManager.register(root)
         updateTime()
-    }
-
-    color: "transparent"
-    WlrLayershell.layer: WlrLayer.Overlay
-    WlrLayershell.exclusiveZone: -1
-    WlrLayershell.keyboardFocus: Services.OverlayManager.controlCenterVisible ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.Exclusive
-    WlrLayershell.namespace: "quickshell:lockscreen"
-    anchors { top: true; bottom: true; left: true; right: true }
-
-    Timer {
-        id: hideTimer
-        interval: 350
-        onTriggered: root.lockVisible = false
+        userInfoProc.running = true
     }
 
     Timer {
         id: clockTimer
         interval: 1000
-        running: root.lockVisible
+        running: root.isLocked
         repeat: true
         triggeredOnStart: true
         onTriggered: root.updateTime()
@@ -146,497 +168,722 @@ PanelWindow {
     Process { id: rebootProc; command: ["systemctl", "reboot"] }
     Process { id: shutdownProc; command: ["systemctl", "poweroff"] }
 
-    // Keyboard Handler - Strictly prevents ESC from unlocking
-    Item {
-        id: keyFocus
-        focus: root.lockVisible
-        Keys.onPressed: (event) => {
-            if (event.key === Qt.Key_Escape) {
-                root.passwordInput = ""
-                root.triggerShake("Password required")
-                event.accepted = true
-            } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
-                root.authenticate()
-                event.accepted = true
-            } else if (event.key === Qt.Key_CapsLock) {
-                root.capsLockOn = !root.capsLockOn
-                event.accepted = true
+    PamContext {
+        id: pam
+        config: "login"
+
+        onResponseRequiredChanged: {
+            if (responseRequired && root.pendingPassword !== "") {
+                pam.respond(root.pendingPassword)
+                root.pendingPassword = ""
+            }
+        }
+
+        onCompleted: (result) => {
+            if (result === PamResult.Success) {
+                root.unlockSuccess()
             } else {
-                if (!pwTextInput.activeFocus && event.text.length > 0) {
-                    pwTextInput.forceActiveFocus()
-                }
+                root.triggerShake("Incorrect password")
             }
+        }
+
+        onError: (err) => {
+            root.triggerShake(err || "Authentication error")
         }
     }
 
-    // Fullscreen Wallpaper Layer
-    Item {
-        anchors.fill: parent
-        opacity: root.lockVisible && root.isLocked ? 1 : 0
-        Behavior on opacity { NumberAnimation { duration: 350; easing.type: Easing.OutCubic } }
+    WlSessionLock {
+        id: sessionLock
 
-        Image {
-            id: bgImage
-            anchors.fill: parent
-            source: "file://" + (Quickshell.env("HOME") || "/home/yasirfadhil") + "/.config/quickshell/assets/wallpapers/background_zoomed.png"
-            fillMode: Image.PreserveAspectCrop
-            asynchronous: true
-            smooth: true
-        }
-
-
-        Rectangle {
-            anchors.fill: parent
-            color: Services.Theme.bg
-            opacity: 0.4
-        }
-    }
-
-    // ── Top Header Bar (Center: DynamicIsland, Right: Quick Status & ControlCenter) ──
-    Item {
-        id: topBarHeader
-        anchors.top: parent.top
-        anchors.left: parent.left
-        anchors.right: parent.right
-        height: 48
-        z: 100
-        opacity: root.lockVisible && root.isLocked ? 1 : 0
-        Behavior on opacity { NumberAnimation { duration: 280; easing.type: Easing.OutCubic } }
-
-        // Center: Dynamic Island (Collapsed Lock Icon on Lockscreen)
-        BarComponents.DynamicIsland {
-            id: dynamicIsland
-            anchors.top: parent.top
-            anchors.horizontalCenter: parent.horizontalCenter
-            allowOnLockscreen: true
-            z: 999
-        }
-
-        // Right Side: Combined Battery & Control Center Pill
-        Rectangle {
-            anchors.right: parent.right
-            anchors.rightMargin: 20
-            anchors.verticalCenter: parent.verticalCenter
-            height: 30
-            implicitWidth: combinedCcRow.implicitWidth + 22
-            radius: 15
-            color: ccMouse.containsMouse ? Services.Theme.bgHover : Services.Theme.surfaceVariant
-            border.color: Services.OverlayManager.controlCenterVisible ? Services.Theme.accent : Services.Theme.border
-            border.width: 1
-            Behavior on color { ColorAnimation { duration: 120 } }
-            Behavior on border.color { ColorAnimation { duration: 120 } }
-
-            RowLayout {
-                id: combinedCcRow
-                anchors.centerIn: parent
-                spacing: 8
-
-                // Battery Icon (using Services.Icons) & Percentage
-                RowLayout {
-                    spacing: 4
-
-                    Text {
-                        text: Services.Icons.powerIcon(Services.Power.charging, Math.round((Services.Power.percentage || 0) * 100))
-                        font.family: Services.Theme.fontSymbols
-                        font.pixelSize: 11
-                        color: Services.Power.charging ? Services.Theme.success : (Services.Power.isLow ? "#ff4444" : (Services.Power.isWarning ? "#e06c75" : Services.Theme.textPrimary))
-                    }
-
-                    Text {
-                        text: Math.round((Services.Power.percentage || 0) * 100) + "%"
-                        font.pixelSize: 11
-                        font.bold: true
-                        color: Services.Power.isLow ? "#ff4444" : (Services.Power.isWarning ? "#e06c75" : Services.Theme.textPrimary)
-                    }
-                }
-
-                // Vertical Separator
-                Rectangle {
-                    width: 1
-                    height: 12
-                    color: Services.Theme.border
-                }
-
-                // Control Center Toggle Icon
-                Text {
-                    text: Services.Icons.sliders
-                    font.family: Services.Theme.fontSymbols
-                    font.pixelSize: 12
-                    color: Services.OverlayManager.controlCenterVisible ? Services.Theme.accent : Services.Theme.textPrimary
-                }
+        onLockedChanged: {
+            Services.OverlayManager.isLocked = sessionLock.locked
+            if (!sessionLock.locked) {
+                root.passwordInput = ""
+                root.pendingPassword = ""
+                root.isAuthenticating = false
+                if (pam.active) pam.abort()
             }
+        }
 
-            MouseArea {
-                id: ccMouse
+        WlSessionLockSurface {
+            id: surface
+
+            // Fullscreen solid root container inside lock surface
+            Rectangle {
                 anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: {
-                    Services.OverlayManager.controlCenterVisible = !Services.OverlayManager.controlCenterVisible
-                }
-            }
-        }
-    }
+                color: Services.Theme.bgDeep
+                focus: true
 
-    // Main Content Backdrop MouseArea
-    MouseArea {
-        anchors.fill: parent
-        enabled: !Services.OverlayManager.controlCenterVisible
-        onClicked: pwTextInput.forceActiveFocus()
+                Component.onCompleted: pwTextInput.forceActiveFocus()
 
-        Item {
-            id: mainContainer
-            anchors.fill: parent
-            anchors.horizontalCenterOffset: 0
-            opacity: root.lockVisible && root.isLocked ? 1 : 0
-            scale: root.lockVisible && root.isLocked ? 1 : 1.05
-
-            Behavior on opacity { NumberAnimation { duration: 320; easing.type: Easing.OutCubic } }
-            Behavior on scale   { NumberAnimation { duration: 350; easing.type: Easing.OutCubic } }
-
-            // Shake Animation on Auth Error or ESC press
-            SequentialAnimation {
-                id: shakeAnim
-                NumberAnimation { target: mainContainer; property: "anchors.horizontalCenterOffset"; from: 0; to: -14; duration: 40; easing.type: Easing.InOutQuad }
-                NumberAnimation { target: mainContainer; property: "anchors.horizontalCenterOffset"; from: -14; to: 14; duration: 40; easing.type: Easing.InOutQuad }
-                NumberAnimation { target: mainContainer; property: "anchors.horizontalCenterOffset"; from: 14; to: -8; duration: 35; easing.type: Easing.InOutQuad }
-                NumberAnimation { target: mainContainer; property: "anchors.horizontalCenterOffset"; from: -8; to: 8; duration: 35; easing.type: Easing.InOutQuad }
-                NumberAnimation { target: mainContainer; property: "anchors.horizontalCenterOffset"; from: 8; to: 0; duration: 30; easing.type: Easing.InOutQuad }
-            }
-
-            // ── 1. Top Clock & Date ─────────────────────────────────────────────────
-            ColumnLayout {
-                anchors.horizontalCenter: parent.horizontalCenter
-                anchors.top: parent.top
-                anchors.topMargin: root.lockVisible && root.isLocked ? (parent.height * 0.14) : (parent.height * 0.11)
-                spacing: 4
-                Behavior on anchors.topMargin { NumberAnimation { duration: 420; easing.type: Easing.OutCubic } }
-
-                Text {
-                    Layout.alignment: Qt.AlignHCenter
-                    text: root.dateStr
-                    color: Services.Theme.textPrimary
-                    font.pixelSize: 18
-                    font.weight: Font.DemiBold
-                    font.letterSpacing: 0.5
-                    style: Text.Outline
-                    styleColor: "#40000000"
+                // Keyboard Handler - Strictly prevents ESC from unlocking
+                Keys.onPressed: (event) => {
+                    if (event.key === Qt.Key_Escape) {
+                        root.passwordInput = ""
+                        root.triggerShake("Password required")
+                        event.accepted = true
+                    } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+                        root.authenticate()
+                        event.accepted = true
+                    } else if (event.key === Qt.Key_CapsLock) {
+                        root.capsLockOn = !root.capsLockOn
+                        event.accepted = true
+                    } else {
+                        if (!pwTextInput.activeFocus && event.text.length > 0) {
+                            pwTextInput.forceActiveFocus()
+                        }
+                    }
                 }
 
-                Text {
-                    Layout.alignment: Qt.AlignHCenter
-                    text: root.timeStr
-                    color: Services.Theme.white
-                    font.pixelSize: 96
-                    font.weight: Font.Bold
-                    font.family: "SF Pro Display, Inter, Sans-Serif"
-                    style: Text.Outline
-                    styleColor: "#30000000"
-                }
-            }
-
-            // ── 2. Center Profile Picture & Password Input Pill ─────────────────────
-            ColumnLayout {
-                anchors.horizontalCenter: parent.horizontalCenter
-                anchors.bottom: parent.bottom
-                anchors.bottomMargin: root.lockVisible && root.isLocked ? (parent.height * 0.25) : (parent.height * 0.22)
-                spacing: 16
-                Behavior on anchors.bottomMargin { NumberAnimation { duration: 420; easing.type: Easing.OutCubic } }
-
-                // Rounded User Picture Avatar (Using .face image with MultiEffect mask)
-                Rectangle {
-                    Layout.alignment: Qt.AlignHCenter
-                    width: 84; height: 84; radius: 22
-                    color: Services.Theme.surfaceVariant
-                    border.color: pwTextInput.activeFocus ? Services.Theme.accent : Services.Theme.borderHighlight
-                    border.width: 2
-                    antialiasing: true
-                    smooth: true
-                    Behavior on border.color { ColorAnimation { duration: 150 } }
+                // Fullscreen Wallpaper Layer (Gets image from Services.Wallpaper with smooth Zoom-In 1.0 -> 1.14 & Zoom-Out 1.14 -> 1.0)
+                Item {
+                    anchors.fill: parent
 
                     Image {
-                        id: userAvatarImg
+                        id: bgImage
                         anchors.fill: parent
-                        anchors.margins: 2
-                        source: Services.OsInfo.avatarPath.length > 0 ? Services.OsInfo.avatarPath : ("file:///home/" + (root.username || "yasirfadhil") + "/.face")
+                        source: Services.Wallpaper.currentWallpaper.length > 0 ? ("file://" + Services.Wallpaper.currentWallpaper) : ("file://" + (Quickshell.env("HOME") || "/home/yasirfadhil") + "/.config/quickshell/assets/wallpapers/background_zoomed.png")
                         fillMode: Image.PreserveAspectCrop
-                        asynchronous: true
+                        asynchronous: false
                         smooth: true
-                        mipmap: true
-                        antialiasing: true
-                        visible: false
+                        cache: true
+                        scale: root.isRevealed ? 1.20 : 1.0
+                        transformOrigin: Item.Center
+                        Behavior on scale { NumberAnimation { duration: 350; easing.type: root.isRevealed ? Easing.OutCubic : Easing.InCubic } }
                     }
 
-                    MultiEffect {
-                        anchors.fill: userAvatarImg
-                        source: userAvatarImg
-                        maskEnabled: true
-                        maskSource: avatarMask
-                        visible: userAvatarImg.status === Image.Ready
+                    // Smooth Dark Dim / Vignette Overlay
+                    Rectangle {
+                        anchors.fill: parent
+                        color: Services.Theme.bgDeep
+                        opacity: root.isRevealed ? 0.45 : 0.0
+                        Behavior on opacity {
+                            NumberAnimation {
+                                duration: 900
+                                easing.type: root.isRevealed ? Easing.OutCubic : Easing.InCubic
+                            }
+                        }
                     }
+                }
+
+                // ── Top Header Bar (Center: DynamicIsland, Right: Quick Status & ControlCenter) ──
+                Item {
+                    id: topBarHeader
+                    anchors.top: parent.top
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    height: 48
+                    z: 100
+                    opacity: root.isRevealed ? 1.0 : 0.0
+                    scale: root.isRevealed ? 1.0 : 0.96
+                    Behavior on opacity { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
+                    Behavior on scale { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
+
+                    // Center: Dynamic Island (Copied 1:1 System HUD Alert Expand 280x54px & Collapsed Capsule 48x30px from DynamicIsland.qml)
+                    Rectangle {
+                        id: lockIsland
+                        anchors.top: parent.top
+                        anchors.topMargin: 4
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        color: Services.Theme.bgDeep
+                        border.color: Services.Theme.borderHighlight
+                        border.width: 1
+
+                        property bool islandExpanded: false
+
+                        height: islandExpanded ? 54 : 32
+                        implicitWidth: islandExpanded ? 280 : 140
+                        radius: islandExpanded ? 27 : 16
+
+                        Behavior on height { NumberAnimation { duration: 320; easing.type: Easing.OutQuad } }
+                        Behavior on implicitWidth { NumberAnimation { duration: 350; easing.type: Easing.OutQuad } }
+                        Behavior on radius { NumberAnimation { duration: 320; easing.type: Easing.OutQuad } }
+
+                        Timer {
+                            id: lockIslandShrinkTimer
+                            interval: 2800
+                            repeat: false
+                            onTriggered: lockIsland.islandExpanded = false
+                        }
+
+                        Connections {
+                            target: root
+                            function onIsRevealedChanged() {
+                                if (root.isRevealed) {
+                                    lockIsland.islandExpanded = true
+                                    lockIslandShrinkTimer.restart()
+                                } else {
+                                    lockIsland.islandExpanded = false
+                                    lockIslandShrinkTimer.stop()
+                                }
+                            }
+                        }
+
+                        // ==================== Collapsed Status Icon (Left Edge in 140x32 Pill - Copied 1:1 from DynamicIsland.qml) ====================
+                        Item {
+                            id: statusIconContainer
+                            anchors.left: parent.left
+                            anchors.leftMargin: 12
+                            anchors.verticalCenter: parent.verticalCenter
+                            implicitWidth: 16
+                            implicitHeight: 16
+                            z: 3
+                            visible: !lockIsland.islandExpanded || opacity > 0.01
+                            opacity: !lockIsland.islandExpanded ? 1 : 0
+                            scale: !lockIsland.islandExpanded ? 1.0 : 0.2
+                            transformOrigin: Item.Center
+
+                            Behavior on opacity { NumberAnimation { duration: 350; easing.type: Easing.OutQuad } }
+                            Behavior on scale   { NumberAnimation { duration: 550; easing.type: Easing.OutExpo } }
+
+                            Text {
+                                anchors.centerIn: parent
+                                text: "󰌾"
+                                font.family: Services.Theme.fontMono
+                                font.pixelSize: 13
+                                color: Services.Theme.accent
+                            }
+                        }
+
+                        // ==================== Expanded: System HUD Alert (Copied 1:1 from DynamicIsland.qml L1288-L1353) ====================
+                        RowLayout {
+                            anchors.fill: parent
+                            anchors.margins: 10
+                            spacing: 10
+                            visible: lockIsland.islandExpanded || opacity > 0.01
+                            opacity: lockIsland.islandExpanded ? 1 : 0
+                            scale: lockIsland.islandExpanded ? 1.0 : 0.15
+                            transformOrigin: Item.Center
+                            z: 1
+
+                            Behavior on opacity { NumberAnimation { duration: 350; easing.type: Easing.OutQuad } }
+                            Behavior on scale   { NumberAnimation { duration: 550; easing.type: Easing.OutExpo } }
+
+                            Rectangle {
+                                implicitWidth: 32
+                                implicitHeight: 32
+                                radius: 16
+                                color: Services.Theme.surfaceVariant
+                                Layout.alignment: Qt.AlignVCenter
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: "󰌾"
+                                    font.family: Services.Theme.fontMono
+                                    font.pixelSize: 15
+                                    color: Services.Theme.accent
+                                }
+                            }
+
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                Layout.alignment: Qt.AlignVCenter
+                                spacing: 1
+
+                                Text {
+                                    text: "Device Locked"
+                                    color: Services.Theme.textPrimary
+                                    font.pixelSize: 12
+                                    font.bold: true
+                                    elide: Text.ElideRight
+                                    Layout.fillWidth: true
+                                }
+
+                                Text {
+                                    text: "Authentication required"
+                                    color: Services.Theme.textSecondary
+                                    font.pixelSize: 10
+                                    elide: Text.ElideRight
+                                    Layout.fillWidth: true
+                                }
+                            }
+                        }
+                    }
+
+                    // Right Side: Combined Battery & Control Center Pill
+                    Rectangle {
+                        anchors.right: parent.right
+                        anchors.rightMargin: 20
+                        anchors.verticalCenter: parent.verticalCenter
+                        height: 30
+                        implicitWidth: combinedCcRow.implicitWidth + 22
+                        radius: 15
+                        color: ccMouse.containsMouse ? Services.Theme.bgHover : Services.Theme.surfaceVariant
+                        border.color: Services.OverlayManager.controlCenterVisible ? Services.Theme.accent : Services.Theme.border
+                        border.width: 1
+                        Behavior on color { ColorAnimation { duration: 120 } }
+                        Behavior on border.color { ColorAnimation { duration: 120 } }
+
+                        RowLayout {
+                            id: combinedCcRow
+                            anchors.centerIn: parent
+                            spacing: 8
+
+                            // Battery Icon & Percentage
+                            RowLayout {
+                                spacing: 4
+
+                                Text {
+                                    text: Services.Icons.powerIcon(Services.Power.charging, Math.round((Services.Power.percentage || 0) * 100))
+                                    font.family: Services.Theme.fontSymbols
+                                    font.pixelSize: Services.Theme.fontSizeMd
+                                    color: Services.Power.charging ? Services.Theme.success : (Services.Power.isLow ? Services.Theme.danger : (Services.Power.isWarning ? Services.Theme.warning : Services.Theme.textPrimary))
+                                }
+
+                                Text {
+                                    text: Math.round((Services.Power.percentage || 0) * 100) + "%"
+                                    font.pixelSize: Services.Theme.fontSizeMd
+                                    font.bold: true
+                                    color: Services.Power.isLow ? Services.Theme.danger : (Services.Power.isWarning ? Services.Theme.warning : Services.Theme.textPrimary)
+                                }
+                            }
+
+                            // Vertical Separator
+                            Rectangle {
+                                width: 1
+                                height: 12
+                                color: Services.Theme.border
+                            }
+
+                            // Control Center Toggle Icon
+                            Text {
+                                text: Services.Icons.sliders
+                                font.family: Services.Theme.fontSymbols
+                                font.pixelSize: 12
+                                color: Services.OverlayManager.controlCenterVisible ? Services.Theme.accent : Services.Theme.textPrimary
+                            }
+                        }
+
+                        MouseArea {
+                            id: ccMouse
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: {
+                                Services.OverlayManager.controlCenterVisible = !Services.OverlayManager.controlCenterVisible
+                            }
+                        }
+                    }
+                }
+
+                // Main Content Backdrop MouseArea
+                MouseArea {
+                    anchors.fill: parent
+                    enabled: !Services.OverlayManager.controlCenterVisible
+                    onClicked: pwTextInput.forceActiveFocus()
 
                     Item {
-                        id: avatarMask
-                        anchors.fill: userAvatarImg
-                        visible: false
-                        layer.enabled: true
-                        layer.smooth: true
-                        layer.samples: 8
-                        Rectangle {
-                            anchors.fill: parent
-                            radius: 20
-                            color: "black"
-                            antialiasing: true
-                            smooth: true
-                        }
-                    }
-
-                    Text {
-                        anchors.centerIn: parent
-                        text: Services.Icons.user
-                        font.family: Services.Theme.fontSymbols
-                        font.pixelSize: 34
-                        color: Services.Theme.textPrimary
-                        visible: userAvatarImg.status !== Image.Ready
-                    }
-                }
-
-                // Username Label
-                Text {
-                    Layout.alignment: Qt.AlignHCenter
-                    text: Services.OsInfo.username.length > 0 ? Services.OsInfo.username : root.username
-                    color: Services.Theme.textPrimary
-                    font.pixelSize: 17
-                    font.weight: Font.Bold
-                    font.letterSpacing: 0.3
-                    style: Text.Outline
-                    styleColor: "#40000000"
-                }
-
-                // Translucent Password Input Pill
-                Rectangle {
-                    Layout.alignment: Qt.AlignHCenter
-                    width: 260
-                    height: 40
-                    radius: 20
-                    color: pwTextInput.activeFocus ? "#55000000" : "#35000000"
-                    border.color: root.isError ? Services.Theme.danger : (pwTextInput.activeFocus ? Services.Theme.accent : Services.Theme.border)
-                    border.width: 1.5
-                    Behavior on color { ColorAnimation { duration: 120 } }
-                    Behavior on border.color { ColorAnimation { duration: 120 } }
-
-                    RowLayout {
+                        id: mainContainer
                         anchors.fill: parent
-                        anchors.leftMargin: 14
-                        anchors.rightMargin: 6
-                        spacing: 6
+                        anchors.horizontalCenterOffset: 0
 
-                        TextInput {
-                            id: pwTextInput
-                            Layout.fillWidth: true
-                            text: root.passwordInput
-                            echoMode: root.showPassword ? TextInput.Normal : TextInput.Password
-                            font.pixelSize: 14
-                            color: Services.Theme.textPrimary
-                            selectByMouse: true
-                            activeFocusOnPress: true
-                            focus: true
+                        // Shake Animation on Auth Error or ESC press
+                        SequentialAnimation {
+                            id: shakeAnim
+                            NumberAnimation { target: mainContainer; property: "anchors.horizontalCenterOffset"; from: 0; to: -14; duration: 40; easing.type: Easing.InOutQuad }
+                            NumberAnimation { target: mainContainer; property: "anchors.horizontalCenterOffset"; from: -14; to: 14; duration: 40; easing.type: Easing.InOutQuad }
+                            NumberAnimation { target: mainContainer; property: "anchors.horizontalCenterOffset"; from: 14; to: -8; duration: 35; easing.type: Easing.InOutQuad }
+                            NumberAnimation { target: mainContainer; property: "anchors.horizontalCenterOffset"; from: -8; to: 8; duration: 35; easing.type: Easing.InOutQuad }
+                            NumberAnimation { target: mainContainer; property: "anchors.horizontalCenterOffset"; from: 8; to: 0; duration: 30; easing.type: Easing.InOutQuad }
+                        }
 
-                            onTextChanged: {
-                                root.passwordInput = text
-                                if (root.isError) root.isError = false
-                            }
-
-                            onAccepted: root.authenticate()
+                        // ── 1. Top Clock & Date ─────────────────────────────────────────────────
+                        ColumnLayout {
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            anchors.top: parent.top
+                            anchors.topMargin: parent.height * 0.14
+                            spacing: 4
+                            opacity: root.isRevealed ? 1.0 : 0.0
+                            Behavior on opacity { NumberAnimation { duration: 320; easing.type: Easing.OutCubic } }
 
                             Text {
-                                text: "Masukkan kata sandi..."
-                                color: Services.Theme.textDisabled
-                                font.pixelSize: 13
-                                visible: pwTextInput.text.length === 0 && !pwTextInput.activeFocus
+                                Layout.alignment: Qt.AlignHCenter
+                                text: root.dateStr
+                                color: Services.Theme.textPrimary
+                                font.pixelSize: Services.Theme.fontSize5xl
+                                font.weight: Font.DemiBold
+                                font.letterSpacing: 0.5
+                                style: Text.Outline
+                                styleColor: Services.Theme.overlayDim
+                            }
+
+                            Text {
+                                Layout.alignment: Qt.AlignHCenter
+                                text: root.timeStr
+                                color: Services.Theme.white
+                                font.pixelSize: Services.Theme.fontSizeHero
+                                font.weight: Font.Bold
+                                font.family: Services.Theme.fontDisplay
+                                style: Text.Outline
+                                styleColor: Services.Theme.overlayDim
                             }
                         }
 
-                        // Eye Password Visibility Toggle
+                        // ── 2. Center Profile Picture & Password Input Pill ─────────────────────
+                        ColumnLayout {
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            anchors.bottom: parent.bottom
+                            anchors.bottomMargin: parent.height * 0.25
+                            spacing: 16
+                            opacity: root.isRevealed ? 1.0 : 0.0
+                            Behavior on opacity { NumberAnimation { duration: 320; easing.type: Easing.OutCubic } }
+
+                            // Rounded User Picture Avatar (Using .face image with MultiEffect mask)
+                            Rectangle {
+                                Layout.alignment: Qt.AlignHCenter
+                                width: 84; height: 84; radius: 22
+                                color: Services.Theme.surfaceVariant
+                                border.color: pwTextInput.activeFocus ? Services.Theme.accent : Services.Theme.borderHighlight
+                                border.width: 2
+                                antialiasing: true
+                                smooth: true
+                                Behavior on border.color { ColorAnimation { duration: 150 } }
+
+                                Image {
+                                    id: userAvatarImg
+                                    anchors.fill: parent
+                                    anchors.margins: 2
+                                    source: Services.OsInfo.avatarPath.length > 0 ? Services.OsInfo.avatarPath : ("file:///home/" + (root.username || "yasirfadhil") + "/.face")
+                                    fillMode: Image.PreserveAspectCrop
+                                    asynchronous: true
+                                    smooth: true
+                                    mipmap: true
+                                    antialiasing: true
+                                    visible: false
+                                }
+
+                                MultiEffect {
+                                    anchors.fill: userAvatarImg
+                                    source: userAvatarImg
+                                    maskEnabled: true
+                                    maskSource: avatarMask
+                                    visible: userAvatarImg.status === Image.Ready
+                                }
+
+                                Item {
+                                    id: avatarMask
+                                    anchors.fill: userAvatarImg
+                                    visible: false
+                                    layer.enabled: true
+                                    layer.smooth: true
+                                    layer.samples: 8
+                                    Rectangle {
+                                        anchors.fill: parent
+                                        radius: 20
+                                        color: "black"
+                                        antialiasing: true
+                                        smooth: true
+                                    }
+                                }
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: Services.Icons.user
+                                    font.family: Services.Theme.fontSymbols
+                                    font.pixelSize: 34
+                                    color: Services.Theme.textPrimary
+                                    visible: userAvatarImg.status !== Image.Ready
+                                }
+                            }
+
+                            // Username Label
+                            Text {
+                                Layout.alignment: Qt.AlignHCenter
+                                text: Services.OsInfo.username.length > 0 ? Services.OsInfo.username : root.username
+                                color: Services.Theme.textPrimary
+                                font.pixelSize: 17
+                                font.weight: Font.Bold
+                                font.letterSpacing: 0.3
+                                style: Text.Outline
+                                styleColor: Services.Theme.overlayDim
+                            }
+
+                            // Translucent Password Input Pill
+                            Rectangle {
+                                Layout.alignment: Qt.AlignHCenter
+                                width: 260
+                                height: 40
+                                radius: 20
+                                color: pwTextInput.activeFocus ? Services.Theme.surfaceVariant : Services.Theme.surface
+                                border.color: root.isError ? Services.Theme.danger : (pwTextInput.activeFocus ? Services.Theme.accent : Services.Theme.border)
+                                border.width: 1.5
+                                Behavior on color { ColorAnimation { duration: 120 } }
+                                Behavior on border.color { ColorAnimation { duration: 120 } }
+
+                                RowLayout {
+                                    anchors.fill: parent
+                                    anchors.leftMargin: 14
+                                    anchors.rightMargin: 6
+                                    spacing: 6
+
+                                    TextInput {
+                                        id: pwTextInput
+                                        Layout.fillWidth: true
+                                        text: root.passwordInput
+                                        echoMode: root.showPassword ? TextInput.Normal : TextInput.Password
+                                        font.pixelSize: Services.Theme.fontSize2xl
+                                        color: Services.Theme.textPrimary
+                                        selectByMouse: true
+                                        activeFocusOnPress: true
+                                        focus: true
+                                        enabled: !root.isAuthenticating
+
+                                        onTextChanged: {
+                                            root.passwordInput = text
+                                            if (text.length > 0 && root.isError) root.isError = false
+                                        }
+
+                                        onAccepted: root.authenticate()
+
+                                        Text {
+                                            text: root.isAuthenticating ? "Authenticating..." : "Enter password..."
+                                            color: Services.Theme.textDisabled
+                                            font.pixelSize: Services.Theme.fontSizeXl
+                                            visible: pwTextInput.text.length === 0 && !pwTextInput.activeFocus
+                                        }
+                                    }
+
+                                    // Eye Password Visibility Toggle
+                                    Rectangle {
+                                        width: 26; height: 26; radius: 13
+                                        color: eyeMouse.containsMouse ? Services.Theme.bgHover : "transparent"
+
+                                        Text {
+                                            anchors.centerIn: parent
+                                            text: root.showPassword ? Services.Icons.eyeOpen : Services.Icons.eyeClosed
+                                            font.family: Services.Theme.fontSymbols
+                                            font.pixelSize: Services.Theme.fontSizeMd
+                                            color: Services.Theme.textSecondary
+                                        }
+
+                                        MouseArea {
+                                            id: eyeMouse
+                                            anchors.fill: parent
+                                            hoverEnabled: true
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: root.showPassword = !root.showPassword
+                                        }
+                                    }
+
+                                    // Submit Button / Loading Indicator
+                                    Rectangle {
+                                        width: 28; height: 28; radius: 14
+                                        color: submitMouse.containsMouse ? Services.Theme.white : (root.passwordInput.length > 0 ? Services.Theme.accent : Services.Theme.surfaceVariant)
+                                        Behavior on color { ColorAnimation { duration: 100 } }
+
+                                        Text {
+                                            anchors.centerIn: parent
+                                            text: root.isAuthenticating ? Services.Icons.spinner : Services.Icons.arrowRight
+                                            font.family: Services.Theme.fontSymbols
+                                            font.pixelSize: Services.Theme.fontSizeMd
+                                            color: root.passwordInput.length > 0 ? Services.Theme.bgDeep : Services.Theme.textDisabled
+                                        }
+
+                                        MouseArea {
+                                            id: submitMouse
+                                            anchors.fill: parent
+                                            hoverEnabled: true
+                                            cursorShape: Qt.PointingHandCursor
+                                            enabled: root.passwordInput.length > 0 && !root.isAuthenticating
+                                            onClicked: root.authenticate()
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Caps Lock Warning Pill
+                            RowLayout {
+                                Layout.alignment: Qt.AlignHCenter
+                                spacing: 6
+                                visible: root.capsLockOn && !root.isError
+
+                                Text {
+                                    text: "󰌎"
+                                    font.family: Services.Theme.fontSymbols
+                                    font.pixelSize: 13
+                                    color: Services.Theme.warning
+                                }
+
+                                Text {
+                                    text: "Caps Lock is ON"
+                                    color: Services.Theme.warning
+                                    font.pixelSize: Services.Theme.fontSizeSm
+                                    font.weight: Font.DemiBold
+                                    style: Text.Outline
+                                    styleColor: Services.Theme.overlayDim
+                                }
+                            }
+
+                            // Error Warning Message Pill
+                            RowLayout {
+                                Layout.alignment: Qt.AlignHCenter
+                                spacing: 6
+                                visible: root.isError && root.errorMessage.length > 0
+
+                                Text {
+                                    text: "󰅙"
+                                    font.family: Services.Theme.fontSymbols
+                                    font.pixelSize: 14
+                                    color: Services.Theme.danger
+                                }
+
+                                Text {
+                                    text: root.errorMessage
+                                    color: Services.Theme.danger
+                                    font.pixelSize: Services.Theme.fontSizeMd
+                                    font.bold: true
+                                    style: Text.Outline
+                                    styleColor: Services.Theme.overlayDim
+                                }
+                            }
+
+                            // ── Red Area: Small Notification Popups ─────────────────────────────
+                            ColumnLayout {
+                                Layout.alignment: Qt.AlignHCenter
+                                spacing: 6
+                                width: Math.min(mainContainer.width - 40, 340)
+                                visible: root.notifCount > 0
+
+                                Repeater {
+                                    model: Services.Notifications.popupList
+                                    delegate: Rectangle {
+                                        required property var modelData
+                                        required property int index
+                                        visible: index < 2 // Show up to 2 notification popups in the red area
+
+                                        Layout.fillWidth: true
+                                        height: 36
+                                        radius: 18
+                                        color: Services.Theme.surfaceVariant
+                                        border.color: Services.Theme.border
+                                        border.width: 1
+
+                                        RowLayout {
+                                            anchors.fill: parent
+                                            anchors.leftMargin: 14
+                                            anchors.rightMargin: 10
+                                            spacing: 8
+
+                                            Text {
+                                                text: Services.Icons.bell
+                                                font.family: Services.Theme.fontSymbols
+                                                font.pixelSize: Services.Theme.fontSizeMd
+                                                color: Services.Theme.accent
+                                            }
+
+                                            Text {
+                                                text: (modelData.appName || "Notification") + ": " + (modelData.summary || "")
+                                                color: Services.Theme.textPrimary
+                                                font.pixelSize: Services.Theme.fontSizeMd
+                                                elide: Text.ElideRight
+                                                Layout.fillWidth: true
+                                            }
+
+                                            Rectangle {
+                                                width: 20; height: 20; radius: 10
+                                                color: dismissMouse.containsMouse ? Services.Theme.danger : "transparent"
+
+                                                Text {
+                                                    anchors.centerIn: parent
+                                                    text: Services.Icons.close
+                                                    font.family: Services.Theme.fontSymbols
+                                                    font.pixelSize: Services.Theme.fontSizeXs
+                                                    color: Services.Theme.textSecondary
+                                                }
+
+                                                MouseArea {
+                                                    id: dismissMouse
+                                                    anchors.fill: parent
+                                                    hoverEnabled: true
+                                                    cursorShape: Qt.PointingHandCursor
+                                                    onClicked: Services.Notifications.dismiss(modelData.notifId)
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // ── 3. Small Bottom Section: Music Pill Only ─────────────────────────────
                         Rectangle {
-                            width: 26; height: 26; radius: 13
-                            color: eyeMouse.containsMouse ? Services.Theme.bgHover : "transparent"
-
-                            Text {
-                                anchors.centerIn: parent
-                                text: root.showPassword ? Services.Icons.eyeOpen : Services.Icons.eyeClosed
-                                font.family: Services.Theme.fontSymbols
-                                font.pixelSize: 11
-                                color: Services.Theme.textSecondary
-                            }
-
-                            MouseArea {
-                                id: eyeMouse
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: root.showPassword = !root.showPassword
-                            }
-                        }
-
-                        // Submit Button
-                        Rectangle {
-                            width: 28; height: 28; radius: 14
-                            color: submitMouse.containsMouse ? Services.Theme.white : (root.passwordInput.length > 0 ? Services.Theme.accent : Services.Theme.surfaceVariant)
-                            Behavior on color { ColorAnimation { duration: 100 } }
-
-                            Text {
-                                anchors.centerIn: parent
-                                text: Services.Icons.arrowRight
-                                font.family: Services.Theme.fontSymbols
-                                font.pixelSize: 11
-                                color: root.passwordInput.length > 0 ? "#000000" : Services.Theme.textDisabled
-                            }
-
-                            MouseArea {
-                                id: submitMouse
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                cursorShape: Qt.PointingHandCursor
-                                enabled: root.passwordInput.length > 0
-                                onClicked: root.authenticate()
-                            }
-                        }
-                    }
-                }
-
-                // Error Message Text
-                Text {
-                    Layout.alignment: Qt.AlignHCenter
-                    text: root.errorMessage
-                    color: Services.Theme.danger
-                    font.pixelSize: 11
-                    visible: root.isError && text.length > 0
-                    style: Text.Outline
-                    styleColor: "#40000000"
-                }
-
-                // ── Red Area: Small Notification Popups ─────────────────────────────
-                ColumnLayout {
-                    Layout.alignment: Qt.AlignHCenter
-                    spacing: 6
-                    width: Math.min(mainContainer.width - 40, 340)
-                    visible: root.notifCount > 0
-
-                    Repeater {
-                        model: Services.Notifications.popupList
-                        delegate: Rectangle {
-                            required property var modelData
-                            required property int index
-                            visible: index < 2 // Show up to 2 notification popups in the red area
-
-                            Layout.fillWidth: true
-                            height: 36
-                            radius: 18
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            anchors.bottom: parent.bottom
+                            anchors.bottomMargin: 24
+                            height: 34
+                            implicitWidth: smallBarContent.implicitWidth + 24
+                            radius: 17
                             color: Services.Theme.surfaceVariant
                             border.color: Services.Theme.border
                             border.width: 1
+                            visible: root.hasPlayer
 
                             RowLayout {
-                                anchors.fill: parent
-                                anchors.leftMargin: 14
-                                anchors.rightMargin: 10
-                                spacing: 8
+                                id: smallBarContent
+                                anchors.centerIn: parent
+                                spacing: 6
 
                                 Text {
-                                    text: Services.Icons.bell
+                                    text: Services.Icons.musicNote
                                     font.family: Services.Theme.fontSymbols
                                     font.pixelSize: 11
                                     color: Services.Theme.accent
                                 }
 
                                 Text {
-                                    text: (modelData.appName || "Notifikasi") + ": " + (modelData.summary || "")
+                                    text: (root.player?.trackTitle || "") + (root.player?.trackArtist ? " — " + root.player.trackArtist : "")
                                     color: Services.Theme.textPrimary
                                     font.pixelSize: 11
+                                    font.weight: Font.Medium
                                     elide: Text.ElideRight
-                                    Layout.fillWidth: true
+                                    Layout.maximumWidth: 160
                                 }
 
+                                // Small Play/Pause Button
                                 Rectangle {
-                                    width: 20; height: 20; radius: 10
-                                    color: dismissMouse.containsMouse ? Services.Theme.danger : "transparent"
+                                    width: 22; height: 22; radius: 11
+                                    color: smallPlayMouse.containsMouse ? Services.Theme.accent : "transparent"
 
                                     Text {
                                         anchors.centerIn: parent
-                                        text: "✕"
-                                        font.pixelSize: 9
-                                        color: Services.Theme.textSecondary
+                                        text: Services.Icons.mediaPlayPause(root.isPlaying)
+                                        font.family: Services.Theme.fontSymbols
+                                        font.pixelSize: Services.Theme.fontSizeXs
+                                        color: smallPlayMouse.containsMouse ? Services.Theme.bgDeep : Services.Theme.textPrimary
                                     }
 
                                     MouseArea {
-                                        id: dismissMouse
+                                        id: smallPlayMouse
                                         anchors.fill: parent
                                         hoverEnabled: true
                                         cursorShape: Qt.PointingHandCursor
-                                        onClicked: Services.Notifications.dismiss(modelData.notifId)
+                                        onClicked: root.player?.togglePlaying()
                                     }
                                 }
                             }
                         }
                     }
                 }
-            }
 
-            // ── 3. Small Bottom Section: Music Pill Only ─────────────────────────────
-            Rectangle {
-                anchors.horizontalCenter: parent.horizontalCenter
-                anchors.bottom: parent.bottom
-                anchors.bottomMargin: 24
-                height: 34
-                implicitWidth: smallBarContent.implicitWidth + 24
-                radius: 17
-                color: Services.Theme.surfaceVariant
-                border.color: Services.Theme.border
-                border.width: 1
-                visible: root.hasPlayer
+                // ── Control Center Overlay Panel on Lockscreen ──
+                Item {
+                    id: ccLockscreenOverlay
+                    anchors.fill: parent
+                    z: 9999
+                    visible: Services.OverlayManager.controlCenterVisible
+                    opacity: visible ? 1 : 0
+                    Behavior on opacity { NumberAnimation { duration: 180 } }
 
-                RowLayout {
-                    id: smallBarContent
-                    anchors.centerIn: parent
-                    spacing: 6
-
-                    Text {
-                        text: Services.Icons.musicNote
-                        font.family: Services.Theme.fontSymbols
-                        font.pixelSize: 11
-                        color: Services.Theme.accent
+                    MouseArea {
+                        anchors.fill: parent
+                        onClicked: Services.OverlayManager.controlCenterVisible = false
                     }
 
-                    Text {
-                        text: (root.player?.trackTitle || "") + (root.player?.trackArtist ? " — " + root.player.trackArtist : "")
-                        color: Services.Theme.textPrimary
-                        font.pixelSize: 11
-                        font.weight: Font.Medium
-                        elide: Text.ElideRight
-                        Layout.maximumWidth: 160
-                    }
-
-                    // Small Play/Pause Button
-                    Rectangle {
-                        width: 22; height: 22; radius: 11
-                        color: smallPlayMouse.containsMouse ? Services.Theme.accent : "transparent"
-
-                        Text {
-                            anchors.centerIn: parent
-                            text: Services.Icons.mediaPlayPause(root.isPlaying)
-                            font.family: Services.Theme.fontSymbols
-                            font.pixelSize: 9
-                            color: smallPlayMouse.containsMouse ? "#000000" : Services.Theme.textPrimary
-                        }
-
-                        MouseArea {
-                            id: smallPlayMouse
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: root.player?.togglePlaying()
-                        }
+                    LockscreenControlCenter {
+                        anchors.top: parent.top
+                        anchors.right: parent.right
+                        anchors.topMargin: 54
+                        anchors.rightMargin: 16
                     }
                 }
             }

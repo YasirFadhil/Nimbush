@@ -36,8 +36,10 @@ Variants {
             id: prevImg
             anchors.fill: parent
             fillMode: Image.PreserveAspectCrop
+            asynchronous: true
+            cache: true
             smooth: true
-            mipmap: true
+            sourceSize: Qt.size(wallWin.width > 0 ? wallWin.width : 1920, wallWin.height > 0 ? wallWin.height : 1080)
             opacity: 0.0
         }
 
@@ -47,8 +49,10 @@ Variants {
             anchors.fill: parent
             source: Services.Wallpaper.currentWallpaper.length > 0 ? ("file://" + Services.Wallpaper.currentWallpaper) : ""
             fillMode: Image.PreserveAspectCrop
+            asynchronous: true
+            cache: true
             smooth: true
-            mipmap: true
+            sourceSize: Qt.size(wallWin.width > 0 ? wallWin.width : 1920, wallWin.height > 0 ? wallWin.height : 1080)
             opacity: 1.0
         }
 
@@ -59,6 +63,9 @@ Variants {
             to: 0.0
             duration: 150
             easing.type: Easing.OutCubic
+            onFinished: {
+                prevImg.source = ""
+            }
         }
     }
 }
