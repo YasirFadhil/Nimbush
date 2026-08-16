@@ -1582,33 +1582,262 @@ PanelWindow {
                             ColumnLayout {
                                 visible: Services.OverlayManager.updatePanelVisible
                                 Layout.fillWidth: true
-                                spacing: 10
+                                spacing: 12
 
-                                Text {
-                                    text: Services.ShellUpdate.hasUpdate ? "An update is available for Quickshell." : "Your Quickshell build is up to date."
-                                    font.pixelSize: 11
-                                    color: Services.Theme.textSecondary
-                                }
-
-                                Rectangle {
+                                // Release Channel Selector
+                                ColumnLayout {
                                     Layout.fillWidth: true
-                                    implicitHeight: 34
-                                    radius: Services.Theme.radiusSm
-                                    color: Services.Theme.accent
-                                    visible: Services.ShellUpdate.hasUpdate
+                                    spacing: 6
 
                                     Text {
-                                        anchors.centerIn: parent
-                                        text: Services.ShellUpdate.isPulling ? "Updating..." : "Update Now"
+                                        text: "Release Channel"
+                                        font.pixelSize: 10
                                         font.bold: true
-                                        font.pixelSize: 11
-                                        color: Services.Theme.bgDeep
+                                        color: Services.Theme.textDisabled
                                     }
 
-                                    MouseArea {
-                                        anchors.fill: parent
-                                        cursorShape: Qt.PointingHandCursor
-                                        onClicked: Services.ShellUpdate.applyUpdate()
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 8
+
+                                        // Stable Pill (main)
+                                        Rectangle {
+                                            Layout.fillWidth: true
+                                            implicitHeight: 32
+                                            radius: Services.Theme.radiusSm
+                                            color: Services.ShellUpdate.currentBranch === "main" 
+                                                   ? Services.Theme.accent 
+                                                   : (stableBtnMouse.containsMouse ? Services.Theme.surfaceVariant : Services.Theme.bgHover)
+                                            border.color: Services.ShellUpdate.currentBranch === "main" ? Services.Theme.accent : Services.Theme.border
+                                            border.width: 1
+                                            Behavior on color { ColorAnimation { duration: 120 } }
+
+                                            RowLayout {
+                                                anchors.centerIn: parent
+                                                spacing: 6
+
+                                                Text {
+                                                    text: Services.Icons.check
+                                                    font.family: Services.Theme.fontSymbols
+                                                    font.pixelSize: 10
+                                                    color: Services.ShellUpdate.currentBranch === "main" ? Services.Theme.bgDeep : Services.Theme.accent
+                                                    visible: Services.ShellUpdate.currentBranch === "main"
+                                                }
+
+                                                Text {
+                                                    text: "Stable (main)"
+                                                    font.bold: Services.ShellUpdate.currentBranch === "main"
+                                                    font.pixelSize: 11
+                                                    color: Services.ShellUpdate.currentBranch === "main" ? Services.Theme.bgDeep : Services.Theme.textPrimary
+                                                }
+                                            }
+
+                                            MouseArea {
+                                                id: stableBtnMouse
+                                                anchors.fill: parent
+                                                hoverEnabled: true
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: Services.ShellUpdate.switchBranch("main")
+                                            }
+                                        }
+
+                                        // Unstable Pill (master)
+                                        Rectangle {
+                                            Layout.fillWidth: true
+                                            implicitHeight: 32
+                                            radius: Services.Theme.radiusSm
+                                            color: Services.ShellUpdate.currentBranch === "master" 
+                                                   ? Services.Theme.accent 
+                                                   : (unstableBtnMouse.containsMouse ? Services.Theme.surfaceVariant : Services.Theme.bgHover)
+                                            border.color: Services.ShellUpdate.currentBranch === "master" ? Services.Theme.accent : Services.Theme.border
+                                            border.width: 1
+                                            Behavior on color { ColorAnimation { duration: 120 } }
+
+                                            RowLayout {
+                                                anchors.centerIn: parent
+                                                spacing: 6
+
+                                                Text {
+                                                    text: Services.Icons.check
+                                                    font.family: Services.Theme.fontSymbols
+                                                    font.pixelSize: 10
+                                                    color: Services.ShellUpdate.currentBranch === "master" ? Services.Theme.bgDeep : Services.Theme.accent
+                                                    visible: Services.ShellUpdate.currentBranch === "master"
+                                                }
+
+                                                Text {
+                                                    text: "Unstable (master)"
+                                                    font.bold: Services.ShellUpdate.currentBranch === "master"
+                                                    font.pixelSize: 11
+                                                    color: Services.ShellUpdate.currentBranch === "master" ? Services.Theme.bgDeep : Services.Theme.textPrimary
+                                                }
+                                            }
+
+                                            MouseArea {
+                                                id: unstableBtnMouse
+                                                anchors.fill: parent
+                                                hoverEnabled: true
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: Services.ShellUpdate.switchBranch("master")
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // Status Card Box
+                                Rectangle {
+                                    Layout.fillWidth: true
+                                    implicitHeight: statusCol.implicitHeight + 20
+                                    radius: Services.Theme.radiusSm
+                                    color: Services.Theme.surfaceVariant
+                                    border.color: Services.Theme.border
+                                    border.width: 1
+
+                                    ColumnLayout {
+                                        id: statusCol
+                                        anchors.top: parent.top
+                                        anchors.left: parent.left
+                                        anchors.right: parent.right
+                                        anchors.margins: 10
+                                        spacing: 6
+
+                                        RowLayout {
+                                            Layout.fillWidth: true
+                                            spacing: 6
+
+                                            Text {
+                                                text: Services.Icons.refreshOrSpinIcon(Services.ShellUpdate.isChecking || Services.ShellUpdate.isPulling || Services.ShellUpdate.isSwitching)
+                                                font.family: Services.Theme.fontSymbols
+                                                font.pixelSize: 12
+                                                color: Services.Theme.accent
+                                            }
+
+                                            Text {
+                                                text: Services.ShellUpdate.isSwitching 
+                                                      ? "Switching release channel..." 
+                                                      : (Services.ShellUpdate.isPulling 
+                                                         ? "Downloading and applying updates..." 
+                                                         : (Services.ShellUpdate.isChecking 
+                                                            ? "Checking for updates..." 
+                                                            : (Services.ShellUpdate.hasUpdate 
+                                                               ? "Update available (" + Services.ShellUpdate.behindCount + " new commit" + (Services.ShellUpdate.behindCount > 1 ? "s" : "") + ")" 
+                                                               : "Your Quickshell build is up to date.")))
+                                                font.bold: true
+                                                font.pixelSize: 11
+                                                color: Services.Theme.textPrimary
+                                                Layout.fillWidth: true
+                                                elide: Text.ElideRight
+                                            }
+                                        }
+
+                                        Text {
+                                            text: "Current branch: " + Services.ShellUpdate.currentBranch + " (" + Services.ShellUpdate.channelName + " channel)"
+                                                  + (Services.ShellUpdate.lastCheckTime ? " • Last checked " + Services.ShellUpdate.lastCheckTime : "")
+                                            font.pixelSize: 10
+                                            color: Services.Theme.textSecondary
+                                        }
+
+                                        // Commit log preview if updates available
+                                        Rectangle {
+                                            visible: Services.ShellUpdate.hasUpdate && Services.ShellUpdate.commitLogs !== ""
+                                            Layout.fillWidth: true
+                                            implicitHeight: commitLogText.implicitHeight + 12
+                                            radius: 4
+                                            color: Services.Theme.bgDeep
+                                            border.color: Services.Theme.border
+                                            border.width: 1
+
+                                            Text {
+                                                id: commitLogText
+                                                anchors.top: parent.top
+                                                anchors.left: parent.left
+                                                anchors.right: parent.right
+                                                anchors.margins: 6
+                                                text: Services.ShellUpdate.commitLogs
+                                                font.family: "Monospace"
+                                                font.pixelSize: 9
+                                                color: Services.Theme.textSecondary
+                                                wrapMode: Text.WrapAnywhere
+                                            }
+                                        }
+
+                                        // Last error / pull message if present
+                                        Text {
+                                            visible: Services.ShellUpdate.lastError !== ""
+                                            text: Services.ShellUpdate.lastError
+                                            font.pixelSize: 10
+                                            color: Services.Theme.danger
+                                            wrapMode: Text.WordWrap
+                                            Layout.fillWidth: true
+                                        }
+
+                                        Text {
+                                            visible: Services.ShellUpdate.pullMessage !== "" && Services.ShellUpdate.lastError === ""
+                                            text: Services.ShellUpdate.pullMessage
+                                            font.pixelSize: 10
+                                            color: Services.Theme.accent
+                                            wrapMode: Text.WordWrap
+                                            Layout.fillWidth: true
+                                        }
+                                    }
+                                }
+
+                                // Action Buttons Row
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 8
+
+                                    // Check Updates Button
+                                    Rectangle {
+                                        Layout.fillWidth: true
+                                        implicitHeight: 32
+                                        radius: Services.Theme.radiusSm
+                                        color: checkBtnMouse.containsMouse ? Services.Theme.surfaceVariant : Services.Theme.bgHover
+                                        border.color: Services.Theme.border
+                                        border.width: 1
+                                        Behavior on color { ColorAnimation { duration: 100 } }
+
+                                        Text {
+                                            anchors.centerIn: parent
+                                            text: Services.ShellUpdate.isChecking ? "Checking..." : "Check for Updates"
+                                            font.bold: true
+                                            font.pixelSize: 11
+                                            color: Services.Theme.textPrimary
+                                        }
+
+                                        MouseArea {
+                                            id: checkBtnMouse
+                                            anchors.fill: parent
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: Services.ShellUpdate.checkUpdates()
+                                        }
+                                    }
+
+                                    // Update Now Button (visible if hasUpdate)
+                                    Rectangle {
+                                        visible: Services.ShellUpdate.hasUpdate
+                                        Layout.fillWidth: true
+                                        implicitHeight: 32
+                                        radius: Services.Theme.radiusSm
+                                        color: updateBtnClickMouse.containsMouse ? Services.Theme.accent : Services.Theme.bgHover
+                                        border.color: Services.Theme.accent
+                                        border.width: 1
+                                        Behavior on color { ColorAnimation { duration: 100 } }
+
+                                        Text {
+                                            anchors.centerIn: parent
+                                            text: Services.ShellUpdate.isPulling ? "Updating..." : "Update Now"
+                                            font.bold: true
+                                            font.pixelSize: 11
+                                            color: updateBtnClickMouse.containsMouse ? Services.Theme.bgDeep : Services.Theme.accent
+                                        }
+
+                                        MouseArea {
+                                            id: updateBtnClickMouse
+                                            anchors.fill: parent
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: Services.ShellUpdate.applyUpdate()
+                                        }
                                     }
                                 }
                             }
