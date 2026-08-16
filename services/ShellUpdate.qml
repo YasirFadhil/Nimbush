@@ -7,11 +7,14 @@ Singleton {
     id: root
 
     property string currentBranch: "main"
-    property int mainBehindCount: 0
-    property bool hasUpdate: mainBehindCount > 0
+    property string channelName: currentBranch === "main" ? "Stable" : (currentBranch === "master" ? "Unstable" : currentBranch)
+    property int behindCount: 0
+    property alias mainBehindCount: root.behindCount
+    property bool hasUpdate: behindCount > 0
     property string commitLogs: ""
     property bool isChecking: false
     property bool isPulling: false
+    property bool isSwitching: false
     property string lastError: ""
     property string lastCheckTime: ""
     property string pullMessage: ""
@@ -20,7 +23,7 @@ Singleton {
 
     Process {
         id: checkProc
-        command: ["sh", "-c", "cd $HOME/.config/quickshell && b=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo 'main'); git fetch origin >/dev/null 2>&1; c=$(git rev-list --count main..origin/main 2>/dev/null || echo 0); echo \"$b|$c\"; echo \"---LOGS---\"; git log main..origin/main --oneline -n 5 2>/dev/null"]
+        command: ["sh", "-c", "cd $HOME/.config/quickshell && b=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo 'main'); git fetch origin >/dev/null 2>&1; c=$(git rev-list --count $b..origin/$b 2>/dev/null || echo 0); echo \"$b|$c\"; echo \"---LOGS---\"; git log $b..origin/$b --oneline -n 5 2>/dev/null"]
         
         property string rawOutput: ""
 
@@ -38,7 +41,7 @@ Singleton {
                     const meta = parts[0].trim().split("|")
                     if (meta.length >= 2) {
                         root.currentBranch = meta[0].trim()
-                        root.mainBehindCount = parseInt(meta[1].trim()) || 0
+                        root.behindCount = parseInt(meta[1].trim()) || 0
                     }
                 }
                 
@@ -50,9 +53,9 @@ Singleton {
                 root.lastCheckTime = Qt.formatTime(now, "hh:mm")
                 root.lastError = ""
 
-                // Send notification if update newly detected on main
+                // Send notification if update newly detected on current branch
                 if (root.hasUpdate && !root._previousHasUpdate) {
-                    notifyProc.command = ["notify-send", "-a", "Quickshell Update", "Update Available", root.mainBehindCount + " new commit(s) available on main branch"]
+                    notifyProc.command = ["notify-send", "-a", "Quickshell Update", "Update Available", root.behindCount + " new commit(s) available on " + root.channelName + " branch (" + root.currentBranch + ")"]
                     notifyProc.running = true
                 }
                 root._previousHasUpdate = root.hasUpdate
@@ -64,7 +67,7 @@ Singleton {
 
     Process {
         id: pullProc
-        command: ["sh", "-c", "cd $HOME/.config/quickshell && if [ \"$(git rev-parse --abbrev-ref HEAD)\" != \"main\" ]; then git checkout main; fi && git pull origin main"]
+        command: ["sh", "-c", "cd $HOME/.config/quickshell && b=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo 'main') && git pull origin $b"]
         
         property string pullOutput: ""
 
@@ -83,13 +86,47 @@ Singleton {
             root.isPulling = false
             if (exitCode === 0) {
                 root.lastError = ""
-                root.pullMessage = "Main branch updated successfully!"
+                root.pullMessage = root.channelName + " branch (" + root.currentBranch + ") updated successfully!"
                 root.checkUpdates()
-                notifyProc.command = ["notify-send", "-a", "Quickshell Update", "Quickshell Updated", "Successfully pulled latest source updates for main branch."]
+                notifyProc.command = ["notify-send", "-a", "Quickshell Update", "Quickshell Updated", "Successfully pulled latest source updates for " + root.channelName + " branch."]
                 notifyProc.running = true
             } else {
                 root.lastError = "Update pull failed: " + pullProc.pullOutput.trim()
-                notifyProc.command = ["notify-send", "-u", "critical", "-a", "Quickshell Update", "Update Failed", "Git pull failed for main branch."]
+                notifyProc.command = ["notify-send", "-u", "critical", "-a", "Quickshell Update", "Update Failed", "Git pull failed for " + root.currentBranch + " branch."]
+                notifyProc.running = true
+            }
+        }
+    }
+
+    Process {
+        id: switchProc
+        property string targetBranchName: "main"
+        command: ["sh", "-c", "cd $HOME/.config/quickshell && git checkout " + targetBranchName + " && git pull origin " + targetBranchName]
+
+        property string switchOutput: ""
+
+        stdout: SplitParser {
+            onRead: data => {
+                switchProc.switchOutput += data + "\n"
+            }
+        }
+        stderr: SplitParser {
+            onRead: data => {
+                switchProc.switchOutput += data + "\n"
+            }
+        }
+
+        onExited: (exitCode, exitStatus) => {
+            root.isSwitching = false
+            if (exitCode === 0) {
+                root.lastError = ""
+                root.pullMessage = "Switched to " + (switchProc.targetBranchName === "main" ? "Stable (main)" : "Unstable (master)") + " branch successfully!"
+                root.checkUpdates()
+                notifyProc.command = ["notify-send", "-a", "Quickshell Update", "Branch Switched", "Switched channel to " + (switchProc.targetBranchName === "main" ? "Stable (main)" : "Unstable (master)")]
+                notifyProc.running = true
+            } else {
+                root.lastError = "Branch switch failed: " + switchProc.switchOutput.trim()
+                notifyProc.command = ["notify-send", "-u", "critical", "-a", "Quickshell Update", "Switch Failed", "Failed to switch to branch " + switchProc.targetBranchName]
                 notifyProc.running = true
             }
         }
@@ -100,17 +137,31 @@ Singleton {
     }
 
     function checkUpdates() {
-        if (isChecking || isPulling) return
+        if (isChecking || isPulling || isSwitching) return
         isChecking = true
         checkProc.rawOutput = ""
         checkProc.running = true
     }
 
     function pullUpdates() {
-        if (isPulling || isChecking) return
+        if (isPulling || isChecking || isSwitching) return
         isPulling = true
         pullProc.pullOutput = ""
         pullProc.running = true
+    }
+
+    function applyUpdate() {
+        pullUpdates()
+    }
+
+    function switchBranch(target) {
+        if (isSwitching || isPulling || isChecking) return
+        if (target === currentBranch) return
+        isSwitching = true
+        switchProc.targetBranchName = target
+        switchProc.switchOutput = ""
+        switchProc.command = ["sh", "-c", "cd $HOME/.config/quickshell && git checkout " + target + " && git pull origin " + target]
+        switchProc.running = true
     }
 
     // Periodically check every 15 minutes
@@ -129,3 +180,4 @@ Singleton {
         onTriggered: root.checkUpdates()
     }
 }
+
