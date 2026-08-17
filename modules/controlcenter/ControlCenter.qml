@@ -29,7 +29,7 @@ PanelWindow {
     }
     Process {
         id: screenshotProc
-        command: ["sh", "-c", "grim -g \"$(slurp)\" - | wl-copy && wl-paste | swappy -f -"]
+        command: ["sh", "-c", "mkdir -p ~/Pictures/Screenshots && sleep 0.2 && (hyprshot -m region -o ~/Pictures/Screenshots || (GEOM=$(slurp) && [ -n \"$GEOM\" ] && FILE=\"$HOME/Pictures/Screenshots/Screenshot_$(date +'%Y%m%d_%H%M%S').png\" && grim -g \"$GEOM\" \"$FILE\" && wl-copy < \"$FILE\"))"]
     }
 
     function open() {
@@ -847,6 +847,123 @@ PanelWindow {
                                                         font.pixelSize: 10
                                                         color: Services.Bluetooth.enabled ? "#333333" : Services.Theme.textDisabled
                                                     }
+
+                                                    // Unpair / Forget button
+                                                    Rectangle {
+                                                        width: 20; height: 20; radius: 10
+                                                        color: unpairBtMouse.containsMouse ? "#40000000" : "transparent"
+
+                                                        Text {
+                                                            anchors.centerIn: parent
+                                                            text: "󰆴"
+                                                            font.family: Services.Theme.fontSymbols
+                                                            font.pixelSize: 10
+                                                            color: unpairBtMouse.containsMouse ? Services.Theme.danger : (Services.Bluetooth.enabled ? "#444444" : Services.Theme.textDisabled)
+                                                        }
+
+                                                        MouseArea {
+                                                            id: unpairBtMouse
+                                                            anchors.fill: parent
+                                                            hoverEnabled: true
+                                                            cursorShape: Qt.PointingHandCursor
+                                                            onClicked: Services.Bluetooth.removeDevice(btItem.modelData.mac)
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    // ── Scan New Devices Button ──
+                                    Rectangle {
+                                        visible: Services.Bluetooth.enabled
+                                        Layout.fillWidth: true
+                                        implicitHeight: 28
+                                        radius: Services.Theme.radiusSm
+                                        color: scanBtnArea.containsMouse ? "#30000000" : "#15000000"
+                                        Layout.topMargin: 4
+
+                                        RowLayout {
+                                            anchors.centerIn: parent
+                                            spacing: 6
+
+                                            Text {
+                                                text: Services.Icons.refreshOrSpinIcon(Services.Bluetooth.scanning)
+                                                font.family: Services.Theme.fontSymbols
+                                                font.pixelSize: 11
+                                                color: Services.Theme.bgDeep
+                                            }
+
+                                            Text {
+                                                text: Services.Bluetooth.scanning ? "Scanning for devices..." : "Scan New Devices"
+                                                font.pixelSize: 10
+                                                font.bold: true
+                                                color: Services.Theme.bgDeep
+                                            }
+                                        }
+
+                                        MouseArea {
+                                            id: scanBtnArea
+                                            anchors.fill: parent
+                                            hoverEnabled: true
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: Services.Bluetooth.toggleScan()
+                                        }
+                                    }
+
+                                    // ── Available / Unpaired Devices Section ──
+                                    Text {
+                                        visible: Services.Bluetooth.enabled && Services.Bluetooth.unpairedDevices.length > 0
+                                        text: "Available Devices"
+                                        font.pixelSize: 10
+                                        font.bold: true
+                                        color: Services.Bluetooth.enabled ? "#444444" : Services.Theme.textDisabled
+                                        Layout.topMargin: 4
+                                    }
+
+                                    Repeater {
+                                        model: Services.Bluetooth.enabled ? Services.Bluetooth.unpairedDevices : []
+                                        delegate: Rectangle {
+                                            id: unpItem
+                                            required property var modelData
+                                            Layout.fillWidth: true
+                                            implicitHeight: 34
+                                            radius: Services.Theme.radiusSm
+                                            color: unpItemArea.containsMouse ? "#25000000" : "transparent"
+
+                                            MouseArea {
+                                                id: unpItemArea
+                                                anchors.fill: parent
+                                                hoverEnabled: true
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: Services.Bluetooth.pairAndConnect(unpItem.modelData.mac)
+
+                                                RowLayout {
+                                                    anchors.fill: parent
+                                                    anchors.margins: 6
+                                                    spacing: 8
+
+                                                    Text {
+                                                        text: "󰂲"
+                                                        font.family: Services.Theme.fontSymbols
+                                                        font.pixelSize: 12
+                                                        color: Services.Bluetooth.enabled ? Services.Theme.bgDeep : Services.Theme.textPrimary
+                                                    }
+
+                                                    Text {
+                                                        text: unpItem.modelData.name || unpItem.modelData.mac
+                                                        font.pixelSize: 11
+                                                        color: Services.Bluetooth.enabled ? Services.Theme.bgDeep : Services.Theme.textPrimary
+                                                        Layout.fillWidth: true
+                                                        elide: Text.ElideRight
+                                                    }
+
+                                                    Text {
+                                                        text: Services.Bluetooth.pairingMac === unpItem.modelData.mac ? "Pairing..." : "Pair & Connect"
+                                                        font.pixelSize: 10
+                                                        font.bold: true
+                                                        color: Services.Bluetooth.enabled ? "#333333" : Services.Theme.textDisabled
+                                                    }
                                                 }
                                             }
                                         }
@@ -947,6 +1064,7 @@ PanelWindow {
                                     cursorShape: Qt.PointingHandCursor
                                     onClicked: {
                                         root.close()
+                                        screenshotProc.running = false
                                         screenshotProc.running = true
                                     }
                                 }

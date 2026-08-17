@@ -762,6 +762,122 @@ Rectangle {
                                                     color: btRow.modelData.connected ? Services.Theme.textPrimary : Services.Theme.bgDeep
                                                 }
                                             }
+
+                                            // Unpair / Forget button
+                                            Rectangle {
+                                                width: 22; height: 22; radius: 11
+                                                color: unpairLsMouse.containsMouse ? Services.Theme.danger : Services.Theme.surfaceVariant
+
+                                                Text {
+                                                    anchors.centerIn: parent
+                                                    text: "󰆴"
+                                                    font.family: Services.Theme.fontSymbols
+                                                    font.pixelSize: 9
+                                                    color: unpairLsMouse.containsMouse ? "#ffffff" : Services.Theme.textSecondary
+                                                }
+
+                                                MouseArea {
+                                                    id: unpairLsMouse
+                                                    anchors.fill: parent
+                                                    hoverEnabled: true
+                                                    cursorShape: Qt.PointingHandCursor
+                                                    onClicked: Services.Bluetooth.removeDevice(btRow.modelData.mac)
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Scan New Devices Button
+                            Rectangle {
+                                visible: Services.Bluetooth.enabled
+                                Layout.fillWidth: true
+                                implicitHeight: 30
+                                radius: Services.Theme.radiusSm
+                                color: lsScanArea.containsMouse ? Services.Theme.bgHover : Services.Theme.surfaceVariant
+
+                                RowLayout {
+                                    anchors.centerIn: parent
+                                    spacing: 6
+
+                                    Text {
+                                        text: Services.Icons.refreshOrSpinIcon(Services.Bluetooth.scanning)
+                                        font.family: Services.Theme.fontSymbols
+                                        font.pixelSize: 11
+                                        color: Services.Theme.accent
+                                    }
+
+                                    Text {
+                                        text: Services.Bluetooth.scanning ? "Scanning..." : "Scan New Devices"
+                                        font.pixelSize: 10
+                                        font.bold: true
+                                        color: Services.Theme.textPrimary
+                                    }
+                                }
+
+                                MouseArea {
+                                    id: lsScanArea
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: Services.Bluetooth.toggleScan()
+                                }
+                            }
+
+                            // Available / Unpaired Devices
+                            Repeater {
+                                model: Services.Bluetooth.enabled ? Services.Bluetooth.unpairedDevices : []
+                                delegate: Rectangle {
+                                    id: lsUnpRow
+                                    required property var modelData
+                                    Layout.fillWidth: true
+                                    implicitHeight: 38
+                                    radius: Services.Theme.radiusSm
+                                    color: lsUnpArea.containsMouse ? Services.Theme.bgHover : "transparent"
+
+                                    MouseArea {
+                                        id: lsUnpArea
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: Services.Bluetooth.pairAndConnect(lsUnpRow.modelData.mac)
+
+                                        RowLayout {
+                                            anchors.fill: parent
+                                            anchors.margins: 6
+                                            spacing: 8
+
+                                            Text {
+                                                text: "󰂲"
+                                                font.family: Services.Theme.fontSymbols
+                                                font.pixelSize: 13
+                                                color: Services.Theme.accent
+                                            }
+
+                                            Text {
+                                                text: lsUnpRow.modelData.name || lsUnpRow.modelData.mac
+                                                font.pixelSize: 11
+                                                color: Services.Theme.textPrimary
+                                                Layout.fillWidth: true
+                                                elide: Text.ElideRight
+                                            }
+
+                                            Rectangle {
+                                                implicitWidth: lsUnpTxt.implicitWidth + 14
+                                                implicitHeight: 22
+                                                radius: 11
+                                                color: Services.Theme.accent
+
+                                                Text {
+                                                    id: lsUnpTxt
+                                                    anchors.centerIn: parent
+                                                    text: Services.Bluetooth.pairingMac === lsUnpRow.modelData.mac ? "Pairing..." : "Pair"
+                                                    font.pixelSize: 9
+                                                    font.bold: true
+                                                    color: Services.Theme.bgDeep
+                                                }
+                                            }
                                         }
                                     }
                                 }

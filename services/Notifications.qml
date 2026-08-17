@@ -138,10 +138,13 @@ Singleton {
     }
 
     function isKdeConnectNotif(n) {
+        if (!n) return false
         const appName = (n.appName || "").toLowerCase()
         const desktopEntry = (n.desktopEntry || "").toLowerCase()
+        const appIcon = (n.appIcon || "").toLowerCase()
         if (appName.includes("kde") || appName.includes("connect")) return true
         if (desktopEntry.includes("kdeconnect") || desktopEntry.includes("kde")) return true
+        if (appIcon.includes("kdeconnect") || appIcon.includes("kde")) return true
         try {
             const hints = n.hints || {}
             for (const k in hints) {
@@ -153,17 +156,53 @@ Singleton {
 
     function isMessagingApp(n) {
         if (!n) return false
+
+        const messagingKeywords = [
+            "whatsapp", "tiktok", "instagram", "telegram", "signal",
+            "discord", "slack", "element", "messenger", "sms",
+            "messages", "chat", "skype", "viber", "line", "wechat",
+            "weixin", "snapchat", "twitter", "reddit", "teams"
+        ]
+
         const appName = (n.appName || "").toLowerCase()
         const desktopEntry = (n.desktopEntry || "").toLowerCase()
-        const messagingKeywords = [
-            "whatsapp", "telegram", "signal", "discord", "slack", "element",
-            "messenger", "sms", "messages", "kdeconnect", "kde connect", "chat",
-            "skype", "viber", "line"
-        ]
+        const appIcon = (n.appIcon || "").toLowerCase()
+        const summary = (n.summary || "").toLowerCase()
+        const body = (n.body || "").toLowerCase()
+
+        // 1. Direct check on primary app identifiers
         for (let i = 0; i < messagingKeywords.length; i++) {
             const kw = messagingKeywords[i]
-            if (appName.includes(kw) || desktopEntry.includes(kw)) return true
+            if (appName.includes(kw) || desktopEntry.includes(kw) || appIcon.includes(kw)) {
+                return true
+            }
         }
+
+        // 2. Package identifiers in appIcon (e.g. TikTok / Instagram / Telegram packages)
+        if (appIcon.includes("trill") || appIcon.includes("ugc") || appIcon.includes("musically")) {
+            return true
+        }
+
+        // 3. For KDE Connect notifications, check summary, body, or hints for messaging keywords
+        if (root.isKdeConnectNotif(n)) {
+            for (let i = 0; i < messagingKeywords.length; i++) {
+                const kw = messagingKeywords[i]
+                if (summary.includes(kw) || body.includes(kw)) {
+                    return true
+                }
+            }
+
+            try {
+                const hints = n.hints || {}
+                for (const k in hints) {
+                    const val = String(hints[k]).toLowerCase()
+                    for (let i = 0; i < messagingKeywords.length; i++) {
+                        if (val.includes(messagingKeywords[i])) return true
+                    }
+                }
+            } catch (e) { }
+        }
+
         return false
     }
 

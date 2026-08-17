@@ -120,11 +120,10 @@ PanelWindow {
                 Layout.bottomMargin: 12
                 Layout.leftMargin: 16
                 Layout.rightMargin: 14
-                spacing: 10
+                spacing: 8
 
                 RowLayout {
                     spacing: 8
-                    Layout.fillWidth: true
 
                     Text {
                         text: "Notifications"
@@ -154,6 +153,8 @@ PanelWindow {
                         }
                     }
                 }
+
+                Item { Layout.fillWidth: true }
 
                 // DnD Toggle Button
                 Rectangle {

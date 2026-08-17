@@ -268,32 +268,6 @@ PanelWindow {
                             }
                         }
                     }
-
-                    // Close button
-                    Rectangle {
-                        width: 26; height: 26; radius: 13
-                        color: closeMouse.containsMouse ? Services.Theme.surfaceVariant : "transparent"
-                        border.color: closeMouse.containsMouse ? Services.Theme.border : "transparent"
-                        border.width: 1
-                        Behavior on color { ColorAnimation { duration: 100 } }
-
-                        Text {
-                            anchors.centerIn: parent
-                            text: Services.Icons.close
-                            font.family: Services.Theme.fontSymbols
-                            font.pixelSize: 11
-                            color: closeMouse.containsMouse ? Services.Theme.textPrimary : Services.Theme.textDisabled
-                            Behavior on color { ColorAnimation { duration: 100 } }
-                        }
-
-                        MouseArea {
-                            id: closeMouse
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: root.close()
-                        }
-                    }
                 }
 
                 // ── Divider ──────────────────────────────────────────────────
