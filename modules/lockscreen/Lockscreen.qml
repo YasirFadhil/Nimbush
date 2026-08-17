@@ -8,6 +8,7 @@ import Quickshell.Services.Pam
 import Quickshell.Services.Mpris
 import "../../services" as Services
 import "../bar/components" as BarComponents
+import "../notifications" as NotifModule
 
 Scope {
     id: root
@@ -31,7 +32,7 @@ Scope {
     readonly property var player: Services.Mpris.activePlayer
     readonly property bool hasPlayer: player !== null && (player?.trackTitle ?? "").length > 0
     readonly property bool isPlaying: player?.isPlaying ?? false
-    readonly property int notifCount: Services.Notifications.popupList ? Services.Notifications.popupList.count : 0
+    readonly property int notifCount: Services.Notifications.historyList ? Services.Notifications.historyList.count : 0
 
 
 
@@ -270,14 +271,16 @@ Scope {
                 Item {
                     id: topBarHeader
                     anchors.top: parent.top
+                    anchors.topMargin: root.isRevealed ? 0 : -20
                     anchors.left: parent.left
                     anchors.right: parent.right
                     height: 48
                     z: 100
                     opacity: root.isRevealed ? 1.0 : 0.0
                     scale: root.isRevealed ? 1.0 : 0.96
-                    Behavior on opacity { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
-                    Behavior on scale { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
+                    Behavior on anchors.topMargin { NumberAnimation { duration: 300; easing.type: Easing.OutCubic } }
+                    Behavior on opacity { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                    Behavior on scale { NumberAnimation { duration: 280; easing.type: Easing.OutCubic } }
 
                     // Center: Dynamic Island (Copied 1:1 System HUD Alert Expand 280x54px & Collapsed Capsule 48x30px from DynamicIsland.qml)
                     Rectangle {
@@ -489,12 +492,17 @@ Scope {
 
                         // ── 1. Top Clock & Date ─────────────────────────────────────────────────
                         ColumnLayout {
+                            id: topClockColumn
                             anchors.horizontalCenter: parent.horizontalCenter
                             anchors.top: parent.top
-                            anchors.topMargin: parent.height * 0.14
+                            anchors.topMargin: root.isRevealed ? (parent.height * 0.14) : (parent.height * 0.14 - 35)
                             spacing: 4
                             opacity: root.isRevealed ? 1.0 : 0.0
-                            Behavior on opacity { NumberAnimation { duration: 320; easing.type: Easing.OutCubic } }
+                            scale: root.isRevealed ? 1.0 : 0.92
+                            transformOrigin: Item.Center
+                            Behavior on anchors.topMargin { NumberAnimation { duration: 400; easing.type: Easing.OutCubic } }
+                            Behavior on opacity { NumberAnimation { duration: 350; easing.type: Easing.OutCubic } }
+                            Behavior on scale { NumberAnimation { duration: 400; easing.type: Easing.OutCubic } }
 
                             Text {
                                 Layout.alignment: Qt.AlignHCenter
@@ -521,12 +529,17 @@ Scope {
 
                         // ── 2. Center Profile Picture & Password Input Pill ─────────────────────
                         ColumnLayout {
+                            id: centerAuthColumn
                             anchors.horizontalCenter: parent.horizontalCenter
                             anchors.bottom: parent.bottom
-                            anchors.bottomMargin: parent.height * 0.25
+                            anchors.bottomMargin: root.isRevealed ? (parent.height * 0.29) : (parent.height * 0.29 - 45)
                             spacing: 16
                             opacity: root.isRevealed ? 1.0 : 0.0
-                            Behavior on opacity { NumberAnimation { duration: 320; easing.type: Easing.OutCubic } }
+                            scale: root.isRevealed ? 1.0 : 0.88
+                            transformOrigin: Item.Center
+                            Behavior on anchors.bottomMargin { NumberAnimation { duration: 420; easing.type: Easing.OutCubic } }
+                            Behavior on opacity { NumberAnimation { duration: 350; easing.type: Easing.OutCubic } }
+                            Behavior on scale { NumberAnimation { duration: 450; easing.type: Easing.OutBack; easing.overshoot: 1.1 } }
 
                             // Rounded User Picture Avatar (Using .face image with MultiEffect mask)
                             Rectangle {
@@ -691,6 +704,8 @@ Scope {
                                 }
                             }
 
+
+
                             // Caps Lock Warning Pill
                             RowLayout {
                                 Layout.alignment: Qt.AlignHCenter
@@ -736,71 +751,42 @@ Scope {
                                     styleColor: Services.Theme.overlayDim
                                 }
                             }
+                        }
 
-                            // ── Red Area: Small Notification Popups ─────────────────────────────
-                            ColumnLayout {
-                                Layout.alignment: Qt.AlignHCenter
-                                spacing: 6
-                                width: Math.min(mainContainer.width - 40, 340)
-                                visible: root.notifCount > 0
+                        // ── Floating Overlapping Notification Cards Overlay (Below input, persistent history) ──
+                        Item {
+                            id: notifStackContainer
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            anchors.top: centerAuthColumn.bottom
+                            anchors.topMargin: 24
+                            width: Math.min(mainContainer.width - 50, 305)
+                            height: 90
+                            z: 100
+                            visible: root.notifCount > 0 && root.isRevealed
+                            opacity: root.isRevealed ? 1.0 : 0.0
+                            Behavior on opacity { NumberAnimation { duration: 300 } }
 
-                                Repeater {
-                                    model: Services.Notifications.popupList
-                                    delegate: Rectangle {
-                                        required property var modelData
-                                        required property int index
-                                        visible: index < 2 // Show up to 2 notification popups in the red area
+                            Repeater {
+                                model: Services.Notifications.historyList
 
-                                        Layout.fillWidth: true
-                                        height: 36
-                                        radius: 18
-                                        color: Services.Theme.surfaceVariant
-                                        border.color: Services.Theme.border
-                                        border.width: 1
+                                delegate: NotifModule.Popup {
+                                    required property var modelData
+                                    required property int index
 
-                                        RowLayout {
-                                            anchors.fill: parent
-                                            anchors.leftMargin: 14
-                                            anchors.rightMargin: 10
-                                            spacing: 8
+                                    visible: index < 2
+                                    notif: modelData
 
-                                            Text {
-                                                text: Services.Icons.bell
-                                                font.family: Services.Theme.fontSymbols
-                                                font.pixelSize: Services.Theme.fontSizeMd
-                                                color: Services.Theme.accent
-                                            }
+                                    anchors.horizontalCenter: parent.horizontalCenter
+                                    width: notifStackContainer.width
 
-                                            Text {
-                                                text: (modelData.appName || "Notification") + ": " + (modelData.summary || "")
-                                                color: Services.Theme.textPrimary
-                                                font.pixelSize: Services.Theme.fontSizeMd
-                                                elide: Text.ElideRight
-                                                Layout.fillWidth: true
-                                            }
+                                    // Overlap Effect (Solid color, older card peeks UPWARDS)
+                                    z: 20 - index
+                                    y: -index * 8
+                                    scale: index === 0 ? 1.0 : 0.96
+                                    opacity: 1.0
 
-                                            Rectangle {
-                                                width: 20; height: 20; radius: 10
-                                                color: dismissMouse.containsMouse ? Services.Theme.danger : "transparent"
-
-                                                Text {
-                                                    anchors.centerIn: parent
-                                                    text: Services.Icons.close
-                                                    font.family: Services.Theme.fontSymbols
-                                                    font.pixelSize: Services.Theme.fontSizeXs
-                                                    color: Services.Theme.textSecondary
-                                                }
-
-                                                MouseArea {
-                                                    id: dismissMouse
-                                                    anchors.fill: parent
-                                                    hoverEnabled: true
-                                                    cursorShape: Qt.PointingHandCursor
-                                                    onClicked: Services.Notifications.dismiss(modelData.notifId)
-                                                }
-                                            }
-                                        }
-                                    }
+                                    Behavior on y { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                                    Behavior on scale { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
                                 }
                             }
                         }
@@ -809,7 +795,7 @@ Scope {
                         Rectangle {
                             anchors.horizontalCenter: parent.horizontalCenter
                             anchors.bottom: parent.bottom
-                            anchors.bottomMargin: 24
+                            anchors.bottomMargin: root.isRevealed ? 24 : 0
                             height: 34
                             implicitWidth: smallBarContent.implicitWidth + 24
                             radius: 17
@@ -817,6 +803,12 @@ Scope {
                             border.color: Services.Theme.border
                             border.width: 1
                             visible: root.hasPlayer
+                            opacity: root.isRevealed ? 1.0 : 0.0
+                            scale: root.isRevealed ? 1.0 : 0.9
+                            transformOrigin: Item.Center
+                            Behavior on anchors.bottomMargin { NumberAnimation { duration: 450; easing.type: Easing.OutCubic } }
+                            Behavior on opacity { NumberAnimation { duration: 350; easing.type: Easing.OutCubic } }
+                            Behavior on scale { NumberAnimation { duration: 450; easing.type: Easing.OutCubic } }
 
                             RowLayout {
                                 id: smallBarContent

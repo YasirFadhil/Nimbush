@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Layouts
+import Quickshell.Services.SystemTray
 import "../../../services" as Services
 import "." as Components
 
@@ -8,33 +9,53 @@ RowLayout {
     spacing: 8
 
     property bool collapseNear: false
+    property bool collapseMore: false
 
-    // System Tray App Icons
+    readonly property real fullUncollapsedWidth: {
+        const trayCount = (typeof SystemTray !== "undefined" && SystemTray.items && SystemTray.items.values) ? SystemTray.items.values.length : 0
+        const maxVis = sysTrayIcons ? sysTrayIcons.maxVisibleCount : 2
+        const visibleCount = Math.min(maxVis, trayCount)
+        const hasOverflow = trayCount > maxVis
+        const trayW = trayCount > 0 ? (visibleCount * 24 + (hasOverflow ? 20 : 0) + 16) : 0
+        return trayW + 370
+    }
+
+    // System Tray App Icons (Hides on Lock, collapseNear, or collapseMore)
     Components.SystemTrayIcons {
+        id: sysTrayIcons
         trayMenuPopup: trayMenuPopup
+        trayOverflowPopup: trayOverflowPopup
 
-        opacity: (Services.OverlayManager.isLocked || root.collapseNear) ? 0 : 1
+        opacity: (Services.OverlayManager.isLocked || root.collapseNear || root.collapseMore) ? 0 : 1
+        visible: opacity > 0
 
         transform: Translate {
-            x: Services.OverlayManager.isLocked ? 35 : (root.collapseNear ? 32 : 0)
-            Behavior on x { NumberAnimation { duration: 350; easing.type: Services.OverlayManager.isLocked ? Easing.OutCubic : Easing.InCubic } }
+            x: Services.OverlayManager.isLocked ? 35 : ((root.collapseNear || root.collapseMore) ? 32 : 0)
+            Behavior on x { NumberAnimation { duration: 350; easing.type: (Services.OverlayManager.isLocked || root.collapseNear || root.collapseMore) ? Easing.OutCubic : Easing.InCubic } }
         }
 
-        Behavior on opacity { NumberAnimation { duration: 350; easing.type: Services.OverlayManager.isLocked ? Easing.OutCubic : Easing.InCubic } }
+        Behavior on opacity { NumberAnimation { duration: 350; easing.type: (Services.OverlayManager.isLocked || root.collapseNear || root.collapseMore) ? Easing.OutCubic : Easing.InCubic } }
     }
 
     Components.TrayMenuPopup {
         id: trayMenuPopup
     }
 
-    // CPU Usage (Hides on Lock)
+    Components.TrayOverflowPopup {
+        id: trayOverflowPopup
+        trayMenuPopup: trayMenuPopup
+        maxVisibleCount: sysTrayIcons.maxVisibleCount
+    }
+
+    // CPU Usage (Hides on Lock or collapseMore)
     Components.SysmonIndicator {
-        opacity: Services.OverlayManager.isLocked ? 0.0 : 1.0
+        opacity: (Services.OverlayManager.isLocked || root.collapseMore) ? 0.0 : 1.0
+        visible: opacity > 0
         transform: Translate {
-            x: Services.OverlayManager.isLocked ? 35 : 0
-            Behavior on x { NumberAnimation { duration: 350; easing.type: Services.OverlayManager.isLocked ? Easing.OutCubic : Easing.InCubic } }
+            x: Services.OverlayManager.isLocked ? 35 : (root.collapseMore ? 32 : 0)
+            Behavior on x { NumberAnimation { duration: 350; easing.type: (Services.OverlayManager.isLocked || root.collapseMore) ? Easing.OutCubic : Easing.InCubic } }
         }
-        Behavior on opacity { NumberAnimation { duration: 350; easing.type: Services.OverlayManager.isLocked ? Easing.OutCubic : Easing.InCubic } }
+        Behavior on opacity { NumberAnimation { duration: 350; easing.type: (Services.OverlayManager.isLocked || root.collapseMore) ? Easing.OutCubic : Easing.InCubic } }
     }
 
     // Volume Pill (Hides on Lock)

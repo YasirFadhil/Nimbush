@@ -18,7 +18,6 @@ import "modules/wallpaper" as WallpaperModule
 
 ShellRoot {
     WallpaperModule.Wallpaper {}
-    // Notif.Popup {} // Disabled — notifications are now routed through DynamicIsland
 
     Osd.Osd {}
     Notif.Center {}

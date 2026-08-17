@@ -53,7 +53,7 @@ PanelWindow {
         Rectangle {
             id: popupCard
             anchors.top: parent.top
-            // anchors.topMargin: 40
+            anchors.topMargin: 12
             x: Math.max(12, Math.min(parent.width - width - 12, root.targetX - (width / 2)))
             implicitWidth: Math.max(180, menuColumn.implicitWidth + 24)
             implicitHeight: menuColumn.implicitHeight + 24

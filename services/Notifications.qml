@@ -11,12 +11,15 @@ Singleton {
 
     property bool doNotDisturb: false
     property bool centerVisible: false
+    property int replyingNotifId: -1
     property alias popupList: popupModel
     property alias historyList: historyModel
+    property int maxHistoryCount: 50
+    property int maxPopupCount: 10
 
     ListModel { id: popupModel }
     ListModel { id: historyModel }
-  
+
     NotificationServer {
         id: server
         keepOnReload: false
@@ -24,11 +27,21 @@ Singleton {
         actionIconsSupported: true
         bodySupported: true
         bodyMarkupSupported: true
+        inlineReplySupported: true
         imageSupported: true
         persistenceSupported: true
 
         onNotification: notif => {
-            notif.tracked = true // track notification object to prevent GC and manage lifecycle manually
+            notif.tracked = true
+
+            const isKdeConnect = root.isKdeConnectNotif(notif)
+            const isMessaging = root.isMessagingApp(notif)
+            const actionsList = notif.actions.map(a => ({ identifier: a.identifier, text: a.text }))
+
+            // Only add/enable inline reply action if the notification is from a messaging app
+            if (isMessaging && (notif.hasInlineReply || isKdeConnect) && !actionsList.some(a => a.identifier === "inline-reply" || (a.identifier || "").toLowerCase().includes("reply"))) {
+                actionsList.push({ identifier: "inline-reply", text: "Reply" })
+            }
 
             const entry = {
                 notifId: notif.id,
@@ -37,19 +50,28 @@ Singleton {
                 summary: notif.summary,
                 body: notif.body,
                 image: notif.image,
-                urgency: notif.urgency, // NotificationUrgency.Low/Normal/Critical
+                urgency: notif.urgency,
                 time: Date.now(),
-                actions: notif.actions.map(a => ({ identifier: a.identifier, text: a.text }))
+                actions: actionsList,
+                hasInlineReply: isMessaging && (notif.hasInlineReply || isKdeConnect),
+                isMessaging: isMessaging,
+                inlineReplyPlaceholder: notif.inlineReplyPlaceholder || "",
+                desktopEntry: notif.desktopEntry || ""
             }
 
             historyModel.insert(0, entry)
+            while (historyModel.count > root.maxHistoryCount) {
+                historyModel.remove(historyModel.count - 1)
+            }
+            root.saveHistory()
 
             if (!root.doNotDisturb) {
                 popupModel.insert(0, entry)
+                while (popupModel.count > root.maxPopupCount) {
+                    popupModel.remove(popupModel.count - 1)
+                }
                 root.newNotification(entry)
 
-                // Play Freedesktop sound based on urgency:
-                // Critical (2) → dialog-error, Low (0) → dialog-information, else → message-new-instant
                 if (notif.urgency === NotificationUrgency.Critical)
                     SoundFeedback.playError()
                 else if (notif.urgency === NotificationUrgency.Low)
@@ -65,7 +87,6 @@ Singleton {
             }
 
             notif.closed.connect(() => {
-                // App closed the notification externally — remove popup only, keep in history
                 root.removePopup(notif.id)
             })
         }
@@ -77,7 +98,11 @@ Singleton {
             property int notifId
             repeat: false
             onTriggered: {
-                // Timeout expired — remove popup toast only, notification remains in history
+                if (root.replyingNotifId === notifId) {
+                    interval = 4000
+                    start()
+                    return
+                }
                 root.removePopup(notifId)
                 destroy()
             }
@@ -93,7 +118,7 @@ Singleton {
         function toggleDnd(): void { root.doNotDisturb = !root.doNotDisturb }
         function clearHistory(): void { root.clearHistory() }
         function toggleCenter(): void { root.centerVisible = !root.centerVisible }
-        function closeCenter(): void { root.centerVisible = false }
+        function closeCenter(): void { root.closeCenter() }
     }
 
     function removePopup(id) {
@@ -104,17 +129,92 @@ Singleton {
 
     function removeFromHistory(id) {
         for (let i = 0; i < historyModel.count; i++) {
-            if (historyModel.get(i).notifId === id) { historyModel.remove(i); break }
+            if (historyModel.get(i).notifId === id) {
+                historyModel.remove(i)
+                root.saveHistory()
+                break
+            }
         }
+    }
+
+    function isKdeConnectNotif(n) {
+        const appName = (n.appName || "").toLowerCase()
+        const desktopEntry = (n.desktopEntry || "").toLowerCase()
+        if (appName.includes("kde") || appName.includes("connect")) return true
+        if (desktopEntry.includes("kdeconnect") || desktopEntry.includes("kde")) return true
+        try {
+            const hints = n.hints || {}
+            for (const k in hints) {
+                if (k.toLowerCase().includes("kde")) return true
+            }
+        } catch (e) { }
+        return false
+    }
+
+    function isMessagingApp(n) {
+        if (!n) return false
+        const appName = (n.appName || "").toLowerCase()
+        const desktopEntry = (n.desktopEntry || "").toLowerCase()
+        const messagingKeywords = [
+            "whatsapp", "telegram", "signal", "discord", "slack", "element",
+            "messenger", "sms", "messages", "kdeconnect", "kde connect", "chat",
+            "skype", "viber", "line"
+        ]
+        for (let i = 0; i < messagingKeywords.length; i++) {
+            const kw = messagingKeywords[i]
+            if (appName.includes(kw) || desktopEntry.includes(kw)) return true
+        }
+        return false
+    }
+
+    Process {
+        id: kdeConnectReplyProc
+        property string replyId: ""
+        property string replyText: ""
+        // KDE Connect's notifications plugin exposes sendReply(replyId, message) as a
+        // TWO-argument method on the plugin object at .../devices/<id>/notifications
+        // (not one-argument, and not on the per-notification sub-path).
+        command: ["sh", "-c",
+            "REPLY_ID=\"$1\"\n" +
+            "TEXT=\"$2\"\n" +
+            "echo \"[kdeconnect-reply] replyId='$REPLY_ID' text='$TEXT'\"\n" +
+            "if command -v busctl >/dev/null 2>&1; then\n" +
+            "    PATHS=$(busctl --user tree org.kde.kdeconnect 2>&1 | sed 's/^[^/]*//' | grep -E '^/modules/kdeconnect/devices/[^/]+/notifications$')\n" +
+            "    echo \"[kdeconnect-reply][busctl] plugin paths found: $PATHS\"\n" +
+            "    for p in $PATHS; do\n" +
+            "        echo \"[kdeconnect-reply][busctl] calling sendReply on $p\"\n" +
+            "        busctl --user call org.kde.kdeconnect \"$p\" org.kde.kdeconnect.device.notifications sendReply ss \"$REPLY_ID\" \"$TEXT\"\n" +
+            "    done\n" +
+            "elif command -v qdbus >/dev/null 2>&1; then\n" +
+            "    for d in $(qdbus org.kde.kdeconnect /modules/kdeconnect devices 2>&1); do\n" +
+            "        p=\"/modules/kdeconnect/devices/$d/notifications\"\n" +
+            "        echo \"[kdeconnect-reply][qdbus] calling sendReply on $p\"\n" +
+            "        qdbus org.kde.kdeconnect \"$p\" sendReply \"$REPLY_ID\" \"$TEXT\"\n" +
+            "    done\n" +
+            "fi\n",
+            "sh", replyId, replyText]
+        stdout: SplitParser { onRead: data => console.log("[kdeConnectReplyProc][out]", data) }
+        stderr: SplitParser { onRead: data => console.log("[kdeConnectReplyProc][err]", data) }
+        onExited: (code, status) => console.log("[kdeConnectReplyProc] exited with code", code)
     }
 
     function invokeAction(notifId, actionId, text) {
         for (const n of server.trackedNotifications.values) {
             if (n.id === notifId) {
-                const action = n.actions.find(a => a.identifier === actionId)
-                if (action) {
-                    if (text !== undefined && text !== "") action.invoke(text)
-                    else action.invoke()
+                if ((actionId === "inline-reply" || n.hasInlineReply) && text !== undefined && text !== "") {
+                    console.log("[Notifications] sending reply via native sendInlineReply for notif", notifId)
+                    n.sendInlineReply(text)
+                } else if (isKdeConnectNotif(n) && text !== undefined && text !== "") {
+                    console.log("[Notifications] sending reply via KDE Connect DBus, notif", notifId, "actionId", actionId)
+                    kdeConnectReplyProc.replyId = actionId || ""
+                    kdeConnectReplyProc.replyText = text
+                    kdeConnectReplyProc.running = true
+                } else {
+                    const action = n.actions.find(a => a.identifier === actionId)
+                    if (action) {
+                        if (text !== undefined && text !== "") action.invoke(text)
+                        else action.invoke()
+                    }
                 }
                 break
             }
@@ -131,12 +231,10 @@ Singleton {
         removeFromHistory(notifId)
     }
 
-    // Remove notification from Center history only (called by user from Center UI)
     function dismissFromCenter(notifId) {
         removeFromHistory(notifId)
     }
 
-    // Remove all notifications in a group from history
     function dismissGroupFromCenter(items) {
         if (!items) return
         const ids = []
@@ -151,7 +249,10 @@ Singleton {
         }
     }
 
-    function clearHistory() { historyModel.clear() }
+    function clearHistory() {
+        historyModel.clear()
+        root.saveHistory()
+    }
 
     property int nextSystemNotifId: 900000
 
@@ -181,6 +282,72 @@ Singleton {
                 dismissTimer.createObject(root, { notifId: id, interval: timeout }).start()
             }
         }
+        root.saveHistory()
         return id
+    }
+
+    readonly property string historyCachePath: "/home/yasirfadhil/.cache/quickshell/notification_history.json"
+
+    Process {
+        id: loadHistoryProc
+        command: ["sh", "-c", "mkdir -p ~/.cache/quickshell && if [ -f \"" + historyCachePath + "\" ]; then cat \"" + historyCachePath + "\"; else echo '[]'; fi"]
+        stdout: SplitParser {
+            onRead: data => {
+                try {
+                    const parsed = JSON.parse(data.trim())
+                    if (Array.isArray(parsed) && parsed.length > 0) {
+                        historyModel.clear()
+                        for (let i = 0; i < parsed.length; i++) {
+                            historyModel.append(parsed[i])
+                        }
+                    }
+                } catch (e) {
+                    console.log("[Notifications] failed to parse history cache:", e)
+                }
+            }
+        }
+    }
+
+    Process {
+        id: saveHistoryProc
+        property string jsonPayload: "[]"
+        command: ["sh", "-c", "mkdir -p ~/.cache/quickshell && printf '%s' \"$1\" > \"" + historyCachePath + "\"", "sh", jsonPayload]
+    }
+
+    function saveHistory() {
+        const arr = []
+        for (let i = 0; i < historyModel.count; i++) {
+            const item = historyModel.get(i)
+            const actions = []
+            if (item.actions) {
+                const actCount = item.actions.count !== undefined ? item.actions.count : item.actions.length
+                for (let j = 0; j < actCount; j++) {
+                    const a = item.actions.get ? item.actions.get(j) : item.actions[j]
+                    actions.push({ identifier: a.identifier || "", text: a.text || "" })
+                }
+            }
+
+            arr.push({
+                notifId: item.notifId,
+                appName: item.appName || "",
+                appIcon: item.appIcon || "",
+                summary: item.summary || "",
+                body: item.body || "",
+                image: item.image || "",
+                urgency: item.urgency !== undefined ? item.urgency : 1,
+                time: item.time || Date.now(),
+                actions: actions,
+                hasInlineReply: item.hasInlineReply || false,
+                isMessaging: item.isMessaging || false,
+                inlineReplyPlaceholder: item.inlineReplyPlaceholder || "",
+                desktopEntry: item.desktopEntry || ""
+            })
+        }
+        saveHistoryProc.jsonPayload = JSON.stringify(arr)
+        saveHistoryProc.running = true
+    }
+
+    Component.onCompleted: {
+        loadHistoryProc.running = true
     }
 }

@@ -54,6 +54,7 @@ Item {
 
     // Bluetooth Devices State Monitoring
     property var btConnectedDevices: ({})
+    property bool btInitialized: false
 
     // Media Stop Animation Choreography
     property bool mediaStopping: false
@@ -218,6 +219,13 @@ Item {
         }
     }
 
+    Component.onCompleted: {
+        root.lastAudioSink = Services.Audio.sink
+        if (Services.Audio.sink) {
+            root.lastAudioMuted = Services.Audio.muted
+        }
+    }
+
     // Connections for System Events
     Connections {
         target: Services.Audio
@@ -244,9 +252,11 @@ Item {
         }
 
         function onSinkChanged() {
-            root.lastAudioSink = Services.Audio.sink
-            if (Services.Audio.sink) {
-                root.lastAudioMuted = Services.Audio.muted
+            if (root.lastAudioSink !== Services.Audio.sink) {
+                root.lastAudioSink = Services.Audio.sink
+                if (Services.Audio.sink) {
+                    root.lastAudioMuted = Services.Audio.muted
+                }
             }
         }
     }
@@ -349,8 +359,9 @@ Item {
 
             for (let i = 0; i < currentDevices.length; i++) {
                 const dev = currentDevices[i]
-                if (dev && dev.connected) {
-                    newMap[dev.mac] = {
+                if (dev && dev.connected && dev.mac) {
+                    const mac = dev.mac.toLowerCase()
+                    newMap[mac] = {
                         name: dev.name || dev.mac,
                         battery: (dev.battery !== undefined && dev.battery >= 0) ? dev.battery : -1,
                         icon: dev.icon || ""
@@ -358,8 +369,9 @@ Item {
                 }
             }
 
-            if (!root.hudReady) {
+            if (!root.hudReady || !root.btInitialized) {
                 root.btConnectedDevices = newMap
+                root.btInitialized = true
                 return
             }
 
@@ -446,7 +458,12 @@ Item {
 
     onReplyModeChanged: {
         if (replyMode) {
+            if (currentNotif) {
+                Services.Notifications.replyingNotifId = currentNotif.notifId
+            }
             Qt.callLater(() => replyInput.forceActiveFocus())
+        } else {
+            Services.Notifications.replyingNotifId = -1
         }
     }
 
@@ -460,7 +477,7 @@ Item {
 
     readonly property bool isCritical: currentNotif !== null && currentNotif.urgency === 2
     readonly property bool hasNotifBody: currentNotif !== null && currentNotif.body !== undefined && currentNotif.body.length > 0
-    readonly property bool hasNotifActions: currentNotif !== null && currentNotif.actions !== undefined && currentNotif.actions.count > 0
+    readonly property bool hasNotifActions: currentNotif !== null && currentNotif.actions !== undefined && (currentNotif.actions.count > 0 || (currentNotif.actions.length !== undefined && currentNotif.actions.length > 0))
 
     readonly property string currentMediaText: {
         if (!activePlayer) return ""
@@ -634,7 +651,11 @@ Item {
         anchors.fill: parent
         enabled: root.expanded
         z: -1
-        onClicked: root.collapse()
+        propagateComposedEvents: true
+        onClicked: mouse => {
+            root.collapse()
+            mouse.accepted = false
+        }
     }
 
     Rectangle {

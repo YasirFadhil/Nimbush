@@ -471,7 +471,7 @@ PanelWindow {
 
     // Action Processes
     Process { id: lockProc; command: ["sh", "-c", "qs ipc call lockscreen lock || hyprlock || swaylock"] }
-    Process { id: logoutProc; command: ["sh", "-c", "hyprctl dispatch 'hl.dsp.exit()' || loginctl terminate-user $USER"] }
+    Process { id: logoutProc; command: ["sh", "-c", "niri msg action quit --skip-confirmation || hyprctl dispatch 'hl.dsp.exit()' || loginctl terminate-user $USER"] }
     Process { id: sleepProc; command: ["systemctl", "suspend"] }
     Process { id: rebootProc; command: ["systemctl", "reboot"] }
     Process { id: shutdownProc; command: ["systemctl", "poweroff"] }
