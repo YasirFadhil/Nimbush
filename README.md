@@ -68,28 +68,28 @@ The `install.sh` script automatically detects your package manager and distro, v
 
 ### NixOS Flake & Home Manager Integration
 
-Repository ini menyediakan `flake.nix` dan **Home Manager module** bawaan ([nix/home-manager-module.nix](file:///home/yasirfadhil/.config/quickshell/nix/home-manager-module.nix)).
+This repository includes a `flake.nix` and a built-in **Home Manager module** ([nix/home-manager-module.nix](file:///home/yasirfadhil/.config/quickshell/nix/home-manager-module.nix)).
 
-#### 1. Uji Coba Langsung (Nix Run)
+#### 1. Instant Run (`nix run`)
 
-Jalankan Quickshell langsung via Flake tanpa instalasi manual:
+Run Quickshell directly via Flake without manual installation:
 
 ```bash
 nix run github:YasirFadhil/Shell
 ```
 
-atau di dalam direktori repository:
+Or from inside the cloned repository directory:
 
 ```bash
 nix run .
 ```
 
-#### 2. Menggunakan Home Manager Module (`flake.nix` / `home.nix`)
+#### 2. Declarative Setup via Home Manager Module (`flake.nix` / `home.nix`)
 
-Tambahkan repository ini ke `inputs` pada `flake.nix` sistem NixOS / Home Manager Anda:
+Add this repository to your system `flake.nix` inputs:
 
 ```nix
-# flake.nix milik Anda
+# Your system flake.nix
 {
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
@@ -107,7 +107,7 @@ Tambahkan repository ini ke `inputs` pada `flake.nix` sistem NixOS / Home Manage
 }
 ```
 
-Kemudian aktifkan dan sesuaikan modul di dalam `home.nix` secara **deklaratif**:
+Then enable and configure the module declaratively inside your `home.nix`:
 
 ```nix
 # home.nix
@@ -120,10 +120,10 @@ Kemudian aktifkan dan sesuaikan modul di dalam `home.nix` secara **deklaratif**:
 
   programs.quickshell-shell = {
     enable = true;
-    enableSystemdService = true;      # Menjalankan service background Quickshell otomatis
-    enableDefaultDependencies = true; # Menginstal dependensi CLI (brightnessctl, cliphist, wl-clipboard, dll.)
+    enableSystemdService = true;      # Automatically runs Quickshell as a user background service
+    enableDefaultDependencies = true; # Installs runtime CLI tools (brightnessctl, cliphist, wl-clipboard, etc.)
 
-    # ── Konfigurasi Wallpaper Deklaratif ───────────────────────────────────
+    # ── Declarative Wallpaper Configuration ──────────────────────────────
     wallpaper = {
       current = "/home/username/Pictures/wallpapers/catppuccin.jpg";
       customWallpapers = [
@@ -132,10 +132,10 @@ Kemudian aktifkan dan sesuaikan modul di dalam `home.nix` secara **deklaratif**:
       ];
     };
 
-    # ── Integrasi Kompositor Deklaratif ────────────────────────────────────
-    # Otomatis menginjeksi keybindings IPC, autostart, & layer rules blur
-    hyprland.enableIntegration = true; # Jika wayland.windowManager.hyprland.enable = true
-    niri.enableIntegration     = true; # Jika programs.niri.enable = true
+    # ── Declarative Compositor Integration ────────────────────────────────
+    # Automatically injects IPC keybindings, autostart, & blur layer rules
+    hyprland.enableIntegration = true; # If wayland.windowManager.hyprland.enable = true
+    niri.enableIntegration     = true; # If programs.niri.enable = true
   };
 }
 ```
