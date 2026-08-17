@@ -243,7 +243,7 @@ Scope {
                     Image {
                         id: bgImage
                         anchors.fill: parent
-                        source: Services.Wallpaper.currentWallpaper.length > 0 ? ("file://" + Services.Wallpaper.currentWallpaper) : ("file://" + (Quickshell.env("HOME") || "/home/yasirfadhil") + "/.config/quickshell/assets/wallpapers/background_zoomed.png")
+                        source: Services.Wallpaper.currentWallpaper.length > 0 ? ("file://" + Services.Wallpaper.currentWallpaper) : ("file://" + (Quickshell.env("HOME") || "/home/" + (Quickshell.env("USER") || "user")) + "/.config/quickshell/assets/wallpapers/wallbler.jpg")
                         fillMode: Image.PreserveAspectCrop
                         asynchronous: false
                         smooth: true
@@ -556,7 +556,7 @@ Scope {
                                     id: userAvatarImg
                                     anchors.fill: parent
                                     anchors.margins: 2
-                                    source: Services.OsInfo.avatarPath.length > 0 ? Services.OsInfo.avatarPath : ("file:///home/" + (root.username || "yasirfadhil") + "/.face")
+                                    source: Services.OsInfo.avatarPath.length > 0 ? Services.OsInfo.avatarPath : ("file://" + (Quickshell.env("HOME") || "/home/" + (Quickshell.env("USER") || "user")) + "/.face")
                                     fillMode: Image.PreserveAspectCrop
                                     asynchronous: true
                                     smooth: true

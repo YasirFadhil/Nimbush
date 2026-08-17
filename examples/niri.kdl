@@ -1,0 +1,20 @@
+// Niri Configuration (~/.config/niri/config.kdl)
+
+// ── Autostart Quickshell & Services ───────────────────────────────────────
+spawn-at-startup "qs" "-c" "~/.config/quickshell"
+spawn-at-startup "wl-paste" "--type" "text" "--watch" "cliphist" "store"
+spawn-at-startup "wl-paste" "--type" "image" "--watch" "cliphist" "store"
+
+// ── Keybindings ────────────────────────────────────────────────────────────
+binds {
+    Mod+Space { spawn "qs" "ipc" "call" "launcher" "toggle"; }
+    Mod+V     { spawn "qs" "ipc" "call" "clipboard" "toggle"; }
+    Mod+P     { spawn "qs" "ipc" "call" "powermenu" "toggle"; }
+    Mod+L     { spawn "qs" "ipc" "call" "lockscreen" "toggle"; }
+    Mod+D     { spawn "qs" "ipc" "call" "dashboard" "toggle"; }
+    Mod+N     { spawn "qs" "ipc" "call" "notifCenter" "toggle"; }
+    Mod+C     { spawn "qs" "ipc" "call" "controlCenter" "toggle"; }
+}
+
+// ── Layer Rules / Window Rules ─────────────────────────────────────────────
+// Quickshell panels handle their own Wayland layer placement automatically via WlrLayershell.

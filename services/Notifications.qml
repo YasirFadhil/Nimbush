@@ -325,7 +325,7 @@ Singleton {
         return id
     }
 
-    readonly property string historyCachePath: "/home/yasirfadhil/.cache/quickshell/notification_history.json"
+    readonly property string historyCachePath: (Quickshell.env("HOME") || "/home/" + (Quickshell.env("USER") || "user")) + "/.cache/quickshell/notification_history.json"
 
     Process {
         id: loadHistoryProc

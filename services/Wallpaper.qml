@@ -6,29 +6,19 @@ import Quickshell.Io
 Singleton {
     id: root
 
-    readonly property string assetsDir: (Quickshell.env("HOME") || "/home/yasirfadhil") + "/.config/quickshell/assets/wallpapers"
-    readonly property string sysWallDir: (Quickshell.env("HOME") || "/home/yasirfadhil") + "/.config/nixos/home/themes/wallpapers"
+    readonly property string assetsDir: (Quickshell.env("HOME") || "/home/" + (Quickshell.env("USER") || "user")) + "/.config/quickshell/assets/wallpapers"
 
     property string currentWallpaper: assetsDir + "/wallbler.jpg"
 
     property var defaultWallpapers: [
-        { name: "Wallbler", path: assetsDir + "/wallbler.jpg", isCustom: false },
-        { name: "Mac Tahoe Dark", path: sysWallDir + "/MacTahoeDark.jpg", isCustom: false },
-        { name: "Shorekeeper", path: sysWallDir + "/Shorekeeper.jpg", isCustom: false },
-        { name: "Wallbla", path: sysWallDir + "/wallbla.jpg", isCustom: false },
-        { name: "Wallble", path: sysWallDir + "/wallble.jpg", isCustom: false },
-        { name: "Wallblu", path: sysWallDir + "/wallblu.jpg", isCustom: false },
-        { name: "Wallpaper", path: sysWallDir + "/wallpaper.jpg", isCustom: false },
-        { name: "Background Zoomed", path: assetsDir + "/background_zoomed.png", isCustom: false },
-
-        { name: "Lock Screen", path: sysWallDir + "/lock.jpg", isCustom: false }
+        { name: "Wallbler", path: assetsDir + "/wallbler.jpg", isCustom: false }
     ]
     property var customWallpapers: []
     property var allWallpapers: []
     property bool isPicking: false
 
-    readonly property string configPath: (Quickshell.env("HOME") || "/home/yasirfadhil") + "/.cache/quickshell/wallpaper_config.json"
-    readonly property string pickerScript: (Quickshell.env("HOME") || "/home/yasirfadhil") + "/.config/quickshell/scripts/xdg-file-picker.py"
+    readonly property string configPath: (Quickshell.env("HOME") || "/home/" + (Quickshell.env("USER") || "user")) + "/.cache/quickshell/wallpaper_config.json"
+    readonly property string pickerScript: (Quickshell.env("HOME") || "/home/" + (Quickshell.env("USER") || "user")) + "/.config/quickshell/scripts/xdg-file-picker.py"
 
     Component.onCompleted: {
         updateAllList()
@@ -151,10 +141,12 @@ Singleton {
         }
     }
 
+    readonly property string declConfigPath: (Quickshell.env("HOME") || "/home/" + (Quickshell.env("USER") || "user")) + "/.config/quickshell/wallpaper_config.json"
+
     // Process to load saved wallpaper config
     Process {
         id: loadConfigProc
-        command: ["sh", "-c", "if [ -f \"" + configPath + "\" ]; then cat \"" + configPath + "\"; else echo '{}'; fi"]
+        command: ["sh", "-c", "if [ -f \"" + declConfigPath + "\" ]; then cat \"" + declConfigPath + "\"; elif [ -f \"" + configPath + "\" ]; then cat \"" + configPath + "\"; else echo '{}'; fi"]
         stdout: SplitParser {
             onRead: data => {
                 try {

@@ -10,28 +10,68 @@ Singleton {
     id: root
 
     readonly property var glyphMap: ({
-        nixos:  "\u{f313}",
-        gentoo: "\u{f30d}",
-        arch:   "\u{f303}",
-        debian: "\u{f306}",
-        ubuntu: "\u{f31b}",
-        fedora: "\u{f30a}"
+        nixos:                "\u{f313}",
+        gentoo:               "\u{f30d}",
+        arch:                 "\u{f303}",
+        archarm:              "\u{f303}",
+        manjaro:              "\u{f312}",
+        garuda:               "\u{f303}",
+        endeavouros:          "\u{f322}",
+        artix:                "\u{f31f}",
+        debian:               "\u{f306}",
+        ubuntu:               "\u{f31b}",
+        linuxmint:            "\u{f30e}",
+        mint:                 "\u{f30e}",
+        pop:                  "\u{f32a}",
+        elementary:           "\u{f309}",
+        zorin:                "\u{f301}",
+        raspbian:             "\u{f315}",
+        steamos:              "\u{f31a}",
+        kali:                 "\u{f327}",
+        fedora:               "\u{f30a}",
+        rhel:                 "\u{f316}",
+        redhat:               "\u{f316}",
+        centos:               "\u{f304}",
+        rocky:                "\u{f304}",
+        alma:                 "\u{f316}",
+        opensuse:             "\u{f314}",
+        "opensuse-tumbleweed":  "\u{f314}",
+        "opensuse-leap":        "\u{f314}",
+        suse:                 "\u{f314}",
+        void:                 "\u{f32e}",
+        alpine:               "\u{f300}",
+        slackware:            "\u{f318}"
     })
 
     property string distroId: ""
+    property string distroIdLike: ""
     property string distroName: ""
     property string username: ""
     property string hostname: ""
     property string kernel: ""
     property string shellName: ""
     property string avatarPath: Quickshell.env("HOME") ? ("file://" + Quickshell.env("HOME") + "/.face") : ""
-    readonly property string logoGlyph: glyphMap[distroId] || "\u{f17c}" // generic Tux fallback
+    
+    readonly property string logoGlyph: {
+        if (glyphMap[distroId]) return glyphMap[distroId]
+        if (distroIdLike.length > 0) {
+            const likes = distroIdLike.toLowerCase().split(/\s+/)
+            for (let i = 0; i < likes.length; i++) {
+                if (glyphMap[likes[i]]) return glyphMap[likes[i]]
+            }
+        }
+        return "\u{f17c}" // generic Tux fallback
+    }
 
     Process {
-        command: ["sh", "-c", "grep '^ID=' /etc/os-release | cut -d= -f2 | tr -d '\"'"]
+        command: ["sh", "-c", "id=$(grep '^ID=' /etc/os-release | cut -d= -f2 | tr -d '\"'); like=$(grep '^ID_LIKE=' /etc/os-release | cut -d= -f2 | tr -d '\"'); echo \"$id|$like\""]
         running: true
         stdout: SplitParser {
-            onRead: data => root.distroId = data.trim().toLowerCase()
+            onRead: data => {
+                const parts = data.trim().toLowerCase().split("|")
+                root.distroId = parts[0] || ""
+                root.distroIdLike = parts[1] || ""
+            }
         }
     }
 

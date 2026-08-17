@@ -78,6 +78,12 @@ detect_pkg_mgr() {
         echo "zypper"
     elif command -v xbps-install &>/dev/null; then
         echo "xbps"
+    elif command -v apk &>/dev/null; then
+        echo "apk"
+    elif command -v emerge &>/dev/null; then
+        echo "emerge"
+    elif command -v eopkg &>/dev/null; then
+        echo "eopkg"
     else
         echo "unknown"
     fi
@@ -268,6 +274,15 @@ if [ ${#MISSING_PKGS[@]} -gt 0 ]; then
                 ;;
             xbps)
                 INSTALL_CMD="sudo xbps-install -S ${UNIQUE_PKGS[*]}"
+                ;;
+            apk)
+                INSTALL_CMD="sudo apk add ${UNIQUE_PKGS[*]}"
+                ;;
+            emerge)
+                INSTALL_CMD="sudo emerge -av ${UNIQUE_PKGS[*]}"
+                ;;
+            eopkg)
+                INSTALL_CMD="sudo eopkg it -y ${UNIQUE_PKGS[*]}"
                 ;;
         esac
 
