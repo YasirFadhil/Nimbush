@@ -66,8 +66,16 @@ PanelWindow {
             }
 
             Components.StatusTray {
+                id: statusTray
                 Layout.alignment: Qt.AlignVCenter
+
+                readonly property real islandRightEdge: (root.width + dynamicIsland.calculatedCollapsedWidth) / 2
+                readonly property real trayFullLeftEdge: root.width - 12 - statusTray.fullUncollapsedWidth
+
                 collapseNear: dynamicIsland.expanded
+                             || (dynamicIsland.calculatedCollapsedWidth > 180)
+                             || (trayFullLeftEdge <= islandRightEdge + 24)
+                collapseMore: dynamicIsland.expanded && (dynamicIsland.calculatedExpandedWidth >= 320 || dynamicIsland.notifActive || dynamicIsland.replyMode)
             }
           }
           

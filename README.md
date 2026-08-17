@@ -9,16 +9,16 @@ This is not a traditional command-line shell. It is a Wayland UI shell built wit
 ## Components
 
 - **Quickshell**: The core UI framework.
-- **Hyprland**: Supported Wayland compositor.
+- **Hyprland / Niri**: Supported Wayland compositors.
 
 ## Dependencies
 
 Before running Quickshell, ensure the following dependencies are installed on your system:
 
-### Core Framework & Compositor
+### Core Framework & Compositors
 
 - **Quickshell** (`quickshell-git` / `quickshell`)
-- **Hyprland** (`hyprland`)
+- **Hyprland** (`hyprland`) or **Niri** (`niri`)
 
 ### System Utilities & Services
 
@@ -29,7 +29,7 @@ Before running Quickshell, ensure the following dependencies are installed on yo
 - **Cliphist** & **wl-clipboard** (`cliphist`, `wl-clipboard`) – Clipboard history & selection handling
 - **Power Profiles Daemon** (`power-profiles-daemon`) – Power profile mode switcher
 - **UPower** (`upower`) – Battery & power monitoring
-- **socat** (`socat`) – Hyprland IPC socket listener for workspaces
+- **socat** (`socat`) – Hyprland IPC socket listener for workspaces (for Hyprland mode)
 - **psmisc** (`psmisc` / `fuser`) – Camera active status detection for Dynamic Island
 
 ### Fonts
@@ -84,6 +84,23 @@ hl.layer_rule({ match = { namespace = "quickshell:notifcenter" },   blur = true,
 hl.layer_rule({ match = { namespace = "quickshell:calendar" },      blur = true, ignore_alpha = 0 })
 hl.layer_rule({ match = { namespace = "quickshell:hud" },      blur = true, ignore_alpha = 0 })
 hl.layer_rule({ match = { namespace = "^quickshell:.*$" }, blur = true, ignore_alpha = 0 })
+```
+
+### Niri Configuration (`config.kdl`)
+
+To use this configuration on **Niri**, add the autostart and keybindings to your `~/.config/niri/config.kdl`:
+
+```kdl
+// Autostart Quickshell
+spawn-at-startup "qs" "-c" "~/.config/quickshell"
+
+// Keybindings
+binds {
+    Mod+Space { spawn "qs" "ipc" "call" "launcher" "toggle"; }
+    Mod+V     { spawn "qs" "ipc" "call" "clipboard" "toggle"; }
+    Mod+P     { spawn "qs" "ipc" "call" "powermenu" "toggle"; }
+    Mod+L     { spawn "qs" "ipc" "call" "lockscreen" "toggle"; }
+}
 ```
 
 ## DISCLAIMER: FULL VIBE CODED

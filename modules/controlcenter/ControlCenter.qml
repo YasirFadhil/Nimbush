@@ -81,26 +81,29 @@ PanelWindow {
         }
 
         RowLayout {
+            id: sliderContentRow
             anchors.fill: parent
             anchors.leftMargin: 12
             anchors.rightMargin: 12
             spacing: 8
 
             Text {
+                id: iconText
                 text: sliderRoot.icon
-                font.family: Services.Theme.fontMono
+                font.family: Services.Theme.fontSymbols
                 font.pixelSize: 14
-                color: (fillBar.width > 28) ? Services.Theme.bgDeep : Services.Theme.textPrimary
+                color: (fillBar.width > (iconText.x + sliderContentRow.x + iconText.width / 2)) ? Services.Theme.bgDeep : Services.Theme.textPrimary
                 Behavior on color { ColorAnimation { duration: 80 } }
             }
 
             Item { Layout.fillWidth: true }
 
             Text {
+                id: percentText
                 text: Math.round(sliderRoot.value * 100) + "%"
                 font.pixelSize: 11
                 font.bold: true
-                color: (fillBar.width > (parent.width - 45)) ? Services.Theme.bgDeep : Services.Theme.textSecondary
+                color: (fillBar.width > (percentText.x + sliderContentRow.x + percentText.width / 2)) ? Services.Theme.bgDeep : Services.Theme.textPrimary
                 Behavior on color { ColorAnimation { duration: 80 } }
             }
         }
