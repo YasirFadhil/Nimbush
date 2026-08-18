@@ -24,8 +24,15 @@
           upower
           socat
           psmisc
+          procps
+          libnotify
+          git
+          dbus
+          glib
+          grim
+          slurp
+          swappy
           python3
-          wlogout
         ];
 
         # Derivation packaging the Quickshell configuration & runner wrapper script

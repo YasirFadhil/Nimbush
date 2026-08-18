@@ -140,11 +140,20 @@ DEPENDENCIES=(
     "cliphist|cliphist|cliphist|cliphist|cliphist|Cliphist clipboard history|req"
     "wl-copy|wl-clipboard|wl-clipboard|wl-clipboard|wl-clipboard|wl-clipboard tool|req"
     "pactl|libpulse|pulseaudio-utils|pulseaudio-utils|pulseaudio|PulseAudio / PipeWire utility|req"
+    "paplay|libpulse|pulseaudio-utils|pulseaudio-utils|pulseaudio|Sound feedback playback|req"
     "powerprofilesctl|power-profiles-daemon|power-profiles-daemon|power-profiles-daemon|power-profiles-daemon|Power profiles daemon|req"
     "upower|upower|upower|upower|upower|UPower battery daemon|req"
     "socat|socat|socat|socat|socat|socat socket tool|req"
-    "fuser|psmisc|psmisc|psmisc|psmisc|psmisc utility (camera detection)|req"
-    "wlogout|wlogout|wlogout|wlogout|wlogout|wlogout power menu|opt"
+    "fuser|psmisc|psmisc|psmisc|psmisc|psmisc camera detection|req"
+    "pkill|procps-ng|procps|procps-ng|procps|Procps process management|req"
+    "notify-send|libnotify|libnotify-bin|libnotify|libnotify|Desktop notification tool|req"
+    "git|git|git|git|git|Git version control|req"
+    "dbus-monitor|dbus|dbus|dbus-tools|dbus|D-Bus system monitor|req"
+    "gdbus|glib2|libglib2.0-bin|glib2|glib|GDBus tool for XDG portal|req"
+    "grim|grim|grim|grim|grim|Wayland screenshot capture|req"
+    "slurp|slurp|slurp|slurp|slurp|Wayland region selector|req"
+    "swappy|swappy|swappy|swappy|swappy|Screenshot editor|opt"
+    "python3|python|python3|python3|python3|Python 3 interpreter|req"
 )
 
 run_dependency_check() {
@@ -250,30 +259,67 @@ if [ ${#MISSING_PKGS[@]} -gt 0 ]; then
     
     if [ "$PKG_MGR" != "unknown" ]; then
         INSTALL_CMD=""
+        NIX_PREFIX="nixpkgs."
+        if nix-env -q -a nixos.hello &>/dev/null 2>&1; then
+            NIX_PREFIX="nixos."
+        fi
+
         case "$PKG_MGR" in
             yay)
-                INSTALL_CMD="yay -S --needed ${UNIQUE_PKGS[*]}"
+                if [ "$AUTO_YES" = true ]; then
+                    INSTALL_CMD="yay -S --needed --noconfirm ${UNIQUE_PKGS[*]}"
+                else
+                    INSTALL_CMD="yay -S --needed ${UNIQUE_PKGS[*]}"
+                fi
                 ;;
             paru)
-                INSTALL_CMD="paru -S --needed ${UNIQUE_PKGS[*]}"
+                if [ "$AUTO_YES" = true ]; then
+                    INSTALL_CMD="paru -S --needed --noconfirm ${UNIQUE_PKGS[*]}"
+                else
+                    INSTALL_CMD="paru -S --needed ${UNIQUE_PKGS[*]}"
+                fi
                 ;;
             pacman)
-                INSTALL_CMD="sudo pacman -S --needed ${UNIQUE_PKGS[*]}"
+                if [ "$AUTO_YES" = true ]; then
+                    INSTALL_CMD="sudo pacman -S --needed --noconfirm ${UNIQUE_PKGS[*]}"
+                else
+                    INSTALL_CMD="sudo pacman -S --needed ${UNIQUE_PKGS[*]}"
+                fi
                 ;;
             apt)
-                INSTALL_CMD="sudo apt update && sudo apt install -y ${UNIQUE_PKGS[*]}"
+                if [ "$AUTO_YES" = true ]; then
+                    INSTALL_CMD="sudo apt update && sudo apt install -y ${UNIQUE_PKGS[*]}"
+                else
+                    INSTALL_CMD="sudo apt update && sudo apt install ${UNIQUE_PKGS[*]}"
+                fi
                 ;;
             dnf)
-                INSTALL_CMD="sudo dnf install -y ${UNIQUE_PKGS[*]}"
+                if [ "$AUTO_YES" = true ]; then
+                    INSTALL_CMD="sudo dnf install -y ${UNIQUE_PKGS[*]}"
+                else
+                    INSTALL_CMD="sudo dnf install ${UNIQUE_PKGS[*]}"
+                fi
                 ;;
             nix-env)
-                INSTALL_CMD="nix-env -iA ${UNIQUE_PKGS[*]/#/nixos.}"
+                NIX_ATTRS=()
+                for pkg in "${UNIQUE_PKGS[@]}"; do
+                    NIX_ATTRS+=("${NIX_PREFIX}${pkg}")
+                done
+                INSTALL_CMD="nix-env -iA ${NIX_ATTRS[*]}"
                 ;;
             zypper)
-                INSTALL_CMD="sudo zypper install -y ${UNIQUE_PKGS[*]}"
+                if [ "$AUTO_YES" = true ]; then
+                    INSTALL_CMD="sudo zypper install -y ${UNIQUE_PKGS[*]}"
+                else
+                    INSTALL_CMD="sudo zypper install ${UNIQUE_PKGS[*]}"
+                fi
                 ;;
             xbps)
-                INSTALL_CMD="sudo xbps-install -S ${UNIQUE_PKGS[*]}"
+                if [ "$AUTO_YES" = true ]; then
+                    INSTALL_CMD="sudo xbps-install -Sy ${UNIQUE_PKGS[*]}"
+                else
+                    INSTALL_CMD="sudo xbps-install -S ${UNIQUE_PKGS[*]}"
+                fi
                 ;;
             apk)
                 INSTALL_CMD="sudo apk add ${UNIQUE_PKGS[*]}"
@@ -282,7 +328,11 @@ if [ ${#MISSING_PKGS[@]} -gt 0 ]; then
                 INSTALL_CMD="sudo emerge -av ${UNIQUE_PKGS[*]}"
                 ;;
             eopkg)
-                INSTALL_CMD="sudo eopkg it -y ${UNIQUE_PKGS[*]}"
+                if [ "$AUTO_YES" = true ]; then
+                    INSTALL_CMD="sudo eopkg it -y ${UNIQUE_PKGS[*]}"
+                else
+                    INSTALL_CMD="sudo eopkg it ${UNIQUE_PKGS[*]}"
+                fi
                 ;;
         esac
 
@@ -301,7 +351,11 @@ if [ ${#MISSING_PKGS[@]} -gt 0 ]; then
 
         if [ "$DO_INSTALL" = true ]; then
             info "Running installation command..."
-            eval "$INSTALL_CMD"
+            if bash -c "$INSTALL_CMD"; then
+                success "Dependency installation executed successfully."
+            else
+                error "Installation command encountered errors. You may need to run it manually."
+            fi
             
             info "Re-running real-time dependency detection after installation..."
             run_dependency_check
@@ -310,6 +364,190 @@ if [ ${#MISSING_PKGS[@]} -gt 0 ]; then
         warn "Could not auto-detect package manager. Please install missing packages manually."
     fi
 fi
+
+# 6. Compositor Configuration Auto-Detection & Setup
+setup_compositor_configs() {
+    if [ "$CHECK_ONLY" = true ]; then
+        return 0
+    fi
+
+    echo -e "${DIM}--------------------------------------------------${NC}"
+    info "Scanning compositor configurations in ~/.config..."
+
+    HYPR_CONFIG="$HOME/.config/hypr/hyprland.conf"
+    HYPR_LUA_CONFIG="$HOME/.config/hypr/hyprland.lua"
+    NIRI_CONFIG="$HOME/.config/niri/config.kdl"
+    COMPOSITOR_FOUND=false
+
+    # Hyprland (.conf) check & injection
+    if [ -f "$HYPR_CONFIG" ]; then
+        COMPOSITOR_FOUND=true
+        if grep -q -E "quickshell|qs ipc" "$HYPR_CONFIG"; then
+            success "Hyprland configuration at $HYPR_CONFIG already contains Quickshell integration."
+        else
+            warn "Hyprland config found at $HYPR_CONFIG (Quickshell integration not present)."
+            INJECT_HYPR=false
+            if [ "$AUTO_YES" = true ]; then
+                INJECT_HYPR=true
+            else
+                read -rp "Would you like to auto-inject Quickshell autostart, binds & layer rules into $HYPR_CONFIG? [y/N] " response
+                if [[ "$response" =~ ^[Yy]$ ]]; then
+                    INJECT_HYPR=true
+                fi
+            fi
+
+            if [ "$INJECT_HYPR" = true ]; then
+                BACKUP_HYPR="${HYPR_CONFIG}_backup_$(date +%Y%m%d_%H%M%S)"
+                cp "$HYPR_CONFIG" "$BACKUP_HYPR"
+                info "Backed up $HYPR_CONFIG to $BACKUP_HYPR"
+
+                cat << 'EOF' >> "$HYPR_CONFIG"
+
+# ── Quickshell Shell Integration ──
+exec-once = qs -c ~/.config/quickshell
+exec-once = wl-paste --type text --watch cliphist store
+exec-once = wl-paste --type image --watch cliphist store
+
+# Quickshell Keybindings
+bind = SUPER, SPACE, exec, qs ipc call launcher toggle
+bind = SUPER, V,     exec, qs ipc call clipboard toggle
+bind = SUPER, P,     exec, qs ipc call powermenu toggle
+bind = SUPER, L,     exec, qs ipc call lockscreen toggle
+bind = SUPER, D,     exec, qs ipc call dashboard toggle
+bind = SUPER, N,     exec, qs ipc call notifCenter toggle
+bind = SUPER, C,     exec, qs ipc call controlCenter toggle
+
+# Quickshell Layer Rules (Blur & Transparency)
+layerrule = blur, quickshell:bar
+layerrule = blur, quickshell:launcher
+layerrule = ignorezero, quickshell:launcher
+layerrule = blur, quickshell:clipboard
+layerrule = ignorezero, quickshell:clipboard
+layerrule = blur, quickshell:controlcenter
+layerrule = ignorezero, quickshell:controlcenter
+layerrule = blur, quickshell:notifcenter
+layerrule = ignorezero, quickshell:notifcenter
+layerrule = blur, quickshell:dashboard
+layerrule = ignorezero, quickshell:dashboard
+layerrule = blur, quickshell:calendar
+layerrule = ignorezero, quickshell:calendar
+layerrule = blur, quickshell:hud
+layerrule = ignorezero, quickshell:hud
+EOF
+                success "Successfully injected Quickshell configuration into $HYPR_CONFIG"
+            fi
+        fi
+    fi
+
+    # Hyprland (.lua) check & injection
+    if [ -f "$HYPR_LUA_CONFIG" ]; then
+        COMPOSITOR_FOUND=true
+        if grep -q -E "quickshell|qs ipc" "$HYPR_LUA_CONFIG"; then
+            success "Hyprland Lua configuration at $HYPR_LUA_CONFIG already contains Quickshell integration."
+        else
+            warn "Hyprland Lua config found at $HYPR_LUA_CONFIG (Quickshell integration not present)."
+            INJECT_HYPR_LUA=false
+            if [ "$AUTO_YES" = true ]; then
+                INJECT_HYPR_LUA=true
+            else
+                read -rp "Would you like to auto-inject Quickshell autostart, binds & layer rules into $HYPR_LUA_CONFIG? [y/N] " response
+                if [[ "$response" =~ ^[Yy]$ ]]; then
+                    INJECT_HYPR_LUA=true
+                fi
+            fi
+
+            if [ "$INJECT_HYPR_LUA" = true ]; then
+                BACKUP_HYPR_LUA="${HYPR_LUA_CONFIG}_backup_$(date +%Y%m%d_%H%M%S)"
+                cp "$HYPR_LUA_CONFIG" "$BACKUP_HYPR_LUA"
+                info "Backed up $HYPR_LUA_CONFIG to $BACKUP_HYPR_LUA"
+
+                cat << 'EOF' >> "$HYPR_LUA_CONFIG"
+
+-- ── Quickshell Shell Integration ──
+hl.on("hyprland.start", function ()
+    hl.exec_cmd("qs -c ~/.config/quickshell")
+    hl.exec_cmd("wl-paste --type text --watch cliphist store")
+    hl.exec_cmd("wl-paste --type image --watch cliphist store")
+end)
+
+local mainMod = "SUPER"
+hl.bind(mainMod .. " + SPACE", hl.dsp.exec_cmd("qs ipc call launcher toggle"))
+hl.bind(mainMod .. " + V",     hl.dsp.exec_cmd("qs ipc call clipboard toggle"))
+hl.bind(mainMod .. " + P",     hl.dsp.exec_cmd("qs ipc call powermenu toggle"))
+hl.bind(mainMod .. " + L",     hl.dsp.exec_cmd("qs ipc call lockscreen toggle"))
+hl.bind(mainMod .. " + D",     hl.dsp.exec_cmd("qs ipc call dashboard toggle"))
+hl.bind(mainMod .. " + N",     hl.dsp.exec_cmd("qs ipc call notifCenter toggle"))
+hl.bind(mainMod .. " + C",     hl.dsp.exec_cmd("qs ipc call controlCenter toggle"))
+
+hl.layer_rule({ match = { namespace = "quickshell:bar" },           blur = true })
+hl.layer_rule({ match = { namespace = "quickshell:launcher" },      blur = true, ignore_alpha = 0 })
+hl.layer_rule({ match = { namespace = "quickshell:clipboard" },     blur = true, ignore_alpha = 0 })
+hl.layer_rule({ match = { namespace = "quickshell:controlcenter" }, blur = true, ignore_alpha = 0 })
+hl.layer_rule({ match = { namespace = "quickshell:notifcenter" },   blur = true, ignore_alpha = 0 })
+hl.layer_rule({ match = { namespace = "quickshell:dashboard" },     blur = true, ignore_alpha = 0 })
+hl.layer_rule({ match = { namespace = "quickshell:calendar" },      blur = true, ignore_alpha = 0 })
+hl.layer_rule({ match = { namespace = "quickshell:hud" },           blur = true, ignore_alpha = 0 })
+hl.layer_rule({ match = { namespace = "^quickshell:.*$" },          blur = true, ignore_alpha = 0 })
+EOF
+                success "Successfully injected Quickshell configuration into $HYPR_LUA_CONFIG"
+            fi
+        fi
+    fi
+
+    # Niri check & injection
+    if [ -f "$NIRI_CONFIG" ]; then
+        COMPOSITOR_FOUND=true
+        if grep -q -E "quickshell|qs ipc" "$NIRI_CONFIG"; then
+            success "Niri configuration at $NIRI_CONFIG already contains Quickshell integration."
+        else
+            warn "Niri config found at $NIRI_CONFIG (Quickshell integration not present)."
+            INJECT_NIRI=false
+            if [ "$AUTO_YES" = true ]; then
+                INJECT_NIRI=true
+            else
+                read -rp "Would you like to auto-inject Quickshell autostart & binds into $NIRI_CONFIG? [y/N] " response
+                if [[ "$response" =~ ^[Yy]$ ]]; then
+                    INJECT_NIRI=true
+                fi
+            fi
+
+            if [ "$INJECT_NIRI" = true ]; then
+                BACKUP_NIRI="${NIRI_CONFIG}_backup_$(date +%Y%m%d_%H%M%S)"
+                cp "$NIRI_CONFIG" "$BACKUP_NIRI"
+                info "Backed up $NIRI_CONFIG to $BACKUP_NIRI"
+
+                cat << 'EOF' >> "$NIRI_CONFIG"
+
+// ── Quickshell Shell Integration ──
+spawn-at-startup "qs" "-c" "~/.config/quickshell"
+spawn-at-startup "wl-paste" "--type" "text" "--watch" "cliphist" "store"
+spawn-at-startup "wl-paste" "--type" "image" "--watch" "cliphist" "store"
+
+binds {
+    Mod+Space { spawn "qs" "ipc" "call" "launcher" "toggle"; }
+    Mod+V     { spawn "qs" "ipc" "call" "clipboard" "toggle"; }
+    Mod+P     { spawn "qs" "ipc" "call" "powermenu" "toggle"; }
+    Mod+L     { spawn "qs" "ipc" "call" "lockscreen" "toggle"; }
+    Mod+D     { spawn "qs" "ipc" "call" "dashboard" "toggle"; }
+    Mod+N     { spawn "qs" "ipc" "call" "notifCenter" "toggle"; }
+    Mod+C     { spawn "qs" "ipc" "call" "controlCenter" "toggle"; }
+}
+EOF
+                success "Successfully injected Quickshell configuration into $NIRI_CONFIG"
+            fi
+        fi
+    fi
+
+    if [ "$COMPOSITOR_FOUND" = false ]; then
+        info "No existing Hyprland or Niri config detected in ~/.config."
+        info "Example configs are available in $SCRIPT_DIR/examples/"
+        info "  - Hyprland (conf): $SCRIPT_DIR/examples/hyprland.conf"
+        info "  - Hyprland (lua):  $SCRIPT_DIR/examples/hyprland.lua"
+        info "  - Niri:            $SCRIPT_DIR/examples/niri.kdl"
+    fi
+}
+
+setup_compositor_configs
 
 if [ "$CHECK_ONLY" = true ]; then
     echo ""
@@ -322,7 +560,5 @@ success "Quickshell configuration setup complete!"
 echo -e "${BOLD}Next Steps:${NC}"
 echo -e "  1. Launch Quickshell:"
 echo -e "     ${GREEN}qs -c ~/.config/quickshell${NC}"
-echo -e "  2. Ensure clipboard history daemons are running in your Hyprland config:"
-echo -e "     ${GREEN}exec-once = wl-paste --type text --watch cliphist store${NC}"
-echo -e "     ${GREEN}exec-once = wl-paste --type image --watch cliphist store${NC}"
+echo -e "  2. Restart your Hyprland / Niri compositor or reload keybindings."
 

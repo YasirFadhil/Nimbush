@@ -19,11 +19,11 @@ PanelWindow {
     property string uptimeStr: ""
 
     readonly property var actions: [
-        { label: "Lock",      sublabel: "Lock screen",    icon: Services.Icons.pmLock,     proc: lockProc,     key: "1", danger: false, instant: true },
-        { label: "Logout",    sublabel: "Exit session",   icon: Services.Icons.pmLogout,   proc: logoutProc,   key: "2", danger: false, instant: false },
-        { label: "Sleep",     sublabel: "Suspend system", icon: Services.Icons.pmSleep,    proc: sleepProc,    key: "3", danger: false, instant: true },
-        { label: "Reboot",    sublabel: "Restart PC",     icon: Services.Icons.pmReboot,   proc: rebootProc,   key: "4", danger: true,  instant: false },
-        { label: "Power Off", sublabel: "Turn off PC",    icon: Services.Icons.pmShutdown, proc: shutdownProc, key: "5", danger: true,  instant: false }
+        { label: "Lock",      sublabel: "Lock screen",    icon: Services.Icons.pmLock,     proc: lockProc,     key: "l", danger: false, instant: true },
+        { label: "Logout",    sublabel: "Exit session",   icon: Services.Icons.pmLogout,   proc: logoutProc,   key: "x", danger: false, instant: false },
+        { label: "Sleep",     sublabel: "Suspend system", icon: Services.Icons.pmSleep,    proc: sleepProc,    key: "s", danger: false, instant: true },
+        { label: "Reboot",    sublabel: "Restart PC",     icon: Services.Icons.pmReboot,   proc: rebootProc,   key: "r", danger: true,  instant: false },
+        { label: "Power Off", sublabel: "Turn off PC",    icon: Services.Icons.pmShutdown, proc: shutdownProc, key: "p", danger: true,  instant: false }
     ]
 
     function open() {

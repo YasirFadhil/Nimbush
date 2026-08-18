@@ -38,13 +38,18 @@ Before running Quickshell, ensure the required dependencies are installed:
 ### System Utilities & Services
 - **NetworkManager** (`networkmanager` / `nmcli`) – Network & Wi-Fi management
 - **BlueZ** (`bluez`, `bluez-utils` / `bluetoothctl`) – Bluetooth management
-- **PipeWire / PulseAudio** (`libpulse` / `pactl`) – Volume & sink control
+- **PipeWire / PulseAudio** (`libpulse` / `pactl`, `paplay`) – Volume control & sound feedback
 - **Brightnessctl** (`brightnessctl`) – Screen brightness control
 - **Cliphist** & **wl-clipboard** (`cliphist`, `wl-clipboard`) – Clipboard history
 - **Power Profiles Daemon** (`power-profiles-daemon`) – Power mode switcher
 - **UPower** (`upower`) – Battery monitoring
 - **socat** (`socat`) – Hyprland socket IPC event listener (Hyprland mode)
 - **psmisc** (`psmisc` / `fuser`) – Camera detection for Dynamic Island
+- **procps** (`procps` / `pkill`) – Process cleanup & management
+- **libnotify** (`libnotify` / `notify-send`) – Desktop notifications
+- **git** (`git`) – Automatic shell update service
+- **D-Bus & GLib** (`dbus`, `glib` / `dbus-monitor`, `gdbus`) – Bluetooth live signal monitoring & XDG Portal file chooser
+- **Grim & Slurp** (`grim`, `slurp`, `swappy`) – Wayland screenshot capture & editing
 - **Python 3** (`python3`) – XDG wallpaper file picker script
 
 ### Fonts

@@ -100,8 +100,15 @@ in
           upower
           socat
           psmisc
+          procps
+          libnotify
+          git
+          dbus
+          glib
+          grim
+          slurp
+          swappy
           python3
-          wlogout
         ]));
 
       # Automatically place files into ~/.config/quickshell if not using wrapped package

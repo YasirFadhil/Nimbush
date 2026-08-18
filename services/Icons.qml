@@ -147,9 +147,9 @@ Singleton {
     function powerIcon(charging, percentage) {
         if (charging) return "\uf0e7"
         var p = (percentage > 0 && percentage <= 1) ? percentage * 100 : percentage
-        if (p >= 75) return "\uf240"
-        if (p >= 50) return "\uf241"
-        if (p >= 25) return "\uf242"
+        if (p >= 75) return "\uf241"
+        if (p >= 50) return "\uf242"
+        if (p >= 25) return "\uf243"
         if (p >= 10) return "\uf243"
         return "\uf244"
     }
