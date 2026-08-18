@@ -9,8 +9,36 @@ import Quickshell.Io
 Singleton {
     id: root
 
-    // Path to freedesktop stereo sound directory
-    readonly property string soundDir: "/run/current-system/sw/share/sounds/freedesktop/stereo/"
+    // Path to freedesktop stereo sound directory (auto-detected across distros, or custom override)
+    property string soundDir: "/usr/share/sounds/freedesktop/stereo"
+
+    // ── Auto-discovery for sound directory ──────────────────────────────────
+    Process {
+        command: [
+            "sh", "-c",
+            "for d in " +
+            "\"$QUICKSHELL_SOUND_DIR\" " +
+            "\"$SOUND_THEME_DIR\" " +
+            "\"${XDG_DATA_HOME:-$HOME/.local/share}/sounds/freedesktop/stereo\" " +
+            "\"/run/current-system/sw/share/sounds/freedesktop/stereo\" " +
+            "\"$HOME/.nix-profile/share/sounds/freedesktop/stereo\" " +
+            "\"/etc/profiles/per-user/$USER/share/sounds/freedesktop/stereo\" " +
+            "\"/usr/local/share/sounds/freedesktop/stereo\" " +
+            "\"/usr/share/sounds/freedesktop/stereo\"; do " +
+            "if [ -n \"$d\" ] && [ -d \"$d\" ]; then echo \"$d\"; exit 0; fi; done; " +
+            "IFS=':'; for xdg in $XDG_DATA_DIRS; do " +
+            "if [ -n \"$xdg\" ] && [ -d \"$xdg/sounds/freedesktop/stereo\" ]; then echo \"$xdg/sounds/freedesktop/stereo\"; exit 0; fi; done"
+        ]
+        running: true
+        stdout: SplitParser {
+            onRead: data => {
+                const path = data.trim()
+                if (path.length > 0) {
+                    root.soundDir = path
+                }
+            }
+        }
+    }
 
     // ── Freedesktop sound event names ────────────────────────────────────────
     readonly property string sndVolumeChange:    "audio-volume-change"
@@ -40,10 +68,22 @@ Singleton {
         id: playerProc
         property string pendingSound: ""
 
-        // paplay with event role so it respects the sound theme volume in PW
-        command: ["paplay",
-                  "--property=media.role=event",
-                  soundDir + pendingSound + ".oga"]
+        // Multi-fallback playback: checks soundDir (.oga, .ogg, .wav), then canberra-gtk-play
+        command: [
+            "sh", "-c",
+            "dir=\"$1\"; sound=\"$2\"; " +
+            "f=\"$dir/$sound\"; " +
+            "for ext in .oga .ogg .wav ''; do " +
+            "if [ -n \"$dir\" ] && [ -f \"$f$ext\" ]; then " +
+            "paplay --property=media.role=event \"$f$ext\" 2>/dev/null || pw-play \"$f$ext\" 2>/dev/null; " +
+            "exit 0; " +
+            "fi; " +
+            "done; " +
+            "canberra-gtk-play -i \"$sound\" 2>/dev/null",
+            "play_sound",
+            root.soundDir,
+            pendingSound
+        ]
         running: false
     }
 

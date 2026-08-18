@@ -94,6 +94,23 @@ ShellRoot {
         function hide()   { lockscreenWindow.hide() }
         function lock()   { lockscreenWindow.lock() }
     }
+
+    // ── Auto-lock on system suspend / sleep ──────────────────────────────────
+    Process {
+        id: sleepWatcher
+        command: [
+            "dbus-monitor", "--system",
+            "type='signal',interface='org.freedesktop.login1.Manager',member='PrepareForSleep'"
+        ]
+        running: true
+        stdout: SplitParser {
+            onRead: data => {
+                if (data.includes("boolean true")) {
+                    lockscreenWindow.lock()
+                }
+            }
+        }
+    }
 }
 
 

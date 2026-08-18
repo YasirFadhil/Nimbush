@@ -69,6 +69,12 @@ in
     };
 
     hyprland = {
+      enablePackage = mkOption {
+        type = types.bool;
+        default = false;
+        description = "Whether to include the Hyprland package in home.packages (optional if already installed at system level or using Niri).";
+      };
+
       enableIntegration = mkOption {
         type = types.bool;
         default = true;
@@ -77,6 +83,12 @@ in
     };
 
     niri = {
+      enablePackage = mkOption {
+        type = types.bool;
+        default = false;
+        description = "Whether to include the Niri package in home.packages (optional if already installed at system level or using Hyprland).";
+      };
+
       enableIntegration = mkOption {
         type = types.bool;
         default = true;
@@ -88,6 +100,8 @@ in
   config = mkIf cfg.enable (mkMerge [
     {
       home.packages = (optional (cfg.package != null) cfg.package)
+        ++ (optional cfg.hyprland.enablePackage pkgs.hyprland)
+        ++ (optional cfg.niri.enablePackage pkgs.niri)
         ++ (optionals cfg.enableDefaultDependencies (with pkgs; [
           quickshell
           networkmanager
@@ -146,7 +160,7 @@ in
     }
 
     # Declarative Hyprland Integration
-    (mkIf (cfg.hyprland.enableIntegration && (config.wayland.windowManager.hyprland ? enable && config.wayland.windowManager.hyprland.enable)) {
+    (mkIf (cfg.hyprland.enableIntegration && (cfg.hyprland.enablePackage || (config.wayland.windowManager ? hyprland && config.wayland.windowManager.hyprland ? enable && config.wayland.windowManager.hyprland.enable))) {
       wayland.windowManager.hyprland.settings = {
         exec-once = [
           "wl-paste --type text --watch cliphist store"
@@ -182,7 +196,7 @@ in
     })
 
     # Declarative Niri Integration
-    (mkIf (cfg.niri.enableIntegration && (config.programs ? niri && config.programs.niri ? enable && config.programs.niri.enable)) {
+    (mkIf (cfg.niri.enableIntegration && (cfg.niri.enablePackage || (config.programs ? niri && config.programs.niri ? enable && config.programs.niri.enable))) {
       programs.niri.settings = {
         spawn-at-startup = [
           { command = [ "wl-paste" "--type" "text" "--watch" "cliphist" "store" ]; }

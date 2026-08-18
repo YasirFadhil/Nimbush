@@ -1,7 +1,7 @@
 // Niri Configuration (~/.config/niri/config.kdl)
 
 // ── Autostart Quickshell & Services ───────────────────────────────────────
-spawn-at-startup "qs" "-c" "~/.config/quickshell"
+spawn-at-startup "qs"
 spawn-at-startup "wl-paste" "--type" "text" "--watch" "cliphist" "store"
 spawn-at-startup "wl-paste" "--type" "image" "--watch" "cliphist" "store"
 
@@ -14,6 +14,11 @@ binds {
     Mod+D     { spawn "qs" "ipc" "call" "dashboard" "toggle"; }
     Mod+N     { spawn "qs" "ipc" "call" "notifCenter" "toggle"; }
     Mod+C     { spawn "qs" "ipc" "call" "controlCenter" "toggle"; }
+
+    // ── Screenshot Keybindings (Grim + Slurp + Swappy + Quickshell Notification) ─
+    Print       { spawn "sh" "-c" "~/.config/quickshell/scripts/screenshot.sh full"; }
+    Shift+Print { spawn "sh" "-c" "~/.config/quickshell/scripts/screenshot.sh region"; }
+    Mod+Print   { spawn "sh" "-c" "~/.config/quickshell/scripts/screenshot.sh window"; }
 }
 
 // ── Layer Rules / Window Rules ─────────────────────────────────────────────

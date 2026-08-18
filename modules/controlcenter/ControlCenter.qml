@@ -242,18 +242,16 @@ PanelWindow {
                         }
                     }
 
-                    // Shell Update Icon Button (App-like update prompt for main branch)
+                    // Shell Update Icon Button (Always visible)
                     Rectangle {
                         width: 26; height: 26; radius: 13
-                        visible: Services.ShellUpdate.hasUpdate || Services.OverlayManager.updatePanelVisible
-                        opacity: visible ? 1 : 0
-                        Behavior on opacity { NumberAnimation { duration: 200 } }
-
                         color: updateBtnMouse.containsMouse 
                                ? Services.Theme.surfaceVariant 
                                : (Services.OverlayManager.updatePanelVisible || Services.ShellUpdate.hasUpdate ? Services.Theme.bgHover : "transparent")
-                        border.color: Services.ShellUpdate.hasUpdate ? Services.Theme.accent : "transparent"
-                        border.width: Services.ShellUpdate.hasUpdate ? 1 : 0
+                        border.color: Services.ShellUpdate.hasUpdate 
+                                      ? Services.Theme.accent 
+                                      : (Services.OverlayManager.updatePanelVisible ? Services.Theme.border : "transparent")
+                        border.width: (Services.ShellUpdate.hasUpdate || Services.OverlayManager.updatePanelVisible) ? 1 : 0
                         Behavior on color { ColorAnimation { duration: 100 } }
 
                         Text {
