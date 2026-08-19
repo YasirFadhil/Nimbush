@@ -1,0 +1,13 @@
+# Personal user settings & runtime configs
+user_settings.json
+wallpaper_config.json
+backup_settings.json
+
+# Backup snapshots & local cache
+.backup_original/
+__pycache__/
+*.pyc
+
+# Logs & temp files
+*.log
+.cache/

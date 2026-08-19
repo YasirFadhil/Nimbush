@@ -1,3 +1,0 @@
-module modules.lockscreen
-Lockscreen 1.0 Lockscreen.qml
-LockscreenControlCenter 1.0 LockscreenControlCenter.qml
