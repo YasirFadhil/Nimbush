@@ -23,7 +23,10 @@ Scope {
     property bool isAuthenticating: false
 
     property string timeStr: "00:00"
+    property string hourStr: "00"
+    property string minStr: "00"
     property string dateStr: ""
+    property string greetingStr: "Welcome"
     property string username: "user"
     property string hostname: "host"
     property bool capsLockOn: false
@@ -33,8 +36,6 @@ Scope {
     readonly property bool hasPlayer: player !== null && (player?.trackTitle ?? "").length > 0
     readonly property bool isPlaying: player?.isPlaying ?? false
     readonly property int notifCount: Services.Notifications.historyList ? Services.Notifications.historyList.count : 0
-
-
 
     Timer {
         id: revealTimer
@@ -90,10 +91,19 @@ Scope {
 
     function updateTime() {
         const now = new Date()
-        let hours = now.getHours() % 12
-        if (hours === 0) hours = 12
-        const minutes = String(now.getMinutes()).padStart(2, "0")
-        timeStr = hours + ":" + minutes
+        const is24 = Services.Config ? Services.Config.lockscreen24h : false
+        let h = now.getHours()
+        if (h < 12) greetingStr = "Good Morning"
+        else if (h < 18) greetingStr = "Good Afternoon"
+        else greetingStr = "Good Evening"
+
+        if (!is24) {
+            h = h % 12
+            if (h === 0) h = 12
+        }
+        hourStr = String(h).padStart(2, "0")
+        minStr = String(now.getMinutes()).padStart(2, "0")
+        timeStr = hourStr + ":" + minStr
         dateStr = Qt.formatDateTime(now, "dddd, MMMM d")
     }
 
@@ -248,7 +258,7 @@ Scope {
                         asynchronous: false
                         smooth: true
                         cache: true
-                        scale: root.isRevealed ? 1.20 : 1.0
+                        scale: (Services.Config && !Services.Config.lockscreenWallpaperZoom) ? 1.0 : (root.isRevealed ? 1.20 : 1.0)
                         transformOrigin: Item.Center
                         Behavior on scale { NumberAnimation { duration: 350; easing.type: root.isRevealed ? Easing.OutCubic : Easing.InCubic } }
                     }
@@ -257,7 +267,7 @@ Scope {
                     Rectangle {
                         anchors.fill: parent
                         color: Services.Theme.bgDeep
-                        opacity: root.isRevealed ? 0.45 : 0.0
+                        opacity: root.isRevealed ? (Services.Config ? Services.Config.lockscreenDim : 0.45) : 0.0
                         Behavior on opacity {
                             NumberAnimation {
                                 duration: 900
@@ -495,7 +505,9 @@ Scope {
                             id: topClockColumn
                             anchors.horizontalCenter: parent.horizontalCenter
                             anchors.top: parent.top
-                            anchors.topMargin: root.isRevealed ? (parent.height * 0.14) : (parent.height * 0.14 - 35)
+                            anchors.topMargin: root.isRevealed 
+                                ? (Services.Config && Services.Config.lockscreenClockStyle === "modern" ? (parent.height * 0.08) : (parent.height * 0.13)) 
+                                : (parent.height * 0.13 - 35)
                             spacing: 4
                             opacity: root.isRevealed ? 1.0 : 0.0
                             scale: root.isRevealed ? 1.0 : 0.92
@@ -504,7 +516,11 @@ Scope {
                             Behavior on opacity { NumberAnimation { duration: 350; easing.type: Easing.OutCubic } }
                             Behavior on scale { NumberAnimation { duration: 400; easing.type: Easing.OutCubic } }
 
+                            readonly property string clockStyle: Services.Config ? Services.Config.lockscreenClockStyle : "hero"
+
+                            // Date Line (for hero & modern)
                             Text {
+                                visible: topClockColumn.clockStyle !== "compact"
                                 Layout.alignment: Qt.AlignHCenter
                                 text: root.dateStr
                                 color: Services.Theme.textPrimary
@@ -515,7 +531,9 @@ Scope {
                                 styleColor: Services.Theme.overlayDim
                             }
 
+                            // Style 1: Hero Clock (Single horizontal huge display)
                             Text {
+                                visible: topClockColumn.clockStyle === "hero"
                                 Layout.alignment: Qt.AlignHCenter
                                 text: root.timeStr
                                 color: Services.Theme.white
@@ -524,6 +542,90 @@ Scope {
                                 font.family: Services.Theme.fontDisplay
                                 style: Text.Outline
                                 styleColor: Services.Theme.overlayDim
+                            }
+
+                            // Style 2: Modern Stacked Clock (Large Hour above Minute)
+                            ColumnLayout {
+                                visible: topClockColumn.clockStyle === "modern"
+                                Layout.alignment: Qt.AlignHCenter
+                                spacing: -20
+
+                                Text {
+                                    Layout.alignment: Qt.AlignHCenter
+                                    text: root.hourStr
+                                    color: Services.Theme.accent
+                                    font.pixelSize: 84
+                                    font.weight: Font.Bold
+                                    font.family: Services.Theme.fontDisplay
+                                    style: Text.Outline
+                                    styleColor: Services.Theme.overlayDim
+                                }
+                                Text {
+                                    Layout.alignment: Qt.AlignHCenter
+                                    text: root.minStr
+                                    color: Services.Theme.white
+                                    font.pixelSize: 84
+                                    font.weight: Font.Bold
+                                    font.family: Services.Theme.fontDisplay
+                                    style: Text.Outline
+                                    styleColor: Services.Theme.overlayDim
+                                }
+                            }
+
+                            // Style 3: Compact Pill Clock
+                            Rectangle {
+                                visible: topClockColumn.clockStyle === "compact"
+                                Layout.alignment: Qt.AlignHCenter
+                                height: 44
+                                implicitWidth: compactRow.implicitWidth + 28
+                                radius: 22
+                                color: Qt.rgba(Services.Theme.bgDeep.r, Services.Theme.bgDeep.g, Services.Theme.bgDeep.b, 0.65)
+                                border.color: Services.Theme.borderHighlight
+                                border.width: 1
+
+                                RowLayout {
+                                    id: compactRow
+                                    anchors.centerIn: parent
+                                    spacing: 12
+
+                                    Text {
+                                        text: root.timeStr
+                                        color: Services.Theme.accent
+                                        font.pixelSize: Services.Theme.fontSize3xl
+                                        font.bold: true
+                                        font.family: Services.Theme.fontDisplay
+                                    }
+                                    Rectangle { width: 1; height: 16; color: Services.Theme.border }
+                                    Text {
+                                        text: root.dateStr
+                                        color: Services.Theme.textPrimary
+                                        font.pixelSize: Services.Theme.fontSizeMd
+                                        font.weight: Font.Medium
+                                    }
+                                }
+                            }
+
+                            // Ambient Greeting / Weather Subtitle
+                            RowLayout {
+                                visible: Services.Config ? Services.Config.lockscreenShowWeather : true
+                                Layout.alignment: Qt.AlignHCenter
+                                spacing: 6
+                                opacity: 0.85
+
+                                Text {
+                                    text: Services.Icons.sun || Services.Icons.sparkle
+                                    font.family: Services.Theme.fontSymbols
+                                    font.pixelSize: 12
+                                    color: Services.Theme.accent
+                                }
+                                Text {
+                                    text: root.greetingStr + ", " + (Services.OsInfo.username || root.username)
+                                    color: Services.Theme.textSecondary
+                                    font.pixelSize: Services.Theme.fontSizeSm
+                                    font.weight: Font.Medium
+                                    style: Text.Outline
+                                    styleColor: Services.Theme.overlayDim
+                                }
                             }
                         }
 
@@ -762,7 +864,7 @@ Scope {
                             width: Math.min(mainContainer.width - 50, 305)
                             height: 90
                             z: 100
-                            visible: root.notifCount > 0 && root.isRevealed
+                            visible: root.notifCount > 0 && root.isRevealed && (Services.Config ? Services.Config.lockscreenShowNotifs : true)
                             opacity: root.isRevealed ? 1.0 : 0.0
                             Behavior on opacity { NumberAnimation { duration: 300 } }
 
@@ -802,7 +904,7 @@ Scope {
                             color: Services.Theme.surfaceVariant
                             border.color: Services.Theme.border
                             border.width: 1
-                            visible: root.hasPlayer
+                            visible: root.hasPlayer && (Services.Config ? Services.Config.lockscreenShowMedia : true)
                             opacity: root.isRevealed ? 1.0 : 0.0
                             scale: root.isRevealed ? 1.0 : 0.9
                             transformOrigin: Item.Center

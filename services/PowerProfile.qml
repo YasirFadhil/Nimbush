@@ -6,19 +6,26 @@ import Quickshell.Io
 Singleton {
     id: root
     property string profile: "balanced" // performance | balanced | power-saver
+    readonly property string currentProfile: profile
     readonly property bool saverEnabled: profile === "power-saver"
 
     function refresh() {
-        getProc.running = true
+        if (!getProc.running) getProc.running = true
     }
 
-    function toggleSaver() {
-        setProc.command = ["powerprofilesctl", "set", root.saverEnabled ? "balanced" : "power-saver"]
+    function setProfile(name) {
+        if (!name) return
+        root.profile = name
+        setProc.command = ["powerprofilesctl", "set", name]
         setProc.running = true
     }
 
+    function toggleSaver() {
+        setProfile(root.saverEnabled ? "balanced" : "power-saver")
+    }
+
     Timer {
-        interval: 5000
+        interval: 4000
         running: true
         repeat: true
         triggeredOnStart: true
@@ -29,7 +36,10 @@ Singleton {
         id: getProc
         command: ["powerprofilesctl", "get"]
         stdout: SplitParser {
-            onRead: data => root.profile = data.trim()
+            onRead: data => {
+                var p = data.trim()
+                if (p.length > 0) root.profile = p
+            }
         }
     }
 

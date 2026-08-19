@@ -11,6 +11,7 @@ PanelWindow {
     property string overlayId: "trayOverflow"
     property var trayMenuPopup: null
     property real targetX: parent ? parent.width - 200 : 0
+    readonly property bool isBottom: Services.Config ? (Services.Config.barPosition === "bottom") : false
 
     anchors { top: true; bottom: true; left: true; right: true }
     color: "transparent"
@@ -53,8 +54,7 @@ PanelWindow {
 
         Rectangle {
             id: popupCard
-            anchors.top: parent.top
-            anchors.topMargin: 12
+            y: root.isBottom ? (parent.height - height - 12) : 12
             x: Math.max(12, Math.min(parent.width - width - 12, root.targetX - (width / 2)))
             implicitWidth: Math.max(200, contentColumn.implicitWidth + 24)
             implicitHeight: contentColumn.implicitHeight + 24
@@ -65,9 +65,13 @@ PanelWindow {
             clip: true
 
             opacity: root.visible ? 1 : 0
-            scale: root.visible ? 1 : 0.95
-            Behavior on opacity { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
-            Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
+            transform: Translate {
+                y: root.visible ? 0 : (root.isBottom ? 24 : -24)
+                Behavior on y { NumberAnimation { duration: 220; easing.type: Easing.OutBack; easing.overshoot: 0.5 } }
+            }
+            scale: root.visible ? 1 : 0.96
+            Behavior on scale { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
+            Behavior on opacity { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
 
             // Prevent clicks inside card from closing backdrop
             MouseArea { anchors.fill: parent; onClicked: {} }

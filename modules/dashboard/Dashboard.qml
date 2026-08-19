@@ -12,6 +12,7 @@ PanelWindow {
 
     property string overlayId: "dashboard"
     property bool isOpen: false
+    readonly property bool isBottom: Services.Config ? (Services.Config.barPosition === "bottom") : false
 
     visible: false
 
@@ -48,6 +49,11 @@ PanelWindow {
         onTriggered: root.visible = false
     }
 
+    Process {
+        id: settingsProc
+        command: ["quickshell", "ipc", "call", "settings", "show"]
+    }
+
     Item {
         id: keyFocus
         focus: root.isOpen
@@ -61,9 +67,9 @@ PanelWindow {
         // ── Panel ──────────────────────────────────────────────────────────
         Rectangle {
             id: panel
-            anchors { top: parent.top; left: parent.left }
+            anchors.left: parent.left
             anchors.leftMargin: 12
-            anchors.topMargin: 12
+            y: root.isBottom ? (parent.height - height - 12) : 12
             width: 360
             implicitHeight: mainCol.implicitHeight + 32
 
@@ -75,9 +81,11 @@ PanelWindow {
 
             opacity: root.isOpen ? 1 : 0
             transform: Translate {
-                y: root.isOpen ? 0 : -16
-                Behavior on y { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
+                y: root.isOpen ? 0 : (root.isBottom ? 32 : -32)
+                Behavior on y { NumberAnimation { duration: 240; easing.type: Easing.OutBack; easing.overshoot: 0.5 } }
             }
+            scale: root.isOpen ? 1 : 0.96
+            Behavior on scale { NumberAnimation { duration: 240; easing.type: Easing.OutCubic } }
             Behavior on opacity { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
 
             MouseArea { anchors.fill: parent; onClicked: {} }
@@ -265,6 +273,34 @@ PanelWindow {
                                 font.pixelSize: 10
                                 color: Services.Theme.accent
                                 elide: Text.ElideRight
+                            }
+                        }
+                    }
+
+                    // Settings Button
+                    Rectangle {
+                        width: 28; height: 28; radius: 14
+                        color: sHover.containsMouse ? Services.Theme.surfaceVariant : "transparent"
+                        border.color: sHover.containsMouse ? Services.Theme.border : "transparent"
+                        border.width: 1
+                        Behavior on color { ColorAnimation { duration: 100 } }
+
+                        Text {
+                            anchors.centerIn: parent
+                            text: Services.Icons.settings
+                            font.family: Services.Theme.fontSymbols
+                            font.pixelSize: 13
+                            color: sHover.containsMouse ? Services.Theme.accent : Services.Theme.textSecondary
+                        }
+
+                        MouseArea {
+                            id: sHover
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: {
+                                root.close()
+                                Services.OverlayManager.openSettings()
                             }
                         }
                     }
@@ -611,7 +647,7 @@ PanelWindow {
                                             text: Services.Icons.check
                                             font.family: Services.Theme.fontSymbols
                                             font.pixelSize: 9
-                                            color: "#ffffff"
+                                            color: Services.Theme.bgOnAccent
                                         }
                                     }
 

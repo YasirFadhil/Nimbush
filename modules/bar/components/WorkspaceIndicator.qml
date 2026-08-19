@@ -34,11 +34,18 @@ RowLayout {
                     text: Services.OsInfo.logoGlyph
                     font.family: Services.Theme.fontMono
                     font.pixelSize: Services.Theme.fontSize3xl
-                    color: Services.Theme.accent
+                    color: logoMouse.containsMouse ? Qt.lighter(Services.Theme.accent, 1.2) : Services.Theme.accent
+                    scale: logoMouse.containsMouse ? 1.1 : 1.0
+
+                    Behavior on color { ColorAnimation { duration: 150 } }
+                    Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
                 }
 
                 MouseArea {
+                    id: logoMouse
                     anchors.fill: parent
+                    anchors.margins: -4
+                    hoverEnabled: true
                     acceptedButtons: Qt.LeftButton | Qt.RightButton
                     cursorShape: Qt.PointingHandCursor
                     onClicked: (mouse) => {
@@ -98,17 +105,19 @@ RowLayout {
                             anchors.fill: parent
                             radius: 3.5
                             color: wsItem.isActive ? Services.Theme.accent
-                                 : wsItem.isOccupied ? Services.Theme.accentDim
-                                 : Services.Theme.textDisabled
-                            opacity: wsItem.isActive ? 1.0 : (wsItem.isOccupied ? 0.75 : 0.35)
+                                 : (wsMouse.containsMouse ? Services.Theme.textPrimary
+                                 : (wsItem.isOccupied ? Services.Theme.accentDim : Services.Theme.textDisabled))
+                            opacity: wsItem.isActive ? 1.0 : (wsMouse.containsMouse ? 1.0 : (wsItem.isOccupied ? 0.75 : 0.35))
 
-                            Behavior on color { ColorAnimation { duration: 180 } }
-                            Behavior on opacity { NumberAnimation { duration: 180 } }
+                            Behavior on color { ColorAnimation { duration: 150 } }
+                            Behavior on opacity { NumberAnimation { duration: 150 } }
                         }
 
                         MouseArea {
+                            id: wsMouse
                             anchors.fill: parent
                             anchors.margins: -4
+                            hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
                             onClicked: Services.Workspaces.switchTo(wsItem.wsId)
                         }

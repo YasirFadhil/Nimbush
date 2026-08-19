@@ -18,6 +18,7 @@ PanelWindow {
 
     function hide() { Services.Notifications.centerVisible = false }
     function close() { hide() }
+    readonly property bool isBottom: Services.Config ? (Services.Config.barPosition === "bottom") : false
 
     Component.onCompleted: Services.OverlayManager.register(centerWin)
 
@@ -91,20 +92,25 @@ PanelWindow {
 
     Rectangle {
         id: panel
-        anchors { top: parent.top; right: parent.right }
+        anchors.right: parent.right
         anchors.rightMargin: 12
-        anchors.topMargin: 12
+        y: centerWin.isBottom ? (parent.height - height - 12) : 12
         width: 390
-        height: Math.max(480, Math.min(mainCol.implicitHeight + 20, 690))
+        height: Math.max(480, Math.min(mainCol.implicitHeight + 20, Math.min(690, parent.height - 24)))
         radius: 16
         color: centerWin.t.surface
         border.color: centerWin.t.border
         border.width: 1
+        clip: true
 
         opacity: Services.Notifications.centerVisible ? 1 : 0
-        y: Services.Notifications.centerVisible ? 0 : -20
-        Behavior on opacity { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
-        Behavior on y { NumberAnimation { duration: 220; easing.type: Easing.OutBack; easing.overshoot: 0.5 } }
+        transform: Translate {
+            y: Services.Notifications.centerVisible ? 0 : (centerWin.isBottom ? 32 : -32)
+            Behavior on y { NumberAnimation { duration: 240; easing.type: Easing.OutBack; easing.overshoot: 0.5 } }
+        }
+        scale: Services.Notifications.centerVisible ? 1 : 0.96
+        Behavior on scale { NumberAnimation { duration: 240; easing.type: Easing.OutCubic } }
+        Behavior on opacity { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
 
         MouseArea { anchors.fill: parent; onClicked: {} }
 

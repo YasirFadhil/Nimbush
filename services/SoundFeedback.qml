@@ -2,6 +2,7 @@ pragma Singleton
 import QtQuick
 import Quickshell
 import Quickshell.Io
+import "." as Services
 
 // Sound feedback service using Freedesktop XDG sound theme.
 // Sound files live at /run/current-system/sw/share/sounds/freedesktop/stereo/
@@ -61,7 +62,7 @@ Singleton {
     readonly property string sndWindowAttention: "window-attention"
 
     // ── Global enable/disable switch ─────────────────────────────────────────
-    property bool enabled: true
+    property bool enabled: (Services.Config ? Services.Config.soundFeedback : true)
 
     // ── Internal player process ──────────────────────────────────────────────
     Process {

@@ -15,6 +15,8 @@ import "modules/calendar" as CalendarModule
 import "modules/lockscreen" as LockscreenModule
 import "modules/dashboard" as DashboardModule
 import "modules/wallpaper" as WallpaperModule
+import "modules/settings" as SettingsModule
+import "modules/welcome" as WelcomeModule
 
 ShellRoot {
     WallpaperModule.Wallpaper {}
@@ -30,12 +32,18 @@ ShellRoot {
     ControlCenter.ControlCenter { id: controlCenter }
     CalendarModule.Calendar {}
     LockscreenModule.Lockscreen { id: lockscreenWindow }
+    SettingsModule.Settings { id: settingsWindow }
+    WelcomeModule.Welcome { id: welcomeWindow }
 
 
     Connections {
         target: Services.OverlayManager
         function onLauncherToggleRequested() { launcherWindow.toggle() }
         function onDashboardToggleRequested() { dashboardWindow.toggle() }
+        function onSettingsToggleRequested() { settingsWindow.toggle() }
+        function onSettingsShowRequested() { settingsWindow.show() }
+        function onWelcomeToggleRequested() { welcomeWindow.toggle() }
+        function onWelcomeShowRequested() { welcomeWindow.show() }
     }
 
     // ── Notification center (history panel) ──────────────────────────────────
@@ -93,6 +101,22 @@ ShellRoot {
         function show()   { lockscreenWindow.show() }
         function hide()   { lockscreenWindow.hide() }
         function lock()   { lockscreenWindow.lock() }
+    }
+
+    // ── Settings ─────────────────────────────────────────────────────────────
+    IpcHandler {
+        target: "settings"
+        function toggle(): void { if (!Services.OverlayManager.isLocked) settingsWindow.toggle() }
+        function show():   void { if (!Services.OverlayManager.isLocked) settingsWindow.show() }
+        function hide():   void { settingsWindow.hide() }
+    }
+
+    // ── Welcome Setup Wizard ─────────────────────────────────────────────────
+    IpcHandler {
+        target: "welcome"
+        function toggle(): void { if (!Services.OverlayManager.isLocked) welcomeWindow.toggle() }
+        function show():   void { if (!Services.OverlayManager.isLocked) welcomeWindow.show() }
+        function hide():   void { welcomeWindow.hide() }
     }
 
     // ── Auto-lock on system suspend / sleep ──────────────────────────────────

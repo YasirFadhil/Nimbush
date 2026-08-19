@@ -7,9 +7,12 @@ Rectangle {
     implicitHeight: 28
     implicitWidth: sysmonRow.implicitWidth + 20
     radius: 14
-    color: Services.Theme.surface
-    border.color: Services.Theme.border
+    color: sysmonMouse.containsMouse ? Services.Theme.surfaceVariant : Services.Theme.surface
+    border.color: sysmonMouse.containsMouse ? Services.Theme.borderHighlight : Services.Theme.border
     border.width: 1
+
+    Behavior on color { ColorAnimation { duration: 150 } }
+    Behavior on border.color { ColorAnimation { duration: 150 } }
 
     RowLayout {
         id: sysmonRow
@@ -17,11 +20,11 @@ Rectangle {
         spacing: 6
 
         Text {
-          text: Services.Icons.cpu
+            text: Services.Icons.cpu
             font.family: Services.Theme.fontSymbols
-            // font.family: Services.Theme.fontMono
             font.pixelSize: Services.Theme.fontSizeXl
-            color: Services.Theme.textPrimary
+            color: sysmonMouse.containsMouse ? Services.Theme.accent : Services.Theme.textPrimary
+            Behavior on color { ColorAnimation { duration: 150 } }
         }
 
         Text {
@@ -30,5 +33,13 @@ Rectangle {
             font.pixelSize: Services.Theme.fontSizeMd
             color: Services.Theme.textSecondary
         }
+    }
+
+    MouseArea {
+        id: sysmonMouse
+        anchors.fill: parent
+        hoverEnabled: true
+        cursorShape: Qt.PointingHandCursor
+        onClicked: Services.OverlayManager.dashboardToggleRequested()
     }
 }

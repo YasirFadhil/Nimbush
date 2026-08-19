@@ -15,6 +15,29 @@ Singleton {
 
     signal launcherToggleRequested()
     signal dashboardToggleRequested()
+    signal settingsToggleRequested()
+    signal settingsShowRequested()
+    signal welcomeToggleRequested()
+    signal welcomeShowRequested()
+
+    function openSettings() {
+        settingsShowRequested()
+    }
+
+    function toggleSettings() {
+        if (isLocked) return
+        settingsToggleRequested()
+    }
+
+    function openWelcome() {
+        closeAllExcept("welcome")
+        welcomeShowRequested()
+    }
+
+    function toggleWelcome() {
+        if (isLocked) return
+        welcomeToggleRequested()
+    }
 
     function register(win) {
         _windows.push(win)
@@ -43,4 +66,3 @@ Singleton {
         }
     }
 }
-

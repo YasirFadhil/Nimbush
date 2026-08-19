@@ -7,10 +7,11 @@ Rectangle {
     implicitWidth: clockText.implicitWidth + 20
     radius: 14
     color: clockArea.containsMouse ? Services.Theme.surfaceVariant : Services.Theme.surface
-    border.color: Services.Theme.border
+    border.color: clockArea.containsMouse ? Services.Theme.borderHighlight : Services.Theme.border
     border.width: 1
 
-    Behavior on color { ColorAnimation { duration: 100 } }
+    Behavior on color { ColorAnimation { duration: 150 } }
+    Behavior on border.color { ColorAnimation { duration: 150 } }
 
     Text {
         id: clockText
@@ -21,7 +22,21 @@ Rectangle {
         color: Services.Theme.textPrimary
 
         function updateTime() {
-            clockText.text = Qt.formatDateTime(new Date(), "ddd, d MMM hh:mm A")
+            const is24 = Services.Config ? Services.Config.clock24h : true
+            const showSec = Services.Config ? Services.Config.clockShowSeconds : false
+            const showDate = Services.Config ? Services.Config.clockShowDate : true
+            const dateFmt = Services.Config ? Services.Config.clockDateFormat : "short"
+
+            const timePattern = is24 
+                ? (showSec ? "HH:mm:ss" : "HH:mm")
+                : (showSec ? "hh:mm:ss A" : "hh:mm A")
+
+            let datePrefix = ""
+            if (showDate) {
+                datePrefix = (dateFmt === "full" ? "dddd, d MMMM " : "ddd, d MMM ")
+            }
+
+            clockText.text = Qt.formatDateTime(new Date(), datePrefix + timePattern)
         }
 
         Timer {
@@ -32,6 +47,13 @@ Rectangle {
         }
 
         Component.onCompleted: updateTime()
+    }
+
+    Connections {
+        target: Services.Config
+        function onConfigChanged() {
+            clockText.updateTime()
+        }
     }
 
     MouseArea {
