@@ -10,10 +10,22 @@ Singleton {
     readonly property string homeDir: (Quickshell.env("HOME") || "/home/" + (Quickshell.env("USER") || "user"))
     readonly property string assetsDir: homeDir + "/.config/quickshell/assets/wallpapers"
 
-    property string currentWallpaper: assetsDir + "/wallbler.jpg"
+    readonly property string darkWallbler: assetsDir + "/wallbler.jpg"
+    readonly property string lightWallbler: assetsDir + "/wallbler-light.jpg"
+
+    readonly property bool isWallblerActive: currentWallpaper === darkWallbler || currentWallpaper === lightWallbler
+
+    property string currentWallpaper: (Services.Config && Services.Config.themeMode === "light") ? lightWallbler : darkWallbler
 
     property var defaultWallpapers: [
-        { name: "Wallbler", path: assetsDir + "/wallbler.jpg", isCustom: false }
+        { 
+            name: "Wallbler (Dynamic)", 
+            path: (Services.Config && Services.Config.themeMode === "light") ? lightWallbler : darkWallbler,
+            darkPath: darkWallbler,
+            lightPath: lightWallbler,
+            isDynamic: true,
+            isCustom: false 
+        }
     ]
     property var customWallpapers: []
     property var allWallpapers: []
@@ -29,11 +41,40 @@ Singleton {
         killSwaybgProc.running = true
     }
 
-    function updateAllList() {
-        var list = []
-        for (var i = 0; i < defaultWallpapers.length; i++) {
-            list.push(defaultWallpapers[i])
+    Connections {
+        target: Services.Config
+        function onConfigChanged() {
+            root.handleThemeChange()
         }
+    }
+
+    function handleThemeChange() {
+        if (isWallblerActive) {
+            var isLight = Services.Config && Services.Config.themeMode === "light"
+            var target = isLight ? lightWallbler : darkWallbler
+            if (currentWallpaper !== target) {
+                currentWallpaper = target
+                saveConfig()
+                if (Services.Config && Services.Config.useMatugen) {
+                    Services.Config.generateMatugen(target)
+                }
+            }
+        }
+        updateAllList()
+    }
+
+    function updateAllList() {
+        var isLight = Services.Config && Services.Config.themeMode === "light"
+        var list = [
+            { 
+                name: "Wallbler (Dynamic)", 
+                path: isLight ? lightWallbler : darkWallbler,
+                darkPath: darkWallbler,
+                lightPath: lightWallbler,
+                isDynamic: true,
+                isCustom: false 
+            }
+        ]
         for (var j = 0; j < customWallpapers.length; j++) {
             list.push(customWallpapers[j])
         }
@@ -42,10 +83,18 @@ Singleton {
 
     function setWallpaper(filePath) {
         if (!filePath) return
-        currentWallpaper = filePath
+        
+        // If Wallbler is selected (either dark or light variant or dynamic preset)
+        if (filePath === darkWallbler || filePath === lightWallbler || filePath.indexOf("wallbler") !== -1) {
+            var isLight = Services.Config && Services.Config.themeMode === "light"
+            currentWallpaper = isLight ? lightWallbler : darkWallbler
+        } else {
+            currentWallpaper = filePath
+        }
+
         saveConfig()
         if (Services.Config) {
-            Services.Config.generateMatugen(filePath)
+            Services.Config.generateMatugen(currentWallpaper)
         }
     }
 
@@ -66,10 +115,15 @@ Singleton {
         customWallpapers = newCustoms
         updateAllList()
         if (currentWallpaper === filePath) {
-            setWallpaper(defaultWallpapers.length > 0 ? defaultWallpapers[0].path : assetsDir + "/wallbler.jpg")
+            var isLight = Services.Config && Services.Config.themeMode === "light"
+            setWallpaper(isLight ? lightWallbler : darkWallbler)
         } else {
             saveConfig()
         }
+    }
+
+    function deleteCustomWallpaper(filePath) {
+        removeCustomWallpaper(filePath)
     }
 
     function addCustomWallpaper(filePath) {
@@ -154,19 +208,22 @@ Singleton {
                     var parsed = JSON.parse(trimmed)
                     if (parsed && parsed.customWallpapers && Array.isArray(parsed.customWallpapers)) {
                         root.customWallpapers = parsed.customWallpapers
-                        root.updateAllList()
                     }
                     if (parsed && parsed.currentWallpaper && parsed.currentWallpaper.length > 0) {
                         root.setWallpaper(parsed.currentWallpaper)
                     } else {
-                        root.setWallpaper(root.assetsDir + "/wallbler.jpg")
+                        var isLight = Services.Config && Services.Config.themeMode === "light"
+                        root.setWallpaper(isLight ? root.lightWallbler : root.darkWallbler)
                     }
                 } catch (e) {
-                    root.setWallpaper(root.assetsDir + "/wallbler.jpg")
+                    var isLight2 = Services.Config && Services.Config.themeMode === "light"
+                    root.setWallpaper(isLight2 ? root.lightWallbler : root.darkWallbler)
                 }
             } else {
-                root.setWallpaper(root.assetsDir + "/wallbler.jpg")
+                var isLight3 = Services.Config && Services.Config.themeMode === "light"
+                root.setWallpaper(isLight3 ? root.lightWallbler : root.darkWallbler)
             }
+            root.updateAllList()
         }
     }
 

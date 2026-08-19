@@ -1,6 +1,6 @@
 {
-  "themeMode": "dark",
-  "accentColor": "#d4d4d4",
+  "themeMode": "light",
+  "accentColor": "#2c2c2e",
   "accentName": "Graphite",
   "useMatugen": false,
   "cornerRadius": 16,
@@ -8,6 +8,7 @@
   "fontFamily": "Liga SFMono Nerd Font, monospace",
   "glassOpacity": 0.85,
   "barPosition": "top",
+  "barStyle": "islands",
   "barFloating": false,
   "showWorkspaces": true,
   "showSysTray": true,

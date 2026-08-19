@@ -891,7 +891,9 @@ FloatingWindow {
                                                         width: 124; height: 76
                                                         radius: 8
                                                         clip: true
-                                                        readonly property bool isCurrent: Services.Wallpaper && Services.Wallpaper.currentWallpaper === modelData.path
+                                                        readonly property bool isCurrent: modelData.isDynamic 
+                                                            ? (Services.Wallpaper && Services.Wallpaper.isWallblerActive)
+                                                            : (Services.Wallpaper && Services.Wallpaper.currentWallpaper === modelData.path)
                                                         border.color: isCurrent ? Services.Theme.accent : (wpCardMouse.containsMouse ? Services.Theme.borderHighlight : Services.Theme.border)
                                                         border.width: isCurrent ? 2 : 1
                                                         color: Services.Theme.bgElevated
@@ -916,6 +918,38 @@ FloatingWindow {
                                                             Behavior on opacity { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
                                                             Behavior on scale { NumberAnimation { duration: 180; easing.type: Easing.OutBack } }
                                                             Text { anchors.centerIn: parent; text: Services.Icons.check; font.family: Services.Theme.fontSymbols; font.pixelSize: 10; color: Services.Theme.bgOnAccent }
+                                                        }
+
+                                                        // Dynamic Badge (for Wallbler)
+                                                        Rectangle {
+                                                            visible: Boolean(modelData.isDynamic)
+                                                            anchors.bottom: parent.bottom; anchors.right: parent.right
+                                                            anchors.margins: 5
+                                                            height: 18
+                                                            implicitWidth: dynRow.implicitWidth + 10
+                                                            radius: 9
+                                                            color: Qt.rgba(0, 0, 0, 0.75)
+                                                            border.color: Qt.rgba(255, 255, 255, 0.25)
+                                                            border.width: 1
+                                                            z: 5
+
+                                                            RowLayout {
+                                                                id: dynRow
+                                                                anchors.centerIn: parent
+                                                                spacing: 3
+                                                                Text {
+                                                                    text: Services.Icons.sun
+                                                                    font.family: Services.Theme.fontSymbols
+                                                                    font.pixelSize: 8
+                                                                    color: "#ffbd2e"
+                                                                }
+                                                                Text {
+                                                                    text: "Dynamic"
+                                                                    font.pixelSize: 8
+                                                                    font.bold: true
+                                                                    color: "#ffffff"
+                                                                }
+                                                            }
                                                         }
 
                                                         Rectangle {
@@ -959,7 +993,7 @@ FloatingWindow {
                                                                 if (Services.Wallpaper) {
                                                                     Services.Wallpaper.setWallpaper(modelData.path)
                                                                     if (Services.Config && Services.Config.useMatugen) {
-                                                                        Services.Config.generateMatugen(modelData.path)
+                                                                        Services.Config.generateMatugen(Services.Wallpaper.currentWallpaper)
                                                                     }
                                                                 }
                                                             }
@@ -1230,7 +1264,173 @@ FloatingWindow {
                                 Layout.fillWidth: true
                                 spacing: 14
 
-                                // Bar Placement Overview Card
+                                // ── 1. BAR LAYOUT & DESIGN PRESET CARD ──
+                                SettingsCard {
+                                    implicitHeight: barStyleCol.implicitHeight + 28
+
+                                    ColumnLayout {
+                                        id: barStyleCol
+                                        anchors.fill: parent
+                                        anchors.margins: 14
+                                        spacing: 12
+
+                                        RowLayout {
+                                            Layout.fillWidth: true
+                                            spacing: 12
+
+                                            Rectangle {
+                                                Layout.preferredWidth: 32
+                                                Layout.preferredHeight: 32
+                                                Layout.alignment: Qt.AlignVCenter
+                                                radius: 8
+                                                color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.15)
+                                                border.color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.3)
+                                                border.width: 1
+
+                                                Text {
+                                                    anchors.centerIn: parent
+                                                    text: Services.Icons.palette
+                                                    font.family: Services.Theme.fontSymbols
+                                                    font.pixelSize: 14
+                                                    color: Services.Theme.accent
+                                                }
+                                            }
+
+                                            ColumnLayout {
+                                                Layout.fillWidth: true
+                                                Layout.alignment: Qt.AlignVCenter
+                                                spacing: 2
+
+                                                Text {
+                                                    Layout.fillWidth: true
+                                                    text: "Bar Layout & Design Preset"
+                                                    font.pixelSize: Services.Theme.fontSizeMd
+                                                    font.bold: true
+                                                    color: Services.Theme.textPrimary
+                                                }
+                                                Text {
+                                                    Layout.fillWidth: true
+                                                    text: "Choose the overall visual architecture and surface styling for your status bar"
+                                                    font.pixelSize: Services.Theme.fontSizeXs
+                                                    color: Services.Theme.textSecondary
+                                                }
+                                            }
+                                        }
+
+                                        GridLayout {
+                                            Layout.fillWidth: true
+                                            columns: 2
+                                            columnSpacing: 10
+                                            rowSpacing: 10
+
+                                            Repeater {
+                                                model: [
+                                                    { id: "islands",  label: "Islands (Discrete)",    desc: "Floating capsules with dynamic island & clear backdrop", icon: Services.Icons.palette },
+                                                    { id: "floating", label: "Floating Glass",        desc: "Continuous floating glass bar with screen edge margins",   icon: Services.Icons.display },
+                                                    { id: "unified",  label: "Unified Edge-to-Edge",  desc: "Classic full-width continuous dock status bar",          icon: Services.Icons.sliders },
+                                                    { id: "minimal",  label: "Minimalist Flat",       desc: "Ultra-slim low-profile bar with borderless flat styling", icon: Services.Icons.sparkles }
+                                                ]
+
+                                                delegate: Rectangle {
+                                                    required property var modelData
+                                                    Layout.fillWidth: true
+                                                    implicitHeight: 64
+                                                    radius: Services.Theme.radiusSm
+                                                    readonly property bool isCur: (Services.Config ? Services.Config.barStyle : "islands") === modelData.id
+
+                                                    color: isCur 
+                                                        ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.15) 
+                                                        : (styleMouse.containsMouse ? Services.Theme.bgHover : Services.Theme.bgElevated)
+                                                    border.color: isCur 
+                                                        ? Services.Theme.accent 
+                                                        : (styleMouse.containsMouse ? Services.Theme.borderHighlight : Services.Theme.border)
+                                                    border.width: isCur ? 2 : 1
+                                                    Behavior on color { ColorAnimation { duration: 180; easing.type: Easing.OutCubic } }
+                                                    Behavior on border.color { ColorAnimation { duration: 180; easing.type: Easing.OutCubic } }
+
+                                                    RowLayout {
+                                                        anchors.fill: parent
+                                                        anchors.leftMargin: 12
+                                                        anchors.rightMargin: 12
+                                                        spacing: 10
+
+                                                        Rectangle {
+                                                            Layout.preferredWidth: 34
+                                                            Layout.preferredHeight: 34
+                                                            Layout.alignment: Qt.AlignVCenter
+                                                            radius: 8
+                                                            color: isCur ? Services.Theme.accent : (styleMouse.containsMouse ? Services.Theme.bgHover : Services.Theme.bgDeep)
+                                                            Behavior on color { ColorAnimation { duration: 180; easing.type: Easing.OutCubic } }
+                                                            Text {
+                                                                anchors.centerIn: parent
+                                                                text: modelData.icon || ""
+                                                                font.family: Services.Theme.fontSymbols
+                                                                font.pixelSize: 14
+                                                                color: isCur ? Services.Theme.bgOnAccent : (styleMouse.containsMouse ? Services.Theme.textPrimary : Services.Theme.textSecondary)
+                                                                Behavior on color { ColorAnimation { duration: 180; easing.type: Easing.OutCubic } }
+                                                            }
+                                                        }
+
+                                                        ColumnLayout {
+                                                            Layout.fillWidth: true
+                                                            Layout.alignment: Qt.AlignVCenter
+                                                            spacing: 2
+
+                                                            Text {
+                                                                Layout.fillWidth: true
+                                                                text: modelData.label
+                                                                font.pixelSize: Services.Theme.fontSizeSm
+                                                                font.bold: isCur
+                                                                color: isCur ? Services.Theme.textPrimary : (styleMouse.containsMouse ? Services.Theme.textPrimary : Services.Theme.textSecondary)
+                                                                elide: Text.ElideRight
+                                                            }
+                                                            Text {
+                                                                Layout.fillWidth: true
+                                                                text: modelData.desc
+                                                                font.pixelSize: 10
+                                                                color: Services.Theme.textDisabled
+                                                                wrapMode: Text.WordWrap
+                                                                maximumLineCount: 2
+                                                                elide: Text.ElideRight
+                                                            }
+                                                        }
+
+                                                        Rectangle {
+                                                            opacity: isCur ? 1.0 : 0.0
+                                                            scale: isCur ? 1.0 : 0.6
+                                                            Layout.preferredWidth: 20
+                                                            Layout.preferredHeight: 20
+                                                            Layout.alignment: Qt.AlignVCenter
+                                                            radius: 10
+                                                            color: Services.Theme.accent
+                                                            Behavior on opacity { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
+                                                            Behavior on scale { NumberAnimation { duration: 180; easing.type: Easing.OutBack } }
+                                                            Text {
+                                                                anchors.centerIn: parent
+                                                                text: Services.Icons.check
+                                                                font.family: Services.Theme.fontSymbols
+                                                                font.pixelSize: 9
+                                                                color: Services.Theme.bgOnAccent
+                                                            }
+                                                        }
+                                                    }
+
+                                                    MouseArea {
+                                                        id: styleMouse
+                                                        anchors.fill: parent
+                                                        hoverEnabled: true
+                                                        cursorShape: Qt.PointingHandCursor
+                                                        onClicked: {
+                                                            if (Services.Config) Services.Config.setBarStyle(modelData.id)
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // ── 2. BAR SCREEN POSITION CARD ──
                                 SettingsCard {
                                     implicitHeight: barPlaceCol.implicitHeight + 28
 
@@ -1256,7 +1456,76 @@ FloatingWindow {
                                     }
                                 }
 
-                                // Bar Widgets Card
+                                // ── 3. WORKSPACE PAGER STYLE CARD ──
+                                SettingsCard {
+                                    implicitHeight: wsStyleCol.implicitHeight + 28
+
+                                    ColumnLayout {
+                                        id: wsStyleCol
+                                        anchors.fill: parent
+                                        anchors.margins: 14
+                                        spacing: 12
+
+                                        SettingsSegmentedOverview {
+                                            icon: Services.Icons.display
+                                            title: "Workspace Pager Appearance"
+                                            subtitle: "Choose how virtual desktop workspaces are visually displayed"
+                                            currentValue: Services.Config ? Services.Config.workspaceStyle : "pills"
+                                            model: [
+                                                { id: "pills",   label: "Dynamic Pills", desc: "Expanding capsules", icon: Services.Icons.display },
+                                                { id: "numbers", label: "Numbered",      desc: "Digits 1, 2, 3...",  icon: Services.Icons.terminal },
+                                                { id: "dots",    label: "Minimal Dots",  desc: "Compact dots",       icon: Services.Icons.checkCircle },
+                                                { id: "icons",   label: "Context Icons", desc: "Task glyphs",        icon: Services.Icons.folder }
+                                            ]
+                                            onSelected: (val) => {
+                                                if (Services.Config) Services.Config.setWorkspaceStyle(val)
+                                            }
+                                        }
+
+                                        SettingsDivider {}
+
+                                        SettingsSwitch {
+                                            icon: Services.Icons.check
+                                            title: "Always Show Primary Workspaces (1–5)"
+                                            subtitle: "Keep primary workspaces visible even when inactive or empty"
+                                            checked: Services.Config ? Services.Config.workspaceShowAll : true
+                                            onToggled: (st) => {
+                                                if (Services.Config) Services.Config.setWorkspaceShowAll(st)
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // ── 4. DYNAMIC ISLAND HUD MODE CARD ──
+                                SettingsCard {
+                                    implicitHeight: islandCol.implicitHeight + 28
+
+                                    ColumnLayout {
+                                        id: islandCol
+                                        anchors.fill: parent
+                                        anchors.margins: 14
+                                        spacing: 12
+
+                                        SettingsSegmentedOverview {
+                                            icon: Services.Icons.sparkles
+                                            title: "Dynamic Island HUD Mode"
+                                            subtitle: (Services.Config && Services.Config.barStyle === "islands")
+                                                ? "Interactive central notch for media controls, system status & notifications"
+                                                : "Dynamic Island is active in 'Islands' bar mode (in floating/unified/minimal, bar uses a centered clock)"
+                                            currentValue: Services.Config ? Services.Config.islandStyle : "expanded"
+                                            model: [
+                                                { id: "expanded", label: "Full Dynamic Island", desc: "Full media controls & system HUD", icon: Services.Icons.sparkles },
+                                                { id: "compact",  label: "Compact HUD",         desc: "Essential alerts & status badge",  icon: Services.Icons.sliders },
+                                                { id: "hidden",   label: "Hidden / Off",        desc: "Disable island for clean center",   icon: Services.Icons.close }
+                                            ]
+                                            onSelected: (val) => {
+                                                if (Services.Config) Services.Config.setIslandStyle(val)
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // ── 5. STATUS BAR MODULES & WIDGETS CARD ──
                                 SettingsCard {
                                     implicitHeight: barWidgetsCol.implicitHeight + 28
 
@@ -1344,7 +1613,7 @@ FloatingWindow {
                                     }
                                 }
 
-                                // Clock Format Card
+                                // ── 6. CLOCK & TIME FORMAT CARD ──
                                 SettingsCard {
                                     implicitHeight: clockFmtCol.implicitHeight + 28
 
@@ -1378,6 +1647,30 @@ FloatingWindow {
                                             subtitle: "Render real-time ticking seconds in bar clock"
                                             checked: Services.Config ? Services.Config.clockShowSeconds : false
                                             onToggled: (st) => { if (Services.Config) Services.Config.setClockShowSeconds(st) }
+                                        }
+                                        SettingsDivider {}
+
+                                        SettingsSwitch {
+                                            icon: Services.Icons.uptime
+                                            title: "Display Date Text"
+                                            subtitle: "Show current day and date prefix in the bar"
+                                            checked: Services.Config ? Services.Config.clockShowDate : true
+                                            onToggled: (st) => { if (Services.Config) Services.Config.setClockShowDate(st) }
+                                        }
+                                        SettingsDivider {}
+
+                                        SettingsSegmentedOverview {
+                                            icon: Services.Icons.uptime
+                                            title: "Date Format"
+                                            subtitle: "Format style for date text"
+                                            currentValue: Services.Config ? Services.Config.clockDateFormat : "short"
+                                            model: [
+                                                { id: "short", label: "Short (Mon, 19 Jan)", desc: "Abbreviated day and month", icon: Services.Icons.uptime },
+                                                { id: "full",  label: "Full (Monday, 19 January)", desc: "Full weekday and month name", icon: Services.Icons.calendar || Services.Icons.uptime }
+                                            ]
+                                            onSelected: (val) => {
+                                                if (Services.Config) Services.Config.setClockDateFormat(val)
+                                            }
                                         }
                                     }
                                 }

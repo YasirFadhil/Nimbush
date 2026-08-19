@@ -25,6 +25,10 @@ PanelWindow {
     property date viewDate: new Date()
     readonly property date today: new Date()
     readonly property bool isBottom: Services.Config ? (Services.Config.barPosition === "bottom") : false
+    readonly property string barStyle: Services.Config ? Services.Config.barStyle : "islands"
+    readonly property bool isCenteredBar: barStyle !== "islands"
+    readonly property int topMargin: 12
+    readonly property int bottomMargin: 12
 
     function close() {
         Services.OverlayManager.calendarVisible = false
@@ -53,16 +57,17 @@ PanelWindow {
 
         Rectangle {
             id: panel
-            anchors.right: parent.right
-            anchors.rightMargin: 12
-            y: root.isBottom ? (parent.height - height - 12) : 12
             width: 300
             height: col.implicitHeight + 32
+            x: root.isCenteredBar ? Math.round((parent.width - width) / 2) : (parent.width - width - 12)
+            y: root.isBottom ? (parent.height - height - 12) : 12
             radius: Services.Theme.radiusLg
             color: Services.Theme.surface
             border.color: Services.Theme.border
             border.width: 1
             clip: true
+
+            Behavior on x { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
 
             opacity: Services.OverlayManager.calendarVisible ? 1 : 0
             transform: Translate {

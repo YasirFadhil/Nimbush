@@ -28,7 +28,7 @@ if [ -f "$DEFAULTS_FILE" ]; then
     cp -f "$DEFAULTS_FILE" "$CACHE_SETTINGS_FILE"
     echo "[Quickshell] Settings successfully reset to factory defaults."
 else
-    echo '{"themeMode":"dark","accentColor":"#d4d4d4","accentName":"Graphite","cornerRadius":16,"uiScale":1.0,"clock24h":true,"clockShowSeconds":false,"islandStyle":"expanded","workspaceStyle":"pills","soundFeedback":true,"notificationTimeout":5,"dndEnabled":false,"lockscreenClockStyle":"hero","showSysmonTray":true,"showBatteryTray":true,"firstRunCompleted":false,"customSettingsVersion":1}' > "$SETTINGS_FILE"
+    echo '{"themeMode":"light","accentColor":"#2c2c2e","accentName":"Graphite","cornerRadius":16,"uiScale":1.0,"barPosition":"top","barStyle":"islands","clock24h":true,"clockShowSeconds":false,"islandStyle":"expanded","workspaceStyle":"pills","soundFeedback":true,"notificationTimeout":5,"dndEnabled":false,"lockscreenClockStyle":"hero","showSysmonTray":true,"showBatteryTray":true,"firstRunCompleted":false,"customSettingsVersion":1}' > "$SETTINGS_FILE"
     cp -f "$SETTINGS_FILE" "$CACHE_SETTINGS_FILE"
     echo "[Quickshell] Fallback default settings written."
 fi

@@ -9,6 +9,18 @@ PanelWindow {
     id: root
 
     readonly property bool isBottom: Services.Config ? (Services.Config.barPosition === "bottom") : false
+    readonly property string barStyle: Services.Config ? Services.Config.barStyle : "islands"
+    readonly property bool isMinimal: barStyle === "minimal"
+    readonly property bool isUnified: barStyle === "unified"
+    readonly property bool isFloating: barStyle === "floating"
+    readonly property bool isIslands: barStyle === "islands"
+
+    readonly property bool showDynamicIsland: root.isIslands && ((Services.Config ? Services.Config.islandStyle : "expanded") !== "hidden")
+
+    readonly property int barHeight: isMinimal ? 30 : (isUnified ? 38 : 36)
+    readonly property int barYOffset: isFloating 
+        ? (isBottom ? (root.height - barHeight - 6) : 6) 
+        : (isIslands ? (isBottom ? (root.height - barHeight - 4) : 4) : (isBottom ? (root.height - barHeight) : 0))
 
     anchors {
         top: !root.isBottom
@@ -19,23 +31,26 @@ PanelWindow {
 
     color: "transparent"
     WlrLayershell.namespace: "quickshell:bar"
-    WlrLayershell.keyboardFocus: dynamicIsland.replyMode ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
+    WlrLayershell.keyboardFocus: (root.showDynamicIsland && dynamicIsland.replyMode) ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
 
-    exclusiveZone: 36
+    exclusiveZone: isMinimal ? 30 : (isUnified ? 38 : (isFloating ? 46 : 36))
     implicitHeight: 160
 
     mask: Region {
+        // Base bar clickable region
         Region {
-            x: 0
-            y: root.isBottom ? (root.height - 36) : 0
-            width: root.width
-            height: 36
+            x: root.isFloating ? 12 : 0
+            y: root.barYOffset
+            width: root.isFloating ? (root.width - 24) : root.width
+            height: root.barHeight
         }
+        // Dynamic Island expanded region (only in islands mode)
         Region {
-            x: (root.width - (dynamicIsland.expanded ? 400 : Math.max(160, dynamicIsland.calculatedCollapsedWidth + 20))) / 2
-            y: root.isBottom ? (root.height - (dynamicIsland.expanded ? 160 : 36)) : 0
-            width: dynamicIsland.expanded ? 400 : Math.max(160, dynamicIsland.calculatedCollapsedWidth + 20)
-            height: dynamicIsland.expanded ? 160 : 36
+            readonly property bool isIslandActive: root.showDynamicIsland
+            x: isIslandActive ? ((root.width - (dynamicIsland.expanded ? 400 : Math.max(160, dynamicIsland.calculatedCollapsedWidth + 20))) / 2) : 0
+            y: isIslandActive ? (root.isBottom ? (root.height - (dynamicIsland.expanded ? 160 : root.barHeight)) : 0) : 0
+            width: isIslandActive ? (dynamicIsland.expanded ? 400 : Math.max(160, dynamicIsland.calculatedCollapsedWidth + 20)) : 0
+            height: isIslandActive ? (dynamicIsland.expanded ? 160 : root.barHeight) : 0
         }
     }
 
@@ -43,18 +58,84 @@ PanelWindow {
         id: barContainer
         anchors.fill: parent
 
+        // ── 1. Floating Glass Bar Container ───────────────────────────────────
+        Rectangle {
+            id: floatingBg
+            visible: root.isFloating
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.leftMargin: 12
+            anchors.rightMargin: 12
+            y: root.barYOffset
+            height: root.barHeight
+            radius: Math.min(18, Services.Theme.baseRadius)
+            color: Services.Theme.bgElevated
+            border.color: Services.Theme.border
+            border.width: 1
+
+            // Subtle top/inner glow
+            Rectangle {
+                anchors.fill: parent
+                radius: parent.radius
+                color: "transparent"
+                border.color: Qt.rgba(1, 1, 1, Services.Theme.isDark ? 0.07 : 0.2)
+                border.width: 1
+            }
+        }
+
+        // ── 2. Unified Edge-to-Edge Bar Container ────────────────────────────
+        Rectangle {
+            id: unifiedBg
+            visible: root.isUnified
+            anchors.left: parent.left
+            anchors.right: parent.right
+            y: root.barYOffset
+            height: root.barHeight
+            color: Services.Theme.bgElevated
+
+            Rectangle {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.bottom: root.isBottom ? undefined : parent.bottom
+                anchors.top: root.isBottom ? parent.top : undefined
+                height: 1
+                color: Services.Theme.border
+            }
+        }
+
+        // ── 3. Minimalist Bar Container ──────────────────────────────────────
+        Rectangle {
+            id: minimalBg
+            visible: root.isMinimal
+            anchors.left: parent.left
+            anchors.right: parent.right
+            y: root.barYOffset
+            height: root.barHeight
+            color: Qt.rgba(Services.Theme.bgElevated.r, Services.Theme.bgElevated.g, Services.Theme.bgElevated.b, 0.65)
+
+            Rectangle {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.bottom: root.isBottom ? undefined : parent.bottom
+                anchors.top: root.isBottom ? parent.top : undefined
+                height: 1
+                color: Services.Theme.borderSubtle
+            }
+        }
+
+        // ── Main Bar Content Row ─────────────────────────────────────────────
         Item {
             id: barRow
             anchors.left: parent.left
             anchors.right: parent.right
-            height: 36
-            y: root.isBottom ? (parent.height - height - 4) : 4
+            height: root.barHeight
+            y: root.barYOffset
 
             RowLayout {
                 anchors.fill: parent
-                anchors.leftMargin: 12
-                anchors.rightMargin: 12
-                spacing: 12
+                anchors.leftMargin: root.isFloating ? 18 : (root.isUnified ? 16 : 12)
+                anchors.rightMargin: root.isFloating ? 18 : (root.isUnified ? 16 : 12)
+                spacing: root.isMinimal ? 8 : 12
 
                 Components.WorkspaceIndicator {
                     Layout.alignment: Qt.AlignVCenter
@@ -75,21 +156,35 @@ PanelWindow {
                     id: statusTray
                     Layout.alignment: Qt.AlignVCenter
 
-                    readonly property real islandRightEdge: (root.width + dynamicIsland.calculatedCollapsedWidth) / 2
+                    readonly property real islandRightEdge: (root.width + (root.showDynamicIsland ? dynamicIsland.calculatedCollapsedWidth : 0)) / 2
                     readonly property real trayFullLeftEdge: root.width - 12 - statusTray.fullUncollapsedWidth
 
-                    collapseNear: dynamicIsland.expanded
+                    collapseNear: root.showDynamicIsland && (dynamicIsland.expanded
                                  || (dynamicIsland.calculatedCollapsedWidth > 180)
-                                 || (trayFullLeftEdge <= islandRightEdge + 24)
-                    collapseMore: dynamicIsland.expanded && (dynamicIsland.calculatedExpandedWidth >= 320 || dynamicIsland.notifActive || dynamicIsland.replyMode)
+                                 || (trayFullLeftEdge <= islandRightEdge + 24))
+                    collapseMore: root.showDynamicIsland && dynamicIsland.expanded && (dynamicIsland.calculatedExpandedWidth >= 320 || dynamicIsland.notifActive || dynamicIsland.replyMode)
                 }
             }
         }
+
+        // ── Center Clock for Non-Island Modes (Floating, Unified, Minimal) ────
+        Item {
+            id: centerClockContainer
+            visible: !root.showDynamicIsland && (Services.Config ? Services.Config.showClockTray : true)
+            anchors.centerIn: barRow
+            height: root.barHeight
+
+            Components.ClockCenter {
+                anchors.centerIn: parent
+            }
+        }
           
+        // ── Dynamic Island (Exclusive to Islands Mode) ────────────────────────
         Components.DynamicIsland {
             id: dynamicIsland
             anchors.fill: parent
             z: 999
+            visible: root.showDynamicIsland
         }
     }
 }

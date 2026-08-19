@@ -7,8 +7,8 @@ Singleton {
     id: root
 
     // ── Appearance Properties ────────────────────────────────────────────────
-    property string themeMode: "dark"             // "dark" | "light" | "auto"
-    property string accentColor: "#d4d4d4"        // Hex string
+    property string themeMode: "light"            // "dark" | "light" | "auto"
+    property string accentColor: "#2c2c2e"        // Hex string
     property string accentName: "Graphite"        // Human readable name
     property int cornerRadius: 16                 // 8 | 12 | 16 | 20 | 24
     property real uiScale: 1.0                    // 0.9 (compact) | 1.0 (normal) | 1.15 (large)
@@ -29,6 +29,7 @@ Singleton {
 
     // ── Bar & Widgets Customization ──────────────────────────────────────────
     property string barPosition: "top"            // "top" | "bottom"
+    property string barStyle: "islands"           // "islands" | "floating" | "unified" | "minimal"
     property bool barFloating: false
     property bool showWorkspaces: true
     property bool showSysTray: true
@@ -42,7 +43,7 @@ Singleton {
     property bool clockShowDate: true
     property string clockDateFormat: "short"      // "short" | "full"
     property string islandStyle: "expanded"       // "expanded" | "compact" | "minimal" | "hidden"
-    property string workspaceStyle: "pills"       // "pills" | "numbers" | "dots"
+    property string workspaceStyle: "pills"       // "pills" | "numbers" | "dots" | "icons"
     property bool workspaceShowAll: true
 
     // ── Sound & Feedback ─────────────────────────────────────────────────────
@@ -141,6 +142,7 @@ Singleton {
         if (data.glassOpacity !== undefined) glassOpacity = Number(data.glassOpacity)
 
         if (data.barPosition !== undefined) barPosition = data.barPosition
+        if (data.barStyle !== undefined) barStyle = data.barStyle
         if (data.barFloating !== undefined) barFloating = Boolean(data.barFloating)
         if (data.showWorkspaces !== undefined) showWorkspaces = Boolean(data.showWorkspaces)
         if (data.showSysTray !== undefined) showSysTray = Boolean(data.showSysTray)
@@ -195,6 +197,7 @@ Singleton {
             glassOpacity: glassOpacity,
 
             barPosition: barPosition,
+            barStyle: barStyle,
             barFloating: barFloating,
             showWorkspaces: showWorkspaces,
             showSysTray: showSysTray,
@@ -249,8 +252,8 @@ Singleton {
     }
 
     function resetToDefaults() {
-        themeMode = "dark"
-        accentColor = "#d4d4d4"
+        themeMode = "light"
+        accentColor = "#2c2c2e"
         accentName = "Graphite"
         useMatugen = false
         cornerRadius = 16
@@ -259,6 +262,7 @@ Singleton {
         glassOpacity = 0.85
 
         barPosition = "top"
+        barStyle = "islands"
         barFloating = false
         showWorkspaces = true
         showSysTray = true
@@ -385,6 +389,7 @@ Singleton {
     }
 
     function setBarPosition(pos) { barPosition = pos; saveConfig() }
+    function setBarStyle(style) { barStyle = style; saveConfig() }
     function setBarFloating(val) { barFloating = val; saveConfig() }
     function setShowWorkspaces(val) { showWorkspaces = val; saveConfig() }
     function setShowSysTray(val) { showSysTray = val; saveConfig() }

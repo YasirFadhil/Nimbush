@@ -34,9 +34,15 @@ Singleton {
     readonly property string clock:     "\uf017"   // nf-fa-clock_o
     readonly property string shell:     "\uf120"   // nf-fa-terminal
     readonly property string lock:      "\uf023"   // nf-fa-lock
-    readonly property string power:     "\uf011"   // nf-fa-power_off
-    readonly property string battery:   "\uf240"   // nf-fa-battery_full
-    readonly property string close:     "\uf00d"   // nf-fa-times
+    readonly property string power:           "\uf011"   // nf-fa-power_off
+    readonly property string close:           "\uf00d"   // nf-fa-times
+    readonly property string battery:         "\uf240"   // nf-fa-battery_full
+    readonly property string batteryFull:     "\uf240"   // nf-fa-battery_full (100%)
+    readonly property string batteryThreeQtr: "\uf241"   // nf-fa-battery_three_quarters (75%)
+    readonly property string batteryHalf:     "\uf242"   // nf-fa-battery_half (50%)
+    readonly property string batteryOneQtr:   "\uf243"   // nf-fa-battery_quarter (25%)
+    readonly property string batteryEmpty:    "\uf244"   // nf-fa-battery_empty (0%)
+    readonly property string batteryBolt:     "\uf0e7"   // nf-fa-bolt (charging)
     readonly property string dash:      "\uf0e4"   // nf-fa-tachometer
     readonly property string dashboard: "\uf0e4"   // nf-fa-tachometer
     readonly property string image:     "\uf03e"   // nf-fa-picture_o
@@ -89,6 +95,9 @@ Singleton {
     readonly property string eyeOpen:   "\uf06e"  // nf-fa-eye
     readonly property string eyeClosed: "\uf070"  // nf-fa-eye_slash
     readonly property string bell:      "\uf0a2"  // nf-fa-bell_o
+    readonly property string bellSlash: "\uf1f6"  // nf-fa-bell_slash_o
+    readonly property string contrast:  "\uf042"  // nf-fa-adjust (dark/light circle)
+    readonly property string theme:     "\uf042"  // nf-fa-adjust
 
     // ── Power Menu ──────────────────────────────────────────────────────────────
     readonly property string reboot:     "\uf021"  // nf-fa-refresh / restart
@@ -144,18 +153,18 @@ Singleton {
     }
 
     function powerIconSimple(charging, percentage) {
-        if (charging) return "\uf0e7"
-        return "\uf240"
+        if (charging) return batteryBolt
+        return batteryFull
     }
 
     function powerIcon(charging, percentage) {
-        if (charging) return "\uf0e7"
-        var p = (percentage > 0 && percentage <= 1) ? percentage * 100 : percentage
-        if (p >= 75) return "\uf241"
-        if (p >= 50) return "\uf242"
-        if (p >= 25) return "\uf243"
-        if (p >= 10) return "\uf243"
-        return "\uf244"
+        if (charging) return batteryBolt
+        var p = (percentage > 0 && percentage <= 1) ? Math.round(percentage * 100) : Math.round(percentage)
+        if (p >= 88) return batteryFull
+        if (p >= 63) return batteryThreeQtr
+        if (p >= 38) return batteryHalf
+        if (p >= 13) return batteryOneQtr
+        return batteryEmpty
     }
 
     function mediaPlayPause(isPlaying) {

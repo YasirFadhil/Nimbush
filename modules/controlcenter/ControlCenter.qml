@@ -241,8 +241,8 @@ PanelWindow {
                             Text {
                                 id: headerBatIcon
                                 text: Services.Icons.powerIcon(Services.Power.charging, Services.Power.percentage * 100)
-                                font.family: Services.Theme.fontMono
-                                font.pixelSize: 11
+                                font.family: Services.Theme.fontSymbols
+                                font.pixelSize: 12
                                 color: Services.Power.charging ? Services.Theme.success : (Services.Power.isLow ? "#ff4444" : (Services.Power.isWarning ? "#e06c75" : (Services.PowerProfile.saverEnabled ? "#ff9800" : Services.Theme.textPrimary)))
                                 Behavior on color { ColorAnimation { duration: 250 } }
 
@@ -1057,7 +1057,7 @@ PanelWindow {
 
                                 Text {
                                     anchors.centerIn: parent
-                                    text: Services.Icons.moon
+                                    text: Services.Notifications.doNotDisturb ? Services.Icons.bellSlash : Services.Icons.bell
                                     font.family: Services.Theme.fontSymbols
                                     font.pixelSize: 18
                                     color: Services.Notifications.doNotDisturb 
@@ -1109,36 +1109,43 @@ PanelWindow {
                                 }
                             }
 
-                            // Screenshot Tile (Slurp region)
+                            // Dark / Light Theme Toggle Tile
                             Rectangle {
+                                id: themeTile
                                 Layout.fillWidth: true
                                 Layout.preferredHeight: 50
                                 radius: Services.Theme.radiusLg
-                                color: ssMouse.containsMouse ? Services.Theme.bgHover : Services.Theme.surfaceVariant
-                                border.color: ssMouse.containsMouse ? Services.Theme.borderHighlight : "transparent"
+                                readonly property bool isLight: Services.Config && Services.Config.themeMode === "light"
+                                color: isLight 
+                                    ? Services.Theme.accent 
+                                    : (themeMouse.containsMouse ? Services.Theme.bgHover : Services.Theme.surfaceVariant)
+                                border.color: (themeMouse.containsMouse && !isLight) ? Services.Theme.borderHighlight : "transparent"
                                 border.width: 1
 
-                                Behavior on color { ColorAnimation { duration: 120 } }
-                                Behavior on border.color { ColorAnimation { duration: 120 } }
+                                Behavior on color { ColorAnimation { duration: 150 } }
+                                Behavior on border.color { ColorAnimation { duration: 150 } }
 
                                 Text {
                                     anchors.centerIn: parent
-                                    text: Services.Icons.camera
+                                    text: Services.Icons.contrast
                                     font.family: Services.Theme.fontSymbols
                                     font.pixelSize: 18
-                                    color: ssMouse.containsMouse ? Services.Theme.accent : Services.Theme.textPrimary
-                                    Behavior on color { ColorAnimation { duration: 120 } }
+                                    color: themeTile.isLight 
+                                        ? Services.Theme.bgOnAccent 
+                                        : (themeMouse.containsMouse ? Services.Theme.accent : Services.Theme.textPrimary)
+                                    Behavior on color { ColorAnimation { duration: 150 } }
                                 }
 
                                 MouseArea {
-                                    id: ssMouse
+                                    id: themeMouse
                                     anchors.fill: parent
                                     hoverEnabled: true
                                     cursorShape: Qt.PointingHandCursor
                                     onClicked: {
-                                        root.close()
-                                        screenshotProc.running = false
-                                        screenshotProc.running = true
+                                        if (Services.Config) {
+                                            var nextMode = (Services.Config.themeMode === "light") ? "dark" : "light"
+                                            Services.Config.setThemeMode(nextMode)
+                                        }
                                     }
                                 }
                             }
