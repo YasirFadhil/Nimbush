@@ -15,7 +15,7 @@ PanelWindow {
     color: "transparent"
     exclusiveZone: 0
     visible: Services.OverlayManager.controlCenterVisible
-    WlrLayershell.layer: WlrLayer.Overlay
+    WlrLayershell.layer: WlrLayer.Top
     WlrLayershell.namespace: "quickshell:controlcenter"
     WlrLayershell.keyboardFocus: Services.OverlayManager.isLocked ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.OnDemand
 

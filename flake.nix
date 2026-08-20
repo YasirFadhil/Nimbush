@@ -32,7 +32,13 @@
           grim
           slurp
           swappy
-          python3
+          zenity
+          (python3.withPackages (ps: with ps; [
+            pygobject3
+            dbus-python
+          ]))
+          gobject-introspection
+          gtk3
         ];
 
         # Derivation builder for Quickshell configuration with optional extra packages (Hyprland / Niri)

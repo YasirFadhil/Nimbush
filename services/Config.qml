@@ -55,17 +55,28 @@ Singleton {
 
     // ── Notifications ────────────────────────────────────────────────────────
     property int notificationTimeout: 5           // in seconds
+    property int notificationRetentionDays: 7     // 1 to 7 days
     property bool dndEnabled: false
     property string notificationPosition: "top_right" // "top_right" | "top_center" | "top_left" | "bottom_right"
 
     // ── Lockscreen & System ──────────────────────────────────────────────────
-    property string lockscreenClockStyle: "hero"  // "hero" | "compact" | "modern"
+    property string lockscreenClockStyle: "hero"  // "hero" | "modern" | "compact" | "minimal" | "vertical" | "typographic" | "radial" | "cyber"
+    property string lockscreenAuthStyle: "pill"   // "pill" | "card"
+    property string lockscreenLayout: "center"    // "center" | "left" | "right"
     property bool lockscreenShowMedia: true
+    property string lockscreenMediaStyle: "pill"  // "pill" | "card"
     property bool lockscreenShowWeather: true
     property bool lockscreenShowNotifs: true
+    property bool lockscreenShowUptime: true
     property bool lockscreenWallpaperZoom: true
     property real lockscreenDim: 0.45
     property bool lockscreen24h: false
+    property bool lockscreenBlur: true
+    property real lockscreenBlurRadius: 0.40
+    property string lockscreenWallpaperMode: "sync" // "sync" | "custom"
+    property string lockscreenCustomWallpaper: ""
+    property bool lockscreenShowQuickPower: true
+    property bool lockscreenShowStatusPill: true
     property bool batteryShowWarnings: true
     property int batteryLowThreshold: 20
     property int clipboardLimit: 50
@@ -102,8 +113,34 @@ Singleton {
     readonly property string defaultsConfigPath: configDir + "/defaults/settings_default.json"
     readonly property string backupConfigPath: configDir + "/backup_settings.json"
 
+    FileView {
+        id: configFileView
+        path: root.declConfigPath
+        blockLoading: true
+        printErrors: false
+        onLoaded: {
+            try {
+                var raw = configFileView.text()
+                if (raw && raw.trim().startsWith("{")) {
+                    var parsed = JSON.parse(raw.trim())
+                    root.applyData(parsed)
+                    root.isLoaded = true
+                    var wasFirstRun = (parsed.firstRunCompleted !== true)
+                    root.initialLoadFinished(wasFirstRun)
+                }
+            } catch (e) {
+                loadConfigProc.running = true
+            }
+        }
+        onLoadFailed: {
+            loadConfigProc.running = true
+        }
+    }
+
     Component.onCompleted: {
-        loadConfigProc.running = true
+        if (!root.isLoaded) {
+            loadConfigProc.running = true
+        }
     }
 
     function applyData(data) {
@@ -166,16 +203,27 @@ Singleton {
         if (data.soundUiFeedback !== undefined) soundUiFeedback = Boolean(data.soundUiFeedback)
 
         if (data.notificationTimeout !== undefined) notificationTimeout = Number(data.notificationTimeout)
+        if (data.notificationRetentionDays !== undefined) notificationRetentionDays = Math.max(1, Math.min(7, Number(data.notificationRetentionDays)))
         if (data.dndEnabled !== undefined) dndEnabled = Boolean(data.dndEnabled)
         if (data.notificationPosition !== undefined) notificationPosition = data.notificationPosition
 
         if (data.lockscreenClockStyle !== undefined) lockscreenClockStyle = data.lockscreenClockStyle
+        if (data.lockscreenAuthStyle !== undefined) lockscreenAuthStyle = data.lockscreenAuthStyle
+        if (data.lockscreenLayout !== undefined) lockscreenLayout = data.lockscreenLayout
         if (data.lockscreenShowMedia !== undefined) lockscreenShowMedia = Boolean(data.lockscreenShowMedia)
+        if (data.lockscreenMediaStyle !== undefined) lockscreenMediaStyle = data.lockscreenMediaStyle
         if (data.lockscreenShowWeather !== undefined) lockscreenShowWeather = Boolean(data.lockscreenShowWeather)
         if (data.lockscreenShowNotifs !== undefined) lockscreenShowNotifs = Boolean(data.lockscreenShowNotifs)
+        if (data.lockscreenShowUptime !== undefined) lockscreenShowUptime = Boolean(data.lockscreenShowUptime)
         if (data.lockscreenWallpaperZoom !== undefined) lockscreenWallpaperZoom = Boolean(data.lockscreenWallpaperZoom)
         if (data.lockscreenDim !== undefined) lockscreenDim = Number(data.lockscreenDim)
         if (data.lockscreen24h !== undefined) lockscreen24h = Boolean(data.lockscreen24h)
+        if (data.lockscreenBlur !== undefined) lockscreenBlur = Boolean(data.lockscreenBlur)
+        if (data.lockscreenBlurRadius !== undefined) lockscreenBlurRadius = Number(data.lockscreenBlurRadius)
+        if (data.lockscreenWallpaperMode !== undefined) lockscreenWallpaperMode = data.lockscreenWallpaperMode
+        if (data.lockscreenCustomWallpaper !== undefined) lockscreenCustomWallpaper = String(data.lockscreenCustomWallpaper)
+        if (data.lockscreenShowQuickPower !== undefined) lockscreenShowQuickPower = Boolean(data.lockscreenShowQuickPower)
+        if (data.lockscreenShowStatusPill !== undefined) lockscreenShowStatusPill = Boolean(data.lockscreenShowStatusPill)
         if (data.batteryShowWarnings !== undefined) batteryShowWarnings = Boolean(data.batteryShowWarnings)
         if (data.batteryLowThreshold !== undefined) batteryLowThreshold = Number(data.batteryLowThreshold)
         if (data.clipboardLimit !== undefined) clipboardLimit = Number(data.clipboardLimit)
@@ -221,16 +269,27 @@ Singleton {
             soundUiFeedback: soundUiFeedback,
 
             notificationTimeout: notificationTimeout,
+            notificationRetentionDays: notificationRetentionDays,
             dndEnabled: dndEnabled,
             notificationPosition: notificationPosition,
 
             lockscreenClockStyle: lockscreenClockStyle,
+            lockscreenAuthStyle: lockscreenAuthStyle,
+            lockscreenLayout: lockscreenLayout,
             lockscreenShowMedia: lockscreenShowMedia,
+            lockscreenMediaStyle: lockscreenMediaStyle,
             lockscreenShowWeather: lockscreenShowWeather,
             lockscreenShowNotifs: lockscreenShowNotifs,
+            lockscreenShowUptime: lockscreenShowUptime,
             lockscreenWallpaperZoom: lockscreenWallpaperZoom,
             lockscreenDim: lockscreenDim,
             lockscreen24h: lockscreen24h,
+            lockscreenBlur: lockscreenBlur,
+            lockscreenBlurRadius: lockscreenBlurRadius,
+            lockscreenWallpaperMode: lockscreenWallpaperMode,
+            lockscreenCustomWallpaper: lockscreenCustomWallpaper,
+            lockscreenShowQuickPower: lockscreenShowQuickPower,
+            lockscreenShowStatusPill: lockscreenShowStatusPill,
             batteryShowWarnings: batteryShowWarnings,
             batteryLowThreshold: batteryLowThreshold,
             clipboardLimit: clipboardLimit,
@@ -240,13 +299,7 @@ Singleton {
             customSettingsVersion: customSettingsVersion
         }
         var jsonStr = JSON.stringify(data, null, 2)
-        saveConfigProc.running = false
-        saveConfigProc.command = [
-            "sh", "-c",
-            "mkdir -p \"" + root.cacheDir + "\" \"" + root.configDir + "\" && " +
-            "cat << 'EOF' > \"" + root.cacheConfigPath + "\"\n" + jsonStr + "\nEOF\n" +
-            "cat << 'EOF' > \"" + root.declConfigPath + "\"\n" + jsonStr + "\nEOF"
-        ]
+        saveConfigProc.payload = jsonStr
         saveConfigProc.running = true
         root.configChanged()
     }
@@ -286,16 +339,24 @@ Singleton {
         soundUiFeedback = true
 
         notificationTimeout = 5
+        notificationRetentionDays = 7
         dndEnabled = false
         notificationPosition = "top_right"
 
         lockscreenClockStyle = "hero"
         lockscreenShowMedia = true
+        lockscreenMediaStyle = "pill"
         lockscreenShowWeather = true
         lockscreenShowNotifs = true
         lockscreenWallpaperZoom = true
         lockscreenDim = 0.45
         lockscreen24h = false
+        lockscreenBlur = true
+        lockscreenBlurRadius = 0.40
+        lockscreenWallpaperMode = "sync"
+        lockscreenCustomWallpaper = ""
+        lockscreenShowQuickPower = true
+        lockscreenShowStatusPill = true
         batteryShowWarnings = true
         batteryLowThreshold = 20
         clipboardLimit = 50
@@ -413,16 +474,27 @@ Singleton {
     function setSoundUiFeedback(val) { soundUiFeedback = val; saveConfig() }
 
     function setNotificationTimeout(sec) { notificationTimeout = sec; saveConfig() }
+    function setNotificationRetentionDays(days) { notificationRetentionDays = Math.max(1, Math.min(7, days)); saveConfig() }
     function setNotificationPosition(pos) { notificationPosition = pos; saveConfig() }
     function setDndEnabled(val) { dndEnabled = val; saveConfig() }
 
     function setLockscreenClockStyle(style) { lockscreenClockStyle = style; saveConfig() }
+    function setLockscreenAuthStyle(style) { lockscreenAuthStyle = style; saveConfig() }
+    function setLockscreenLayout(layout) { lockscreenLayout = layout; saveConfig() }
     function setLockscreenShowMedia(val) { lockscreenShowMedia = val; saveConfig() }
+    function setLockscreenMediaStyle(style) { lockscreenMediaStyle = style; saveConfig() }
     function setLockscreenShowWeather(val) { lockscreenShowWeather = val; saveConfig() }
     function setLockscreenShowNotifs(val) { lockscreenShowNotifs = val; saveConfig() }
+    function setLockscreenShowUptime(val) { lockscreenShowUptime = val; saveConfig() }
     function setLockscreenWallpaperZoom(val) { lockscreenWallpaperZoom = val; saveConfig() }
     function setLockscreenDim(val) { lockscreenDim = val; saveConfig() }
     function setLockscreen24h(val) { lockscreen24h = val; saveConfig() }
+    function setLockscreenBlur(val) { lockscreenBlur = val; saveConfig() }
+    function setLockscreenBlurRadius(val) { lockscreenBlurRadius = val; saveConfig() }
+    function setLockscreenWallpaperMode(mode) { lockscreenWallpaperMode = mode; saveConfig() }
+    function setLockscreenCustomWallpaper(path) { lockscreenCustomWallpaper = path; saveConfig() }
+    function setLockscreenShowQuickPower(val) { lockscreenShowQuickPower = val; saveConfig() }
+    function setLockscreenShowStatusPill(val) { lockscreenShowStatusPill = val; saveConfig() }
     function setBatteryShowWarnings(val) { batteryShowWarnings = val; saveConfig() }
     function setBatteryLowThreshold(val) { batteryLowThreshold = val; saveConfig() }
     function setClipboardLimit(val) { clipboardLimit = val; saveConfig() }
@@ -519,6 +591,12 @@ Singleton {
 
     Process {
         id: saveConfigProc
+        property string payload: ""
+        command: ["sh", "-c",
+            "mkdir -p \"" + root.cacheDir + "\" \"" + root.configDir + "\" && " +
+            "printf '%s' \"$1\" > \"" + root.cacheConfigPath + "\" && " +
+            "printf '%s' \"$1\" > \"" + root.declConfigPath + "\"",
+            "sh", payload]
     }
 
     Process {

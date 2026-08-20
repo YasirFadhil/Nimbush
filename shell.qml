@@ -23,6 +23,7 @@ ShellRoot {
 
     Osd.Osd {}
     Notif.Center {}
+    Notif.Popup {}
     // Osd.PowerOsd {} // Disabled — charging status is now shown in DynamicIsland
     Launcher.Launcher  { id: launcherWindow }
     DashboardModule.Dashboard { id: dashboardWindow }
@@ -117,6 +118,19 @@ ShellRoot {
         function toggle(): void { if (!Services.OverlayManager.isLocked) welcomeWindow.toggle() }
         function show():   void { if (!Services.OverlayManager.isLocked) welcomeWindow.show() }
         function hide():   void { welcomeWindow.hide() }
+    }
+
+    // ── Shell lifecycle / reload ──────────────────────────────────────────────
+    Process {
+        id: reloadTriggerProc
+        command: ["sh", "-c", "touch \"" + (Quickshell.env("HOME") || "/home/" + (Quickshell.env("USER") || "user")) + "/.config/quickshell/shell.qml\" || pkill -USR1 qs || pkill -USR1 quickshell"]
+    }
+
+    IpcHandler {
+        target: "shell"
+        function reload(): void {
+            reloadTriggerProc.running = true
+        }
     }
 
     // ── Auto-lock on system suspend / sleep ──────────────────────────────────

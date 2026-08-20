@@ -30,6 +30,7 @@ PanelWindow {
     }
 
     color: "transparent"
+    WlrLayershell.layer: WlrLayer.Overlay
     WlrLayershell.namespace: "quickshell:bar"
     WlrLayershell.keyboardFocus: (root.showDynamicIsland && dynamicIsland.replyMode) ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
 

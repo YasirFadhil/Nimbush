@@ -17,7 +17,7 @@ PanelWindow {
     color: "transparent"
     exclusiveZone: 0
     visible: false
-    WlrLayershell.layer: WlrLayer.Overlay
+    WlrLayershell.layer: WlrLayer.Top
     WlrLayershell.namespace: "quickshell:trayoverflow"
     WlrLayershell.keyboardFocus: WlrKeyboardFocus.OnDemand
 
@@ -166,15 +166,26 @@ PanelWindow {
                                     anchors.rightMargin: 8
                                     spacing: 8
 
-                                    IconImage {
+                                    Image {
                                         id: itemImg
                                         Layout.preferredWidth: 18
                                         Layout.preferredHeight: 18
-                                        source: overflowItem.item.icon || ""
+                                        source: {
+                                            const icon = overflowItem.item.icon || ""
+                                            if (!icon) return ""
+                                            if (icon.startsWith("/") || icon.startsWith("file://") || icon.startsWith("http") || icon.startsWith("image://"))
+                                                return icon
+                                            return Quickshell.iconPath(icon, true)
+                                        }
+                                        fillMode: Image.PreserveAspectFit
+                                        asynchronous: true
+                                        cache: true
+                                        sourceSize: Qt.size(36, 36)
+                                        visible: status === Image.Ready
                                     }
 
                                     Text {
-                                        visible: !itemImg.visible || itemImg.status === Image.Error
+                                        visible: !itemImg.visible
                                         text: "󰍹"
                                         font.family: Services.Theme.fontMono
                                         font.pixelSize: Services.Theme.fontSizeLg

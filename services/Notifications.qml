@@ -3,6 +3,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import Quickshell.Services.Notifications
+import "." as Services
 
 Singleton {
     id: root
@@ -17,9 +18,142 @@ Singleton {
     property int maxHistoryCount: 50
     property int maxPopupCount: 10
 
+    readonly property int retentionDays: Services.Config ? Services.Config.notificationRetentionDays : 7
+    onRetentionDaysChanged: pruneExpiredHistory()
+
     ListModel { id: popupModel }
     ListModel { id: historyModel }
 
+    readonly property string kdeHelperPath: (Quickshell.env("HOME") || "/home/" + (Quickshell.env("USER") || "user")) + "/.config/quickshell/scripts/kdeconnect-helper.py"
+
+    // ── Retention Pruner (1 to 7 days) ──────────────────────────────────────
+    function pruneExpiredHistory() {
+        const days = Math.max(1, Math.min(7, root.retentionDays || 7))
+        const cutoff = Date.now() - (days * 86400000)
+        let changed = false
+        for (let i = historyModel.count - 1; i >= 0; i--) {
+            const item = historyModel.get(i)
+            if (item && item.time && item.time < cutoff) {
+                historyModel.remove(i)
+                changed = true
+            }
+        }
+        while (historyModel.count > root.maxHistoryCount) {
+            historyModel.remove(historyModel.count - 1)
+            changed = true
+        }
+        if (changed) {
+            root.saveHistory()
+        }
+    }
+
+    Timer {
+        id: pruneTimer
+        interval: 300000 // 5 minutes
+        repeat: true
+        running: true
+        onTriggered: root.pruneExpiredHistory()
+    }
+
+    // ── Live KDE Connect DBus Watcher & Auto-Dismissal Sync ─────────────────
+    Process {
+        id: kdeWatcherProc
+        command: [root.kdeHelperPath, "watch"]
+        running: true
+        stdout: SplitParser {
+            onRead: line => {
+                try {
+                    const data = JSON.parse(line.trim())
+                    if (data.event === "removed") {
+                        if (data.removedIds && data.removedIds.length > 0) {
+                            root.removeKdeNotificationsByIds(data.removedIds)
+                        }
+                    } else if (data.event === "sync") {
+                        if (data.removedIds && data.removedIds.length > 0) {
+                            root.removeKdeNotificationsByIds(data.removedIds)
+                        }
+                        if (data.activeIds && Array.isArray(data.activeIds)) {
+                            root.syncKdeNotificationsWithActive(data.activeIds, data.notifications || [])
+                        }
+                    } else if (data.event === "all_removed") {
+                        root.removeAllKdeNotifications()
+                    }
+                } catch (e) { }
+            }
+        }
+        onExited: (code, status) => {
+            kdeRestartTimer.restart()
+        }
+    }
+
+    Timer {
+        id: kdeRestartTimer
+        interval: 3000
+        repeat: false
+        onTriggered: kdeWatcherProc.running = true
+    }
+
+    function removeKdeNotificationsByIds(removedIds) {
+        if (!removedIds || removedIds.length === 0) return
+        const removedSet = {}
+        for (let i = 0; i < removedIds.length; i++) removedSet[String(removedIds[i])] = true
+
+        for (let i = popupModel.count - 1; i >= 0; i--) {
+            const item = popupModel.get(i)
+            if (item && item.isKdeConnect && item.kdeNotifId && removedSet[String(item.kdeNotifId)]) {
+                popupModel.remove(i)
+            }
+        }
+        let changed = false
+        for (let i = historyModel.count - 1; i >= 0; i--) {
+            const item = historyModel.get(i)
+            if (item && item.isKdeConnect && item.kdeNotifId && removedSet[String(item.kdeNotifId)]) {
+                historyModel.remove(i)
+                changed = true
+            }
+        }
+        if (changed) root.saveHistory()
+    }
+
+    function removeAllKdeNotifications() {
+        for (let i = popupModel.count - 1; i >= 0; i--) {
+            const item = popupModel.get(i)
+            if (item && item.isKdeConnect) popupModel.remove(i)
+        }
+        let changed = false
+        for (let i = historyModel.count - 1; i >= 0; i--) {
+            const item = historyModel.get(i)
+            if (item && item.isKdeConnect) {
+                historyModel.remove(i)
+                changed = true
+            }
+        }
+        if (changed) root.saveHistory()
+    }
+
+    function syncKdeNotificationsWithActive(activeIds, kdeNotifs) {
+        if (!activeIds) return
+        const activeSet = {}
+        for (let i = 0; i < activeIds.length; i++) activeSet[String(activeIds[i])] = true
+
+        for (let i = popupModel.count - 1; i >= 0; i--) {
+            const item = popupModel.get(i)
+            if (item && item.isKdeConnect && item.kdeNotifId && !activeSet[String(item.kdeNotifId)]) {
+                popupModel.remove(i)
+            }
+        }
+        let changed = false
+        for (let i = historyModel.count - 1; i >= 0; i--) {
+            const item = historyModel.get(i)
+            if (item && item.isKdeConnect && item.kdeNotifId && !activeSet[String(item.kdeNotifId)]) {
+                historyModel.remove(i)
+                changed = true
+            }
+        }
+        if (changed) root.saveHistory()
+    }
+
+    // ── Desktop Notification Server ─────────────────────────────────────────
     NotificationServer {
         id: server
         keepOnReload: false
@@ -38,8 +172,8 @@ Singleton {
             const isMessaging = root.isMessagingApp(notif)
             const actionsList = notif.actions.map(a => ({ identifier: a.identifier, text: a.text }))
 
-            // Only add/enable inline reply action if the notification is from a messaging app
-            if (isMessaging && (notif.hasInlineReply || isKdeConnect) && !actionsList.some(a => a.identifier === "inline-reply" || (a.identifier || "").toLowerCase().includes("reply"))) {
+            // Add inline reply action if messaging or hasInlineReply or KDE Connect
+            if ((isMessaging || notif.hasInlineReply || isKdeConnect) && !actionsList.some(a => a.identifier === "inline-reply" || (a.identifier || "").toLowerCase().includes("reply") || (a.text || "").toLowerCase().includes("reply") || (a.text || "").toLowerCase().includes("balas"))) {
                 actionsList.push({ identifier: "inline-reply", text: "Reply" })
             }
 
@@ -47,23 +181,27 @@ Singleton {
                 notifId: notif.id,
                 appName: notif.appName || "Unknown",
                 appIcon: notif.appIcon,
-                summary: notif.summary,
-                body: notif.body,
-                image: notif.image,
+                summary: notif.summary || "",
+                body: notif.body || "",
+                image: notif.image || "",
                 urgency: notif.urgency,
                 time: Date.now(),
                 actions: actionsList,
-                hasInlineReply: isMessaging && (notif.hasInlineReply || isKdeConnect),
+                hasInlineReply: isMessaging || notif.hasInlineReply || isKdeConnect,
                 isMessaging: isMessaging,
+                isKdeConnect: isKdeConnect,
+                kdeNotifId: "",
+                kdeReplyId: "",
                 inlineReplyPlaceholder: notif.inlineReplyPlaceholder || "",
                 desktopEntry: notif.desktopEntry || ""
             }
 
-            historyModel.insert(0, entry)
-            while (historyModel.count > root.maxHistoryCount) {
-                historyModel.remove(historyModel.count - 1)
+            if (isKdeConnect) {
+                root.linkKdeNotification(entry)
             }
-            root.saveHistory()
+
+            historyModel.insert(0, entry)
+            root.pruneExpiredHistory()
 
             if (!root.doNotDisturb) {
                 popupModel.insert(0, entry)
@@ -80,7 +218,7 @@ Singleton {
                     SoundFeedback.playNotification()
 
                 const timeout = notif.expireTimeout > 0 ? notif.expireTimeout
-                    : (notif.urgency === NotificationUrgency.Critical ? 7000 : 5000)
+                    : (notif.urgency === NotificationUrgency.Critical ? 7000 : (Services.Config ? (Services.Config.notificationTimeout * 1000) : 5000))
                 if (timeout > 0) {
                     dismissTimer.createObject(root, { notifId: notif.id, interval: timeout }).start()
                 }
@@ -88,8 +226,59 @@ Singleton {
 
             notif.closed.connect(() => {
                 root.removePopup(notif.id)
+                root.removeFromHistory(notif.id)
             })
         }
+    }
+
+    Process {
+        id: kdeLinkProc
+        property string targetSummary: ""
+        property string targetBody: ""
+        property int targetNotifId: -1
+        command: [root.kdeHelperPath, "list"]
+        stdout: SplitParser {
+            onRead: data => {
+                try {
+                    const list = JSON.parse(data.trim())
+                    if (Array.isArray(list)) {
+                        for (let i = 0; i < list.length; i++) {
+                            const k = list[i]
+                            const sMatch = (k.app && kdeLinkProc.targetSummary.includes(k.app)) || (k.title && kdeLinkProc.targetSummary.includes(k.title))
+                            const bMatch = (k.text && kdeLinkProc.targetBody.includes(k.text.substring(0, 15))) || (k.title && kdeLinkProc.targetBody.includes(k.title))
+                            if (sMatch || bMatch || list.length === 1) {
+                                for (let h = 0; h < historyModel.count; h++) {
+                                    const hItem = historyModel.get(h)
+                                    if (hItem && hItem.notifId === kdeLinkProc.targetNotifId) {
+                                        hItem.kdeNotifId = String(k.id)
+                                        hItem.kdeReplyId = String(k.replyId || "")
+                                        root.saveHistory()
+                                        break
+                                    }
+                                }
+                                for (let p = 0; p < popupModel.count; p++) {
+                                    const pItem = popupModel.get(p)
+                                    if (pItem && pItem.notifId === kdeLinkProc.targetNotifId) {
+                                        pItem.kdeNotifId = String(k.id)
+                                        pItem.kdeReplyId = String(k.replyId || "")
+                                        break
+                                    }
+                                }
+                                break
+                            }
+                        }
+                    }
+                } catch (e) { }
+            }
+        }
+    }
+
+    function linkKdeNotification(entry) {
+        if (!entry) return
+        kdeLinkProc.targetSummary = entry.summary || ""
+        kdeLinkProc.targetBody = entry.body || ""
+        kdeLinkProc.targetNotifId = entry.notifId
+        kdeLinkProc.running = true
     }
 
     Component {
@@ -137,6 +326,16 @@ Singleton {
         }
     }
 
+    function findEntry(id) {
+        for (let i = 0; i < historyModel.count; i++) {
+            if (historyModel.get(i).notifId === id) return historyModel.get(i)
+        }
+        for (let i = 0; i < popupModel.count; i++) {
+            if (popupModel.get(i).notifId === id) return popupModel.get(i)
+        }
+        return null
+    }
+
     function isKdeConnectNotif(n) {
         if (!n) return false
         const appName = (n.appName || "").toLowerCase()
@@ -178,12 +377,12 @@ Singleton {
             }
         }
 
-        // 2. Package identifiers in appIcon (e.g. TikTok / Instagram / Telegram packages)
+        // 2. Package identifiers in appIcon
         if (appIcon.includes("trill") || appIcon.includes("ugc") || appIcon.includes("musically")) {
             return true
         }
 
-        // 3. For KDE Connect notifications, check summary, body, or hints for messaging keywords
+        // 3. For KDE Connect notifications, check summary or body
         if (root.isKdeConnectNotif(n)) {
             for (let i = 0; i < messagingKeywords.length; i++) {
                 const kw = messagingKeywords[i]
@@ -209,69 +408,109 @@ Singleton {
     Process {
         id: kdeConnectReplyProc
         property string replyId: ""
+        property string notifId: ""
+        property string summary: ""
+        property string body: ""
         property string replyText: ""
-        // KDE Connect's notifications plugin exposes sendReply(replyId, message) as a
-        // TWO-argument method on the plugin object at .../devices/<id>/notifications
-        // (not one-argument, and not on the per-notification sub-path).
-        command: ["sh", "-c",
-            "REPLY_ID=\"$1\"\n" +
-            "TEXT=\"$2\"\n" +
-            "echo \"[kdeconnect-reply] replyId='$REPLY_ID' text='$TEXT'\"\n" +
-            "if command -v busctl >/dev/null 2>&1; then\n" +
-            "    PATHS=$(busctl --user tree org.kde.kdeconnect 2>&1 | sed 's/^[^/]*//' | grep -E '^/modules/kdeconnect/devices/[^/]+/notifications$')\n" +
-            "    echo \"[kdeconnect-reply][busctl] plugin paths found: $PATHS\"\n" +
-            "    for p in $PATHS; do\n" +
-            "        echo \"[kdeconnect-reply][busctl] calling sendReply on $p\"\n" +
-            "        busctl --user call org.kde.kdeconnect \"$p\" org.kde.kdeconnect.device.notifications sendReply ss \"$REPLY_ID\" \"$TEXT\"\n" +
-            "    done\n" +
-            "elif command -v qdbus >/dev/null 2>&1; then\n" +
-            "    for d in $(qdbus org.kde.kdeconnect /modules/kdeconnect devices 2>&1); do\n" +
-            "        p=\"/modules/kdeconnect/devices/$d/notifications\"\n" +
-            "        echo \"[kdeconnect-reply][qdbus] calling sendReply on $p\"\n" +
-            "        qdbus org.kde.kdeconnect \"$p\" sendReply \"$REPLY_ID\" \"$TEXT\"\n" +
-            "    done\n" +
-            "fi\n",
-            "sh", replyId, replyText]
+        command: [
+            root.kdeHelperPath, "reply",
+            "--reply-id", replyId,
+            "--notif-id", notifId,
+            "--summary", summary,
+            "--body", body,
+            "--message", replyText
+        ]
         stdout: SplitParser { onRead: data => console.log("[kdeConnectReplyProc][out]", data) }
         stderr: SplitParser { onRead: data => console.log("[kdeConnectReplyProc][err]", data) }
         onExited: (code, status) => console.log("[kdeConnectReplyProc] exited with code", code)
     }
 
+    Process {
+        id: kdeConnectDismissProc
+        property string notifId: ""
+        property string summary: ""
+        property string body: ""
+        command: [
+            root.kdeHelperPath, "dismiss",
+            "--notif-id", notifId,
+            "--summary", summary,
+            "--body", body
+        ]
+        stdout: SplitParser { onRead: data => console.log("[kdeConnectDismissProc][out]", data) }
+        stderr: SplitParser { onRead: data => console.log("[kdeConnectDismissProc][err]", data) }
+    }
+
     function invokeAction(notifId, actionId, text) {
+        const item = root.findEntry(notifId)
+        const isKde = item ? (item.isKdeConnect || (item.appName || "").toLowerCase().includes("kde") || (item.desktopEntry || "").toLowerCase().includes("kdeconnect")) : false
+
+        let trackedNotif = null
         for (const n of server.trackedNotifications.values) {
-            if (n.id === notifId) {
-                if ((actionId === "inline-reply" || n.hasInlineReply) && text !== undefined && text !== "") {
+            if (n.id === notifId) { trackedNotif = n; break }
+        }
+
+        if (text !== undefined && text !== "") {
+            // Inline Reply execution
+            if (isKde) {
+                console.log("[Notifications] sending reply via KDE Connect DBus helper, notif", notifId, "actionId", actionId)
+                kdeConnectReplyProc.replyId = (item && item.kdeReplyId) ? item.kdeReplyId : (actionId || "")
+                kdeConnectReplyProc.notifId = (item && item.kdeNotifId) ? item.kdeNotifId : ""
+                kdeConnectReplyProc.summary = item ? (item.summary || "") : ""
+                kdeConnectReplyProc.body = item ? (item.body || "") : ""
+                kdeConnectReplyProc.replyText = text
+                kdeConnectReplyProc.running = true
+            }
+
+            if (trackedNotif) {
+                if (trackedNotif.hasInlineReply) {
                     console.log("[Notifications] sending reply via native sendInlineReply for notif", notifId)
-                    n.sendInlineReply(text)
-                } else if (isKdeConnectNotif(n) && text !== undefined && text !== "") {
-                    console.log("[Notifications] sending reply via KDE Connect DBus, notif", notifId, "actionId", actionId)
-                    kdeConnectReplyProc.replyId = actionId || ""
-                    kdeConnectReplyProc.replyText = text
-                    kdeConnectReplyProc.running = true
+                    trackedNotif.sendInlineReply(text)
                 } else {
-                    const action = n.actions.find(a => a.identifier === actionId)
-                    if (action) {
-                        if (text !== undefined && text !== "") action.invoke(text)
-                        else action.invoke()
-                    }
+                    const act = trackedNotif.actions.find(a => a.identifier === actionId)
+                    if (act) act.invoke(text)
                 }
-                break
+            }
+        } else {
+            // Regular Action click
+            if (isKde && (actionId === "1" || actionId === "mark-as-read" || actionId === "dismiss")) {
+                kdeConnectDismissProc.notifId = (item && item.kdeNotifId) ? item.kdeNotifId : ""
+                kdeConnectDismissProc.summary = item ? (item.summary || "") : ""
+                kdeConnectDismissProc.body = item ? (item.body || "") : ""
+                kdeConnectDismissProc.running = true
+            }
+            if (trackedNotif) {
+                const act = trackedNotif.actions.find(a => a.identifier === actionId)
+                if (act) act.invoke()
             }
         }
-        removePopup(notifId)
-        removeFromHistory(notifId)
+
+        if (trackedNotif) {
+            trackedNotif.dismiss()
+        }
+
+        root.removePopup(notifId)
+        root.removeFromHistory(notifId)
     }
 
     function dismiss(notifId) {
+        const item = root.findEntry(notifId)
+        const isKde = item ? (item.isKdeConnect || (item.appName || "").toLowerCase().includes("kde") || (item.desktopEntry || "").toLowerCase().includes("kdeconnect")) : false
+        if (isKde) {
+            kdeConnectDismissProc.notifId = (item && item.kdeNotifId) ? item.kdeNotifId : ""
+            kdeConnectDismissProc.summary = item ? (item.summary || "") : ""
+            kdeConnectDismissProc.body = item ? (item.body || "") : ""
+            kdeConnectDismissProc.running = true
+        }
+
         for (const n of server.trackedNotifications.values) {
             if (n.id === notifId) { n.dismiss(); break }
         }
-        removePopup(notifId)
-        removeFromHistory(notifId)
+        root.removePopup(notifId)
+        root.removeFromHistory(notifId)
     }
 
     function dismissFromCenter(notifId) {
-        removeFromHistory(notifId)
+        root.dismiss(notifId)
     }
 
     function dismissGroupFromCenter(items) {
@@ -284,11 +523,21 @@ Singleton {
                 ids.push(item.notifId)
         }
         for (let i = 0; i < ids.length; i++) {
-            removeFromHistory(ids[i])
+            root.dismiss(ids[i])
         }
     }
 
     function clearHistory() {
+        // Also dismiss any active KDE Connect notifications
+        for (let i = 0; i < historyModel.count; i++) {
+            const item = historyModel.get(i)
+            if (item && item.isKdeConnect) {
+                kdeConnectDismissProc.notifId = item.kdeNotifId || ""
+                kdeConnectDismissProc.summary = item.summary || ""
+                kdeConnectDismissProc.body = item.body || ""
+                kdeConnectDismissProc.running = true
+            }
+        }
         historyModel.clear()
         root.saveHistory()
     }
@@ -307,16 +556,24 @@ Singleton {
             image: entry.image || "",
             urgency: entry.urgency !== undefined ? entry.urgency : 2,
             time: Date.now(),
-            actions: entry.actions || []
+            actions: entry.actions || [],
+            hasInlineReply: false,
+            isMessaging: false,
+            isKdeConnect: false,
+            kdeNotifId: "",
+            kdeReplyId: "",
+            inlineReplyPlaceholder: "",
+            desktopEntry: ""
         }
 
         historyModel.insert(0, fullEntry)
+        root.pruneExpiredHistory()
 
         if (!root.doNotDisturb) {
             popupModel.insert(0, fullEntry)
             root.newNotification(fullEntry)
             const timeout = entry.expireTimeout > 0 ? entry.expireTimeout
-                : (fullEntry.urgency === 2 ? 6000 : 5000)
+                : (fullEntry.urgency === 2 ? 6000 : (Services.Config ? (Services.Config.notificationTimeout * 1000) : 5000))
             if (timeout > 0) {
                 dismissTimer.createObject(root, { notifId: id, interval: timeout }).start()
             }
@@ -339,6 +596,7 @@ Singleton {
                         for (let i = 0; i < parsed.length; i++) {
                             historyModel.append(parsed[i])
                         }
+                        root.pruneExpiredHistory()
                     }
                 } catch (e) {
                     console.log("[Notifications] failed to parse history cache:", e)
@@ -378,6 +636,9 @@ Singleton {
                 actions: actions,
                 hasInlineReply: item.hasInlineReply || false,
                 isMessaging: item.isMessaging || false,
+                isKdeConnect: item.isKdeConnect || false,
+                kdeNotifId: item.kdeNotifId || "",
+                kdeReplyId: item.kdeReplyId || "",
                 inlineReplyPlaceholder: item.inlineReplyPlaceholder || "",
                 desktopEntry: item.desktopEntry || ""
             })

@@ -84,7 +84,11 @@ Singleton {
     property string saveStatus: "idle" // "idle", "saving", "saved", "error"
     property string statusMessage: ""
 
-    readonly property string helperScript: Quickshell.env("HOME") + "/.config/quickshell/scripts/compositor-helper.py"
+    readonly property string helperScript: {
+        var u = Qt.resolvedUrl("../scripts/compositor-helper.py").toString()
+        var p = u.startsWith("file://") ? u.substring(7) : u
+        return p.length > 0 ? p : (Quickshell.env("HOME") + "/.config/quickshell/scripts/compositor-helper.py")
+    }
 
     // ── Internal Queue for async option updates ───────────────────────────────
     property var _pendingQueue: []

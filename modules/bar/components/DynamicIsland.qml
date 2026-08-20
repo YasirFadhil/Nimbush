@@ -560,8 +560,11 @@ Item {
 
     function togglePin() {
         if (!hasExpandContent) return
-        pinned = !pinned
-        if (!pinned) autoExpanded = false
+        if (expanded) {
+            collapse()
+        } else {
+            pinned = true
+        }
     }
 
     function collapse() {
@@ -952,10 +955,21 @@ Item {
                     implicitHeight: 20
                     Layout.alignment: Qt.AlignVCenter
 
-                    IconImage {
+                    Image {
                         id: appIconImg
                         anchors.fill: parent
-                        source: root.currentNotif ? (root.currentNotif.image || root.currentNotif.appIcon || "") : ""
+                        source: {
+                            if (!root.currentNotif) return ""
+                            const src = root.currentNotif.image || root.currentNotif.appIcon || ""
+                            if (!src) return ""
+                            if (src.startsWith("/") || src.startsWith("file://") || src.startsWith("http"))
+                                return src
+                            return Quickshell.iconPath(src, true)
+                        }
+                        fillMode: Image.PreserveAspectFit
+                        asynchronous: true
+                        cache: true
+                        sourceSize: Qt.size(40, 40)
                         visible: status === Image.Ready
                     }
 

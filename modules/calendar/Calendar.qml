@@ -12,7 +12,7 @@ PanelWindow {
     color: "transparent"
     exclusiveZone: 0
     visible: Services.OverlayManager.calendarVisible
-    WlrLayershell.layer: WlrLayer.Overlay
+    WlrLayershell.layer: WlrLayer.Top
     WlrLayershell.namespace: "quickshell:calendar"
     WlrLayershell.keyboardFocus: WlrKeyboardFocus.OnDemand
 

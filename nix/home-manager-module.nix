@@ -122,7 +122,13 @@ in
           grim
           slurp
           swappy
-          python3
+          zenity
+          (python3.withPackages (ps: with ps; [
+            pygobject3
+            dbus-python
+          ]))
+          gobject-introspection
+          gtk3
         ]));
 
       # Automatically place files into ~/.config/quickshell if not using wrapped package

@@ -153,6 +153,7 @@ DEPENDENCIES=(
     "grim|grim|grim|grim|grim|Wayland screenshot capture|req"
     "slurp|slurp|slurp|slurp|slurp|Wayland region selector|req"
     "swappy|swappy|swappy|swappy|swappy|Screenshot editor|opt"
+    "zenity|zenity|zenity|zenity|zenity|XDG File Picker Dialog (fallback)|opt"
     "python3|python|python3|python3|python3|Python 3 interpreter|req"
 )
 

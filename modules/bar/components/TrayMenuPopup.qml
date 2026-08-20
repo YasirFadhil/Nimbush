@@ -18,7 +18,7 @@ PanelWindow {
     color: "transparent"
     exclusiveZone: 0
     visible: activeMenu !== null
-    WlrLayershell.layer: WlrLayer.Overlay
+    WlrLayershell.layer: WlrLayer.Top
     WlrLayershell.namespace: "quickshell:traymenu"
     WlrLayershell.keyboardFocus: WlrKeyboardFocus.OnDemand
 
@@ -87,10 +87,21 @@ PanelWindow {
                     visible: root.activeItem !== null && (root.activeItem.title || root.activeItem.id)
                     spacing: 8
 
-                    IconImage {
+                    Image {
                         Layout.preferredWidth: 16
                         Layout.preferredHeight: 16
-                        source: root.activeItem ? (root.activeItem.icon || "") : ""
+                        source: {
+                            const icon = root.activeItem ? (root.activeItem.icon || "") : ""
+                            if (!icon) return ""
+                            if (icon.startsWith("/") || icon.startsWith("file://") || icon.startsWith("http") || icon.startsWith("image://"))
+                                return icon
+                            return Quickshell.iconPath(icon, true)
+                        }
+                        fillMode: Image.PreserveAspectFit
+                        asynchronous: true
+                        cache: true
+                        sourceSize: Qt.size(32, 32)
+                        visible: status === Image.Ready
                     }
 
                     Text {
@@ -171,11 +182,21 @@ PanelWindow {
                                     }
 
                                     // Entry Icon
-                                    IconImage {
-                                        visible: menuItem.modelData.icon && menuItem.modelData.icon.length > 0
+                                    Image {
+                                        visible: menuItem.modelData.icon && menuItem.modelData.icon.length > 0 && status === Image.Ready
                                         Layout.preferredWidth: 14
                                         Layout.preferredHeight: 14
-                                        source: menuItem.modelData.icon || ""
+                                        source: {
+                                            const icon = menuItem.modelData.icon || ""
+                                            if (!icon) return ""
+                                            if (icon.startsWith("/") || icon.startsWith("file://") || icon.startsWith("http") || icon.startsWith("image://"))
+                                                return icon
+                                            return Quickshell.iconPath(icon, true)
+                                        }
+                                        fillMode: Image.PreserveAspectFit
+                                        asynchronous: true
+                                        cache: true
+                                        sourceSize: Qt.size(28, 28)
                                     }
 
                                     // Entry Label
@@ -269,11 +290,21 @@ PanelWindow {
                                                     color: Services.Theme.accent
                                                 }
 
-                                                IconImage {
-                                                    visible: subItem.modelData.icon && subItem.modelData.icon.length > 0
+                                                Image {
+                                                    visible: subItem.modelData.icon && subItem.modelData.icon.length > 0 && status === Image.Ready
                                                     Layout.preferredWidth: 12
                                                     Layout.preferredHeight: 12
-                                                    source: subItem.modelData.icon || ""
+                                                    source: {
+                                                        const icon = subItem.modelData.icon || ""
+                                                        if (!icon) return ""
+                                                        if (icon.startsWith("/") || icon.startsWith("file://") || icon.startsWith("http") || icon.startsWith("image://"))
+                                                            return icon
+                                                        return Quickshell.iconPath(icon, true)
+                                                    }
+                                                    fillMode: Image.PreserveAspectFit
+                                                    asynchronous: true
+                                                    cache: true
+                                                    sourceSize: Qt.size(24, 24)
                                                 }
 
                                                 Text {

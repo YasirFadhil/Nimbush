@@ -17,7 +17,7 @@ PanelWindow {
     visible: false
 
     color: "transparent"
-    WlrLayershell.layer: WlrLayer.Overlay
+    WlrLayershell.layer: WlrLayer.Top
     WlrLayershell.keyboardFocus: WlrKeyboardFocus.OnDemand
     WlrLayershell.namespace: "quickshell:dashboard"
     exclusiveZone: 0

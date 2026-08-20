@@ -1,7 +1,153 @@
 #!/usr/bin/env python3
 import sys
 import os
+import shutil
+import subprocess
+import time
+import re
 import urllib.parse
+
+def pick_via_zenity():
+    if not shutil.which("zenity"):
+        return None
+    try:
+        pictures_dir = os.path.expanduser("~/Pictures")
+        cmd = [
+            "zenity",
+            "--file-selection",
+            "--title=Select Wallpaper Image",
+            "--file-filter=Image files (*.jpg, *.png, *.webp, *.jpeg, *.gif, *.bmp, *.avif, *.svg) | *.jpg *.jpeg *.png *.webp *.gif *.bmp *.avif *.svg *.JPG *.JPEG *.PNG *.WEBP",
+            "--file-filter=All files (*.*) | *"
+        ]
+        if os.path.isdir(pictures_dir):
+            cmd.append(f"--filename={pictures_dir}/")
+        
+        proc = subprocess.run(cmd, capture_output=True, text=True)
+        if proc.returncode == 0:
+            selected = proc.stdout.strip()
+            if selected and os.path.isfile(selected):
+                return selected
+    except Exception:
+        pass
+    return None
+
+def pick_via_kdialog():
+    if not shutil.which("kdialog"):
+        return None
+    try:
+        pictures_dir = os.path.expanduser("~/Pictures")
+        start_dir = pictures_dir if os.path.isdir(pictures_dir) else os.path.expanduser("~")
+        cmd = [
+            "kdialog",
+            "--getopenfilename",
+            start_dir,
+            "Image files (*.jpg *.jpeg *.png *.webp *.gif *.bmp *.avif *.svg);;All files (*)"
+        ]
+        proc = subprocess.run(cmd, capture_output=True, text=True)
+        if proc.returncode == 0:
+            selected = proc.stdout.strip()
+            if selected and os.path.isfile(selected):
+                return selected
+    except Exception:
+        pass
+    return None
+
+def pick_via_yad():
+    if not shutil.which("yad"):
+        return None
+    try:
+        pictures_dir = os.path.expanduser("~/Pictures")
+        cmd = [
+            "yad",
+            "--file",
+            "--title=Select Wallpaper Image",
+            "--file-filter=Image files | *.jpg *.jpeg *.png *.webp *.gif *.bmp *.avif *.svg *.JPG *.PNG",
+            "--file-filter=All files | *"
+        ]
+        if os.path.isdir(pictures_dir):
+            cmd.append(f"--filename={pictures_dir}/")
+        
+        proc = subprocess.run(cmd, capture_output=True, text=True)
+        if proc.returncode == 0:
+            selected = proc.stdout.strip()
+            if selected and os.path.isfile(selected):
+                return selected
+    except Exception:
+        pass
+    return None
+
+def pick_via_gdbus():
+    """Fallback via gdbus tool to talk with org.freedesktop.portal.Desktop (no python-dbus required)."""
+    if not shutil.which("gdbus"):
+        return None
+    token = f"qs_wp_{int(time.time())}_{os.getpid()}"
+    monitor_proc = None
+    try:
+        monitor_proc = subprocess.Popen(
+            ["gdbus", "monitor", "--session", "--dest", "org.freedesktop.portal.Desktop"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True
+        )
+        time.sleep(0.05)
+
+        options = f"{{'handle_token': <'{token}'>, 'multiple': <false>}}"
+        call_res = subprocess.run(
+            [
+                "gdbus", "call", "--session",
+                "--dest", "org.freedesktop.portal.Desktop",
+                "--object-path", "/org/freedesktop/portal/desktop",
+                "--method", "org.freedesktop.portal.FileChooser.OpenFile",
+                "", "Select Wallpaper Image", options
+            ],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        if call_res.returncode != 0:
+            return None
+
+        handle_match = re.search(r"'/org/freedesktop/portal/desktop/request/[^']+'", call_res.stdout)
+        target_handle = handle_match.group(0).strip("'") if handle_match else token
+
+        selected_file = None
+        start_time = time.time()
+        buf = ""
+        while time.time() - start_time < 300:
+            line = monitor_proc.stdout.readline()
+            if not line:
+                if monitor_proc.poll() is not None:
+                    break
+                continue
+            buf += line
+            if target_handle in buf and "Response" in buf:
+                if "uint32 0" in buf:
+                    m = re.search(r"'file://([^']+)'", buf)
+                    if m:
+                        path = urllib.parse.unquote(m.group(1))
+                        if not path.startswith("/"):
+                            path = "/" + path
+                        if os.path.exists(path):
+                            selected_file = path
+                            break
+                elif "uint32 1" in buf or "uint32 2" in buf:
+                    break
+                if "}" in buf and (line.strip().endswith("}") or line.strip().endswith(")")):
+                    break
+
+        return selected_file
+    except Exception:
+        return None
+    finally:
+        if monitor_proc:
+            try:
+                monitor_proc.terminate()
+                monitor_proc.wait(timeout=0.5)
+            except Exception:
+                try:
+                    monitor_proc.kill()
+                except Exception:
+                    pass
 
 def pick_via_gtk():
     try:
@@ -20,14 +166,22 @@ def pick_via_gtk():
         )
 
         filter_img = Gtk.FileFilter()
-        filter_img.set_name("Image files (*.jpg, *.png, *.webp, *.jpeg)")
+        filter_img.set_name("Image files (*.jpg, *.png, *.webp, *.jpeg, *.gif, *.bmp, *.avif, *.svg)")
         filter_img.add_mime_type("image/png")
         filter_img.add_mime_type("image/jpeg")
         filter_img.add_mime_type("image/webp")
+        filter_img.add_mime_type("image/gif")
+        filter_img.add_mime_type("image/bmp")
+        filter_img.add_mime_type("image/avif")
+        filter_img.add_mime_type("image/svg+xml")
         filter_img.add_pattern("*.png")
         filter_img.add_pattern("*.jpg")
         filter_img.add_pattern("*.jpeg")
         filter_img.add_pattern("*.webp")
+        filter_img.add_pattern("*.gif")
+        filter_img.add_pattern("*.bmp")
+        filter_img.add_pattern("*.avif")
+        filter_img.add_pattern("*.svg")
         dialog.add_filter(filter_img)
 
         filter_all = Gtk.FileFilter()
@@ -48,7 +202,7 @@ def pick_via_gtk():
         while Gtk.events_pending():
             Gtk.main_iteration()
         return selected
-    except Exception as e:
+    except Exception:
         return None
 
 def pick_via_portal():
@@ -56,7 +210,6 @@ def pick_via_portal():
         import dbus
         from dbus.mainloop.glib import DBusGMainLoop
         from gi.repository import GLib
-        import time
 
         DBusGMainLoop(set_as_default=True)
         bus = dbus.SessionBus()
@@ -98,10 +251,25 @@ def pick_via_portal():
     except Exception:
         return None
 
-if __name__ == "__main__":
-    path = pick_via_gtk()
-    if not path:
-        path = pick_via_portal()
+def main():
+    # Try backends in order of reliability and user environment
+    backends = [
+        ("zenity", pick_via_zenity),
+        ("kdialog", pick_via_kdialog),
+        ("yad", pick_via_yad),
+        ("gtk", pick_via_gtk),
+        ("portal_dbus", pick_via_portal),
+        ("gdbus", pick_via_gdbus),
+    ]
+
+    path = None
+    for name, backend in backends:
+        try:
+            path = backend()
+            if path and os.path.isfile(path):
+                break
+        except Exception:
+            continue
 
     if path and os.path.isfile(path):
         print(path)
@@ -109,3 +277,6 @@ if __name__ == "__main__":
         sys.exit(0)
     else:
         sys.exit(1)
+
+if __name__ == "__main__":
+    main()

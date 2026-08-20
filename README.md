@@ -50,7 +50,7 @@ Before running Quickshell, ensure the required dependencies are installed:
 - **git** (`git`) – Automatic shell update service
 - **D-Bus & GLib** (`dbus`, `glib` / `dbus-monitor`, `gdbus`) – Bluetooth live signal monitoring & XDG Portal file chooser
 - **Grim & Slurp** (`grim`, `slurp`, `swappy`) – Wayland screenshot capture & editing
-- **Python 3** (`python3`) – XDG wallpaper file picker script
+- **Python 3** (`python3`) & File Pickers (`zenity` / `kdialog` / `yad` / `gdbus`) – XDG wallpaper file picker backends
 
 ### Fonts
 - **Nerd Fonts** (`ttf-nerd-fonts-symbols-mono` / `ttf-jetbrains-mono-nerd`) – Icons (`Symbols Nerd Font Mono`)

@@ -8,7 +8,11 @@ Singleton {
     id: root
 
     readonly property string homeDir: (Quickshell.env("HOME") || "/home/" + (Quickshell.env("USER") || "user"))
-    readonly property string assetsDir: homeDir + "/.config/quickshell/assets/wallpapers"
+    readonly property string assetsDir: {
+        var u = Qt.resolvedUrl("../assets/wallpapers").toString()
+        var p = u.startsWith("file://") ? u.substring(7) : u
+        return p.length > 0 ? p : (homeDir + "/.config/quickshell/assets/wallpapers")
+    }
 
     readonly property string darkWallbler: assetsDir + "/wallbler.jpg"
     readonly property string lightWallbler: assetsDir + "/wallbler-light.jpg"
@@ -33,7 +37,11 @@ Singleton {
 
     readonly property string configPath: homeDir + "/.cache/quickshell/wallpaper_config.json"
     readonly property string declConfigPath: homeDir + "/.config/quickshell/wallpaper_config.json"
-    readonly property string pickerScript: homeDir + "/.config/quickshell/scripts/xdg-file-picker.py"
+    readonly property string pickerScript: {
+        var u = Qt.resolvedUrl("../scripts/xdg-file-picker.py").toString()
+        var p = u.startsWith("file://") ? u.substring(7) : u
+        return p.length > 0 ? p : (homeDir + "/.config/quickshell/scripts/xdg-file-picker.py")
+    }
 
     Component.onCompleted: {
         updateAllList()
@@ -98,11 +106,20 @@ Singleton {
         }
     }
 
+    property bool isPickingLockscreen: false
+
     function pickCustomWallpaper() {
         if (isPicking) return
         isPicking = true
         pickerProc.running = false
         pickerProc.running = true
+    }
+
+    function pickLockscreenWallpaper() {
+        if (isPickingLockscreen) return
+        isPickingLockscreen = true
+        lockscreenPickerProc.running = false
+        lockscreenPickerProc.running = true
     }
 
     function removeCustomWallpaper(filePath) {
@@ -159,7 +176,7 @@ Singleton {
             "sh", "-c",
             "mkdir -p ~/.cache/quickshell && " +
             "cat << 'EOF' > \"" + configPath + "\"\n" + jsonStr + "\nEOF\n" +
-            "cat << 'EOF' > \"" + declConfigPath + "\"\n" + jsonStr + "\nEOF"
+            "(cat << 'EOF' > \"" + declConfigPath + "\"\n" + jsonStr + "\nEOF) 2>/dev/null || true"
         ]
         saveConfigProc.running = true
     }
@@ -186,14 +203,32 @@ Singleton {
         }
     }
 
+    // Process to pick dedicated custom wallpaper for lockscreen
+    Process {
+        id: lockscreenPickerProc
+        command: ["python3", root.pickerScript]
+        stdout: SplitParser {
+            onRead: data => {
+                var selected = data.trim()
+                if (selected.length > 0 && Services.Config) {
+                    Services.Config.setLockscreenCustomWallpaper(selected)
+                    Services.Config.setLockscreenWallpaperMode("custom")
+                }
+            }
+        }
+        onExited: (exitCode, exitStatus) => {
+            root.isPickingLockscreen = false
+        }
+    }
+
     // Process to load saved wallpaper config
     Process {
         id: loadConfigProc
         property string rawData: ""
         command: [
             "sh", "-c",
-            "if [ -f \"" + declConfigPath + "\" ]; then tr -d '\\r\\n' < \"" + declConfigPath + "\"; " +
-            "elif [ -f \"" + configPath + "\" ]; then tr -d '\\r\\n' < \"" + configPath + "\"; " +
+            "if [ -f \"" + configPath + "\" ]; then tr -d '\\r\\n' < \"" + configPath + "\"; " +
+            "elif [ -f \"" + declConfigPath + "\" ]; then tr -d '\\r\\n' < \"" + declConfigPath + "\"; " +
             "else echo '{}'; fi"
         ]
         stdout: SplitParser {

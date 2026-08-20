@@ -105,6 +105,7 @@ Singleton {
     readonly property string pmLogout:   "\uf08b"  // nf-fa-sign_out
     readonly property string pmSleep:    "\uf186"  // nf-fa-moon_o
     readonly property string pmReboot:   "\uf021"  // nf-fa-refresh
+    readonly property string pmRestart:  "\uf021"  // nf-fa-refresh / restart alias
     readonly property string pmShutdown: "\uf011"  // nf-fa-power_off
 
     // ── Launcher / Search ────────────────────────────────────────────────────────
@@ -126,6 +127,9 @@ Singleton {
     readonly property string font:          "\uf031"   // nf-fa-font
     readonly property string keyboard:      "\uf11c"   // nf-fa-keyboard_o
     readonly property string sparkles:      "\uf0d0"   // nf-fa-magic / sparkle
+    readonly property string sparkle:       "\uf0d0"   // alias
+    readonly property string expand:        "\uf065"   // nf-fa-expand
+    readonly property string layout:        "\uf009"   // nf-fa-th_large
     readonly property string terminal:      "\uf120"   // nf-fa-terminal
     readonly property string info:          "\uf129"   // nf-fa-info
     readonly property string tray:          "\uf0c9"   // nf-fa-bars / tray

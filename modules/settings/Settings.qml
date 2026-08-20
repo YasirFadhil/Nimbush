@@ -4,6 +4,7 @@ import Quickshell.Io
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtQuick.Effects
 import "../../services" as Services
 
 FloatingWindow {
@@ -1728,6 +1729,22 @@ FloatingWindow {
 
                                         SettingsDivider {}
 
+                                        SettingsSlider {
+                                            icon: Services.Icons.uptime
+                                            title: "Notification History Retention"
+                                            subtitle: "How many days notifications stay in history before expiring (1 to 7 days)"
+                                            from: 1
+                                            to: 7
+                                            stepSize: 1
+                                            valueSuffix: (Services.Config && Services.Config.notificationRetentionDays === 1) ? " day" : " days"
+                                            value: Services.Config ? Services.Config.notificationRetentionDays : 7
+                                            onMoved: (v) => {
+                                                if (Services.Config) Services.Config.setNotificationRetentionDays(Math.round(v))
+                                            }
+                                        }
+
+                                        SettingsDivider {}
+
                                         // Action Buttons
                                         RowLayout {
                                             Layout.fillWidth: true
@@ -1878,12 +1895,471 @@ FloatingWindow {
                             // ─────────────────────────────────────────────────
                             // PAGE 4: LOCKSCREEN & POWER
                             // ─────────────────────────────────────────────────
+                            // ── PAGE 4: LOCKSCREEN & POWER ───────────────────────────────────
                             ColumnLayout {
                                 visible: rootWindow.currentTab === 4
                                 Layout.fillWidth: true
                                 spacing: 14
 
-                                // ── Card 1: Lockscreen Visual Style & Clock ──
+                                // ── Card 0: Live Lockscreen Interactive Preview ──
+                                SettingsCard {
+                                    implicitHeight: 220
+
+                                    Item {
+                                        anchors.fill: parent
+                                        anchors.margins: 14
+                                        clip: true
+
+                                        // Miniature Lockscreen Canvas Frame
+                                        Rectangle {
+                                            anchors.fill: parent
+                                            radius: Services.Theme.radiusSm
+                                            clip: true
+                                            color: Services.Theme.bgDeep
+                                            border.color: Services.Theme.borderHighlight
+                                            border.width: 1
+
+                                            // Mini Wallpaper Background
+                                            Image {
+                                                id: miniLsBg
+                                                anchors.fill: parent
+                                                source: {
+                                                    if (Services.Config && Services.Config.lockscreenWallpaperMode === "custom" && Services.Config.lockscreenCustomWallpaper.length > 0) {
+                                                        return "file://" + Services.Config.lockscreenCustomWallpaper
+                                                    }
+                                                    return Services.Wallpaper.currentWallpaper.length > 0 ? ("file://" + Services.Wallpaper.currentWallpaper) : ("file://" + Services.Wallpaper.darkWallbler)
+                                                }
+                                                fillMode: Image.PreserveAspectCrop
+                                                asynchronous: true
+                                                smooth: true
+                                                visible: !(Services.Config && Services.Config.lockscreenBlur && (Services.Config.lockscreenBlurRadius > 0))
+                                            }
+
+                                            MultiEffect {
+                                                anchors.fill: miniLsBg
+                                                source: miniLsBg
+                                                blurEnabled: (Services.Config && Services.Config.lockscreenBlur) || false
+                                                blur: (Services.Config ? Services.Config.lockscreenBlurRadius : 0.40)
+                                                blurMax: 32
+                                                visible: (Services.Config && Services.Config.lockscreenBlur && (Services.Config.lockscreenBlurRadius > 0)) || false
+                                            }
+
+                                            // Mini Dimming
+                                            Rectangle {
+                                                anchors.fill: parent
+                                                color: Services.Theme.bgDeep
+                                                opacity: Services.Config ? Services.Config.lockscreenDim : 0.45
+                                            }
+
+                                            // Mini Top Header (Dynamic Island & Status Pill)
+                                            Item {
+                                                anchors.top: parent.top
+                                                anchors.left: parent.left
+                                                anchors.right: parent.right
+                                                anchors.margins: 8
+                                                height: 18
+
+                                                // Dynamic Island pill
+                                                Rectangle {
+                                                    anchors.centerIn: parent
+                                                    width: 38; height: 14; radius: 7
+                                                    color: Services.Theme.bgDeep
+                                                    border.color: Services.Theme.border; border.width: 1
+                                                    Text {
+                                                        anchors.centerIn: parent
+                                                        text: "󰌾"
+                                                        font.family: Services.Theme.fontSymbols
+                                                        font.pixelSize: 8
+                                                        color: Services.Theme.accent
+                                                    }
+                                                }
+
+                                                // Mini Status Pill
+                                                Rectangle {
+                                                    anchors.right: parent.right
+                                                    height: 14
+                                                    width: 44
+                                                    radius: 7
+                                                    color: Services.Theme.surfaceVariant
+                                                    visible: Services.Config ? Services.Config.lockscreenShowStatusPill : true
+                                                    RowLayout {
+                                                        anchors.centerIn: parent
+                                                        spacing: 3
+                                                        Text { text: Services.Icons.wifi; font.family: Services.Theme.fontSymbols; font.pixelSize: 7; color: Services.Theme.accent }
+                                                        Text { text: Math.round((Services.Power.percentage || 0) * 100) + "%"; font.pixelSize: 7; font.bold: true; color: Services.Theme.textPrimary }
+                                                    }
+                                                }
+                                            }
+
+                                            // Mini Clock Display (Reflects selected lockscreenClockStyle)
+                                            ColumnLayout {
+                                                anchors.centerIn: parent
+                                                anchors.verticalCenterOffset: -18
+                                                spacing: 2
+
+                                                // Date (for hero/modern/minimal)
+                                                Text {
+                                                    visible: (Services.Config ? Services.Config.lockscreenClockStyle : "hero") !== "compact" && (Services.Config ? Services.Config.lockscreenClockStyle : "hero") !== "vertical" && (Services.Config ? Services.Config.lockscreenClockStyle : "hero") !== "typographic" && (Services.Config ? Services.Config.lockscreenClockStyle : "hero") !== "radial" && (Services.Config ? Services.Config.lockscreenClockStyle : "hero") !== "cyber"
+                                                    Layout.alignment: Qt.AlignHCenter
+                                                    text: Qt.formatDateTime(new Date(), (Services.Config && Services.Config.lockscreenClockStyle === "minimal") ? "dddd, MMMM d" : "dddd, MMMM d").toUpperCase()
+                                                    color: Services.Theme.textPrimary
+                                                    font.pixelSize: 8
+                                                    font.bold: true
+                                                }
+
+                                                // Hero
+                                                Text {
+                                                    visible: (Services.Config ? Services.Config.lockscreenClockStyle : "hero") === "hero"
+                                                    Layout.alignment: Qt.AlignHCenter
+                                                    text: Qt.formatDateTime(new Date(), (Services.Config && Services.Config.lockscreen24h) ? "hh:mm" : "h:mm")
+                                                    color: Services.Theme.white
+                                                    font.pixelSize: 32
+                                                    font.bold: true
+                                                    font.family: Services.Theme.fontDisplay
+                                                }
+
+                                                // Modern
+                                                ColumnLayout {
+                                                    visible: (Services.Config ? Services.Config.lockscreenClockStyle : "hero") === "modern"
+                                                    Layout.alignment: Qt.AlignHCenter
+                                                    spacing: -8
+                                                    Text { Layout.alignment: Qt.AlignHCenter; text: Qt.formatDateTime(new Date(), (Services.Config && Services.Config.lockscreen24h) ? "hh" : "h"); color: Services.Theme.accent; font.pixelSize: 20; font.bold: true; font.family: Services.Theme.fontDisplay }
+                                                    Text { Layout.alignment: Qt.AlignHCenter; text: Qt.formatDateTime(new Date(), "mm"); color: Services.Theme.white; font.pixelSize: 20; font.bold: true; font.family: Services.Theme.fontDisplay }
+                                                }
+
+                                                // Compact
+                                                Rectangle {
+                                                    visible: (Services.Config ? Services.Config.lockscreenClockStyle : "hero") === "compact"
+                                                    Layout.alignment: Qt.AlignHCenter
+                                                    height: 20
+                                                    width: 110
+                                                    radius: 10
+                                                    color: Qt.rgba(Services.Theme.bgDeep.r, Services.Theme.bgDeep.g, Services.Theme.bgDeep.b, 0.7)
+                                                    border.color: Services.Theme.borderHighlight; border.width: 1
+                                                    RowLayout {
+                                                        anchors.centerIn: parent
+                                                        spacing: 6
+                                                        Text { text: Qt.formatDateTime(new Date(), (Services.Config && Services.Config.lockscreen24h) ? "hh:mm" : "h:mm"); color: Services.Theme.accent; font.pixelSize: 10; font.bold: true }
+                                                        Rectangle { width: 1; height: 8; color: Services.Theme.border }
+                                                        Text { text: Qt.formatDateTime(new Date(), "MMM d"); color: Services.Theme.textPrimary; font.pixelSize: 8 }
+                                                    }
+                                                }
+
+                                                // Minimal
+                                                Text {
+                                                    visible: (Services.Config ? Services.Config.lockscreenClockStyle : "hero") === "minimal"
+                                                    Layout.alignment: Qt.AlignHCenter
+                                                    text: Qt.formatDateTime(new Date(), (Services.Config && Services.Config.lockscreen24h) ? "hh:mm" : "h:mm")
+                                                    color: Services.Theme.white
+                                                    font.pixelSize: 26
+                                                    font.weight: Font.ExtraLight
+                                                    font.letterSpacing: 2
+                                                    font.family: Services.Theme.fontDisplay
+                                                }
+
+                                                // Vertical
+                                                RowLayout {
+                                                    visible: (Services.Config ? Services.Config.lockscreenClockStyle : "hero") === "vertical"
+                                                    Layout.alignment: Qt.AlignHCenter
+                                                    spacing: 6
+                                                    ColumnLayout {
+                                                        spacing: -6
+                                                        Text { text: Qt.formatDateTime(new Date(), (Services.Config && Services.Config.lockscreen24h) ? "hh" : "h"); color: Services.Theme.accent; font.pixelSize: 16; font.bold: true; font.family: Services.Theme.fontDisplay }
+                                                        Text { text: Qt.formatDateTime(new Date(), "mm"); color: Services.Theme.white; font.pixelSize: 16; font.bold: true; font.family: Services.Theme.fontDisplay }
+                                                    }
+                                                    Rectangle { width: 2; height: 26; color: Services.Theme.accent; radius: 1 }
+                                                    ColumnLayout {
+                                                        spacing: 1
+                                                        Text { text: Qt.formatDateTime(new Date(), "dddd"); color: Services.Theme.accent; font.pixelSize: 8; font.bold: true }
+                                                        Text { text: Qt.formatDateTime(new Date(), "MMM d"); color: Services.Theme.textPrimary; font.pixelSize: 7 }
+                                                    }
+                                                }
+
+                                                // Typographic
+                                                ColumnLayout {
+                                                    visible: (Services.Config ? Services.Config.lockscreenClockStyle : "hero") === "typographic"
+                                                    Layout.alignment: Qt.AlignHCenter
+                                                    spacing: 1
+                                                    Text { Layout.alignment: Qt.AlignHCenter; text: "ELEVEN"; color: Services.Theme.accent; font.pixelSize: 14; font.bold: true; font.family: Services.Theme.fontDisplay }
+                                                    Text { Layout.alignment: Qt.AlignHCenter; text: "FORTY TWO"; color: Services.Theme.white; font.pixelSize: 14; font.bold: true; font.family: Services.Theme.fontDisplay }
+                                                }
+
+                                                // Radial
+                                                Rectangle {
+                                                    visible: (Services.Config ? Services.Config.lockscreenClockStyle : "hero") === "radial"
+                                                    Layout.alignment: Qt.AlignHCenter
+                                                    width: 48; height: 48; radius: 24
+                                                    color: Qt.rgba(Services.Theme.bgDeep.r, Services.Theme.bgDeep.g, Services.Theme.bgDeep.b, 0.6)
+                                                    border.color: Services.Theme.accent; border.width: 1.5
+                                                    ColumnLayout {
+                                                        anchors.centerIn: parent; spacing: 0
+                                                        Text { Layout.alignment: Qt.AlignHCenter; text: Qt.formatDateTime(new Date(), (Services.Config && Services.Config.lockscreen24h) ? "hh:mm" : "h:mm"); color: Services.Theme.white; font.pixelSize: 10; font.bold: true }
+                                                        Text { Layout.alignment: Qt.AlignHCenter; text: Qt.formatDateTime(new Date(), "MMM d"); color: Services.Theme.accent; font.pixelSize: 6; font.bold: true }
+                                                    }
+                                                }
+
+                                                // Cyberpunk HUD
+                                                Rectangle {
+                                                    visible: (Services.Config ? Services.Config.lockscreenClockStyle : "hero") === "cyber"
+                                                    Layout.alignment: Qt.AlignHCenter
+                                                    width: 120; height: 36; radius: 4
+                                                    color: Qt.rgba(0, 0, 0, 0.75)
+                                                    border.color: Services.Theme.accent; border.width: 1
+                                                    ColumnLayout {
+                                                        anchors.centerIn: parent; spacing: 1
+                                                        Text { Layout.alignment: Qt.AlignHCenter; text: "┌[ SYS: LOCKED ]┐"; color: Services.Theme.accent; font.pixelSize: 6; font.family: Services.Theme.fontMono }
+                                                        Text { Layout.alignment: Qt.AlignHCenter; text: Qt.formatDateTime(new Date(), "hh:mm:ss"); color: Services.Theme.white; font.pixelSize: 11; font.bold: true; font.family: Services.Theme.fontMono }
+                                                        Text { Layout.alignment: Qt.AlignHCenter; text: "└[ " + Qt.formatDateTime(new Date(), "yyyy.MM.dd") + " ]┘"; color: Services.Theme.textSecondary; font.pixelSize: 6; font.family: Services.Theme.fontMono }
+                                                    }
+                                                }
+
+                                                // Mini Greeting
+                                                Text {
+                                                    visible: (Services.Config ? Services.Config.lockscreenShowWeather : true) && (Services.Config ? Services.Config.lockscreenClockStyle : "hero") !== "vertical" && (Services.Config ? Services.Config.lockscreenClockStyle : "hero") !== "radial" && (Services.Config ? Services.Config.lockscreenClockStyle : "hero") !== "cyber"
+                                                    Layout.alignment: Qt.AlignHCenter
+                                                    text: "Welcome back, " + (Services.OsInfo.username || "User")
+                                                    color: Services.Theme.textSecondary
+                                                    font.pixelSize: 7
+                                                }
+                                            }
+
+                                            // Mini Auth Input Bar
+                                            Rectangle {
+                                                anchors.horizontalCenter: parent.horizontalCenter
+                                                anchors.bottom: parent.bottom
+                                                anchors.bottomMargin: 26
+                                                width: 130; height: 16; radius: 8
+                                                color: Qt.rgba(Services.Theme.surfaceVariant.r, Services.Theme.surfaceVariant.g, Services.Theme.surfaceVariant.b, 0.75)
+                                                border.color: Services.Theme.border; border.width: 1
+                                                RowLayout {
+                                                    anchors.fill: parent
+                                                    anchors.leftMargin: 8; anchors.rightMargin: 8
+                                                    Text { text: "••••••••"; color: Services.Theme.textDisabled; font.pixelSize: 7; Layout.fillWidth: true }
+                                                    Text { text: "󰌾"; font.family: Services.Theme.fontSymbols; font.pixelSize: 7; color: Services.Theme.accent }
+                                                }
+                                            }
+
+                                            // Mini Power Button (Bottom Right)
+                                            Rectangle {
+                                                anchors.right: parent.right
+                                                anchors.bottom: parent.bottom
+                                                anchors.margins: 6
+                                                height: 14; width: 14; radius: 7
+                                                color: Qt.rgba(Services.Theme.bgDeep.r, Services.Theme.bgDeep.g, Services.Theme.bgDeep.b, 0.75)
+                                                border.color: Services.Theme.border; border.width: 1
+                                                visible: Services.Config ? Services.Config.lockscreenShowQuickPower : true
+                                                Text {
+                                                    anchors.centerIn: parent
+                                                    text: Services.Icons.power
+                                                    font.family: Services.Theme.fontSymbols
+                                                    font.pixelSize: 7
+                                                    color: Services.Theme.danger
+                                                }
+                                            }
+
+                                            // Live Preview Tag Badge
+                                            Rectangle {
+                                                anchors.left: parent.left
+                                                anchors.bottom: parent.bottom
+                                                anchors.margins: 6
+                                                height: 14; width: 66; radius: 4
+                                                color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.2)
+                                                border.color: Services.Theme.accent; border.width: 1
+                                                Text {
+                                                    anchors.centerIn: parent
+                                                    text: "LIVE PREVIEW"
+                                                    font.pixelSize: 7
+                                                    font.bold: true
+                                                    color: Services.Theme.accent
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // ── Card 1: Lockscreen Wallpaper & Backdrop ──
+                                SettingsCard {
+                                    implicitHeight: lockBgCol.implicitHeight + 28
+
+                                    ColumnLayout {
+                                        id: lockBgCol
+                                        anchors.fill: parent
+                                        anchors.margins: 14
+                                        spacing: 14
+
+                                        Text {
+                                            text: "Lockscreen Wallpaper & Backdrop"
+                                            font.pixelSize: Services.Theme.fontSizeLg
+                                            font.bold: true
+                                            color: Services.Theme.textPrimary
+                                        }
+
+                                        SettingsSegmentedOverview {
+                                            icon: Services.Icons.palette
+                                            title: "Lockscreen Wallpaper Source"
+                                            subtitle: "Choose whether lockscreen syncs with desktop wallpaper or uses dedicated image"
+                                            currentValue: Services.Config ? Services.Config.lockscreenWallpaperMode : "sync"
+                                            model: [
+                                                { id: "sync",   label: "Sync Desktop Wallpaper", desc: "Follows active wallpaper automatically", icon: Services.Icons.display },
+                                                { id: "custom", label: "Custom Lock Image",      desc: "Choose dedicated lockscreen background", icon: Services.Icons.image }
+                                            ]
+                                            onSelected: (val) => {
+                                                if (Services.Config) Services.Config.setLockscreenWallpaperMode(val)
+                                            }
+                                        }
+
+                                        // Custom Image Picker Row (visible if mode is custom)
+                                        Rectangle {
+                                            visible: (Services.Config ? Services.Config.lockscreenWallpaperMode : "sync") === "custom"
+                                            Layout.fillWidth: true
+                                            implicitHeight: customPickRow.implicitHeight + 20
+                                            radius: Services.Theme.radiusSm
+                                            color: Services.Theme.bgElevated
+                                            border.color: Services.Theme.border
+                                            border.width: 1
+
+                                            RowLayout {
+                                                id: customPickRow
+                                                anchors.fill: parent
+                                                anchors.margins: 10
+                                                spacing: 12
+
+                                                Rectangle {
+                                                    width: 40; height: 40; radius: 8
+                                                    color: Services.Theme.surfaceVariant
+                                                    border.color: Services.Theme.border; border.width: 1
+
+                                                    Image {
+                                                        anchors.fill: parent
+                                                        anchors.margins: 1
+                                                        source: (Services.Config && Services.Config.lockscreenCustomWallpaper.length > 0) ? ("file://" + Services.Config.lockscreenCustomWallpaper) : ""
+                                                        fillMode: Image.PreserveAspectCrop
+                                                        visible: source.toString().length > 0
+                                                    }
+
+                                                    Text {
+                                                        anchors.centerIn: parent
+                                                        text: Services.Icons.image
+                                                        font.family: Services.Theme.fontSymbols
+                                                        font.pixelSize: 18
+                                                        color: Services.Theme.accent
+                                                        visible: !(Services.Config && Services.Config.lockscreenCustomWallpaper.length > 0)
+                                                    }
+                                                }
+
+                                                ColumnLayout {
+                                                    Layout.fillWidth: true
+                                                    spacing: 2
+                                                    Text {
+                                                        text: (Services.Config && Services.Config.lockscreenCustomWallpaper.length > 0) 
+                                                            ? Services.Config.lockscreenCustomWallpaper.substring(Services.Config.lockscreenCustomWallpaper.lastIndexOf("/") + 1)
+                                                            : "No custom image selected"
+                                                        font.pixelSize: Services.Theme.fontSizeSm
+                                                        font.bold: true
+                                                        color: Services.Theme.textPrimary
+                                                        elide: Text.ElideMiddle
+                                                        Layout.fillWidth: true
+                                                    }
+                                                    Text {
+                                                        text: (Services.Config && Services.Config.lockscreenCustomWallpaper.length > 0) 
+                                                            ? Services.Config.lockscreenCustomWallpaper
+                                                            : "Click button to select an image from disk"
+                                                        font.pixelSize: Services.Theme.fontSizeXs
+                                                        color: Services.Theme.textSecondary
+                                                        elide: Text.ElideMiddle
+                                                        Layout.fillWidth: true
+                                                    }
+                                                }
+
+                                                Rectangle {
+                                                    height: 32
+                                                    implicitWidth: btnPickLsTxt.implicitWidth + 24
+                                                    radius: Services.Theme.radiusSm
+                                                    color: pickLsMouse.containsMouse ? Services.Theme.accent : Services.Theme.surfaceVariant
+                                                    border.color: pickLsMouse.containsMouse ? Services.Theme.accent : Services.Theme.border
+                                                    border.width: 1
+                                                    Behavior on color { ColorAnimation { duration: 140 } }
+
+                                                    Text {
+                                                        id: btnPickLsTxt
+                                                        anchors.centerIn: parent
+                                                        text: "Choose Image..."
+                                                        font.pixelSize: Services.Theme.fontSizeSm
+                                                        font.bold: true
+                                                        color: pickLsMouse.containsMouse ? Services.Theme.bgDeep : Services.Theme.textPrimary
+                                                    }
+
+                                                    MouseArea {
+                                                        id: pickLsMouse
+                                                        anchors.fill: parent
+                                                        hoverEnabled: true
+                                                        cursorShape: Qt.PointingHandCursor
+                                                        onClicked: {
+                                                            if (Services.Wallpaper) Services.Wallpaper.pickLockscreenWallpaper()
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        SettingsDivider {}
+
+                                        SettingsSwitch {
+                                            icon: Services.Icons.sparkle
+                                            title: "Wallpaper Blur (Frosted Glass)"
+                                            subtitle: "Apply hardware-accelerated frosted glass blur on the lockscreen background"
+                                            checked: Services.Config ? Services.Config.lockscreenBlur : true
+                                            onToggled: (st) => {
+                                                if (Services.Config) Services.Config.setLockscreenBlur(st)
+                                            }
+                                        }
+
+                                        SettingsSlider {
+                                            visible: Services.Config ? Services.Config.lockscreenBlur : true
+                                            icon: Services.Icons.sliders
+                                            title: "Backdrop Blur Radius"
+                                            subtitle: "Adjust frosted glass blur intensity for subtle or deep translucent aesthetic"
+                                            from: 10
+                                            to: 100
+                                            stepSize: 5
+                                            valueSuffix: "%"
+                                            value: Math.round((Services.Config ? Services.Config.lockscreenBlurRadius : 0.40) * 100)
+                                            onMoved: (v) => {
+                                                if (Services.Config) Services.Config.setLockscreenBlurRadius(Number((v / 100).toFixed(2)))
+                                            }
+                                        }
+
+                                        SettingsDivider {}
+
+                                        SettingsSlider {
+                                            icon: Services.Icons.moon
+                                            title: "Lockscreen Backdrop Dimming"
+                                            subtitle: "Dark vignette opacity over lockscreen background wallpaper"
+                                            from: 10
+                                            to: 85
+                                            stepSize: 5
+                                            valueSuffix: "%"
+                                            value: Math.round((Services.Config ? Services.Config.lockscreenDim : 0.45) * 100)
+                                            onMoved: (v) => {
+                                                if (Services.Config) Services.Config.setLockscreenDim(Number((v / 100).toFixed(2)))
+                                            }
+                                        }
+
+                                        SettingsDivider {}
+
+                                        SettingsSwitch {
+                                            icon: Services.Icons.expand
+                                            title: "Ken Burns Wallpaper Zoom"
+                                            subtitle: "Smooth subtle wallpaper zoom animation when unlocking or revealing"
+                                            checked: Services.Config ? Services.Config.lockscreenWallpaperZoom : true
+                                            onToggled: (st) => {
+                                                if (Services.Config) Services.Config.setLockscreenWallpaperZoom(st)
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // ── Card 2: Lockscreen Typography & Presentation ──
                                 SettingsCard {
                                     implicitHeight: lockVisualCol.implicitHeight + 28
 
@@ -1894,7 +2370,7 @@ FloatingWindow {
                                         spacing: 14
 
                                         Text {
-                                            text: "Lockscreen Style & Typography"
+                                            text: "Clock Typography & Presentation"
                                             font.pixelSize: Services.Theme.fontSizeLg
                                             font.bold: true
                                             color: Services.Theme.textPrimary
@@ -1906,12 +2382,33 @@ FloatingWindow {
                                             subtitle: "Choose visual time and date presentation on the lockscreen"
                                             currentValue: Services.Config ? Services.Config.lockscreenClockStyle : "hero"
                                             model: [
-                                                { id: "hero",    label: "Hero Display", desc: "Huge Apple-style bold clock", icon: Services.Icons.clock },
-                                                { id: "modern",  label: "Modern Stack", desc: "Two-tone stacked Hour/Minute", icon: Services.Icons.dashboard },
-                                                { id: "compact", label: "Compact Pill", desc: "Discrete minimal capsule pill", icon: Services.Icons.controlcenter }
+                                                { id: "hero",        label: "Hero Display",       desc: "Huge Apple-style bold clock", icon: Services.Icons.clock },
+                                                { id: "modern",      label: "Modern Stack",       desc: "Two-tone stacked Hour/Minute", icon: Services.Icons.dashboard },
+                                                { id: "compact",     label: "Compact Pill",       desc: "Discrete minimal capsule pill", icon: Services.Icons.controlcenter },
+                                                { id: "minimal",     label: "Minimalist",         desc: "Clean ultra-light display font", icon: Services.Icons.sparkle },
+                                                { id: "vertical",    label: "Vertical Style",     desc: "Aesthetic side-by-side vertical block", icon: Services.Icons.layout },
+                                                { id: "typographic", label: "Typographic Words",  desc: "Bold editorial text hour & minute words", icon: Services.Icons.notes || Services.Icons.dashboard },
+                                                { id: "radial",      label: "Radial Ring",        desc: "Circular ring gauge with digital core", icon: Services.Icons.sysmon },
+                                                { id: "cyber",       label: "Cyberpunk HUD",      desc: "Futuristic monospace telemetry terminal", icon: Services.Icons.terminal }
                                             ]
                                             onSelected: (val) => {
                                                 if (Services.Config) Services.Config.setLockscreenClockStyle(val)
+                                            }
+                                        }
+
+                                        SettingsDivider {}
+
+                                        SettingsSegmentedOverview {
+                                            icon: Services.Icons.pmLock
+                                            title: "Authentication Box Style"
+                                            subtitle: "Choose between a compact floating capsule or a glass profile card"
+                                            currentValue: Services.Config ? Services.Config.lockscreenAuthStyle : "pill"
+                                            model: [
+                                                { id: "pill", label: "Minimalist Pill", desc: "Compact capsule password input", icon: Services.Icons.pmLock },
+                                                { id: "card", label: "Glass Card",      desc: "Frosted glass card with greeting", icon: Services.Icons.controlcenter }
+                                            ]
+                                            onSelected: (val) => {
+                                                if (Services.Config) Services.Config.setLockscreenAuthStyle(val)
                                             }
                                         }
 
@@ -1938,16 +2435,48 @@ FloatingWindow {
                                                 if (Services.Config) Services.Config.setLockscreenShowWeather(st)
                                             }
                                         }
+                                    }
+                                }
 
-                                        SettingsDivider {}
+                                // ── Card 3: Lockscreen Widgets & Quick Controls ──
+                                SettingsCard {
+                                    implicitHeight: lockWidgetCol.implicitHeight + 28
+
+                                    ColumnLayout {
+                                        id: lockWidgetCol
+                                        anchors.fill: parent
+                                        anchors.margins: 14
+                                        spacing: 14
+
+                                        Text {
+                                            text: "Widgets & Status on Lockscreen"
+                                            font.pixelSize: Services.Theme.fontSizeLg
+                                            font.bold: true
+                                            color: Services.Theme.textPrimary
+                                        }
 
                                         SettingsSwitch {
                                             icon: Services.Icons.musicNote
-                                            title: "Now Playing Media Pill"
+                                            title: "Show Now Playing Media"
                                             subtitle: "Show active media controls and track info on lockscreen"
                                             checked: Services.Config ? Services.Config.lockscreenShowMedia : true
                                             onToggled: (st) => {
                                                 if (Services.Config) Services.Config.setLockscreenShowMedia(st)
+                                            }
+                                        }
+
+                                        SettingsSegmentedOverview {
+                                            visible: Services.Config ? Services.Config.lockscreenShowMedia : true
+                                            icon: Services.Icons.sliders
+                                            title: "Media Widget Display Style"
+                                            subtitle: "Choose between compact bottom capsule or interactive media player card"
+                                            currentValue: Services.Config ? Services.Config.lockscreenMediaStyle : "pill"
+                                            model: [
+                                                { id: "pill", label: "Minimalist Pill", desc: "Compact capsule bar at bottom", icon: Services.Icons.musicNote },
+                                                { id: "card", label: "Interactive Card", desc: "Full player with album art & progress", icon: Services.Icons.sliders }
+                                            ]
+                                            onSelected: (val) => {
+                                                if (Services.Config) Services.Config.setLockscreenMediaStyle(val)
                                             }
                                         }
 
@@ -1966,34 +2495,42 @@ FloatingWindow {
                                         SettingsDivider {}
 
                                         SettingsSwitch {
-                                            icon: Services.Icons.palette
-                                            title: "Ken Burns Wallpaper Zoom"
-                                            subtitle: "Smooth subtle wallpaper zoom effect when unlocking or revealing"
-                                            checked: Services.Config ? Services.Config.lockscreenWallpaperZoom : true
+                                            icon: Services.Icons.wifi
+                                            title: "Top Status Bar (Battery, Wi-Fi, BT)"
+                                            subtitle: "Display system connectivity and battery status pill in top header bar"
+                                            checked: Services.Config ? Services.Config.lockscreenShowStatusPill : true
                                             onToggled: (st) => {
-                                                if (Services.Config) Services.Config.setLockscreenWallpaperZoom(st)
+                                                if (Services.Config) Services.Config.setLockscreenShowStatusPill(st)
                                             }
                                         }
 
                                         SettingsDivider {}
 
-                                        SettingsSlider {
-                                            icon: Services.Icons.moon
-                                            title: "Lockscreen Backdrop Dimming"
-                                            subtitle: "Dark vignette opacity over lockscreen background wallpaper"
-                                            from: 10
-                                            to: 85
-                                            stepSize: 5
-                                            valueSuffix: "%"
-                                            value: Math.round((Services.Config ? Services.Config.lockscreenDim : 0.45) * 100)
-                                            onMoved: (v) => {
-                                                if (Services.Config) Services.Config.setLockscreenDim(Number((v / 100).toFixed(2)))
+                                        SettingsSwitch {
+                                            icon: Services.Icons.clock
+                                            title: "Show System Uptime Chip"
+                                            subtitle: "Display live system uptime in the lockscreen top status bar"
+                                            checked: Services.Config ? Services.Config.lockscreenShowUptime : true
+                                            onToggled: (st) => {
+                                                if (Services.Config) Services.Config.setLockscreenShowUptime(st)
+                                            }
+                                        }
+
+                                        SettingsDivider {}
+
+                                        SettingsSwitch {
+                                            icon: Services.Icons.power
+                                            title: "Power Menu Button (Bottom Right)"
+                                            subtitle: "Display circular power button that reveals power options on lockscreen"
+                                            checked: Services.Config ? Services.Config.lockscreenShowQuickPower : true
+                                            onToggled: (st) => {
+                                                if (Services.Config) Services.Config.setLockscreenShowQuickPower(st)
                                             }
                                         }
                                     }
                                 }
 
-                                // ── Card 2: Power Profile & Battery Management ──
+                                // ── Card 4: Power Profile & Battery Management ──
                                 SettingsCard {
                                     implicitHeight: pwrCol.implicitHeight + 28
 
@@ -2155,7 +2692,7 @@ FloatingWindow {
                                     }
                                 }
 
-                                // ── Card 3: Session & Quick Power Actions ──
+                                // ── Card 5: Quick Session & Power Actions ──
                                 SettingsCard {
                                     implicitHeight: quickPwrCol.implicitHeight + 28
 
@@ -2172,10 +2709,13 @@ FloatingWindow {
                                             color: Services.Theme.textPrimary
                                         }
 
-                                        RowLayout {
+                                        GridLayout {
                                             Layout.fillWidth: true
-                                            spacing: 10
+                                            columns: 2
+                                            rowSpacing: 10
+                                            columnSpacing: 10
 
+                                            // Lock Screen Now
                                             Rectangle {
                                                 Layout.fillWidth: true
                                                 height: 40
@@ -2205,6 +2745,7 @@ FloatingWindow {
                                                 }
                                             }
 
+                                            // Suspend System
                                             Rectangle {
                                                 Layout.fillWidth: true
                                                 height: 40
@@ -2228,6 +2769,60 @@ FloatingWindow {
                                                     hoverEnabled: true
                                                     cursorShape: Qt.PointingHandCursor
                                                     onClicked: suspendProc.running = true
+                                                }
+                                            }
+
+                                            // Reboot System
+                                            Rectangle {
+                                                Layout.fillWidth: true
+                                                height: 40
+                                                radius: Services.Theme.radiusSm
+                                                color: btnRebootMouse.containsMouse ? Services.Theme.bgHover : Services.Theme.bgElevated
+                                                border.color: btnRebootMouse.containsMouse ? Services.Theme.warning : Services.Theme.border
+                                                border.width: 1
+                                                Behavior on color { ColorAnimation { duration: 180; easing.type: Easing.OutCubic } }
+                                                Behavior on border.color { ColorAnimation { duration: 180; easing.type: Easing.OutCubic } }
+
+                                                RowLayout {
+                                                    anchors.centerIn: parent
+                                                    spacing: 6
+                                                    Text { text: Services.Icons.pmRestart; font.family: Services.Theme.fontSymbols; font.pixelSize: 13; color: Services.Theme.warning }
+                                                    Text { text: "Reboot System"; font.pixelSize: Services.Theme.fontSizeSm; font.bold: true; color: Services.Theme.textPrimary }
+                                                }
+
+                                                MouseArea {
+                                                    id: btnRebootMouse
+                                                    anchors.fill: parent
+                                                    hoverEnabled: true
+                                                    cursorShape: Qt.PointingHandCursor
+                                                    onClicked: rebootProc.running = true
+                                                }
+                                            }
+
+                                            // Power Off System
+                                            Rectangle {
+                                                Layout.fillWidth: true
+                                                height: 40
+                                                radius: Services.Theme.radiusSm
+                                                color: btnPowerMouse.containsMouse ? Qt.rgba(Services.Theme.danger.r, Services.Theme.danger.g, Services.Theme.danger.b, 0.2) : Services.Theme.bgElevated
+                                                border.color: btnPowerMouse.containsMouse ? Services.Theme.danger : Services.Theme.border
+                                                border.width: 1
+                                                Behavior on color { ColorAnimation { duration: 180; easing.type: Easing.OutCubic } }
+                                                Behavior on border.color { ColorAnimation { duration: 180; easing.type: Easing.OutCubic } }
+
+                                                RowLayout {
+                                                    anchors.centerIn: parent
+                                                    spacing: 6
+                                                    Text { text: Services.Icons.power; font.family: Services.Theme.fontSymbols; font.pixelSize: 13; color: Services.Theme.danger }
+                                                    Text { text: "Power Off System"; font.pixelSize: Services.Theme.fontSizeSm; font.bold: true; color: Services.Theme.danger }
+                                                }
+
+                                                MouseArea {
+                                                    id: btnPowerMouse
+                                                    anchors.fill: parent
+                                                    hoverEnabled: true
+                                                    cursorShape: Qt.PointingHandCursor
+                                                    onClicked: poweroffProc.running = true
                                                 }
                                             }
                                         }
@@ -2890,5 +3485,13 @@ FloatingWindow {
     Process {
         id: suspendProc
         command: ["systemctl", "suspend"]
+    }
+    Process {
+        id: rebootProc
+        command: ["systemctl", "reboot"]
+    }
+    Process {
+        id: poweroffProc
+        command: ["systemctl", "poweroff"]
     }
 }
