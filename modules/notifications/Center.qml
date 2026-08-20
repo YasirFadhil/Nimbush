@@ -12,12 +12,13 @@ PanelWindow {
     color: "transparent"
     exclusiveZone: 0
     visible: Services.Notifications.centerVisible
-    WlrLayershell.layer: WlrLayer.Overlay
+    WlrLayershell.layer: WlrLayer.Top
     WlrLayershell.namespace: "quickshell:notifcenter"
     WlrLayershell.keyboardFocus: WlrKeyboardFocus.OnDemand
 
     function hide() { Services.Notifications.centerVisible = false }
     function close() { hide() }
+    readonly property bool isBottom: Services.Config ? (Services.Config.barPosition === "bottom") : false
 
     Component.onCompleted: Services.OverlayManager.register(centerWin)
 
@@ -91,20 +92,25 @@ PanelWindow {
 
     Rectangle {
         id: panel
-        anchors { top: parent.top; right: parent.right }
+        anchors.right: parent.right
         anchors.rightMargin: 12
-        anchors.topMargin: 12
+        y: centerWin.isBottom ? (parent.height - height - 12) : 12
         width: 390
-        height: Math.max(480, Math.min(mainCol.implicitHeight + 20, 690))
+        height: Math.max(480, Math.min(mainCol.implicitHeight + 20, Math.min(690, parent.height - 24)))
         radius: 16
         color: centerWin.t.surface
         border.color: centerWin.t.border
         border.width: 1
+        clip: true
 
         opacity: Services.Notifications.centerVisible ? 1 : 0
-        y: Services.Notifications.centerVisible ? 0 : -20
-        Behavior on opacity { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
-        Behavior on y { NumberAnimation { duration: 220; easing.type: Easing.OutBack; easing.overshoot: 0.5 } }
+        transform: Translate {
+            y: Services.Notifications.centerVisible ? 0 : (centerWin.isBottom ? 32 : -32)
+            Behavior on y { NumberAnimation { duration: 240; easing.type: Easing.OutBack; easing.overshoot: 0.5 } }
+        }
+        scale: Services.Notifications.centerVisible ? 1 : 0.96
+        Behavior on scale { NumberAnimation { duration: 240; easing.type: Easing.OutCubic } }
+        Behavior on opacity { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
 
         MouseArea { anchors.fill: parent; onClicked: {} }
 
@@ -120,11 +126,10 @@ PanelWindow {
                 Layout.bottomMargin: 12
                 Layout.leftMargin: 16
                 Layout.rightMargin: 14
-                spacing: 10
+                spacing: 8
 
                 RowLayout {
                     spacing: 8
-                    Layout.fillWidth: true
 
                     Text {
                         text: "Notifications"
@@ -154,6 +159,8 @@ PanelWindow {
                         }
                     }
                 }
+
+                Item { Layout.fillWidth: true }
 
                 // DnD Toggle Button
                 Rectangle {
@@ -247,20 +254,28 @@ PanelWindow {
                     }
                 }
 
+                displaced: Transition {
+                    NumberAnimation { properties: "y"; duration: 280; easing.type: Easing.OutCubic }
+                }
+
                 delegate: Rectangle {
                     id: groupCard
                     required property var modelData
                     property var group: modelData
-                    property bool isMulti: group.items.length > 1
-                    property bool expanded: !isMulti || centerWin.expandedGroups[group.appName] === true
-                    property bool isBatteryGroup: centerWin.isBatteryNotification(group.items[0])
-                    property bool isCritical: group.items[0].urgency === 2 || isBatteryGroup
-                    property bool singleReplyMode: false
-                    property string singleReplyActionId: ""
+                    property var primaryItem: (group && group.items && group.items.length > 0) ? group.items[0] : null
+                    property bool isMulti: group && group.items && group.items.length > 1
+                    property bool expanded: isMulti && centerWin.expandedGroups[group.appName] === true
+                    property bool isBatteryGroup: primaryItem ? centerWin.isBatteryNotification(primaryItem) : false
+                    property bool isCritical: primaryItem ? (primaryItem.urgency === 2 || isBatteryGroup) : false
+                    property bool replyMode: false
+                    property string activeReplyActionId: ""
+
+                    property real expandProgress: expanded ? 1.0 : 0.0
+                    Behavior on expandProgress { NumberAnimation { duration: 320; easing.type: Easing.OutExpo } }
 
                     width: historyView.width - 24
-                    implicitHeight: groupCard.isMulti ? (groupContent.implicitHeight + 20) : (singleContent.implicitHeight + 20)
-                    radius: 12
+                    implicitHeight: cardContent.implicitHeight + 20
+                    radius: 14
                     color: centerWin.t.surfaceVariant
                     border.color: isBatteryGroup ? centerWin.t.warning : (groupCard.isCritical ? centerWin.t.danger : centerWin.t.border)
                     border.width: 1
@@ -274,360 +289,27 @@ PanelWindow {
                         color: groupCard.isBatteryGroup ? centerWin.t.warning : centerWin.t.danger
                     }
 
-                    // ── 1. SINGLE NOTIFICATION CARD (When !isMulti) ──────────────────
                     ColumnLayout {
-                        id: singleContent
-                        visible: !groupCard.isMulti
-                        anchors { left: parent.left; right: parent.right; top: parent.top; margins: 10 }
-                        spacing: 6
-
-                        // Header Row: App Icon + App Name + Warning Tag + Time + Dismiss ×
-                        RowLayout {
-                            Layout.fillWidth: true
-                            spacing: 8
-
-                            Item {
-                                Layout.preferredWidth: 22
-                                Layout.preferredHeight: 22
-                                Layout.alignment: Qt.AlignVCenter
-
-                                Rectangle {
-                                    anchors.fill: parent
-                                    radius: 6
-                                    color: centerWin.t.bgHover
-                                    border.color: centerWin.t.border
-                                    border.width: 1
-                                    visible: sIcon.status !== Image.Ready
-
-                                    Text {
-                                        anchors.centerIn: parent
-                                        text: (groupCard.group.appName || "?").charAt(0).toUpperCase()
-                                        color: centerWin.t.textPrimary
-                                        font.bold: true
-                                        font.pixelSize: 10
-                                    }
-                                }
-
-                                Image {
-                                    id: sIcon
-                                    anchors.fill: parent
-                                    source: {
-                                        const icon = groupCard.group.appIcon
-                                        if (!icon) return ""
-                                        if (icon.startsWith("/") || icon.startsWith("file://") || icon.startsWith("http"))
-                                            return icon
-                                        return Quickshell.iconPath(icon, true)
-                                    }
-                                    fillMode: Image.PreserveAspectFit
-                                    asynchronous: true
-                                    cache: true
-                                    sourceSize: Qt.size(32, 32)
-                                    visible: status === Image.Ready
-                                }
-                            }
-
-                            Text {
-                                text: groupCard.group.appName
-                                color: centerWin.t.textPrimary
-                                font.pixelSize: 11
-                                font.bold: true
-                            }
-
-                            // System Warning Pill Tag (for Battery Warning)
-                            Rectangle {
-                                visible: groupCard.isBatteryGroup
-                                implicitWidth: sWarnTxt.implicitWidth + 8
-                                implicitHeight: 16
-                                radius: 8
-                                color: Qt.rgba(centerWin.t.warning.r, centerWin.t.warning.g, centerWin.t.warning.b, 0.2)
-                                border.color: centerWin.t.warning
-                                border.width: 1
-
-                                RowLayout {
-                                    id: sWarnTxt
-                                    anchors.centerIn: parent
-                                    spacing: 3
-
-                                    Text { text: "󰂃"; color: centerWin.t.warning; font.pixelSize: 10 }
-                                    Text { text: "System Warning"; color: centerWin.t.warning; font.pixelSize: 9; font.bold: true }
-                                }
-                            }
-
-                            Item { Layout.fillWidth: true }
-
-                            Text {
-                                text: centerWin.formatTime(groupCard.group.items[0].time)
-                                color: centerWin.t.textDisabled
-                                font.pixelSize: 10
-                                Layout.alignment: Qt.AlignVCenter
-                            }
-
-                            // Dismiss Button ×
-                            Item {
-                                width: 20
-                                height: 20
-                                Layout.alignment: Qt.AlignVCenter
-
-                                Rectangle {
-                                    anchors.fill: parent
-                                    radius: 5
-                                    color: sDismissBtn.containsMouse ? centerWin.t.bgHover : "transparent"
-                                    Behavior on color { ColorAnimation { duration: 80 } }
-                                }
-                                Text {
-                                    anchors.centerIn: parent
-                                    text: "\u00d7"
-                                    color: sDismissBtn.containsMouse ? centerWin.t.textPrimary : centerWin.t.textDisabled
-                                    font.pixelSize: 15
-                                    font.bold: true
-                                }
-                                MouseArea {
-                                    id: sDismissBtn
-                                    anchors.fill: parent
-                                    hoverEnabled: true
-                                    cursorShape: Qt.PointingHandCursor
-                                    onClicked: {
-                                        Services.Notifications.dismissFromCenter(groupCard.group.items[0].notifId)
-                                    }
-                                }
-                            }
-                        }
-
-                        // Content Row: Image + Summary + Body
-                        RowLayout {
-                            Layout.fillWidth: true
-                            spacing: 8
-
-                            Image {
-                                id: sImg
-                                property string imgPath: groupCard.group.items[0].image || ""
-                                visible: imgPath.length > 0 && status === Image.Ready
-                                source: {
-                                    if (!imgPath) return ""
-                                    if (imgPath.startsWith("/") || imgPath.startsWith("file://") || imgPath.startsWith("http"))
-                                        return imgPath
-                                    return Quickshell.iconPath(imgPath, true)
-                                }
-                                Layout.preferredWidth: 40
-                                Layout.preferredHeight: 40
-                                fillMode: Image.PreserveAspectCrop
-                                asynchronous: true
-                                cache: true
-                                sourceSize: Qt.size(80, 80)
-                                clip: true
-                                Layout.alignment: Qt.AlignTop
-                            }
-
-                            ColumnLayout {
-                                Layout.fillWidth: true
-                                spacing: 3
-
-                                Text {
-                                    text: groupCard.group.items[0].summary || ""
-                                    color: centerWin.t.textPrimary
-                                    font.bold: true
-                                    font.pixelSize: 12
-                                    wrapMode: Text.Wrap
-                                    Layout.fillWidth: true
-                                }
-
-                                Text {
-                                    visible: (groupCard.group.items[0].body || "").length > 0
-                                    text: groupCard.group.items[0].body || ""
-                                    color: centerWin.t.textSecondary
-                                    font.pixelSize: 11
-                                    wrapMode: Text.Wrap
-                                    Layout.fillWidth: true
-                                }
-                            }
-                        }
-
-                        // Actions Row for Single Notification
-                        RowLayout {
-                            readonly property var actList: groupCard.group.items[0].actions
-                            readonly property int actCount: actList ? (actList.count !== undefined ? actList.count : (actList.length !== undefined ? actList.length : 0)) : 0
-                            visible: actCount > 0 && !groupCard.singleReplyMode
-                            spacing: 6
-                            Layout.topMargin: 2
-
-                            Repeater {
-                                model: parent.actList
-                                delegate: Rectangle {
-                                    id: sActBtn
-                                    required property string identifier
-                                    required property string text
-                                    radius: 6
-                                    color: sActHover.containsMouse ? centerWin.t.bgHover : centerWin.t.surface
-                                    border.color: centerWin.t.border
-                                    border.width: 1
-                                    implicitHeight: 24
-                                    implicitWidth: sActLabel.implicitWidth + 16
-                                    Behavior on color { ColorAnimation { duration: 80 } }
-
-                                    Text {
-                                        id: sActLabel
-                                        anchors.centerIn: parent
-                                        text: sActBtn.text
-                                        color: centerWin.t.textPrimary
-                                        font.pixelSize: 11
-                                    }
-                                    MouseArea {
-                                        id: sActHover
-                                        anchors.fill: parent
-                                        hoverEnabled: true
-                                        cursorShape: Qt.PointingHandCursor
-                                        onClicked: {
-                                            if (centerWin.isReplyAction(sActBtn)) {
-                                                groupCard.singleReplyActionId = sActBtn.identifier
-                                                groupCard.singleReplyMode = true
-                                                Qt.callLater(() => sReplyInput.forceActiveFocus())
-                                            } else {
-                                                Services.Notifications.invokeAction(groupCard.group.items[0].notifId, sActBtn.identifier)
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        // Inline Reply Area for Single Notification
-                        ColumnLayout {
-                            visible: groupCard.singleReplyMode
-                            Layout.fillWidth: true
-                            spacing: 6
-                            Layout.topMargin: 2
-
-                            Rectangle {
-                                Layout.fillWidth: true
-                                implicitHeight: 32
-                                radius: 7
-                                color: centerWin.t.bgHover
-                                border.color: sReplyInput.activeFocus ? centerWin.t.accent : centerWin.t.border
-                                border.width: 1
-
-                                TextInput {
-                                    id: sReplyInput
-                                    anchors.fill: parent
-                                    anchors.margins: 6
-                                    color: centerWin.t.textPrimary
-                                    font.pixelSize: 11
-                                    clip: true
-                                    focus: groupCard.singleReplyMode
-
-                                    Text {
-                                        text: "Write a reply..."
-                                        color: centerWin.t.textDisabled
-                                        font.pixelSize: 11
-                                        visible: sReplyInput.text.length === 0 && !sReplyInput.activeFocus
-                                    }
-
-                                    Keys.onReturnPressed: {
-                                        if (sReplyInput.text.trim().length > 0) {
-                                            Services.Notifications.invokeAction(
-                                                groupCard.group.items[0].notifId,
-                                                groupCard.singleReplyActionId,
-                                                sReplyInput.text.trim()
-                                            )
-                                            groupCard.singleReplyMode = false
-                                            sReplyInput.text = ""
-                                        }
-                                    }
-                                }
-                            }
-
-                            RowLayout {
-                                Layout.fillWidth: true
-                                spacing: 6
-
-                                Item { Layout.fillWidth: true }
-
-                                Rectangle {
-                                    implicitHeight: 22
-                                    implicitWidth: sCancelTxt.implicitWidth + 14
-                                    radius: 6
-                                    color: sCancelMouse.containsMouse ? centerWin.t.bgHover : centerWin.t.surface
-                                    border.color: centerWin.t.border
-                                    border.width: 1
-
-                                    Text {
-                                        id: sCancelTxt
-                                        anchors.centerIn: parent
-                                        text: "Cancel"
-                                        color: centerWin.t.textSecondary
-                                        font.pixelSize: 10
-                                        font.bold: true
-                                    }
-
-                                    MouseArea {
-                                        id: sCancelMouse
-                                        anchors.fill: parent
-                                        hoverEnabled: true
-                                        cursorShape: Qt.PointingHandCursor
-                                        onClicked: {
-                                            groupCard.singleReplyMode = false
-                                            sReplyInput.text = ""
-                                        }
-                                    }
-                                }
-
-                                Rectangle {
-                                    implicitHeight: 22
-                                    implicitWidth: sSendTxt.implicitWidth + 14
-                                    radius: 6
-                                    color: sSendMouse.containsMouse ? centerWin.t.textPrimary : centerWin.t.accent
-
-                                    Text {
-                                        id: sSendTxt
-                                        anchors.centerIn: parent
-                                        text: "Send 󰏲"
-                                        color: Services.Theme.bgDeep
-                                        font.pixelSize: 10
-                                        font.bold: true
-                                    }
-
-                                    MouseArea {
-                                        id: sSendMouse
-                                        anchors.fill: parent
-                                        hoverEnabled: true
-                                        cursorShape: Qt.PointingHandCursor
-                                        onClicked: {
-                                            if (sReplyInput.text.trim().length > 0) {
-                                                Services.Notifications.invokeAction(
-                                                    groupCard.group.items[0].notifId,
-                                                    groupCard.singleReplyActionId,
-                                                    sReplyInput.text.trim()
-                                                )
-                                                groupCard.singleReplyMode = false
-                                                sReplyInput.text = ""
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // ── 2. MULTI NOTIFICATION GROUP CARD (When isMulti) ──────────────
-                    ColumnLayout {
-                        id: groupContent
-                        visible: groupCard.isMulti
+                        id: cardContent
                         anchors { left: parent.left; right: parent.right; top: parent.top; margins: 10 }
                         spacing: 8
 
-                        // ── Group Header Row ────────────────────────────────────
+                        // ── 1. UNIFIED HEADER ROW ──────────────────────────────
                         RowLayout {
                             id: headerRow
                             Layout.fillWidth: true
                             spacing: 8
 
-                            // Expandable Header Info Zone
+                            // Expandable Header Info Zone (clickable if multi-item)
                             MouseArea {
                                 id: headerClickArea
                                 Layout.fillWidth: true
-                                Layout.preferredHeight: 30
-                                hoverEnabled: true
-                                cursorShape: Qt.PointingHandCursor
+                                Layout.preferredHeight: 26
+                                enabled: groupCard.isMulti
+                                hoverEnabled: groupCard.isMulti
+                                cursorShape: groupCard.isMulti ? Qt.PointingHandCursor : Qt.ArrowCursor
                                 onClicked: {
+                                    if (!groupCard.isMulti) return
                                     const copy = Object.assign({}, centerWin.expandedGroups)
                                     copy[groupCard.group.appName] = !groupCard.expanded
                                     centerWin.expandedGroups = copy
@@ -639,13 +321,13 @@ PanelWindow {
 
                                     // App Icon Squircle Container
                                     Item {
-                                        Layout.preferredWidth: 26
-                                        Layout.preferredHeight: 26
+                                        Layout.preferredWidth: 22
+                                        Layout.preferredHeight: 22
                                         Layout.alignment: Qt.AlignVCenter
 
                                         Rectangle {
                                             anchors.fill: parent
-                                            radius: 7
+                                            radius: 6
                                             color: centerWin.t.bgHover
                                             border.color: centerWin.t.border
                                             border.width: 1
@@ -656,7 +338,7 @@ PanelWindow {
                                                 text: (groupCard.group.appName || "?").charAt(0).toUpperCase()
                                                 color: centerWin.t.textPrimary
                                                 font.bold: true
-                                                font.pixelSize: 11
+                                                font.pixelSize: 10
                                             }
                                         }
 
@@ -682,14 +364,14 @@ PanelWindow {
                                     Text {
                                         text: groupCard.group.appName
                                         color: centerWin.t.textPrimary
-                                        font.pixelSize: 12
+                                        font.pixelSize: 11
                                         font.bold: true
                                     }
 
                                     // System Warning Pill Tag (for Battery Warning)
                                     Rectangle {
                                         visible: groupCard.isBatteryGroup
-                                        implicitWidth: sysWarnTxt.implicitWidth + 10
+                                        implicitWidth: sysWarnTxt.implicitWidth + 8
                                         implicitHeight: 16
                                         radius: 8
                                         color: Qt.rgba(centerWin.t.warning.r, centerWin.t.warning.g, centerWin.t.warning.b, 0.2)
@@ -699,20 +381,21 @@ PanelWindow {
                                         RowLayout {
                                             id: sysWarnTxt
                                             anchors.centerIn: parent
-                                            spacing: 4
+                                            spacing: 3
 
                                             Text { text: "󰂃"; color: centerWin.t.warning; font.pixelSize: 10 }
                                             Text { text: "System Warning"; color: centerWin.t.warning; font.pixelSize: 9; font.bold: true }
                                         }
                                     }
 
-                                    // Group Multi Count Badge
+                                    // Multi-item Count Badge (only if isMulti)
                                     Rectangle {
-                                        height: 16
+                                        visible: groupCard.isMulti
+                                        height: 18
                                         implicitWidth: badgeText.implicitWidth + 10
-                                        radius: 8
-                                        color: centerWin.t.surface
-                                        border.color: centerWin.t.border
+                                        radius: 9
+                                        color: Qt.rgba(centerWin.t.accent.r, centerWin.t.accent.g, centerWin.t.accent.b, 0.15)
+                                        border.color: Qt.rgba(centerWin.t.accent.r, centerWin.t.accent.g, centerWin.t.accent.b, 0.3)
                                         border.width: 1
 
                                         Text {
@@ -725,21 +408,24 @@ PanelWindow {
                                         }
                                     }
 
-                                    Item { Layout.fillWidth: true }
-
-                                    // Time of latest notification item
+                                    // Chevron expand/collapse icon (only if isMulti)
                                     Text {
-                                        text: centerWin.formatTime(groupCard.group.items[0].time)
+                                        visible: groupCard.isMulti
+                                        text: "󰅀"
                                         color: centerWin.t.textDisabled
-                                        font.pixelSize: 10
+                                        font.pixelSize: 12
                                         Layout.alignment: Qt.AlignVCenter
+                                        transformOrigin: Item.Center
+                                        rotation: -90 * (1.0 - groupCard.expandProgress)
                                     }
 
-                                    // Chevron expand/collapse icon
+                                    Item { Layout.fillWidth: true }
+
+                                    // Timestamp of latest notification
                                     Text {
-                                        text: groupCard.expanded ? "󰅀" : "󰅁"
+                                        text: groupCard.primaryItem ? centerWin.formatTime(groupCard.primaryItem.time) : ""
                                         color: centerWin.t.textDisabled
-                                        font.pixelSize: 13
+                                        font.pixelSize: 10
                                         Layout.alignment: Qt.AlignVCenter
                                     }
                                 }
@@ -747,13 +433,13 @@ PanelWindow {
 
                             // Dismiss Group Button ×
                             Item {
-                                width: 22
-                                height: 22
+                                width: 20
+                                height: 20
                                 Layout.alignment: Qt.AlignVCenter
 
                                 Rectangle {
                                     anchors.fill: parent
-                                    radius: 6
+                                    radius: 5
                                     color: groupDismissBtn.containsMouse ? centerWin.t.bgHover : "transparent"
                                     Behavior on color { ColorAnimation { duration: 80 } }
                                 }
@@ -761,7 +447,7 @@ PanelWindow {
                                     anchors.centerIn: parent
                                     text: "\u00d7"
                                     color: groupDismissBtn.containsMouse ? centerWin.t.textPrimary : centerWin.t.textDisabled
-                                    font.pixelSize: 16
+                                    font.pixelSize: 15
                                     font.bold: true
                                 }
                                 MouseArea {
@@ -770,15 +456,20 @@ PanelWindow {
                                     hoverEnabled: true
                                     cursorShape: Qt.PointingHandCursor
                                     onClicked: {
-                                        Services.Notifications.dismissGroupFromCenter(groupCard.group.items)
+                                        if (groupCard.isMulti) {
+                                            Services.Notifications.dismissGroupFromCenter(groupCard.group.items)
+                                        } else if (groupCard.primaryItem) {
+                                            Services.Notifications.dismissFromCenter(groupCard.primaryItem.notifId)
+                                        }
                                     }
                                 }
                             }
                         }
 
-                        // ── Collapsed Content Preview (when !groupCard.expanded) ──────────
+                        // ── 2. PRIMARY NOTIFICATION (Item 0) ────────────────────
                         ColumnLayout {
-                            visible: !groupCard.expanded
+                            id: primaryNotifCol
+                            visible: groupCard.primaryItem !== null
                             Layout.fillWidth: true
                             spacing: 6
 
@@ -786,10 +477,10 @@ PanelWindow {
                                 Layout.fillWidth: true
                                 spacing: 8
 
-                                // Thumbnail/Image if present
+                                // Thumbnail / Image if present
                                 Image {
-                                    id: collapsedImg
-                                    property string imgPath: groupCard.group.items[0].image || ""
+                                    id: primaryImg
+                                    property string imgPath: (groupCard.primaryItem && groupCard.primaryItem.image) ? groupCard.primaryItem.image : ""
                                     visible: imgPath.length > 0 && status === Image.Ready
                                     source: {
                                         if (!imgPath) return ""
@@ -797,35 +488,90 @@ PanelWindow {
                                             return imgPath
                                         return Quickshell.iconPath(imgPath, true)
                                     }
-                                    Layout.preferredWidth: 42
-                                    Layout.preferredHeight: 42
+                                    Layout.preferredWidth: 38
+                                    Layout.preferredHeight: 38
                                     fillMode: Image.PreserveAspectCrop
                                     asynchronous: true
                                     cache: true
-                                    sourceSize: Qt.size(84, 84)
+                                    sourceSize: Qt.size(76, 76)
                                     clip: true
                                     Layout.alignment: Qt.AlignTop
                                 }
 
                                 ColumnLayout {
                                     Layout.fillWidth: true
-                                    spacing: 2
+                                    spacing: 3
 
-                                    Text {
-                                        text: groupCard.group.items[0].summary || ""
-                                        color: centerWin.t.textPrimary
-                                        font.bold: true
-                                        font.pixelSize: 12
-                                        wrapMode: Text.Wrap
+                                    RowLayout {
                                         Layout.fillWidth: true
+                                        spacing: 6
+
+                                        Text {
+                                            visible: groupCard.primaryItem && (groupCard.primaryItem.summary || "").length > 0
+                                            text: groupCard.primaryItem ? (groupCard.primaryItem.summary || "") : ""
+                                            color: centerWin.t.textPrimary
+                                            font.bold: true
+                                            font.pixelSize: 12
+                                            wrapMode: Text.Wrap
+                                            Layout.fillWidth: true
+                                        }
+
+                                        // "Latest" pill tag when group is expanded
+                                        Rectangle {
+                                            visible: groupCard.isMulti && groupCard.expanded
+                                            height: 15
+                                            implicitWidth: latestTagTxt.implicitWidth + 8
+                                            radius: 4
+                                            color: Qt.rgba(centerWin.t.accent.r, centerWin.t.accent.g, centerWin.t.accent.b, 0.12)
+                                            Layout.alignment: Qt.AlignTop
+                                            Text {
+                                                id: latestTagTxt
+                                                anchors.centerIn: parent
+                                                text: "Latest"
+                                                color: centerWin.t.accent
+                                                font.pixelSize: 9
+                                                font.bold: true
+                                            }
+                                        }
+
+                                        // Individual Dismiss Button for Item 0 (only when expanded in multi-group)
+                                        Item {
+                                            visible: groupCard.isMulti && groupCard.expanded
+                                            width: 18
+                                            height: 18
+                                            Layout.alignment: Qt.AlignTop
+
+                                            Rectangle {
+                                                anchors.fill: parent
+                                                radius: 5
+                                                color: pItemDismissBtn.containsMouse ? centerWin.t.bgHover : "transparent"
+                                                Behavior on color { ColorAnimation { duration: 80 } }
+                                            }
+                                            Text {
+                                                anchors.centerIn: parent
+                                                text: "\u00d7"
+                                                color: pItemDismissBtn.containsMouse ? centerWin.t.textPrimary : centerWin.t.textDisabled
+                                                font.pixelSize: 14
+                                                font.bold: true
+                                            }
+                                            MouseArea {
+                                                id: pItemDismissBtn
+                                                anchors.fill: parent
+                                                hoverEnabled: true
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: {
+                                                    Services.Notifications.dismissFromCenter(groupCard.primaryItem.notifId)
+                                                }
+                                            }
+                                        }
                                     }
 
                                     Text {
-                                        visible: (groupCard.group.items[0].body || "").length > 0
-                                        text: groupCard.group.items[0].body || ""
+                                        visible: groupCard.primaryItem && (groupCard.primaryItem.body || "").length > 0
+                                        text: groupCard.primaryItem ? (groupCard.primaryItem.body || "") : ""
                                         color: centerWin.t.textSecondary
                                         font.pixelSize: 11
-                                        maximumLineCount: 2
+                                        maximumLineCount: (groupCard.isMulti && !groupCard.expanded) ? 2 : 4
                                         elide: Text.ElideRight
                                         wrapMode: Text.Wrap
                                         Layout.fillWidth: true
@@ -833,17 +579,196 @@ PanelWindow {
                                 }
                             }
 
-                            // Stacked preview pill when collapsed with multiple items
-                            Rectangle {
+                            // Primary Notification Actions Row (when not replying)
+                            RowLayout {
+                                readonly property var actList: groupCard.primaryItem ? groupCard.primaryItem.actions : null
+                                readonly property int actCount: actList ? (actList.count !== undefined ? actList.count : (actList.length !== undefined ? actList.length : 0)) : 0
+                                visible: actCount > 0 && !groupCard.replyMode
+                                spacing: 6
+                                Layout.topMargin: 2
+
+                                Repeater {
+                                    model: parent.actList
+                                    delegate: Rectangle {
+                                        id: pActBtn
+                                        required property string identifier
+                                        required property string text
+                                        radius: 6
+                                        color: pActHover.containsMouse ? centerWin.t.bgHover : centerWin.t.surface
+                                        border.color: centerWin.t.border
+                                        border.width: 1
+                                        implicitHeight: 24
+                                        implicitWidth: pActLabel.implicitWidth + 16
+                                        Behavior on color { ColorAnimation { duration: 80 } }
+
+                                        Text {
+                                            id: pActLabel
+                                            anchors.centerIn: parent
+                                            text: pActBtn.text
+                                            color: centerWin.t.textPrimary
+                                            font.pixelSize: 11
+                                        }
+                                        MouseArea {
+                                            id: pActHover
+                                            anchors.fill: parent
+                                            hoverEnabled: true
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: {
+                                                if (centerWin.isReplyAction(pActBtn)) {
+                                                    groupCard.activeReplyActionId = pActBtn.identifier
+                                                    groupCard.replyMode = true
+                                                    Qt.callLater(() => pReplyInput.forceActiveFocus())
+                                                } else {
+                                                    Services.Notifications.invokeAction(
+                                                        groupCard.primaryItem.notifId, pActBtn.identifier)
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Primary Notification Inline Reply Area
+                            ColumnLayout {
+                                visible: groupCard.replyMode
                                 Layout.fillWidth: true
-                                implicitHeight: stackPreviewRow.implicitHeight + 8
-                                radius: 8
-                                color: centerWin.t.surface
-                                border.color: centerWin.t.border
-                                border.width: 1
+                                spacing: 6
+                                Layout.topMargin: 2
+
+                                Rectangle {
+                                    Layout.fillWidth: true
+                                    implicitHeight: 32
+                                    radius: 7
+                                    color: centerWin.t.bgHover
+                                    border.color: pReplyInput.activeFocus ? centerWin.t.accent : centerWin.t.border
+                                    border.width: 1
+
+                                    TextInput {
+                                        id: pReplyInput
+                                        anchors.fill: parent
+                                        anchors.margins: 6
+                                        color: centerWin.t.textPrimary
+                                        font.pixelSize: 11
+                                        clip: true
+                                        focus: groupCard.replyMode
+
+                                        Text {
+                                            text: "Write a reply..."
+                                            color: centerWin.t.textDisabled
+                                            font.pixelSize: 11
+                                            visible: pReplyInput.text.length === 0 && !pReplyInput.activeFocus
+                                        }
+
+                                        Keys.onReturnPressed: {
+                                            if (pReplyInput.text.trim().length > 0) {
+                                                Services.Notifications.invokeAction(
+                                                    groupCard.primaryItem.notifId,
+                                                    groupCard.activeReplyActionId,
+                                                    pReplyInput.text.trim()
+                                                )
+                                                groupCard.replyMode = false
+                                                pReplyInput.text = ""
+                                            }
+                                        }
+                                    }
+                                }
 
                                 RowLayout {
-                                    id: stackPreviewRow
+                                    Layout.fillWidth: true
+                                    spacing: 6
+
+                                    Item { Layout.fillWidth: true }
+
+                                    // Cancel Button
+                                    Rectangle {
+                                        implicitHeight: 22
+                                        implicitWidth: pCancelTxt.implicitWidth + 14
+                                        radius: 6
+                                        color: pCancelMouse.containsMouse ? centerWin.t.bgHover : centerWin.t.surface
+                                        border.color: centerWin.t.border
+                                        border.width: 1
+
+                                        Text {
+                                            id: pCancelTxt
+                                            anchors.centerIn: parent
+                                            text: "Cancel"
+                                            color: centerWin.t.textSecondary
+                                            font.pixelSize: 10
+                                            font.bold: true
+                                        }
+
+                                        MouseArea {
+                                            id: pCancelMouse
+                                            anchors.fill: parent
+                                            hoverEnabled: true
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: {
+                                                groupCard.replyMode = false
+                                                pReplyInput.text = ""
+                                            }
+                                        }
+                                    }
+
+                                    // Send Button
+                                    Rectangle {
+                                        implicitHeight: 22
+                                        implicitWidth: pSendTxt.implicitWidth + 14
+                                        radius: 6
+                                        color: pSendMouse.containsMouse ? centerWin.t.textPrimary : centerWin.t.accent
+
+                                        Text {
+                                            id: pSendTxt
+                                            anchors.centerIn: parent
+                                            text: "Send 󰏲"
+                                            color: Services.Theme.bgDeep
+                                            font.pixelSize: 10
+                                            font.bold: true
+                                        }
+
+                                        MouseArea {
+                                            id: pSendMouse
+                                            anchors.fill: parent
+                                            hoverEnabled: true
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: {
+                                                if (pReplyInput.text.trim().length > 0) {
+                                                    Services.Notifications.invokeAction(
+                                                        groupCard.primaryItem.notifId,
+                                                        groupCard.activeReplyActionId,
+                                                        pReplyInput.text.trim()
+                                                    )
+                                                    groupCard.replyMode = false
+                                                    pReplyInput.text = ""
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // ── 3. MULTI-ITEM STACK: COLLAPSED PEEK PILL (Only when isMulti) ──
+                        Item {
+                            id: stackPeekWrapper
+                            visible: groupCard.isMulti && groupCard.expandProgress < 0.99
+                            Layout.fillWidth: true
+                            implicitHeight: Math.round((1.0 - groupCard.expandProgress) * (stackPeekPill.implicitHeight + 2))
+                            clip: true
+                            opacity: Math.max(0.0, 1.0 - groupCard.expandProgress * 2.5)
+                            transform: Translate { y: -groupCard.expandProgress * 6 }
+
+                            Rectangle {
+                                id: stackPeekPill
+                                anchors { left: parent.left; right: parent.right; top: parent.top }
+                                implicitHeight: stackPeekContent.implicitHeight + 8
+                                radius: 8
+                                color: peekMouse.containsMouse ? centerWin.t.bgHover : centerWin.t.surface
+                                border.color: centerWin.t.border
+                                border.width: 1
+                                Behavior on color { ColorAnimation { duration: 80 } }
+
+                                RowLayout {
+                                    id: stackPeekContent
                                     anchors { left: parent.left; right: parent.right; top: parent.top; margins: 4; leftMargin: 8; rightMargin: 8 }
                                     spacing: 6
 
@@ -862,62 +787,73 @@ PanelWindow {
                                     }
 
                                     Text {
-                                        visible: groupCard.group.items.length > 2
-                                        text: "+" + (groupCard.group.items.length - 1) + " more"
+                                        text: "+" + (groupCard.group.items.length - 1) + " older"
                                         color: centerWin.t.accent
                                         font.pixelSize: 10
                                         font.bold: true
                                     }
                                 }
+
+                                MouseArea {
+                                    id: peekMouse
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: {
+                                        const copy = Object.assign({}, centerWin.expandedGroups)
+                                        copy[groupCard.group.appName] = true
+                                        centerWin.expandedGroups = copy
+                                    }
+                                }
                             }
                         }
 
-                        // ── Expanded Items List (when groupCard.expanded) ──────────
-                        ColumnLayout {
-                            visible: groupCard.expanded
+                        // ── 4. MULTI-ITEM STACK: EXPANDED OLDER ITEMS ACCORDION ─────
+                        Item {
+                            id: olderItemsWrapper
+                            visible: groupCard.isMulti && groupCard.expandProgress > 0.01
                             Layout.fillWidth: true
-                            spacing: 6
+                            implicitHeight: Math.round(groupCard.expandProgress * olderItemsCol.implicitHeight)
+                            clip: true
+                            opacity: Math.max(0.0, (groupCard.expandProgress - 0.15) / 0.85)
+                            transform: Translate { y: (1.0 - groupCard.expandProgress) * -10 }
 
-                            Repeater {
-                                model: groupCard.group.items
-                                delegate: Rectangle {
-                                    id: itemDelegate
-                                    required property var modelData
-                                    property var notifItem: modelData
-                                    property bool replyMode: false
-                                    property string activeReplyActionId: ""
-                                    property bool isBatteryItem: centerWin.isBatteryNotification(notifItem)
-                                    property bool isItemCritical: notifItem.urgency === 2 || isBatteryItem
+                            ColumnLayout {
+                                id: olderItemsCol
+                                anchors { left: parent.left; right: parent.right; top: parent.top }
+                                spacing: 6
 
-                                    Layout.fillWidth: true
-                                    implicitHeight: itemContent.implicitHeight + 14
-                                    radius: 9
-                                    color: centerWin.t.surface
-                                    border.color: itemDelegate.isBatteryItem ? centerWin.t.warning : (itemDelegate.isItemCritical ? centerWin.t.danger : centerWin.t.border)
-                                    border.width: 1
+                                Repeater {
+                                    model: groupCard.isMulti ? groupCard.group.items.slice(1) : []
+                                    delegate: ColumnLayout {
+                                        id: olderItemDelegate
+                                        required property var modelData
+                                        property var notifItem: modelData
+                                        property bool itemReplyMode: false
+                                        property string itemReplyActionId: ""
+                                        property bool isBatteryItem: centerWin.isBatteryNotification(notifItem)
+                                        property bool isItemCritical: notifItem.urgency === 2 || isBatteryItem
 
-                                    // Left strip for item (warning or critical)
-                                    Rectangle {
-                                        visible: itemDelegate.isItemCritical || itemDelegate.isBatteryItem
-                                        anchors { left: parent.left; top: parent.top; bottom: parent.bottom }
-                                        width: 3
-                                        radius: 2
-                                        color: itemDelegate.isBatteryItem ? centerWin.t.warning : centerWin.t.danger
-                                    }
-
-                                    ColumnLayout {
-                                        id: itemContent
-                                        anchors { left: parent.left; right: parent.right; top: parent.top; margins: 8; leftMargin: 10; rightMargin: 10 }
+                                        Layout.fillWidth: true
                                         spacing: 6
+
+                                        // Hairline Divider between thread messages
+                                        Rectangle {
+                                            Layout.fillWidth: true
+                                            height: 1
+                                            color: centerWin.t.border
+                                            opacity: 0.65
+                                            Layout.topMargin: 2
+                                            Layout.bottomMargin: 2
+                                        }
 
                                         RowLayout {
                                             Layout.fillWidth: true
                                             spacing: 8
 
-                                            // Notification Image / Avatar
                                             Image {
-                                                id: notifImg
-                                                property string imgPath: itemDelegate.notifItem.image || ""
+                                                id: olderNotifImg
+                                                property string imgPath: olderItemDelegate.notifItem.image || ""
                                                 visible: imgPath.length > 0 && status === Image.Ready
                                                 source: {
                                                     if (!imgPath) return ""
@@ -925,27 +861,26 @@ PanelWindow {
                                                         return imgPath
                                                     return Quickshell.iconPath(imgPath, true)
                                                 }
-                                                Layout.preferredWidth: 40
-                                                Layout.preferredHeight: 40
+                                                Layout.preferredWidth: 34
+                                                Layout.preferredHeight: 34
                                                 fillMode: Image.PreserveAspectCrop
                                                 asynchronous: true
                                                 cache: true
-                                                sourceSize: Qt.size(80, 80)
+                                                sourceSize: Qt.size(68, 68)
                                                 clip: true
                                                 Layout.alignment: Qt.AlignTop
                                             }
 
                                             ColumnLayout {
                                                 Layout.fillWidth: true
-                                                spacing: 3
+                                                spacing: 2
 
-                                                // Item Header Row: Summary + Timestamp + Dismiss ×
                                                 RowLayout {
                                                     Layout.fillWidth: true
                                                     spacing: 6
 
                                                     Text {
-                                                        text: itemDelegate.notifItem.summary || ""
+                                                        text: olderItemDelegate.notifItem.summary || ""
                                                         color: centerWin.t.textPrimary
                                                         font.bold: true
                                                         font.pixelSize: 12
@@ -954,13 +889,12 @@ PanelWindow {
                                                     }
 
                                                     Text {
-                                                        text: centerWin.formatTime(itemDelegate.notifItem.time)
+                                                        text: centerWin.formatTime(olderItemDelegate.notifItem.time)
                                                         color: centerWin.t.textDisabled
                                                         font.pixelSize: 10
                                                         Layout.alignment: Qt.AlignTop
                                                     }
 
-                                                    // Individual Dismiss Button ×
                                                     Item {
                                                         width: 18
                                                         height: 18
@@ -969,32 +903,31 @@ PanelWindow {
                                                         Rectangle {
                                                             anchors.fill: parent
                                                             radius: 5
-                                                            color: itemDismissBtn.containsMouse ? centerWin.t.bgHover : "transparent"
+                                                            color: olderDismissBtn.containsMouse ? centerWin.t.bgHover : "transparent"
                                                             Behavior on color { ColorAnimation { duration: 80 } }
                                                         }
                                                         Text {
                                                             anchors.centerIn: parent
                                                             text: "\u00d7"
-                                                            color: itemDismissBtn.containsMouse ? centerWin.t.textPrimary : centerWin.t.textDisabled
+                                                            color: olderDismissBtn.containsMouse ? centerWin.t.textPrimary : centerWin.t.textDisabled
                                                             font.pixelSize: 14
                                                             font.bold: true
                                                         }
                                                         MouseArea {
-                                                            id: itemDismissBtn
+                                                            id: olderDismissBtn
                                                             anchors.fill: parent
                                                             hoverEnabled: true
                                                             cursorShape: Qt.PointingHandCursor
                                                             onClicked: {
-                                                                Services.Notifications.dismissFromCenter(itemDelegate.notifItem.notifId)
+                                                                Services.Notifications.dismissFromCenter(olderItemDelegate.notifItem.notifId)
                                                             }
                                                         }
                                                     }
                                                 }
 
-                                                // Item Body
                                                 Text {
-                                                    visible: (itemDelegate.notifItem.body || "").length > 0
-                                                    text: itemDelegate.notifItem.body || ""
+                                                    visible: (olderItemDelegate.notifItem.body || "").length > 0
+                                                    text: olderItemDelegate.notifItem.body || ""
                                                     color: centerWin.t.textSecondary
                                                     font.pixelSize: 11
                                                     wrapMode: Text.Wrap
@@ -1003,48 +936,48 @@ PanelWindow {
                                             }
                                         }
 
-                                        // Actions Row
+                                        // Older Item Actions Row
                                         RowLayout {
-                                            readonly property var actList: itemDelegate.notifItem.actions
+                                            readonly property var actList: olderItemDelegate.notifItem.actions
                                             readonly property int actCount: actList ? (actList.count !== undefined ? actList.count : (actList.length !== undefined ? actList.length : 0)) : 0
-                                            visible: actCount > 0 && !itemDelegate.replyMode
+                                            visible: actCount > 0 && !olderItemDelegate.itemReplyMode
                                             spacing: 6
                                             Layout.topMargin: 2
 
                                             Repeater {
                                                 model: parent.actList
                                                 delegate: Rectangle {
-                                                    id: actBtn
+                                                    id: oActBtn
                                                     required property string identifier
                                                     required property string text
                                                     radius: 6
-                                                    color: actHover.containsMouse ? centerWin.t.bgHover : centerWin.t.surfaceVariant
+                                                    color: oActHover.containsMouse ? centerWin.t.bgHover : centerWin.t.surface
                                                     border.color: centerWin.t.border
                                                     border.width: 1
                                                     implicitHeight: 24
-                                                    implicitWidth: actLabel.implicitWidth + 16
+                                                    implicitWidth: oActLabel.implicitWidth + 16
                                                     Behavior on color { ColorAnimation { duration: 80 } }
 
                                                     Text {
-                                                        id: actLabel
+                                                        id: oActLabel
                                                         anchors.centerIn: parent
-                                                        text: actBtn.text
+                                                        text: oActBtn.text
                                                         color: centerWin.t.textPrimary
                                                         font.pixelSize: 11
                                                     }
                                                     MouseArea {
-                                                        id: actHover
+                                                        id: oActHover
                                                         anchors.fill: parent
                                                         hoverEnabled: true
                                                         cursorShape: Qt.PointingHandCursor
                                                         onClicked: {
-                                                            if (centerWin.isReplyAction(actBtn)) {
-                                                                itemDelegate.activeReplyActionId = actBtn.identifier
-                                                                itemDelegate.replyMode = true
-                                                                Qt.callLater(() => cardReplyInput.forceActiveFocus())
+                                                            if (centerWin.isReplyAction(oActBtn)) {
+                                                                olderItemDelegate.itemReplyActionId = oActBtn.identifier
+                                                                olderItemDelegate.itemReplyMode = true
+                                                                Qt.callLater(() => oReplyInput.forceActiveFocus())
                                                             } else {
                                                                 Services.Notifications.invokeAction(
-                                                                    itemDelegate.notifItem.notifId, actBtn.identifier)
+                                                                    olderItemDelegate.notifItem.notifId, oActBtn.identifier)
                                                             }
                                                         }
                                                     }
@@ -1052,9 +985,9 @@ PanelWindow {
                                             }
                                         }
 
-                                        // Inline Reply Area
+                                        // Older Item Inline Reply Area
                                         ColumnLayout {
-                                            visible: itemDelegate.replyMode
+                                            visible: olderItemDelegate.itemReplyMode
                                             Layout.fillWidth: true
                                             spacing: 6
                                             Layout.topMargin: 2
@@ -1064,34 +997,34 @@ PanelWindow {
                                                 implicitHeight: 32
                                                 radius: 7
                                                 color: centerWin.t.bgHover
-                                                border.color: cardReplyInput.activeFocus ? centerWin.t.accent : centerWin.t.border
+                                                border.color: oReplyInput.activeFocus ? centerWin.t.accent : centerWin.t.border
                                                 border.width: 1
 
                                                 TextInput {
-                                                    id: cardReplyInput
+                                                    id: oReplyInput
                                                     anchors.fill: parent
                                                     anchors.margins: 6
                                                     color: centerWin.t.textPrimary
                                                     font.pixelSize: 11
                                                     clip: true
-                                                    focus: itemDelegate.replyMode
+                                                    focus: olderItemDelegate.itemReplyMode
 
                                                     Text {
                                                         text: "Write a reply..."
                                                         color: centerWin.t.textDisabled
                                                         font.pixelSize: 11
-                                                        visible: cardReplyInput.text.length === 0 && !cardReplyInput.activeFocus
+                                                        visible: oReplyInput.text.length === 0 && !oReplyInput.activeFocus
                                                     }
 
                                                     Keys.onReturnPressed: {
-                                                        if (cardReplyInput.text.trim().length > 0) {
+                                                        if (oReplyInput.text.trim().length > 0) {
                                                             Services.Notifications.invokeAction(
-                                                                itemDelegate.notifItem.notifId,
-                                                                itemDelegate.activeReplyActionId,
-                                                                cardReplyInput.text.trim()
+                                                                olderItemDelegate.notifItem.notifId,
+                                                                olderItemDelegate.itemReplyActionId,
+                                                                oReplyInput.text.trim()
                                                             )
-                                                            itemDelegate.replyMode = false
-                                                            cardReplyInput.text = ""
+                                                            olderItemDelegate.itemReplyMode = false
+                                                            oReplyInput.text = ""
                                                         }
                                                     }
                                                 }
@@ -1103,17 +1036,16 @@ PanelWindow {
 
                                                 Item { Layout.fillWidth: true }
 
-                                                // Cancel Button
                                                 Rectangle {
                                                     implicitHeight: 22
-                                                    implicitWidth: cancelTxt.implicitWidth + 14
+                                                    implicitWidth: oCancelTxt.implicitWidth + 14
                                                     radius: 6
-                                                    color: cancelMouse.containsMouse ? centerWin.t.bgHover : centerWin.t.surfaceVariant
+                                                    color: oCancelMouse.containsMouse ? centerWin.t.bgHover : centerWin.t.surface
                                                     border.color: centerWin.t.border
                                                     border.width: 1
 
                                                     Text {
-                                                        id: cancelTxt
+                                                        id: oCancelTxt
                                                         anchors.centerIn: parent
                                                         text: "Cancel"
                                                         color: centerWin.t.textSecondary
@@ -1122,26 +1054,25 @@ PanelWindow {
                                                     }
 
                                                     MouseArea {
-                                                        id: cancelMouse
+                                                        id: oCancelMouse
                                                         anchors.fill: parent
                                                         hoverEnabled: true
                                                         cursorShape: Qt.PointingHandCursor
                                                         onClicked: {
-                                                            itemDelegate.replyMode = false
-                                                            cardReplyInput.text = ""
+                                                            olderItemDelegate.itemReplyMode = false
+                                                            oReplyInput.text = ""
                                                         }
                                                     }
                                                 }
 
-                                                // Send Button
                                                 Rectangle {
                                                     implicitHeight: 22
-                                                    implicitWidth: sendTxt.implicitWidth + 14
+                                                    implicitWidth: oSendTxt.implicitWidth + 14
                                                     radius: 6
-                                                    color: sendMouse.containsMouse ? centerWin.t.textPrimary : centerWin.t.accent
+                                                    color: oSendMouse.containsMouse ? centerWin.t.textPrimary : centerWin.t.accent
 
                                                     Text {
-                                                        id: sendTxt
+                                                        id: oSendTxt
                                                         anchors.centerIn: parent
                                                         text: "Send 󰏲"
                                                         color: Services.Theme.bgDeep
@@ -1150,19 +1081,19 @@ PanelWindow {
                                                     }
 
                                                     MouseArea {
-                                                        id: sendMouse
+                                                        id: oSendMouse
                                                         anchors.fill: parent
                                                         hoverEnabled: true
                                                         cursorShape: Qt.PointingHandCursor
                                                         onClicked: {
-                                                            if (cardReplyInput.text.trim().length > 0) {
+                                                            if (oReplyInput.text.trim().length > 0) {
                                                                 Services.Notifications.invokeAction(
-                                                                    itemDelegate.notifItem.notifId,
-                                                                    itemDelegate.activeReplyActionId,
-                                                                    cardReplyInput.text.trim()
+                                                                    olderItemDelegate.notifItem.notifId,
+                                                                    olderItemDelegate.itemReplyActionId,
+                                                                    oReplyInput.text.trim()
                                                                 )
-                                                                itemDelegate.replyMode = false
-                                                                cardReplyInput.text = ""
+                                                                olderItemDelegate.itemReplyMode = false
+                                                                oReplyInput.text = ""
                                                             }
                                                         }
                                                     }

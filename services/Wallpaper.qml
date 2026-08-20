@@ -2,33 +2,46 @@ pragma Singleton
 import QtQuick
 import Quickshell
 import Quickshell.Io
+import "." as Services
 
 Singleton {
     id: root
 
-    readonly property string assetsDir: (Quickshell.env("HOME") || "/home/yasirfadhil") + "/.config/quickshell/assets/wallpapers"
-    readonly property string sysWallDir: (Quickshell.env("HOME") || "/home/yasirfadhil") + "/.config/nixos/home/themes/wallpapers"
+    readonly property string homeDir: (Quickshell.env("HOME") || "/home/" + (Quickshell.env("USER") || "user"))
+    readonly property string assetsDir: {
+        var u = Qt.resolvedUrl("../assets/wallpapers").toString()
+        var p = u.startsWith("file://") ? u.substring(7) : u
+        return p.length > 0 ? p : (homeDir + "/.config/quickshell/assets/wallpapers")
+    }
 
-    property string currentWallpaper: assetsDir + "/wallbler.jpg"
+    readonly property string darkWallbler: assetsDir + "/wallbler.jpg"
+    readonly property string lightWallbler: assetsDir + "/wallbler-light.jpg"
+
+    readonly property bool isWallblerActive: currentWallpaper === darkWallbler || currentWallpaper === lightWallbler
+
+    property string currentWallpaper: (Services.Config && Services.Config.themeMode === "light") ? lightWallbler : darkWallbler
 
     property var defaultWallpapers: [
-        { name: "Wallbler", path: assetsDir + "/wallbler.jpg", isCustom: false },
-        { name: "Mac Tahoe Dark", path: sysWallDir + "/MacTahoeDark.jpg", isCustom: false },
-        { name: "Shorekeeper", path: sysWallDir + "/Shorekeeper.jpg", isCustom: false },
-        { name: "Wallbla", path: sysWallDir + "/wallbla.jpg", isCustom: false },
-        { name: "Wallble", path: sysWallDir + "/wallble.jpg", isCustom: false },
-        { name: "Wallblu", path: sysWallDir + "/wallblu.jpg", isCustom: false },
-        { name: "Wallpaper", path: sysWallDir + "/wallpaper.jpg", isCustom: false },
-        { name: "Background Zoomed", path: assetsDir + "/background_zoomed.png", isCustom: false },
-
-        { name: "Lock Screen", path: sysWallDir + "/lock.jpg", isCustom: false }
+        { 
+            name: "Wallbler (Dynamic)", 
+            path: (Services.Config && Services.Config.themeMode === "light") ? lightWallbler : darkWallbler,
+            darkPath: darkWallbler,
+            lightPath: lightWallbler,
+            isDynamic: true,
+            isCustom: false 
+        }
     ]
     property var customWallpapers: []
     property var allWallpapers: []
     property bool isPicking: false
 
-    readonly property string configPath: (Quickshell.env("HOME") || "/home/yasirfadhil") + "/.cache/quickshell/wallpaper_config.json"
-    readonly property string pickerScript: (Quickshell.env("HOME") || "/home/yasirfadhil") + "/.config/quickshell/scripts/xdg-file-picker.py"
+    readonly property string configPath: homeDir + "/.cache/quickshell/wallpaper_config.json"
+    readonly property string declConfigPath: homeDir + "/.config/quickshell/wallpaper_config.json"
+    readonly property string pickerScript: {
+        var u = Qt.resolvedUrl("../scripts/xdg-file-picker.py").toString()
+        var p = u.startsWith("file://") ? u.substring(7) : u
+        return p.length > 0 ? p : (homeDir + "/.config/quickshell/scripts/xdg-file-picker.py")
+    }
 
     Component.onCompleted: {
         updateAllList()
@@ -36,11 +49,40 @@ Singleton {
         killSwaybgProc.running = true
     }
 
-    function updateAllList() {
-        var list = []
-        for (var i = 0; i < defaultWallpapers.length; i++) {
-            list.push(defaultWallpapers[i])
+    Connections {
+        target: Services.Config
+        function onConfigChanged() {
+            root.handleThemeChange()
         }
+    }
+
+    function handleThemeChange() {
+        if (isWallblerActive) {
+            var isLight = Services.Config && Services.Config.themeMode === "light"
+            var target = isLight ? lightWallbler : darkWallbler
+            if (currentWallpaper !== target) {
+                currentWallpaper = target
+                saveConfig()
+                if (Services.Config && Services.Config.useMatugen) {
+                    Services.Config.generateMatugen(target)
+                }
+            }
+        }
+        updateAllList()
+    }
+
+    function updateAllList() {
+        var isLight = Services.Config && Services.Config.themeMode === "light"
+        var list = [
+            { 
+                name: "Wallbler (Dynamic)", 
+                path: isLight ? lightWallbler : darkWallbler,
+                darkPath: darkWallbler,
+                lightPath: lightWallbler,
+                isDynamic: true,
+                isCustom: false 
+            }
+        ]
         for (var j = 0; j < customWallpapers.length; j++) {
             list.push(customWallpapers[j])
         }
@@ -49,15 +91,35 @@ Singleton {
 
     function setWallpaper(filePath) {
         if (!filePath) return
-        currentWallpaper = filePath
+        
+        // If Wallbler is selected (either dark or light variant or dynamic preset)
+        if (filePath === darkWallbler || filePath === lightWallbler || filePath.indexOf("wallbler") !== -1) {
+            var isLight = Services.Config && Services.Config.themeMode === "light"
+            currentWallpaper = isLight ? lightWallbler : darkWallbler
+        } else {
+            currentWallpaper = filePath
+        }
+
         saveConfig()
+        if (Services.Config) {
+            Services.Config.generateMatugen(currentWallpaper)
+        }
     }
+
+    property bool isPickingLockscreen: false
 
     function pickCustomWallpaper() {
         if (isPicking) return
         isPicking = true
         pickerProc.running = false
         pickerProc.running = true
+    }
+
+    function pickLockscreenWallpaper() {
+        if (isPickingLockscreen) return
+        isPickingLockscreen = true
+        lockscreenPickerProc.running = false
+        lockscreenPickerProc.running = true
     }
 
     function removeCustomWallpaper(filePath) {
@@ -69,11 +131,16 @@ Singleton {
         }
         customWallpapers = newCustoms
         updateAllList()
-        if (currentWallpaper === filePath && allWallpapers.length > 0) {
-            setWallpaper(allWallpapers[0].path)
+        if (currentWallpaper === filePath) {
+            var isLight = Services.Config && Services.Config.themeMode === "light"
+            setWallpaper(isLight ? lightWallbler : darkWallbler)
         } else {
             saveConfig()
         }
+    }
+
+    function deleteCustomWallpaper(filePath) {
+        removeCustomWallpaper(filePath)
     }
 
     function addCustomWallpaper(filePath) {
@@ -98,34 +165,19 @@ Singleton {
         setWallpaper(filePath)
     }
 
-    function toBase64(str) {
-        if (!str) return ""
-        const bytes = []
-        for (let i = 0; i < str.length; i++) {
-            const code = str.charCodeAt(i)
-            if (code < 128) {
-                bytes.push(code)
-            } else if (code < 2048) {
-                bytes.push((code >> 6) | 192, (code & 63) | 128)
-            } else if ((code & 0xFC00) === 0xD800 && i + 1 < str.length && (str.charCodeAt(i + 1) & 0xFC00) === 0xDC00) {
-                const surrogate = ((code & 0x03FF) << 10) + (str.charCodeAt(++i) & 0x03FF) + 0x10000
-                bytes.push((surrogate >> 18) | 240, ((surrogate >> 12) & 63) | 128, ((surrogate >> 6) & 63) | 128, (surrogate & 63) | 128)
-            } else {
-                bytes.push((code >> 12) | 224, ((code >> 6) & 63) | 128, (code & 63) | 128)
-            }
-        }
-        return Qt.btoa(bytes)
-    }
-
     function saveConfig() {
         var data = {
             currentWallpaper: currentWallpaper,
             customWallpapers: customWallpapers
         }
-        var jsonStr = JSON.stringify(data)
-        var b64 = toBase64(jsonStr)
+        var jsonStr = JSON.stringify(data, null, 2)
         saveConfigProc.running = false
-        saveConfigProc.command = ["sh", "-c", "mkdir -p ~/.cache/quickshell && echo '" + b64 + "' | base64 -d > \"" + configPath + "\""]
+        saveConfigProc.command = [
+            "sh", "-c",
+            "mkdir -p ~/.cache/quickshell && " +
+            "cat << 'EOF' > \"" + configPath + "\"\n" + jsonStr + "\nEOF\n" +
+            "(cat << 'EOF' > \"" + declConfigPath + "\"\n" + jsonStr + "\nEOF) 2>/dev/null || true"
+        ]
         saveConfigProc.running = true
     }
 
@@ -134,7 +186,7 @@ Singleton {
         command: ["sh", "-c", "pkill swaybg || true"]
     }
 
-    // Process to run XDG File Chooser via python script
+    // Process to run GTK/XDG File Chooser via python script
     Process {
         id: pickerProc
         command: ["python3", root.pickerScript]
@@ -151,31 +203,65 @@ Singleton {
         }
     }
 
+    // Process to pick dedicated custom wallpaper for lockscreen
+    Process {
+        id: lockscreenPickerProc
+        command: ["python3", root.pickerScript]
+        stdout: SplitParser {
+            onRead: data => {
+                var selected = data.trim()
+                if (selected.length > 0 && Services.Config) {
+                    Services.Config.setLockscreenCustomWallpaper(selected)
+                    Services.Config.setLockscreenWallpaperMode("custom")
+                }
+            }
+        }
+        onExited: (exitCode, exitStatus) => {
+            root.isPickingLockscreen = false
+        }
+    }
+
     // Process to load saved wallpaper config
     Process {
         id: loadConfigProc
-        command: ["sh", "-c", "if [ -f \"" + configPath + "\" ]; then cat \"" + configPath + "\"; else echo '{}'; fi"]
+        property string rawData: ""
+        command: [
+            "sh", "-c",
+            "if [ -f \"" + configPath + "\" ]; then tr -d '\\r\\n' < \"" + configPath + "\"; " +
+            "elif [ -f \"" + declConfigPath + "\" ]; then tr -d '\\r\\n' < \"" + declConfigPath + "\"; " +
+            "else echo '{}'; fi"
+        ]
         stdout: SplitParser {
-            onRead: data => {
+            onRead: chunk => {
+                loadConfigProc.rawData += chunk
+            }
+        }
+        onExited: (exitCode, exitStatus) => {
+            var trimmed = loadConfigProc.rawData.trim()
+            if (trimmed.length > 0 && trimmed.startsWith("{")) {
                 try {
-                    var parsed = JSON.parse(data.trim())
+                    var parsed = JSON.parse(trimmed)
                     if (parsed && parsed.customWallpapers && Array.isArray(parsed.customWallpapers)) {
                         root.customWallpapers = parsed.customWallpapers
-                        root.updateAllList()
                     }
                     if (parsed && parsed.currentWallpaper && parsed.currentWallpaper.length > 0) {
                         root.setWallpaper(parsed.currentWallpaper)
                     } else {
-                        root.setWallpaper(root.assetsDir + "/wallbler.jpg")
+                        var isLight = Services.Config && Services.Config.themeMode === "light"
+                        root.setWallpaper(isLight ? root.lightWallbler : root.darkWallbler)
                     }
                 } catch (e) {
-                    root.setWallpaper(root.assetsDir + "/wallbler.jpg")
+                    var isLight2 = Services.Config && Services.Config.themeMode === "light"
+                    root.setWallpaper(isLight2 ? root.lightWallbler : root.darkWallbler)
                 }
+            } else {
+                var isLight3 = Services.Config && Services.Config.themeMode === "light"
+                root.setWallpaper(isLight3 ? root.lightWallbler : root.darkWallbler)
             }
+            root.updateAllList()
         }
     }
 
-    // Process to save wallpaper config
     Process {
         id: saveConfigProc
     }

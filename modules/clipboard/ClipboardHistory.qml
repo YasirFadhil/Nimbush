@@ -276,32 +276,30 @@ PanelWindow {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 clip: true
-                spacing: 2
+                spacing: 4
                 model: Services.Clipboard.filteredEntries
                 currentIndex: 0
                 keyNavigationEnabled: false
-                topMargin: 6; bottomMargin: 6
-                leftMargin: 6; rightMargin: 6
+                topMargin: 4; bottomMargin: 4
+                leftMargin: 8; rightMargin: 8
 
-                highlight: Rectangle {
-                    radius: 10
-                    color: Services.Theme.surfaceSolid
-                    border.color: Services.Theme.borderHighlight
-                    border.width: 1
-                    x: 6
-                    width: resultList.width - 12
-                    z: 1
-                }
-                highlightMoveDuration: 130
-                highlightResizeDuration: 0
-                highlightFollowsCurrentItem: true
-
-                delegate: Item {
+                delegate: Rectangle {
                     id: card
                     required property var modelData
                     required property int index
-                    width: resultList.width - 12
+                    width: resultList.width - 16
                     height: 56
+                    radius: 10
+
+                    readonly property bool isCurrent: card.index === resultList.currentIndex
+
+                    color: isCurrent 
+                        ? Services.Theme.surfaceVariant 
+                        : (hoverArea.containsMouse ? Services.Theme.bgHover : "transparent")
+                    border.color: isCurrent ? Services.Theme.accent : "transparent"
+                    border.width: isCurrent ? 1 : 0
+                    Behavior on color { ColorAnimation { duration: 100 } }
+                    Behavior on border.color { ColorAnimation { duration: 100 } }
 
                     property bool isImage: Services.Clipboard.isImageEntry(modelData)
                     property bool isPinnedItem: Services.Clipboard.isPinned(modelData)
@@ -329,7 +327,6 @@ PanelWindow {
                         anchors.fill: parent
                         anchors.leftMargin: 12; anchors.rightMargin: 12
                         spacing: 12
-                        z: 2
 
                         // Entry Type Badge / Thumbnail
                         Item {

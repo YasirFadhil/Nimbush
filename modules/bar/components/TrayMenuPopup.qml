@@ -12,12 +12,13 @@ PanelWindow {
     property var activeItem: null
     property var activeMenu: activeItem ? activeItem.menu : null
     property real targetX: parent ? parent.width - 150 : 0
+    readonly property bool isBottom: Services.Config ? (Services.Config.barPosition === "bottom") : false
 
     anchors { top: true; bottom: true; left: true; right: true }
     color: "transparent"
     exclusiveZone: 0
     visible: activeMenu !== null
-    WlrLayershell.layer: WlrLayer.Overlay
+    WlrLayershell.layer: WlrLayer.Top
     WlrLayershell.namespace: "quickshell:traymenu"
     WlrLayershell.keyboardFocus: WlrKeyboardFocus.OnDemand
 
@@ -52,8 +53,7 @@ PanelWindow {
 
         Rectangle {
             id: popupCard
-            anchors.top: parent.top
-            anchors.topMargin: 12
+            y: root.isBottom ? (parent.height - height - 12) : 12
             x: Math.max(12, Math.min(parent.width - width - 12, root.targetX - (width / 2)))
             implicitWidth: Math.max(180, menuColumn.implicitWidth + 24)
             implicitHeight: menuColumn.implicitHeight + 24
@@ -64,9 +64,13 @@ PanelWindow {
             clip: true
 
             opacity: root.visible ? 1 : 0
-            scale: root.visible ? 1 : 0.95
-            Behavior on opacity { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
-            Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
+            transform: Translate {
+                y: root.visible ? 0 : (root.isBottom ? 24 : -24)
+                Behavior on y { NumberAnimation { duration: 220; easing.type: Easing.OutBack; easing.overshoot: 0.5 } }
+            }
+            scale: root.visible ? 1 : 0.96
+            Behavior on scale { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
+            Behavior on opacity { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
 
             // Prevent clicks inside card from closing backdrop
             MouseArea { anchors.fill: parent; onClicked: {} }
@@ -83,10 +87,21 @@ PanelWindow {
                     visible: root.activeItem !== null && (root.activeItem.title || root.activeItem.id)
                     spacing: 8
 
-                    IconImage {
+                    Image {
                         Layout.preferredWidth: 16
                         Layout.preferredHeight: 16
-                        source: root.activeItem ? (root.activeItem.icon || "") : ""
+                        source: {
+                            const icon = root.activeItem ? (root.activeItem.icon || "") : ""
+                            if (!icon) return ""
+                            if (icon.startsWith("/") || icon.startsWith("file://") || icon.startsWith("http") || icon.startsWith("image://"))
+                                return icon
+                            return Quickshell.iconPath(icon, true)
+                        }
+                        fillMode: Image.PreserveAspectFit
+                        asynchronous: true
+                        cache: true
+                        sourceSize: Qt.size(32, 32)
+                        visible: status === Image.Ready
                     }
 
                     Text {
@@ -167,11 +182,21 @@ PanelWindow {
                                     }
 
                                     // Entry Icon
-                                    IconImage {
-                                        visible: menuItem.modelData.icon && menuItem.modelData.icon.length > 0
+                                    Image {
+                                        visible: menuItem.modelData.icon && menuItem.modelData.icon.length > 0 && status === Image.Ready
                                         Layout.preferredWidth: 14
                                         Layout.preferredHeight: 14
-                                        source: menuItem.modelData.icon || ""
+                                        source: {
+                                            const icon = menuItem.modelData.icon || ""
+                                            if (!icon) return ""
+                                            if (icon.startsWith("/") || icon.startsWith("file://") || icon.startsWith("http") || icon.startsWith("image://"))
+                                                return icon
+                                            return Quickshell.iconPath(icon, true)
+                                        }
+                                        fillMode: Image.PreserveAspectFit
+                                        asynchronous: true
+                                        cache: true
+                                        sourceSize: Qt.size(28, 28)
                                     }
 
                                     // Entry Label
@@ -265,11 +290,21 @@ PanelWindow {
                                                     color: Services.Theme.accent
                                                 }
 
-                                                IconImage {
-                                                    visible: subItem.modelData.icon && subItem.modelData.icon.length > 0
+                                                Image {
+                                                    visible: subItem.modelData.icon && subItem.modelData.icon.length > 0 && status === Image.Ready
                                                     Layout.preferredWidth: 12
                                                     Layout.preferredHeight: 12
-                                                    source: subItem.modelData.icon || ""
+                                                    source: {
+                                                        const icon = subItem.modelData.icon || ""
+                                                        if (!icon) return ""
+                                                        if (icon.startsWith("/") || icon.startsWith("file://") || icon.startsWith("http") || icon.startsWith("image://"))
+                                                            return icon
+                                                        return Quickshell.iconPath(icon, true)
+                                                    }
+                                                    fillMode: Image.PreserveAspectFit
+                                                    asynchronous: true
+                                                    cache: true
+                                                    sourceSize: Qt.size(24, 24)
                                                 }
 
                                                 Text {

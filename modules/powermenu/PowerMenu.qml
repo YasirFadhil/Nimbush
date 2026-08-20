@@ -11,26 +11,53 @@ PanelWindow {
     property bool menuVisible: false
     property bool isOpen: false
     property int selectedIndex: 0
-    property int pendingActionIndex: -1
-    property int countdownSeconds: 5
+    property int activeHoldIndex: -1
+    property real holdProgress: 0.0
+    property string activeHoldKey: ""
+    readonly property int holdDurationMs: 800
 
     property string username: ""
     property string hostname: ""
     property string uptimeStr: ""
 
     readonly property var actions: [
-        { label: "Lock",      sublabel: "Lock screen",    icon: Services.Icons.pmLock,     proc: lockProc,     key: "1", danger: false, instant: true },
-        { label: "Logout",    sublabel: "Exit session",   icon: Services.Icons.pmLogout,   proc: logoutProc,   key: "2", danger: false, instant: false },
-        { label: "Sleep",     sublabel: "Suspend system", icon: Services.Icons.pmSleep,    proc: sleepProc,    key: "3", danger: false, instant: true },
-        { label: "Reboot",    sublabel: "Restart PC",     icon: Services.Icons.pmReboot,   proc: rebootProc,   key: "4", danger: true,  instant: false },
-        { label: "Power Off", sublabel: "Turn off PC",    icon: Services.Icons.pmShutdown, proc: shutdownProc, key: "5", danger: true,  instant: false }
+        { label: "Lock",         sublabel: "Lock screen",        icon: Services.Icons.pmLock,     proc: lockProc,     key: "L", num: "1", danger: false, needsHold: false },
+        { label: "Reload Shell", sublabel: "Restart Quickshell", icon: Services.Icons.reboot,     proc: reloadProc,   key: "Q", num: "2", danger: false, needsHold: false },
+        { label: "Suspend",      sublabel: "Suspend to RAM",     icon: Services.Icons.pmSleep,    proc: sleepProc,    key: "S", num: "3", danger: false, needsHold: true  },
+        { label: "Logout",       sublabel: "Exit user session",  icon: Services.Icons.pmLogout,   proc: logoutProc,   key: "X", num: "4", danger: false, needsHold: true  },
+        { label: "Reboot",       sublabel: "Restart system",     icon: Services.Icons.pmReboot,   proc: rebootProc,   key: "R", num: "5", danger: true,  needsHold: true  },
+        { label: "Power Off",    sublabel: "Turn off computer",  icon: Services.Icons.pmShutdown, proc: shutdownProc, key: "P", num: "6", danger: true,  needsHold: true  }
     ]
+
+    NumberAnimation {
+        id: holdAnim
+        target: root
+        property: "holdProgress"
+        from: 0.0
+        to: 1.0
+        duration: root.holdDurationMs
+        easing.type: Easing.Linear
+        onFinished: {
+            if (root.activeHoldIndex >= 0 && root.holdProgress >= 0.98) {
+                root.executeAction(root.activeHoldIndex)
+                root.stopHold()
+            }
+        }
+    }
+
+    NumberAnimation {
+        id: releaseAnim
+        target: root
+        property: "holdProgress"
+        to: 0.0
+        duration: 140
+        easing.type: Easing.OutQuad
+    }
 
     function open() {
         Services.OverlayManager.closeAllExcept(root)
         hideTimer.stop()
-        countdownTimer.stop()
-        pendingActionIndex = -1
+        stopHold()
         selectedIndex = 0
         menuVisible = true
         isOpen = true
@@ -41,8 +68,7 @@ PanelWindow {
 
     function close() {
         if (!isOpen && !menuVisible) return
-        countdownTimer.stop()
-        pendingActionIndex = -1
+        stopHold()
         isOpen = false
         hideTimer.restart()
     }
@@ -50,29 +76,40 @@ PanelWindow {
     function hide() { close() }
     function show() { open() }
 
-    function triggerAction(index) {
+    function startHold(index, keyName) {
         if (index < 0 || index >= actions.length) return
         const act = actions[index]
-        if (act.instant) {
-            act.proc.running = true
+        selectedIndex = index
+        if (!act.needsHold) {
+            executeAction(index)
+            return
+        }
+        activeHoldIndex = index
+        activeHoldKey = keyName || ""
+        releaseAnim.stop()
+        holdProgress = 0.0
+        holdAnim.restart()
+    }
+
+    function stopHold() {
+        if (activeHoldIndex >= 0 || holdProgress > 0) {
+            holdAnim.stop()
+            activeHoldIndex = -1
+            activeHoldKey = ""
+            releaseAnim.restart()
+        }
+    }
+
+    function executeAction(index) {
+        if (index < 0 || index >= actions.length) return
+        const act = actions[index]
+        if (act.label === "Reload Shell") {
+            reloadProc.running = true
             close()
-        } else {
-            pendingActionIndex = index
-            countdownSeconds = 5
-            countdownTimer.restart()
+            return
         }
-    }
-
-    function confirmPendingAction() {
-        if (pendingActionIndex >= 0 && pendingActionIndex < actions.length) {
-            actions[pendingActionIndex].proc.running = true
-        }
+        act.proc.running = true
         close()
-    }
-
-    function cancelPendingAction() {
-        countdownTimer.stop()
-        pendingActionIndex = -1
     }
 
     visible: menuVisible
@@ -85,7 +122,7 @@ PanelWindow {
     WlrLayershell.layer: WlrLayer.Overlay
     WlrLayershell.exclusiveZone: -1
     WlrLayershell.keyboardFocus: WlrKeyboardFocus.Exclusive
-    WlrLayershell.namespace: "quickshell:hud"
+    WlrLayershell.namespace: "quickshell:powermenu"
     anchors { top: true; bottom: true; left: true; right: true }
 
     Timer {
@@ -94,58 +131,86 @@ PanelWindow {
         onTriggered: root.menuVisible = false
     }
 
-    Timer {
-        id: countdownTimer
-        interval: 1000
-        repeat: true
-        running: false
-        onTriggered: {
-            if (root.countdownSeconds > 1) {
-                root.countdownSeconds -= 1
-            } else {
-                countdownTimer.stop()
-                root.confirmPendingAction()
-            }
+    onMenuVisibleChanged: {
+        if (menuVisible) {
+            keyFocus.forceActiveFocus()
         }
     }
 
-    // Keyboard handler
+    // Keyboard navigation & hold hotkeys
     Item {
         id: keyFocus
-        focus: root.menuVisible
+        focus: true
         Keys.onPressed: (event) => {
-            if (root.pendingActionIndex >= 0) {
-                if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) {
-                    root.confirmPendingAction()
-                    event.accepted = true
-                } else if (event.key === Qt.Key_Escape) {
-                    root.cancelPendingAction()
-                    event.accepted = true
-                }
+            if (event.isAutoRepeat) {
+                event.accepted = true
                 return
             }
 
-            if (event.key === Qt.Key_Left || event.key === Qt.Key_H) {
-                root.selectedIndex = Math.max(root.selectedIndex - 1, 0)
+            const txt = (event.text || "").toLowerCase()
+            const k = event.key
+
+            // ── Direct Letter Hotkeys (L, Q, S, X, R, P) ─────────────────────
+            if (txt === "l" || k === Qt.Key_L) {
+                root.startHold(0, "l"); event.accepted = true; return
+            }
+            if (txt === "q" || txt === "e" || k === Qt.Key_Q || k === Qt.Key_E) {
+                root.startHold(1, "q"); event.accepted = true; return
+            }
+            if (txt === "s" || k === Qt.Key_S) {
+                root.startHold(2, "s"); event.accepted = true; return
+            }
+            if (txt === "x" || k === Qt.Key_X) {
+                root.startHold(3, "x"); event.accepted = true; return
+            }
+            if (txt === "r" || k === Qt.Key_R) {
+                root.startHold(4, "r"); event.accepted = true; return
+            }
+            if (txt === "p" || k === Qt.Key_P) {
+                root.startHold(5, "p"); event.accepted = true; return
+            }
+
+            // ── Number Hotkeys (1-6) ─────────────────────────────────────────
+            if (k >= Qt.Key_1 && k <= Qt.Key_6) {
+                const idx = k - Qt.Key_1
+                root.startHold(idx, "num" + (idx + 1)); event.accepted = true; return
+            }
+
+            // ── Enter / Space to Hold/Trigger Selected Card ──────────────────
+            if (k === Qt.Key_Return || k === Qt.Key_Enter || k === Qt.Key_Space) {
+                root.startHold(root.selectedIndex, "enter")
                 event.accepted = true
-            } else if (event.key === Qt.Key_Right || event.key === Qt.Key_L) {
-                root.selectedIndex = Math.min(root.selectedIndex + 1, root.actions.length - 1)
+                return
+            }
+
+            // ── Arrow Keys & Tab Navigation (No letter conflicts) ────────────
+            if (k === Qt.Key_Left) {
+                root.selectedIndex = (root.selectedIndex - 1 + root.actions.length) % root.actions.length
                 event.accepted = true
-            } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) {
-                root.triggerAction(root.selectedIndex)
+            } else if (k === Qt.Key_Right || k === Qt.Key_Tab) {
+                root.selectedIndex = (root.selectedIndex + 1) % root.actions.length
                 event.accepted = true
-            } else if (event.key === Qt.Key_Escape) {
+            } else if (k === Qt.Key_Up) {
+                root.selectedIndex = (root.selectedIndex < 3) ? (root.selectedIndex + 3) : (root.selectedIndex - 3)
+                event.accepted = true
+            } else if (k === Qt.Key_Down) {
+                root.selectedIndex = (root.selectedIndex < 3) ? (root.selectedIndex + 3) : (root.selectedIndex - 3)
+                event.accepted = true
+            } else if (k === Qt.Key_Escape) {
+                root.stopHold()
                 root.close()
-                event.accepted = true
-            } else if (event.key >= Qt.Key_1 && event.key <= Qt.Key_5) {
-                root.selectedIndex = event.key - Qt.Key_1
-                root.triggerAction(root.selectedIndex)
                 event.accepted = true
             }
         }
+
+        Keys.onReleased: (event) => {
+            if (event.isAutoRepeat) return
+            root.stopHold()
+            event.accepted = true
+        }
     }
 
-    // Fullscreen Backdrop
+    // Fullscreen Dimmed Backdrop
     MouseArea {
         anchors.fill: parent
         onClicked: {
@@ -163,15 +228,15 @@ PanelWindow {
             Behavior on opacity { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
         }
 
-        // Dialog Card
+        // Floating Glass Card HUD
         Rectangle {
             id: card
             anchors.centerIn: parent
-            anchors.verticalCenterOffset: root.isOpen ? 0 : 20
-            width: 620
-            implicitHeight: cardContent.implicitHeight + 36
+            anchors.verticalCenterOffset: root.isOpen ? 0 : 24
+            width: 580
+            implicitHeight: cardContent.implicitHeight + 40
 
-            radius: Services.Theme.radiusLg
+            radius: Services.Theme.radiusLg + 4
             color: Services.Theme.surface
             border.color: root.pendingActionIndex >= 0 && root.actions[root.pendingActionIndex].danger ? Services.Theme.danger : Services.Theme.border
             border.width: 1
@@ -185,7 +250,7 @@ PanelWindow {
             Behavior on implicitHeight { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
             Behavior on border.color { ColorAnimation { duration: 200 } }
 
-            // Block click propagation to backdrop
+            // Block backdrop clicks
             MouseArea {
                 anchors.fill: parent
                 onClicked: {}
@@ -194,17 +259,17 @@ PanelWindow {
             ColumnLayout {
                 id: cardContent
                 anchors { left: parent.left; right: parent.right; top: parent.top }
-                anchors.margins: 18
-                spacing: 16
+                anchors.margins: 20
+                spacing: 18
 
-                // Header
+                // ── Header Section ──────────────────────────────────────────
                 RowLayout {
                     Layout.fillWidth: true
-                    spacing: 12
+                    spacing: 14
 
-                    // Distro / Avatar Icon
+                    // User / Distro Avatar
                     Rectangle {
-                        width: 40; height: 40; radius: 20
+                        width: 44; height: 44; radius: 22
                         color: Services.Theme.surfaceVariant
                         border.color: Services.Theme.border
                         border.width: 1
@@ -213,70 +278,129 @@ PanelWindow {
                             anchors.centerIn: parent
                             text: Services.OsInfo.logoGlyph
                             font.family: Services.Theme.fontSymbols
-                            font.pixelSize: Services.Theme.fontSize6xl
+                            font.pixelSize: Services.Theme.fontSize6xl + 2
                             color: Services.Theme.accent
                         }
+
+                        // Online dot indicator
+                        Rectangle {
+                            anchors { right: parent.right; bottom: parent.bottom; margins: 1 }
+                            width: 10; height: 10; radius: 5
+                            color: Services.Theme.success
+                            border.color: Services.Theme.surface
+                            border.width: 1.5
+                        }
                     }
 
-                    // User & System Info
+                    // User Info & Status Badges
                     ColumnLayout {
-                        spacing: 2
+                        spacing: 4
                         Layout.fillWidth: true
 
-                        Text {
-                            text: root.username !== "" ? "Goodbye, " + root.username : "Power Options"
-                            font.pixelSize: Services.Theme.fontSize3xl
-                            font.weight: Font.Bold
-                            color: Services.Theme.textPrimary
+                        RowLayout {
+                            spacing: 8
+                            Text {
+                                text: root.username !== "" ? ("Hi, " + root.username.charAt(0).toUpperCase() + root.username.slice(1)) : "Power Menu"
+                                font.pixelSize: Services.Theme.fontSize3xl + 1
+                                font.weight: Font.Bold
+                                color: Services.Theme.textPrimary
+                            }
+
+                            // Hostname Tag
+                            Rectangle {
+                                visible: root.hostname !== ""
+                                implicitWidth: hostText.implicitWidth + 10
+                                height: 18
+                                radius: 9
+                                color: Services.Theme.surfaceVariant
+                                border.color: Services.Theme.border
+                                border.width: 1
+
+                                Text {
+                                    id: hostText
+                                    anchors.centerIn: parent
+                                    text: root.hostname
+                                    font.pixelSize: Services.Theme.fontSizeXs
+                                    font.weight: Font.Medium
+                                    color: Services.Theme.textSecondary
+                                }
+                            }
                         }
 
+                        // Telemetry chips
                         RowLayout {
-                            spacing: 6
-                            Text {
-                                text: (root.username !== "" && root.hostname !== "") ? (root.username + "@" + root.hostname) : "System Controls"
-                                font.pixelSize: Services.Theme.fontSizeMd
-                                color: Services.Theme.textSecondary
-                            }
-                            Text {
+                            spacing: 8
+
+                            // Uptime Chip
+                            Rectangle {
                                 visible: root.uptimeStr !== ""
-                                text: "•"
-                                font.pixelSize: Services.Theme.fontSizeMd
-                                color: Services.Theme.textDisabled
+                                implicitWidth: upRow.implicitWidth + 12
+                                height: 20
+                                radius: 10
+                                color: Services.Theme.bgHover
+                                border.color: Services.Theme.borderSubtle
+                                border.width: 1
+
+                                RowLayout {
+                                    id: upRow
+                                    anchors.centerIn: parent
+                                    spacing: 4
+                                    Text {
+                                        text: "󱑂"
+                                        font.family: Services.Theme.fontSymbols
+                                        font.pixelSize: Services.Theme.fontSizeSm
+                                        color: Services.Theme.accent
+                                    }
+                                    Text {
+                                        text: "up " + root.uptimeStr
+                                        font.pixelSize: Services.Theme.fontSizeSm
+                                        color: Services.Theme.textSecondary
+                                    }
+                                }
                             }
-                            Text {
-                                visible: root.uptimeStr !== ""
-                                text: "up " + root.uptimeStr
-                                font.pixelSize: Services.Theme.fontSizeMd
-                                color: Services.Theme.textSecondary
-                            }
-                            Text {
+
+                            // Battery Chip
+                            Rectangle {
                                 visible: Services.Power.ready && !isNaN(Services.Power.percentage) && Services.Power.percentage > 0
-                                text: "•"
-                                font.pixelSize: Services.Theme.fontSizeMd
-                                color: Services.Theme.textDisabled
-                            }
-                            Text {
-                                visible: Services.Power.ready && !isNaN(Services.Power.percentage) && Services.Power.percentage > 0
-                                text: Services.Icons.powerIcon(Services.Power.charging, Services.Power.percentage * 100) + " " + Math.round(Services.Power.percentage * 100) + "%"
-                                font.family: Services.Theme.fontSymbols
-                                font.pixelSize: Services.Theme.fontSizeMd
-                                color: Services.Power.isLow ? "#ff4444" : (Services.Power.isWarning ? "#e06c75" : Services.Theme.textSecondary)
+                                implicitWidth: batRow.implicitWidth + 12
+                                height: 20
+                                radius: 10
+                                color: Services.Theme.bgHover
+                                border.color: Services.Theme.borderSubtle
+                                border.width: 1
+
+                                RowLayout {
+                                    id: batRow
+                                    anchors.centerIn: parent
+                                    spacing: 4
+                                    Text {
+                                        text: Services.Icons.powerIcon(Services.Power.charging, Services.Power.percentage * 100)
+                                        font.family: Services.Theme.fontSymbols
+                                        font.pixelSize: Services.Theme.fontSizeSm
+                                        color: Services.Power.isLow ? Services.Theme.danger : Services.Theme.textSecondary
+                                    }
+                                    Text {
+                                        text: Math.round(Services.Power.percentage * 100) + "%" + (Services.Power.charging ? " (Charging)" : "")
+                                        font.pixelSize: Services.Theme.fontSizeSm
+                                        color: Services.Theme.textSecondary
+                                    }
+                                }
                             }
                         }
                     }
 
-                    // Close Button
+                    // Close (Esc) Button
                     Rectangle {
-                        width: 30; height: 30; radius: 15
+                        width: 32; height: 32; radius: 16
                         color: escMouse.containsMouse ? Services.Theme.surfaceVariant : Services.Theme.bgHover
                         border.color: Services.Theme.border
                         border.width: 1
 
                         Text {
                             anchors.centerIn: parent
-                            text: Services.Icons.reboot
+                            text: Services.Icons.close
                             font.family: Services.Theme.fontSymbols
-                            font.pixelSize: Services.Theme.fontSize2xl
+                            font.pixelSize: Services.Theme.fontSizeMd
                             color: Services.Theme.textSecondary
                         }
 
@@ -298,13 +422,15 @@ PanelWindow {
                     Layout.fillWidth: true
                     height: 1
                     color: Services.Theme.border
+                    opacity: 0.7
                 }
 
-                // Normal Mode: Action Cards Grid
-                RowLayout {
-                    visible: root.pendingActionIndex === -1
+                // ── 2x3 Action Cards Grid ──────────────────────────────────
+                GridLayout {
                     Layout.fillWidth: true
-                    spacing: 10
+                    columns: 3
+                    rowSpacing: 10
+                    columnSpacing: 10
 
                     Repeater {
                         model: root.actions
@@ -314,165 +440,41 @@ PanelWindow {
                             cardSublabel: modelData.sublabel
                             cardIcon: modelData.icon
                             cardKey: modelData.key
+                            cardNum: modelData.num
                             isDangerAction: modelData.danger
+                            needsHoldAction: modelData.needsHold
                             cardIndex: index
-
-                            onClicked: {
-                                root.selectedIndex = index
-                                root.triggerAction(index)
-                            }
                         }
                     }
                 }
 
-                // Confirmation / Countdown Mode
-                ColumnLayout {
-                    visible: root.pendingActionIndex >= 0
-                    Layout.fillWidth: true
-                    spacing: 14
+                // ── Footer Hint ─────────────────────────────────────────────
+                RowLayout {
+                    Layout.alignment: Qt.AlignHCenter
+                    spacing: 6
 
-                    RowLayout {
-                        spacing: 12
-                        Layout.alignment: Qt.AlignHCenter
-
-                        Rectangle {
-                            width: 44; height: 44; radius: 22
-                            color: root.actions[root.pendingActionIndex >= 0 ? root.pendingActionIndex : 0].danger ? "#2a1515" : Services.Theme.surfaceVariant
-                            border.color: root.actions[root.pendingActionIndex >= 0 ? root.pendingActionIndex : 0].danger ? Services.Theme.danger : Services.Theme.accent
-                            border.width: 1
-
-                            Text {
-                                anchors.centerIn: parent
-                                text: root.actions[root.pendingActionIndex >= 0 ? root.pendingActionIndex : 0].icon
-                                font.family: Services.Theme.fontSymbols
-                                font.pixelSize: Services.Theme.fontSize7xl
-                                color: root.actions[root.pendingActionIndex >= 0 ? root.pendingActionIndex : 0].danger ? Services.Theme.danger : Services.Theme.accent
-                            }
-                        }
-
-                        ColumnLayout {
-                            spacing: 2
-                            Text {
-                                text: root.actions[root.pendingActionIndex >= 0 ? root.pendingActionIndex : 0].label + " System?"
-                                font.pixelSize: Services.Theme.fontSize4xl
-                                font.weight: Font.Bold
-                                color: Services.Theme.textPrimary
-                            }
-                            Text {
-                                text: "Executing automatically in " + root.countdownSeconds + " second" + (root.countdownSeconds > 1 ? "s..." : "...")
-                                font.pixelSize: Services.Theme.fontSizeLg
-                                color: Services.Theme.textSecondary
-                            }
-                        }
+                    Text {
+                        text: root.activeHoldIndex >= 0 ? "󰔛" : "󰌌"
+                        font.family: Services.Theme.fontSymbols
+                        font.pixelSize: Services.Theme.fontSizeSm
+                        color: root.activeHoldIndex >= 0 ? (root.actions[root.activeHoldIndex].danger ? Services.Theme.danger : Services.Theme.accent) : Services.Theme.textDisabled
                     }
 
-                    // Progress Bar
-                    Rectangle {
-                        Layout.fillWidth: true
-                        height: 4
-                        radius: 2
-                        color: Services.Theme.border
-                        clip: true
-
-                        Rectangle {
-                            height: parent.height
-                            width: parent.width * (root.countdownSeconds / 5.0)
-                            radius: 2
-                            color: root.actions[root.pendingActionIndex >= 0 ? root.pendingActionIndex : 0].danger ? Services.Theme.danger : Services.Theme.accent
-                            Behavior on width { NumberAnimation { duration: 900; easing.type: Easing.Linear } }
-                        }
-                    }
-
-                    // Button Row
-                    RowLayout {
-                        Layout.alignment: Qt.AlignHCenter
-                        spacing: 12
-
-                        // Confirm Button
-                        Rectangle {
-                            implicitWidth: 160
-                            height: 38
-                            radius: Services.Theme.radiusMd
-                            color: confirmMouse.containsMouse ? (root.actions[root.pendingActionIndex >= 0 ? root.pendingActionIndex : 0].danger ? "#9e4848" : "#e0e0e0") : (root.actions[root.pendingActionIndex >= 0 ? root.pendingActionIndex : 0].danger ? Services.Theme.danger : Services.Theme.accent)
-
-                            RowLayout {
-                                anchors.centerIn: parent
-                                spacing: 8
-                                Text {
-                                    text: "Confirm Now"
-                                    font.pixelSize: Services.Theme.fontSizeXl
-                                    font.weight: Font.DemiBold
-                                    color: root.actions[root.pendingActionIndex >= 0 ? root.pendingActionIndex : 0].danger ? Services.Theme.white : Services.Theme.bgOnAccent
-                                }
-                                Rectangle {
-                                    width: 44; height: 18; radius: 4
-                                    color: root.actions[root.pendingActionIndex >= 0 ? root.pendingActionIndex : 0].danger ? Services.Theme.dangerDeep : Services.Theme.textOnSafe
-                                    Text {
-                                        anchors.centerIn: parent
-                                        text: "↵ Enter"
-                                        font.pixelSize: Services.Theme.fontSizeXs
-                                        font.weight: Font.Bold
-                                        color: root.actions[root.pendingActionIndex >= 0 ? root.pendingActionIndex : 0].danger ? Services.Theme.white : Services.Theme.bgOnAccent
-                                    }
-                                }
-                            }
-
-                            MouseArea {
-                                id: confirmMouse
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: root.confirmPendingAction()
-                            }
-                        }
-
-                        // Cancel Button
-                        Rectangle {
-                            implicitWidth: 140
-                            height: 38
-                            radius: Services.Theme.radiusMd
-                            color: cancelMouse.containsMouse ? Services.Theme.surfaceVariant : Services.Theme.bgHover
-                            border.color: Services.Theme.border
-                            border.width: 1
-
-                            RowLayout {
-                                anchors.centerIn: parent
-                                spacing: 8
-                                Text {
-                                    text: "Cancel"
-                                    font.pixelSize: Services.Theme.fontSizeXl
-                                    color: Services.Theme.textPrimary
-                                }
-                                Rectangle {
-                                    width: 34; height: 18; radius: 4
-                                    color: Services.Theme.surfaceVariant
-                                    Text {
-                                        anchors.centerIn: parent
-                                        text: "Esc"
-                                        font.pixelSize: Services.Theme.fontSizeXs
-                                        color: Services.Theme.textSecondary
-                                    }
-                                }
-                            }
-
-                            MouseArea {
-                                id: cancelMouse
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: root.cancelPendingAction()
-                            }
-                        }
+                    Text {
+                        text: root.activeHoldIndex >= 0 ? ("Holding key to confirm " + root.actions[root.activeHoldIndex].label + "...") : "Press hotkey (L, Q) or hold (S, X, R, P) to execute"
+                        font.pixelSize: Services.Theme.fontSizeXs
+                        color: root.activeHoldIndex >= 0 ? (root.actions[root.activeHoldIndex].danger ? Services.Theme.danger : Services.Theme.textPrimary) : Services.Theme.textDisabled
                     }
                 }
             }
         }
     }
 
-    // Action Processes
+    // ── Action Processes ────────────────────────────────────────────────────
     Process { id: lockProc; command: ["sh", "-c", "qs ipc call lockscreen lock || hyprlock || swaylock"] }
+    Process { id: reloadProc; command: ["sh", "-c", "touch \"" + (Quickshell.env("HOME") || "/home/" + (Quickshell.env("USER") || "user")) + "/.config/quickshell/shell.qml\" || pkill -USR1 qs || pkill -USR1 quickshell"] }
     Process { id: logoutProc; command: ["sh", "-c", "niri msg action quit --skip-confirmation || hyprctl dispatch 'hl.dsp.exit()' || loginctl terminate-user $USER"] }
-    Process { id: sleepProc; command: ["systemctl", "suspend"] }
+    Process { id: sleepProc; command: ["sh", "-c", "qs ipc call lockscreen lock && sleep 0.2 && systemctl suspend"] }
     Process { id: rebootProc; command: ["systemctl", "reboot"] }
     Process { id: shutdownProc; command: ["systemctl", "poweroff"] }
 
@@ -498,26 +500,28 @@ PanelWindow {
         }
     }
 
-    // Card Component
+    // ── Action Card Component ───────────────────────────────────────────────
     component PowerCard: Rectangle {
         id: pCard
         property string cardLabel: ""
         property string cardSublabel: ""
         property string cardIcon: ""
         property string cardKey: ""
+        property string cardNum: ""
         property bool isDangerAction: false
+        property bool needsHoldAction: false
         property int cardIndex: -1
 
-        signal clicked()
-
         readonly property bool isSelected: root.selectedIndex === cardIndex
+        readonly property bool isHolding: (root.activeHoldIndex === cardIndex)
 
-        height: 114
+        height: 104
         radius: Services.Theme.radiusMd
-        color: pMouse.containsMouse || isSelected ? Services.Theme.surfaceVariant : Services.Theme.bgHover
-        border.color: isSelected ? (isDangerAction ? Services.Theme.danger : Services.Theme.accent) : (pMouse.containsMouse ? Services.Theme.borderHighlight : Services.Theme.border)
-        border.width: isSelected ? 2 : 1
-        scale: pMouse.containsMouse ? 1.03 : (isSelected ? 1.01 : 1.0)
+        color: isHolding ? (isDangerAction ? Qt.rgba(0.94, 0.27, 0.27, 0.15) : Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.15)) : (pMouse.containsMouse || isSelected ? Services.Theme.surfaceVariant : Services.Theme.bgHover)
+        border.color: isHolding ? (isDangerAction ? Services.Theme.danger : Services.Theme.accent) : (isSelected ? (isDangerAction ? Services.Theme.danger : Services.Theme.accent) : (pMouse.containsMouse ? Services.Theme.borderHighlight : Services.Theme.border))
+        border.width: isHolding ? 2 : (isSelected ? 2 : 1)
+        scale: isHolding ? 0.97 : (pMouse.containsMouse ? 1.03 : (isSelected ? 1.01 : 1.0))
+        clip: true
 
         Behavior on color { ColorAnimation { duration: 120 } }
         Behavior on border.color { ColorAnimation { duration: 120 } }
@@ -529,14 +533,16 @@ PanelWindow {
             hoverEnabled: true
             cursorShape: Qt.PointingHandCursor
             onEntered: root.selectedIndex = pCard.cardIndex
-            onClicked: pCard.clicked()
+            onPressed: root.startHold(pCard.cardIndex, "mouse")
+            onReleased: root.stopHold()
+            onCanceled: root.stopHold()
         }
 
-        // Hotkey Badge
+        // Hotkey Badge (Top Right)
         Rectangle {
-            anchors { top: parent.top; right: parent.right; margins: 8 }
-            width: 18; height: 18; radius: 9
-            color: isSelected ? (isDangerAction ? Services.Theme.danger : Services.Theme.accent) : Services.Theme.border
+            anchors { top: parent.top; right: parent.right; margins: 7 }
+            width: 20; height: 20; radius: 6
+            color: isHolding ? (isDangerAction ? Services.Theme.danger : Services.Theme.accent) : (isSelected ? (isDangerAction ? Services.Theme.danger : Services.Theme.accent) : Services.Theme.border)
             Behavior on color { ColorAnimation { duration: 120 } }
 
             Text {
@@ -544,28 +550,30 @@ PanelWindow {
                 text: pCard.cardKey
                 font.pixelSize: Services.Theme.fontSizeSm
                 font.weight: Font.Bold
-                color: isSelected ? (isDangerAction ? Services.Theme.white : Services.Theme.bgOnAccent) : Services.Theme.textSecondary
+                color: (isHolding || isSelected) ? (isDangerAction ? "#ffffff" : Services.Theme.bgOnAccent) : Services.Theme.textSecondary
             }
         }
 
         ColumnLayout {
             anchors.fill: parent
-            anchors.margins: 12
-            spacing: 6
+            anchors.margins: 10
+            spacing: 5
 
             // Icon Box
             Rectangle {
                 Layout.alignment: Qt.AlignHCenter
-                width: 44; height: 44; radius: 22
-                color: isSelected ? (isDangerAction ? "#2a1515" : "#2a2a2a") : Services.Theme.bgElevated
+                width: 40; height: 40; radius: 20
+                color: isHolding ? (isDangerAction ? Qt.rgba(0.94, 0.27, 0.27, 0.3) : Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.3)) : (isSelected ? (isDangerAction ? Qt.rgba(0.94, 0.27, 0.27, 0.2) : Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.2)) : Services.Theme.bgElevated)
+                border.color: (isHolding || isSelected) ? (isDangerAction ? Services.Theme.danger : Services.Theme.accent) : "transparent"
+                border.width: (isHolding || isSelected) ? 1 : 0
                 Behavior on color { ColorAnimation { duration: 120 } }
 
                 Text {
                     anchors.centerIn: parent
                     text: pCard.cardIcon
                     font.family: Services.Theme.fontSymbols
-                    font.pixelSize: Services.Theme.fontSize7xl
-                    color: isSelected ? (isDangerAction ? Services.Theme.danger : Services.Theme.accent) : Services.Theme.textPrimary
+                    font.pixelSize: Services.Theme.fontSize5xl
+                    color: (isHolding || isSelected) ? (isDangerAction ? Services.Theme.danger : Services.Theme.accent) : (isDangerAction ? Qt.lighter(Services.Theme.danger, 1.1) : Services.Theme.textPrimary)
                     Behavior on color { ColorAnimation { duration: 120 } }
                 }
             }
@@ -574,21 +582,38 @@ PanelWindow {
             Text {
                 Layout.alignment: Qt.AlignHCenter
                 text: pCard.cardLabel
-                font.pixelSize: Services.Theme.fontSizeLg
+                font.pixelSize: Services.Theme.fontSizeMd
                 font.weight: Font.DemiBold
-                color: isSelected ? Services.Theme.textPrimary : Services.Theme.textSecondary
+                color: (isHolding || isSelected) ? Services.Theme.textPrimary : Services.Theme.textSecondary
+                elide: Text.ElideRight
                 Behavior on color { ColorAnimation { duration: 120 } }
             }
 
-            // Sublabel
+            // Sublabel / Hold Hint
             Text {
                 Layout.alignment: Qt.AlignHCenter
-                text: pCard.cardSublabel
-                font.pixelSize: Services.Theme.fontSizeXs
-                color: Services.Theme.textDisabled
+                text: pCard.isHolding ? "HOLD TO EXECUTE..." : (pCard.needsHoldAction ? (pMouse.containsMouse || pCard.isSelected ? ("Hold [" + pCard.cardKey + "]") : pCard.cardSublabel) : pCard.cardSublabel)
+                font.pixelSize: Services.Theme.fontSizeXs - 1
+                font.bold: pCard.isHolding
+                color: pCard.isHolding ? (pCard.isDangerAction ? Services.Theme.danger : Services.Theme.accent) : Services.Theme.textDisabled
                 elide: Text.ElideRight
-                Layout.maximumWidth: parent.width - 16
+                Layout.maximumWidth: parent.width - 8
+            }
+        }
+
+        // Live Hold Progress Bar (along bottom border)
+        Rectangle {
+            anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
+            height: 4
+            color: Qt.rgba(0, 0, 0, 0.25)
+            visible: pCard.isHolding
+
+            Rectangle {
+                anchors { left: parent.left; top: parent.top; bottom: parent.bottom }
+                width: parent.width * root.holdProgress
+                color: pCard.isDangerAction ? Services.Theme.danger : Services.Theme.accent
             }
         }
     }
 }
+

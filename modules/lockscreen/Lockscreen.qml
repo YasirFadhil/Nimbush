@@ -23,18 +23,33 @@ Scope {
     property bool isAuthenticating: false
 
     property string timeStr: "00:00"
+    property string hourStr: "00"
+    property string minStr: "00"
     property string dateStr: ""
+    property string greetingStr: "Welcome"
     property string username: "user"
     property string hostname: "host"
     property bool capsLockOn: false
     property bool isRevealed: false
+    property bool lockscreenCcOpen: false
+    property bool lockscreenPwrOpen: false
+
+    function numberToWords(num) {
+        const ones = ["ZERO", "ONE", "TWO", "THREE", "FOUR", "FIVE", "SIX", "SEVEN", "EIGHT", "NINE", "TEN", "ELEVEN", "TWELVE", "THIRTEEN", "FOURTEEN", "FIFTEEN", "SIXTEEN", "SEVENTEEN", "EIGHTEEN", "NINETEEN"];
+        const tens = ["", "", "TWENTY", "THIRTY", "FORTY", "FIFTY"];
+        if (num < 20) return ones[num] || "";
+        const t = Math.floor(num / 10);
+        const o = num % 10;
+        return tens[t] + (o > 0 ? (" " + ones[o]) : "");
+    }
+
+    readonly property string hourWords: numberToWords(Number(root.hourStr))
+    readonly property string minWords: (Number(root.minStr) === 0) ? "O'CLOCK" : ((Number(root.minStr) < 10 ? "OH " : "") + numberToWords(Number(root.minStr)))
 
     readonly property var player: Services.Mpris.activePlayer
     readonly property bool hasPlayer: player !== null && (player?.trackTitle ?? "").length > 0
     readonly property bool isPlaying: player?.isPlaying ?? false
     readonly property int notifCount: Services.Notifications.historyList ? Services.Notifications.historyList.count : 0
-
-
 
     Timer {
         id: revealTimer
@@ -54,6 +69,8 @@ Scope {
     function open() {
         Services.OverlayManager.isLocked = true
         Services.OverlayManager.closeAllExcept(root)
+        lockscreenCcOpen = false
+        lockscreenPwrOpen = false
         passwordInput = ""
         pendingPassword = ""
         isError = false
@@ -90,10 +107,19 @@ Scope {
 
     function updateTime() {
         const now = new Date()
-        let hours = now.getHours() % 12
-        if (hours === 0) hours = 12
-        const minutes = String(now.getMinutes()).padStart(2, "0")
-        timeStr = hours + ":" + minutes
+        const is24 = Services.Config ? Services.Config.lockscreen24h : false
+        let h = now.getHours()
+        if (h < 12) greetingStr = "Good Morning"
+        else if (h < 18) greetingStr = "Good Afternoon"
+        else greetingStr = "Good Evening"
+
+        if (!is24) {
+            h = h % 12
+            if (h === 0) h = 12
+        }
+        hourStr = String(h).padStart(2, "0")
+        minStr = String(now.getMinutes()).padStart(2, "0")
+        timeStr = hourStr + ":" + minStr
         dateStr = Qt.formatDateTime(now, "dddd, MMMM d")
     }
 
@@ -132,6 +158,8 @@ Scope {
         pendingPassword = ""
         isAuthenticating = false
         isRevealed = false
+        lockscreenCcOpen = false
+        lockscreenPwrOpen = false
         unlockTimer.start()
     }
 
@@ -164,7 +192,7 @@ Scope {
         }
     }
 
-    // Action processes
+    // Power Action Processes
     Process { id: suspendProc; command: ["systemctl", "suspend"] }
     Process { id: rebootProc; command: ["systemctl", "reboot"] }
     Process { id: shutdownProc; command: ["systemctl", "poweroff"] }
@@ -236,28 +264,46 @@ Scope {
                     }
                 }
 
-                // Fullscreen Wallpaper Layer (Gets image from Services.Wallpaper with smooth Zoom-In 1.0 -> 1.14 & Zoom-Out 1.14 -> 1.0)
+                // Fullscreen Wallpaper Layer (Gets image from Services.Wallpaper or custom lockscreen image, with smooth Zoom and MultiEffect blur)
                 Item {
                     anchors.fill: parent
 
                     Image {
                         id: bgImage
                         anchors.fill: parent
-                        source: Services.Wallpaper.currentWallpaper.length > 0 ? ("file://" + Services.Wallpaper.currentWallpaper) : ("file://" + (Quickshell.env("HOME") || "/home/yasirfadhil") + "/.config/quickshell/assets/wallpapers/background_zoomed.png")
+                        source: {
+                            if (Services.Config && Services.Config.lockscreenWallpaperMode === "custom" && Services.Config.lockscreenCustomWallpaper.length > 0) {
+                                return "file://" + Services.Config.lockscreenCustomWallpaper
+                            }
+                            return Services.Wallpaper.currentWallpaper.length > 0 ? ("file://" + Services.Wallpaper.currentWallpaper) : ("file://" + Services.Wallpaper.darkWallbler)
+                        }
                         fillMode: Image.PreserveAspectCrop
                         asynchronous: false
                         smooth: true
                         cache: true
-                        scale: root.isRevealed ? 1.20 : 1.0
+                        scale: (Services.Config && !Services.Config.lockscreenWallpaperZoom) ? 1.0 : (root.isRevealed ? 1.16 : 1.0)
                         transformOrigin: Item.Center
+                        visible: !(Services.Config && Services.Config.lockscreenBlur && (Services.Config.lockscreenBlurRadius > 0))
                         Behavior on scale { NumberAnimation { duration: 350; easing.type: root.isRevealed ? Easing.OutCubic : Easing.InCubic } }
+                    }
+
+                    MultiEffect {
+                        anchors.fill: bgImage
+                        source: bgImage
+                        scale: bgImage.scale
+                        transformOrigin: Item.Center
+                        blurEnabled: (Services.Config && Services.Config.lockscreenBlur) || false
+                        blur: (Services.Config ? Services.Config.lockscreenBlurRadius : 0.40)
+                        blurMax: 64
+                        visible: (Services.Config && Services.Config.lockscreenBlur && (Services.Config.lockscreenBlurRadius > 0)) || false
+                        Behavior on blur { NumberAnimation { duration: 250 } }
                     }
 
                     // Smooth Dark Dim / Vignette Overlay
                     Rectangle {
                         anchors.fill: parent
                         color: Services.Theme.bgDeep
-                        opacity: root.isRevealed ? 0.45 : 0.0
+                        opacity: root.isRevealed ? (Services.Config ? Services.Config.lockscreenDim : 0.45) : 0.0
                         Behavior on opacity {
                             NumberAnimation {
                                 duration: 900
@@ -403,7 +449,7 @@ Scope {
                         }
                     }
 
-                    // Right Side: Combined Battery & Control Center Pill
+                    // Right Side: Combined Quick Status & Control Center Pill
                     Rectangle {
                         anchors.right: parent.right
                         anchors.rightMargin: 20
@@ -412,8 +458,9 @@ Scope {
                         implicitWidth: combinedCcRow.implicitWidth + 22
                         radius: 15
                         color: ccMouse.containsMouse ? Services.Theme.bgHover : Services.Theme.surfaceVariant
-                        border.color: Services.OverlayManager.controlCenterVisible ? Services.Theme.accent : Services.Theme.border
+                        border.color: root.lockscreenCcOpen ? Services.Theme.accent : Services.Theme.border
                         border.width: 1
+                        visible: Services.Config ? Services.Config.lockscreenShowStatusPill : true
                         Behavior on color { ColorAnimation { duration: 120 } }
                         Behavior on border.color { ColorAnimation { duration: 120 } }
 
@@ -421,6 +468,24 @@ Scope {
                             id: combinedCcRow
                             anchors.centerIn: parent
                             spacing: 8
+
+                            // Wi-Fi Status Icon (if enabled)
+                            Text {
+                                visible: Services.Wifi && Services.Wifi.enabled
+                                text: Services.Icons.wifi
+                                font.family: Services.Theme.fontSymbols
+                                font.pixelSize: Services.Theme.fontSizeSm
+                                color: (Services.Wifi && Services.Wifi.connected) ? Services.Theme.accent : Services.Theme.textDisabled
+                            }
+
+                            // Bluetooth Status Icon (if enabled)
+                            Text {
+                                visible: Services.Bluetooth && Services.Bluetooth.enabled
+                                text: Services.Icons.bluetooth
+                                font.family: Services.Theme.fontSymbols
+                                font.pixelSize: Services.Theme.fontSizeSm
+                                color: (Services.Bluetooth && Services.Bluetooth.devices.some(d => d.connected)) ? Services.Theme.accent : Services.Theme.textDisabled
+                            }
 
                             // Battery Icon & Percentage
                             RowLayout {
@@ -453,7 +518,7 @@ Scope {
                                 text: Services.Icons.sliders
                                 font.family: Services.Theme.fontSymbols
                                 font.pixelSize: 12
-                                color: Services.OverlayManager.controlCenterVisible ? Services.Theme.accent : Services.Theme.textPrimary
+                                color: root.lockscreenCcOpen ? Services.Theme.accent : Services.Theme.textPrimary
                             }
                         }
 
@@ -463,7 +528,7 @@ Scope {
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
                             onClicked: {
-                                Services.OverlayManager.controlCenterVisible = !Services.OverlayManager.controlCenterVisible
+                                root.lockscreenCcOpen = !root.lockscreenCcOpen
                             }
                         }
                     }
@@ -472,7 +537,7 @@ Scope {
                 // Main Content Backdrop MouseArea
                 MouseArea {
                     anchors.fill: parent
-                    enabled: !Services.OverlayManager.controlCenterVisible
+                    enabled: !root.lockscreenCcOpen
                     onClicked: pwTextInput.forceActiveFocus()
 
                     Item {
@@ -495,7 +560,9 @@ Scope {
                             id: topClockColumn
                             anchors.horizontalCenter: parent.horizontalCenter
                             anchors.top: parent.top
-                            anchors.topMargin: root.isRevealed ? (parent.height * 0.14) : (parent.height * 0.14 - 35)
+                            anchors.topMargin: root.isRevealed 
+                                ? (Services.Config && (Services.Config.lockscreenClockStyle === "modern" || Services.Config.lockscreenClockStyle === "vertical") ? (parent.height * 0.07) : (parent.height * 0.12)) 
+                                : (parent.height * 0.12 - 35)
                             spacing: 4
                             opacity: root.isRevealed ? 1.0 : 0.0
                             scale: root.isRevealed ? 1.0 : 0.92
@@ -504,18 +571,24 @@ Scope {
                             Behavior on opacity { NumberAnimation { duration: 350; easing.type: Easing.OutCubic } }
                             Behavior on scale { NumberAnimation { duration: 400; easing.type: Easing.OutCubic } }
 
+                            readonly property string clockStyle: Services.Config ? Services.Config.lockscreenClockStyle : "hero"
+
+                            // Date Line (for hero, modern, minimal)
                             Text {
+                                visible: topClockColumn.clockStyle !== "compact" && topClockColumn.clockStyle !== "vertical" && topClockColumn.clockStyle !== "typographic" && topClockColumn.clockStyle !== "radial" && topClockColumn.clockStyle !== "cyber"
                                 Layout.alignment: Qt.AlignHCenter
-                                text: root.dateStr
-                                color: Services.Theme.textPrimary
-                                font.pixelSize: Services.Theme.fontSize5xl
-                                font.weight: Font.DemiBold
-                                font.letterSpacing: 0.5
+                                text: topClockColumn.clockStyle === "minimal" ? root.dateStr.toUpperCase() : root.dateStr
+                                color: topClockColumn.clockStyle === "minimal" ? Services.Theme.accent : Services.Theme.textPrimary
+                                font.pixelSize: topClockColumn.clockStyle === "minimal" ? Services.Theme.fontSizeSm : Services.Theme.fontSize5xl
+                                font.weight: topClockColumn.clockStyle === "minimal" ? Font.Bold : Font.DemiBold
+                                font.letterSpacing: topClockColumn.clockStyle === "minimal" ? 2.5 : 0.5
                                 style: Text.Outline
                                 styleColor: Services.Theme.overlayDim
                             }
 
+                            // Style 1: Hero Clock (Single horizontal huge display)
                             Text {
+                                visible: topClockColumn.clockStyle === "hero"
                                 Layout.alignment: Qt.AlignHCenter
                                 text: root.timeStr
                                 color: Services.Theme.white
@@ -524,6 +597,310 @@ Scope {
                                 font.family: Services.Theme.fontDisplay
                                 style: Text.Outline
                                 styleColor: Services.Theme.overlayDim
+                            }
+
+                            // Style 2: Modern Stacked Clock (Large Hour above Minute)
+                            ColumnLayout {
+                                visible: topClockColumn.clockStyle === "modern"
+                                Layout.alignment: Qt.AlignHCenter
+                                spacing: -20
+
+                                Text {
+                                    Layout.alignment: Qt.AlignHCenter
+                                    text: root.hourStr
+                                    color: Services.Theme.accent
+                                    font.pixelSize: 84
+                                    font.weight: Font.Bold
+                                    font.family: Services.Theme.fontDisplay
+                                    style: Text.Outline
+                                    styleColor: Services.Theme.overlayDim
+                                }
+                                Text {
+                                    Layout.alignment: Qt.AlignHCenter
+                                    text: root.minStr
+                                    color: Services.Theme.white
+                                    font.pixelSize: 84
+                                    font.weight: Font.Bold
+                                    font.family: Services.Theme.fontDisplay
+                                    style: Text.Outline
+                                    styleColor: Services.Theme.overlayDim
+                                }
+                            }
+
+                            // Style 3: Compact Pill Clock
+                            Rectangle {
+                                visible: topClockColumn.clockStyle === "compact"
+                                Layout.alignment: Qt.AlignHCenter
+                                height: 44
+                                implicitWidth: compactRow.implicitWidth + 28
+                                radius: 22
+                                color: Qt.rgba(Services.Theme.bgDeep.r, Services.Theme.bgDeep.g, Services.Theme.bgDeep.b, 0.65)
+                                border.color: Services.Theme.borderHighlight
+                                border.width: 1
+
+                                RowLayout {
+                                    id: compactRow
+                                    anchors.centerIn: parent
+                                    spacing: 12
+
+                                    Text {
+                                        text: root.timeStr
+                                        color: Services.Theme.accent
+                                        font.pixelSize: Services.Theme.fontSize3xl
+                                        font.bold: true
+                                        font.family: Services.Theme.fontDisplay
+                                    }
+                                    Rectangle { width: 1; height: 16; color: Services.Theme.border }
+                                    Text {
+                                        text: root.dateStr
+                                        color: Services.Theme.textPrimary
+                                        font.pixelSize: Services.Theme.fontSizeMd
+                                        font.weight: Font.Medium
+                                    }
+                                }
+                            }
+
+                            // Style 4: Minimalist Clock (Clean ultra-light display)
+                            Text {
+                                visible: topClockColumn.clockStyle === "minimal"
+                                Layout.alignment: Qt.AlignHCenter
+                                text: root.timeStr
+                                color: Services.Theme.white
+                                font.pixelSize: 88
+                                font.weight: Font.ExtraLight
+                                font.letterSpacing: 2
+                                font.family: Services.Theme.fontDisplay
+                                style: Text.Outline
+                                styleColor: Services.Theme.overlayDim
+                            }
+
+                            // Style 5: Vertical Aesthetic Clock
+                            RowLayout {
+                                visible: topClockColumn.clockStyle === "vertical"
+                                Layout.alignment: Qt.AlignHCenter
+                                spacing: 18
+
+                                ColumnLayout {
+                                    spacing: -14
+                                    Text {
+                                        text: root.hourStr
+                                        color: Services.Theme.accent
+                                        font.pixelSize: 64
+                                        font.weight: Font.Bold
+                                        font.family: Services.Theme.fontDisplay
+                                        style: Text.Outline
+                                        styleColor: Services.Theme.overlayDim
+                                    }
+                                    Text {
+                                        text: root.minStr
+                                        color: Services.Theme.white
+                                        font.pixelSize: 64
+                                        font.weight: Font.Bold
+                                        font.family: Services.Theme.fontDisplay
+                                        style: Text.Outline
+                                        styleColor: Services.Theme.overlayDim
+                                    }
+                                }
+
+                                Rectangle {
+                                    width: 2
+                                    height: 80
+                                    color: Services.Theme.accent
+                                    radius: 1
+                                }
+
+                                ColumnLayout {
+                                    spacing: 4
+                                    Text {
+                                        text: Qt.formatDateTime(new Date(), "dddd")
+                                        color: Services.Theme.accent
+                                        font.pixelSize: Services.Theme.fontSizeLg
+                                        font.bold: true
+                                    }
+                                    Text {
+                                        text: Qt.formatDateTime(new Date(), "MMMM d, yyyy")
+                                        color: Services.Theme.textPrimary
+                                        font.pixelSize: Services.Theme.fontSizeSm
+                                        font.weight: Font.Medium
+                                    }
+                                    Text {
+                                        text: root.greetingStr
+                                        color: Services.Theme.textSecondary
+                                        font.pixelSize: Services.Theme.fontSizeXs
+                                    }
+                                }
+                            }
+
+                            // Style 6: Typographic Editorial Words Clock
+                            ColumnLayout {
+                                visible: topClockColumn.clockStyle === "typographic" || topClockColumn.clockStyle === "words"
+                                Layout.alignment: Qt.AlignHCenter
+                                spacing: 3
+
+                                Text {
+                                    Layout.alignment: Qt.AlignHCenter
+                                    text: root.hourWords
+                                    color: Services.Theme.accent
+                                    font.pixelSize: 44
+                                    font.weight: Font.Black
+                                    font.letterSpacing: 2.5
+                                    font.family: Services.Theme.fontDisplay
+                                    style: Text.Outline
+                                    styleColor: Services.Theme.overlayDim
+                                }
+                                Text {
+                                    Layout.alignment: Qt.AlignHCenter
+                                    text: root.minWords
+                                    color: Services.Theme.white
+                                    font.pixelSize: 44
+                                    font.weight: Font.Black
+                                    font.letterSpacing: 2.5
+                                    font.family: Services.Theme.fontDisplay
+                                    style: Text.Outline
+                                    styleColor: Services.Theme.overlayDim
+                                }
+                                Rectangle {
+                                    Layout.alignment: Qt.AlignHCenter
+                                    Layout.topMargin: 4
+                                    width: 140; height: 2; radius: 1; color: Services.Theme.accent
+                                }
+                                Text {
+                                    Layout.alignment: Qt.AlignHCenter
+                                    text: root.dateStr.toUpperCase()
+                                    color: Services.Theme.textSecondary
+                                    font.pixelSize: Services.Theme.fontSizeXs
+                                    font.weight: Font.Bold
+                                    font.letterSpacing: 1.5
+                                    style: Text.Outline
+                                    styleColor: Services.Theme.overlayDim
+                                }
+                            }
+
+                            // Style 7: Radial Ring Gauge Clock
+                            Rectangle {
+                                visible: topClockColumn.clockStyle === "radial"
+                                Layout.alignment: Qt.AlignHCenter
+                                width: 146; height: 146; radius: 73
+                                color: Qt.rgba(Services.Theme.bgDeep.r, Services.Theme.bgDeep.g, Services.Theme.bgDeep.b, 0.55)
+                                border.color: Services.Theme.accent
+                                border.width: 2.5
+
+                                Rectangle {
+                                    anchors.fill: parent
+                                    anchors.margins: 6
+                                    radius: 67
+                                    color: "transparent"
+                                    border.color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.25)
+                                    border.width: 1.5
+                                }
+
+                                ColumnLayout {
+                                    anchors.centerIn: parent
+                                    spacing: 2
+
+                                    Text {
+                                        Layout.alignment: Qt.AlignHCenter
+                                        text: root.timeStr
+                                        color: Services.Theme.white
+                                        font.pixelSize: 34
+                                        font.weight: Font.Bold
+                                        font.family: Services.Theme.fontDisplay
+                                    }
+                                    Text {
+                                        Layout.alignment: Qt.AlignHCenter
+                                        text: Qt.formatDateTime(new Date(), "ddd, MMM d")
+                                        color: Services.Theme.accent
+                                        font.pixelSize: 11
+                                        font.weight: Font.DemiBold
+                                        font.letterSpacing: 0.5
+                                    }
+                                }
+                            }
+
+                            // Style 8: Cyberpunk / Terminal Monospace HUD
+                            Rectangle {
+                                visible: topClockColumn.clockStyle === "cyber"
+                                Layout.alignment: Qt.AlignHCenter
+                                implicitWidth: cyberCol.implicitWidth + 36
+                                implicitHeight: cyberCol.implicitHeight + 22
+                                radius: 8
+                                color: Qt.rgba(0, 0, 0, 0.7)
+                                border.color: Services.Theme.accent
+                                border.width: 1.5
+
+                                ColumnLayout {
+                                    id: cyberCol
+                                    anchors.centerIn: parent
+                                    spacing: 4
+
+                                    RowLayout {
+                                        spacing: 12
+                                        Text {
+                                            text: "┌[ SYS: LOCKED ]"
+                                            font.family: Services.Theme.fontMono
+                                            font.pixelSize: 10
+                                            color: Services.Theme.accent
+                                            font.bold: true
+                                        }
+                                        Item { Layout.fillWidth: true }
+                                        Text {
+                                            text: "[ " + (Services.OsInfo.username || root.username) + "@" + (Services.OsInfo.hostname || root.hostname) + " ]┐"
+                                            font.family: Services.Theme.fontMono
+                                            font.pixelSize: 10
+                                            color: Services.Theme.textSecondary
+                                        }
+                                    }
+
+                                    Text {
+                                        Layout.alignment: Qt.AlignHCenter
+                                        text: root.timeStr + ":" + String(new Date().getSeconds()).padStart(2, "0")
+                                        font.family: Services.Theme.fontMono
+                                        font.pixelSize: 42
+                                        font.bold: true
+                                        color: Services.Theme.white
+                                    }
+
+                                    RowLayout {
+                                        spacing: 12
+                                        Text {
+                                            text: "└[ DATE: " + Qt.formatDateTime(new Date(), "yyyy.MM.dd") + " ]"
+                                            font.family: Services.Theme.fontMono
+                                            font.pixelSize: 10
+                                            color: Services.Theme.textSecondary
+                                        }
+                                        Item { Layout.fillWidth: true }
+                                        Text {
+                                            text: "[ BAT: " + Math.round((Services.Power.percentage || 0.9) * 100) + "% ]┘"
+                                            font.family: Services.Theme.fontMono
+                                            font.pixelSize: 10
+                                            color: Services.Theme.accent
+                                            font.bold: true
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Ambient Greeting / Weather Subtitle (for styles other than vertical/radial/cyber)
+                            RowLayout {
+                                visible: (topClockColumn.clockStyle !== "vertical" && topClockColumn.clockStyle !== "radial" && topClockColumn.clockStyle !== "cyber") && (Services.Config ? Services.Config.lockscreenShowWeather : true)
+                                Layout.alignment: Qt.AlignHCenter
+                                spacing: 6
+                                opacity: 0.85
+
+                                Text {
+                                    text: Services.Icons.sun || Services.Icons.sparkle
+                                    font.family: Services.Theme.fontSymbols
+                                    font.pixelSize: 12
+                                    color: Services.Theme.accent
+                                }
+                                Text {
+                                    text: root.greetingStr + ", " + (Services.OsInfo.username || root.username)
+                                    color: Services.Theme.textSecondary
+                                    font.pixelSize: Services.Theme.fontSizeSm
+                                    font.weight: Font.Medium
+                                    style: Text.Outline
+                                    styleColor: Services.Theme.overlayDim
+                                }
                             }
                         }
 
@@ -556,7 +933,7 @@ Scope {
                                     id: userAvatarImg
                                     anchors.fill: parent
                                     anchors.margins: 2
-                                    source: Services.OsInfo.avatarPath.length > 0 ? Services.OsInfo.avatarPath : ("file:///home/" + (root.username || "yasirfadhil") + "/.face")
+                                    source: Services.OsInfo.avatarPath.length > 0 ? Services.OsInfo.avatarPath : ("file://" + (Quickshell.env("HOME") || "/home/" + (Quickshell.env("USER") || "user")) + "/.face")
                                     fillMode: Image.PreserveAspectCrop
                                     asynchronous: true
                                     smooth: true
@@ -762,14 +1139,14 @@ Scope {
                             width: Math.min(mainContainer.width - 50, 305)
                             height: 90
                             z: 100
-                            visible: root.notifCount > 0 && root.isRevealed
+                            visible: root.notifCount > 0 && root.isRevealed && (Services.Config ? Services.Config.lockscreenShowNotifs : true)
                             opacity: root.isRevealed ? 1.0 : 0.0
                             Behavior on opacity { NumberAnimation { duration: 300 } }
 
                             Repeater {
                                 model: Services.Notifications.historyList
 
-                                delegate: NotifModule.Popup {
+                                delegate: NotifModule.PopupCard {
                                     required property var modelData
                                     required property int index
 
@@ -791,7 +1168,8 @@ Scope {
                             }
                         }
 
-                        // ── 3. Small Bottom Section: Music Pill Only ─────────────────────────────
+                        // ── 3. Bottom Section: Music Pill or Full Interactive Card ───────────────
+                        // Mode A: Minimalist Pill
                         Rectangle {
                             anchors.horizontalCenter: parent.horizontalCenter
                             anchors.bottom: parent.bottom
@@ -802,7 +1180,7 @@ Scope {
                             color: Services.Theme.surfaceVariant
                             border.color: Services.Theme.border
                             border.width: 1
-                            visible: root.hasPlayer
+                            visible: root.hasPlayer && (Services.Config ? Services.Config.lockscreenShowMedia : true) && ((Services.Config ? Services.Config.lockscreenMediaStyle : "pill") === "pill")
                             opacity: root.isRevealed ? 1.0 : 0.0
                             scale: root.isRevealed ? 1.0 : 0.9
                             transformOrigin: Item.Center
@@ -854,6 +1232,424 @@ Scope {
                                 }
                             }
                         }
+
+                        // Mode B: Full Interactive Media Card
+                        Rectangle {
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            anchors.bottom: parent.bottom
+                            anchors.bottomMargin: root.isRevealed ? 24 : 0
+                            width: 320
+                            implicitHeight: mediaCardCol.implicitHeight + 20
+                            radius: Services.Theme.radiusLg
+                            color: Qt.rgba(Services.Theme.bgDeep.r, Services.Theme.bgDeep.g, Services.Theme.bgDeep.b, 0.75)
+                            border.color: Services.Theme.borderHighlight
+                            border.width: 1
+                            visible: root.hasPlayer && (Services.Config ? Services.Config.lockscreenShowMedia : true) && ((Services.Config ? Services.Config.lockscreenMediaStyle : "pill") === "card")
+                            opacity: root.isRevealed ? 1.0 : 0.0
+                            scale: root.isRevealed ? 1.0 : 0.92
+                            transformOrigin: Item.Center
+                            Behavior on anchors.bottomMargin { NumberAnimation { duration: 450; easing.type: Easing.OutCubic } }
+                            Behavior on opacity { NumberAnimation { duration: 350; easing.type: Easing.OutCubic } }
+                            Behavior on scale { NumberAnimation { duration: 450; easing.type: Easing.OutCubic } }
+
+                            ColumnLayout {
+                                id: mediaCardCol
+                                anchors.fill: parent
+                                anchors.margins: 12
+                                spacing: 8
+
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 10
+
+                                    // Album Art Thumbnail with Mask
+                                    Rectangle {
+                                        width: 44; height: 44; radius: 10
+                                        color: Services.Theme.surfaceVariant
+                                        border.color: Services.Theme.border
+                                        border.width: 1
+
+                                        Image {
+                                            id: lockArtImg
+                                            anchors.fill: parent
+                                            anchors.margins: 1
+                                            source: root.player?.trackArtUrl ?? ""
+                                            fillMode: Image.PreserveAspectCrop
+                                            asynchronous: true
+                                            smooth: true
+                                            visible: false
+                                        }
+
+                                        MultiEffect {
+                                            anchors.fill: lockArtImg
+                                            source: lockArtImg
+                                            maskEnabled: true
+                                            maskSource: lockArtMask
+                                            visible: lockArtImg.status === Image.Ready
+                                        }
+
+                                        Item {
+                                            id: lockArtMask
+                                            anchors.fill: lockArtImg
+                                            visible: false
+                                            layer.enabled: true
+                                            Rectangle { anchors.fill: parent; radius: 9; color: "black" }
+                                        }
+
+                                        Text {
+                                            anchors.centerIn: parent
+                                            text: Services.Icons.musicNote
+                                            font.family: Services.Theme.fontSymbols
+                                            font.pixelSize: 18
+                                            color: Services.Theme.accent
+                                            visible: lockArtImg.status !== Image.Ready
+                                        }
+                                    }
+
+                                    // Title & Artist
+                                    ColumnLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 2
+
+                                        Text {
+                                            text: root.player?.trackTitle || "No title"
+                                            color: Services.Theme.textPrimary
+                                            font.pixelSize: Services.Theme.fontSizeSm
+                                            font.bold: true
+                                            elide: Text.ElideRight
+                                            Layout.fillWidth: true
+                                        }
+
+                                        Text {
+                                            text: root.player?.trackArtist || (root.player?.trackAlbum || "Unknown Artist")
+                                            color: Services.Theme.textSecondary
+                                            font.pixelSize: Services.Theme.fontSizeXs
+                                            elide: Text.ElideRight
+                                            Layout.fillWidth: true
+                                        }
+                                    }
+
+                                    // Media Controls (Prev, Play/Pause, Next)
+                                    RowLayout {
+                                        spacing: 4
+
+                                        Rectangle {
+                                            width: 28; height: 28; radius: 14
+                                            color: lsPrevMouse.containsMouse ? Services.Theme.bgHover : "transparent"
+                                            Text {
+                                                anchors.centerIn: parent
+                                                text: Services.Icons.mediaPrev
+                                                font.family: Services.Theme.fontSymbols
+                                                font.pixelSize: 12
+                                                color: Services.Theme.textPrimary
+                                            }
+                                            MouseArea {
+                                                id: lsPrevMouse
+                                                anchors.fill: parent
+                                                hoverEnabled: true
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: root.player?.previous()
+                                            }
+                                        }
+
+                                        Rectangle {
+                                            width: 32; height: 32; radius: 16
+                                            color: lsPlayMouse.containsMouse ? Services.Theme.white : Services.Theme.accent
+                                            Behavior on color { ColorAnimation { duration: 120 } }
+                                            Text {
+                                                anchors.centerIn: parent
+                                                text: Services.Icons.mediaPlayPause(root.isPlaying)
+                                                font.family: Services.Theme.fontSymbols
+                                                font.pixelSize: 14
+                                                color: Services.Theme.bgDeep
+                                            }
+                                            MouseArea {
+                                                id: lsPlayMouse
+                                                anchors.fill: parent
+                                                hoverEnabled: true
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: root.player?.togglePlaying()
+                                            }
+                                        }
+
+                                        Rectangle {
+                                            width: 28; height: 28; radius: 14
+                                            color: lsNextMouse.containsMouse ? Services.Theme.bgHover : "transparent"
+                                            Text {
+                                                anchors.centerIn: parent
+                                                text: Services.Icons.mediaNext
+                                                font.family: Services.Theme.fontSymbols
+                                                font.pixelSize: 12
+                                                color: Services.Theme.textPrimary
+                                            }
+                                            MouseArea {
+                                                id: lsNextMouse
+                                                anchors.fill: parent
+                                                hoverEnabled: true
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: root.player?.next()
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // Playback Progress Bar (if length > 0)
+                                Rectangle {
+                                    visible: (root.player?.length ?? 0) > 0
+                                    Layout.fillWidth: true
+                                    height: 4
+                                    radius: 2
+                                    color: Services.Theme.bgHover
+
+                                    Rectangle {
+                                        height: parent.height
+                                        radius: 2
+                                        color: Services.Theme.accent
+                                        width: Math.max(4, Math.min(parent.width, ((root.player?.position ?? 0) / Math.max(1, root.player?.length ?? 1)) * parent.width))
+                                    }
+                                }
+                            }
+                        }
+
+                        // ── 4. Bottom Right: Power Button & Floating Power Menu Panel ──
+                        Item {
+                            anchors.right: parent.right
+                            anchors.bottom: parent.bottom
+                            anchors.rightMargin: 24
+                            anchors.bottomMargin: root.isRevealed ? 24 : 0
+                            width: 38
+                            height: 38
+                            visible: Services.Config ? Services.Config.lockscreenShowQuickPower : true
+                            opacity: root.isRevealed ? 1.0 : 0.0
+                            Behavior on anchors.bottomMargin { NumberAnimation { duration: 450; easing.type: Easing.OutCubic } }
+                            Behavior on opacity { NumberAnimation { duration: 350; easing.type: Easing.OutCubic } }
+
+                            // Floating Power Menu Panel (Opens right above the button)
+                            Rectangle {
+                                id: pwrMenuPopup
+                                anchors.bottom: pwrBtnRound.top
+                                anchors.right: parent.right
+                                anchors.bottomMargin: 12
+                                width: 220
+                                implicitHeight: pwrMenuCol.implicitHeight + 20
+                                radius: Services.Theme.radiusLg
+                                color: Qt.rgba(Services.Theme.surface.r, Services.Theme.surface.g, Services.Theme.surface.b, 0.95)
+                                border.color: Services.Theme.borderHighlight
+                                border.width: 1
+                                clip: true
+
+                                visible: root.lockscreenPwrOpen
+                                opacity: root.lockscreenPwrOpen ? 1.0 : 0.0
+                                scale: root.lockscreenPwrOpen ? 1.0 : 0.85
+                                transformOrigin: Item.BottomRight
+                                Behavior on opacity { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
+                                Behavior on scale { NumberAnimation { duration: 200; easing.type: Easing.OutBack } }
+
+                                MouseArea {
+                                    anchors.fill: parent
+                                    onClicked: {}
+                                }
+
+                                ColumnLayout {
+                                    id: pwrMenuCol
+                                    anchors.fill: parent
+                                    anchors.margins: 10
+                                    spacing: 6
+
+                                    // Header
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 6
+
+                                        Text {
+                                            text: "Power Options"
+                                            font.pixelSize: 11
+                                            font.bold: true
+                                            color: Services.Theme.textPrimary
+                                        }
+                                        Item { Layout.fillWidth: true }
+                                        Rectangle {
+                                            width: 20; height: 20; radius: 10
+                                            color: pwrCloseMouse.containsMouse ? Services.Theme.bgHover : "transparent"
+                                            Text {
+                                                anchors.centerIn: parent
+                                                text: Services.Icons.close
+                                                font.family: Services.Theme.fontSymbols
+                                                font.pixelSize: 9
+                                                color: Services.Theme.textSecondary
+                                            }
+                                            MouseArea {
+                                                id: pwrCloseMouse
+                                                anchors.fill: parent
+                                                hoverEnabled: true
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: root.lockscreenPwrOpen = false
+                                            }
+                                        }
+                                    }
+
+                                    Rectangle {
+                                        Layout.fillWidth: true
+                                        height: 1
+                                        color: Services.Theme.border
+                                    }
+
+                                    // Sleep Option
+                                    Rectangle {
+                                        Layout.fillWidth: true
+                                        implicitHeight: 36
+                                        radius: Services.Theme.radiusSm
+                                        color: sleepMouse.containsMouse ? Services.Theme.bgHover : "transparent"
+                                        Behavior on color { ColorAnimation { duration: 120 } }
+
+                                        RowLayout {
+                                            anchors.fill: parent
+                                            anchors.margins: 8
+                                            spacing: 10
+
+                                            Text {
+                                                text: Services.Icons.pmSleep
+                                                font.family: Services.Theme.fontSymbols
+                                                font.pixelSize: 14
+                                                color: sleepMouse.containsMouse ? Services.Theme.accent : Services.Theme.accentDim
+                                            }
+                                            ColumnLayout {
+                                                Layout.fillWidth: true
+                                                spacing: 0
+                                                Text { text: "Sleep"; font.pixelSize: 11; font.bold: true; color: Services.Theme.textPrimary }
+                                                Text { text: "Suspend session"; font.pixelSize: 8; color: Services.Theme.textDisabled }
+                                            }
+                                        }
+
+                                        MouseArea {
+                                            id: sleepMouse
+                                            anchors.fill: parent
+                                            hoverEnabled: true
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: {
+                                                root.lockscreenPwrOpen = false
+                                                suspendProc.running = true
+                                            }
+                                        }
+                                    }
+
+                                    // Reboot Option
+                                    Rectangle {
+                                        Layout.fillWidth: true
+                                        implicitHeight: 36
+                                        radius: Services.Theme.radiusSm
+                                        color: rebootMouse.containsMouse ? Qt.rgba(Services.Theme.warning.r, Services.Theme.warning.g, Services.Theme.warning.b, 0.15) : "transparent"
+                                        Behavior on color { ColorAnimation { duration: 120 } }
+
+                                        RowLayout {
+                                            anchors.fill: parent
+                                            anchors.margins: 8
+                                            spacing: 10
+
+                                            Text {
+                                                text: Services.Icons.pmReboot
+                                                font.family: Services.Theme.fontSymbols
+                                                font.pixelSize: 14
+                                                color: Services.Theme.warning
+                                            }
+                                            ColumnLayout {
+                                                Layout.fillWidth: true
+                                                spacing: 0
+                                                Text { text: "Reboot"; font.pixelSize: 11; font.bold: true; color: Services.Theme.textPrimary }
+                                                Text { text: "Restart system"; font.pixelSize: 8; color: Services.Theme.textDisabled }
+                                            }
+                                        }
+
+                                        MouseArea {
+                                            id: rebootMouse
+                                            anchors.fill: parent
+                                            hoverEnabled: true
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: {
+                                                root.lockscreenPwrOpen = false
+                                                rebootProc.running = true
+                                            }
+                                        }
+                                    }
+
+                                    // Shutdown Option
+                                    Rectangle {
+                                        Layout.fillWidth: true
+                                        implicitHeight: 36
+                                        radius: Services.Theme.radiusSm
+                                        color: shutdownMouse.containsMouse ? Qt.rgba(Services.Theme.danger.r, Services.Theme.danger.g, Services.Theme.danger.b, 0.2) : "transparent"
+                                        Behavior on color { ColorAnimation { duration: 120 } }
+
+                                        RowLayout {
+                                            anchors.fill: parent
+                                            anchors.margins: 8
+                                            spacing: 10
+
+                                            Text {
+                                                text: Services.Icons.pmShutdown
+                                                font.family: Services.Theme.fontSymbols
+                                                font.pixelSize: 14
+                                                color: Services.Theme.danger
+                                            }
+                                            ColumnLayout {
+                                                Layout.fillWidth: true
+                                                spacing: 0
+                                                Text { text: "Power Off"; font.pixelSize: 11; font.bold: true; color: Services.Theme.danger }
+                                                Text { text: "Turn off PC"; font.pixelSize: 8; color: Services.Theme.textDisabled }
+                                            }
+                                        }
+
+                                        MouseArea {
+                                            id: shutdownMouse
+                                            anchors.fill: parent
+                                            hoverEnabled: true
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: {
+                                                root.lockscreenPwrOpen = false
+                                                shutdownProc.running = true
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Single Circular Power Button
+                            Rectangle {
+                                id: pwrBtnRound
+                                anchors.fill: parent
+                                radius: 19
+                                color: (root.lockscreenPwrOpen || pwrBtnMouse.containsMouse) 
+                                       ? Qt.rgba(Services.Theme.danger.r, Services.Theme.danger.g, Services.Theme.danger.b, 0.25)
+                                       : Qt.rgba(Services.Theme.bgDeep.r, Services.Theme.bgDeep.g, Services.Theme.bgDeep.b, 0.75)
+                                border.color: (root.lockscreenPwrOpen || pwrBtnMouse.containsMouse) ? Services.Theme.danger : Services.Theme.border
+                                border.width: 1
+                                scale: pwrBtnMouse.pressed ? 0.92 : 1.0
+                                Behavior on color { ColorAnimation { duration: 150 } }
+                                Behavior on border.color { ColorAnimation { duration: 150 } }
+                                Behavior on scale { NumberAnimation { duration: 100 } }
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: Services.Icons.power
+                                    font.family: Services.Theme.fontSymbols
+                                    font.pixelSize: 15
+                                    color: (root.lockscreenPwrOpen || pwrBtnMouse.containsMouse) ? Services.Theme.danger : Services.Theme.textSecondary
+                                    Behavior on color { ColorAnimation { duration: 150 } }
+                                }
+
+                                MouseArea {
+                                    id: pwrBtnMouse
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: {
+                                        root.lockscreenPwrOpen = !root.lockscreenPwrOpen
+                                        if (root.lockscreenPwrOpen) root.lockscreenCcOpen = false
+                                    }
+                                }
+                            }
+                        }
+
                     }
                 }
 
@@ -862,20 +1658,21 @@ Scope {
                     id: ccLockscreenOverlay
                     anchors.fill: parent
                     z: 9999
-                    visible: Services.OverlayManager.controlCenterVisible
-                    opacity: visible ? 1 : 0
+                    visible: root.lockscreenCcOpen
+                    opacity: root.lockscreenCcOpen ? 1 : 0
                     Behavior on opacity { NumberAnimation { duration: 180 } }
 
                     MouseArea {
                         anchors.fill: parent
-                        onClicked: Services.OverlayManager.controlCenterVisible = false
+                        onClicked: root.lockscreenCcOpen = false
                     }
 
                     LockscreenControlCenter {
                         anchors.top: parent.top
                         anchors.right: parent.right
                         anchors.topMargin: 54
-                        anchors.rightMargin: 16
+                        anchors.rightMargin: 20
+                        onRequestClose: root.lockscreenCcOpen = false
                     }
                 }
             }

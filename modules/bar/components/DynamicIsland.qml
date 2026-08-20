@@ -20,6 +20,7 @@ Item {
     property string activeReplyActionId: ""
 
     // Island visual dimensions for window masking
+    readonly property bool isBottom: Services.Config ? (Services.Config.barPosition === "bottom") : false
     readonly property int islandWidth: island.width
     readonly property int islandHeight: island.height
 
@@ -559,8 +560,11 @@ Item {
 
     function togglePin() {
         if (!hasExpandContent) return
-        pinned = !pinned
-        if (!pinned) autoExpanded = false
+        if (expanded) {
+            collapse()
+        } else {
+            pinned = true
+        }
     }
 
     function collapse() {
@@ -662,8 +666,7 @@ Item {
         id: island
         z: 2
         anchors.horizontalCenter: parent.horizontalCenter
-        anchors.top: parent.top
-        anchors.topMargin: 6
+        y: root.isBottom ? (parent.height - height - 6) : 6
         clip: true
 
         width: root.expanded ? root.calculatedExpandedWidth : root.calculatedCollapsedWidth
@@ -952,10 +955,21 @@ Item {
                     implicitHeight: 20
                     Layout.alignment: Qt.AlignVCenter
 
-                    IconImage {
+                    Image {
                         id: appIconImg
                         anchors.fill: parent
-                        source: root.currentNotif ? (root.currentNotif.image || root.currentNotif.appIcon || "") : ""
+                        source: {
+                            if (!root.currentNotif) return ""
+                            const src = root.currentNotif.image || root.currentNotif.appIcon || ""
+                            if (!src) return ""
+                            if (src.startsWith("/") || src.startsWith("file://") || src.startsWith("http"))
+                                return src
+                            return Quickshell.iconPath(src, true)
+                        }
+                        fillMode: Image.PreserveAspectFit
+                        asynchronous: true
+                        cache: true
+                        sourceSize: Qt.size(40, 40)
                         visible: status === Image.Ready
                     }
 
@@ -1006,11 +1020,13 @@ Item {
                         implicitWidth: 20; implicitHeight: 20
                         radius: 10
                         color: prevMouse.containsMouse ? Services.Theme.borderHighlight : "transparent"
+                        Behavior on color { ColorAnimation { duration: 120 } }
                         Text { anchors.centerIn: parent; text: "‹"; color: Services.Theme.textPrimary; font.pixelSize: 14; font.bold: true }
                         MouseArea {
                             id: prevMouse
                             anchors.fill: parent
                             hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
                             onClicked: (mouse) => { root.prevNotif(); mouse.accepted = true }
                         }
                     }
@@ -1020,11 +1036,13 @@ Item {
                         implicitWidth: 20; implicitHeight: 20
                         radius: 10
                         color: nextMouse.containsMouse ? Services.Theme.borderHighlight : "transparent"
+                        Behavior on color { ColorAnimation { duration: 120 } }
                         Text { anchors.centerIn: parent; text: "›"; color: Services.Theme.textPrimary; font.pixelSize: 14; font.bold: true }
                         MouseArea {
                             id: nextMouse
                             anchors.fill: parent
                             hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
                             onClicked: (mouse) => { root.nextNotif(); mouse.accepted = true }
                         }
                     }
@@ -1035,20 +1053,23 @@ Item {
                     implicitWidth: 20; implicitHeight: 20
                     radius: 10
                     color: dismissBtnMouse.containsMouse ? Services.Theme.danger : Services.Theme.surfaceVariant
+                    Behavior on color { ColorAnimation { duration: 120 } }
                     Layout.alignment: Qt.AlignVCenter
 
                     Text {
                         anchors.centerIn: parent
                         text: "✕"
-                        color: Services.Theme.textPrimary
+                        color: dismissBtnMouse.containsMouse ? "#ffffff" : Services.Theme.textPrimary
                         font.pixelSize: 10
                         font.bold: true
+                        Behavior on color { ColorAnimation { duration: 120 } }
                     }
 
                     MouseArea {
                         id: dismissBtnMouse
                         anchors.fill: parent
                         hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
                         onClicked: (mouse) => {
                             if (root.currentNotif) {
                                 root.replyMode = false
@@ -1231,7 +1252,7 @@ Item {
                             anchors.centerIn: parent
                             text: "Kirim 󰏲"
                             font.family: Services.Theme.fontMono
-                            color: Services.Theme.bgDeep
+                            color: Services.Theme.bgOnAccent
                             font.pixelSize: 10
                             font.bold: true
                         }
@@ -1586,16 +1607,22 @@ Item {
                 Item {
                     implicitWidth: 28; implicitHeight: 28
                     opacity: (root.activePlayer?.shuffleSupported ?? false) ? 1 : 0.2
-                    Rectangle { anchors.fill: parent; radius: 6; color: shArea.containsMouse ? Services.Theme.surfaceVariant : "transparent" }
+                    Rectangle {
+                        anchors.fill: parent; radius: 6
+                        color: shArea.containsMouse ? Services.Theme.surfaceVariant : "transparent"
+                        Behavior on color { ColorAnimation { duration: 120 } }
+                    }
                     Text {
                         anchors.centerIn: parent
                         text: Services.Icons.mediaShuffle
                         font.family: Services.Theme.fontSymbols
                         font.pixelSize: 11
                         color: (root.activePlayer?.shuffle ?? false) ? Services.Theme.accent : Services.Theme.textSecondary
+                        Behavior on color { ColorAnimation { duration: 120 } }
                     }
                     MouseArea {
                         id: shArea; anchors.fill: parent; hoverEnabled: true
+                        cursorShape: (root.activePlayer?.shuffleSupported ?? false) ? Qt.PointingHandCursor : Qt.ArrowCursor
                         enabled: root.activePlayer?.shuffleSupported ?? false
                         onClicked: (mouse) => { root.activePlayer.shuffle = !root.activePlayer.shuffle; mouse.accepted = true }
                     }
@@ -1607,16 +1634,22 @@ Item {
                 Item {
                     implicitWidth: 28; implicitHeight: 28
                     opacity: (root.activePlayer?.canGoPrevious ?? false) ? 1 : 0.3
-                    Rectangle { anchors.fill: parent; radius: 6; color: prvArea.containsMouse ? Services.Theme.surfaceVariant : "transparent" }
+                    Rectangle {
+                        anchors.fill: parent; radius: 6
+                        color: prvArea.containsMouse ? Services.Theme.surfaceVariant : "transparent"
+                        Behavior on color { ColorAnimation { duration: 120 } }
+                    }
                     Text {
                         anchors.centerIn: parent
                         text: Services.Icons.mediaPrev
                         font.family: Services.Theme.fontSymbols
                         font.pixelSize: 12
-                        color: Services.Theme.textPrimary
+                        color: prvArea.containsMouse ? Services.Theme.accent : Services.Theme.textPrimary
+                        Behavior on color { ColorAnimation { duration: 120 } }
                     }
                     MouseArea {
                         id: prvArea; anchors.fill: parent; hoverEnabled: true
+                        cursorShape: (root.activePlayer?.canGoPrevious ?? false) ? Qt.PointingHandCursor : Qt.ArrowCursor
                         enabled: root.activePlayer?.canGoPrevious ?? false
                         onClicked: (mouse) => { root.activePlayer.previous(); mouse.accepted = true }
                     }
@@ -1626,7 +1659,11 @@ Item {
                 Rectangle {
                     implicitWidth: 30; implicitHeight: 30
                     radius: 8
-                    color: playArea.containsMouse ? Qt.lighter(Services.Theme.accent, 1.1) : Services.Theme.accent
+                    color: playArea.containsMouse ? Qt.lighter(Services.Theme.accent, 1.15) : Services.Theme.accent
+                    scale: playArea.containsMouse ? 1.05 : 1.0
+
+                    Behavior on color { ColorAnimation { duration: 120 } }
+                    Behavior on scale { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
 
                     Text {
                         anchors.centerIn: parent
@@ -1637,6 +1674,7 @@ Item {
                     }
                     MouseArea {
                         id: playArea; anchors.fill: parent; hoverEnabled: true
+                        cursorShape: (root.activePlayer?.canTogglePlaying ?? true) ? Qt.PointingHandCursor : Qt.ArrowCursor
                         enabled: root.activePlayer?.canTogglePlaying ?? true
                         onClicked: (mouse) => { root.activePlayer.playPause(); mouse.accepted = true }
                     }
@@ -1646,16 +1684,22 @@ Item {
                 Item {
                     implicitWidth: 28; implicitHeight: 28
                     opacity: (root.activePlayer?.canGoNext ?? false) ? 1 : 0.3
-                    Rectangle { anchors.fill: parent; radius: 6; color: nxtArea.containsMouse ? Services.Theme.surfaceVariant : "transparent" }
+                    Rectangle {
+                        anchors.fill: parent; radius: 6
+                        color: nxtArea.containsMouse ? Services.Theme.surfaceVariant : "transparent"
+                        Behavior on color { ColorAnimation { duration: 120 } }
+                    }
                     Text {
                         anchors.centerIn: parent
                         text: Services.Icons.mediaNext
                         font.family: Services.Theme.fontSymbols
                         font.pixelSize: 12
-                        color: Services.Theme.textPrimary
+                        color: nxtArea.containsMouse ? Services.Theme.accent : Services.Theme.textPrimary
+                        Behavior on color { ColorAnimation { duration: 120 } }
                     }
                     MouseArea {
                         id: nxtArea; anchors.fill: parent; hoverEnabled: true
+                        cursorShape: (root.activePlayer?.canGoNext ?? false) ? Qt.PointingHandCursor : Qt.ArrowCursor
                         enabled: root.activePlayer?.canGoNext ?? false
                         onClicked: (mouse) => { root.activePlayer.next(); mouse.accepted = true }
                     }
@@ -1667,16 +1711,22 @@ Item {
                 Item {
                     implicitWidth: 28; implicitHeight: 28
                     opacity: (root.activePlayer?.loopSupported ?? false) ? 1 : 0.2
-                    Rectangle { anchors.fill: parent; radius: 6; color: rpArea.containsMouse ? Services.Theme.surfaceVariant : "transparent" }
+                    Rectangle {
+                        anchors.fill: parent; radius: 6
+                        color: rpArea.containsMouse ? Services.Theme.surfaceVariant : "transparent"
+                        Behavior on color { ColorAnimation { duration: 120 } }
+                    }
                     Text {
                         anchors.centerIn: parent
                         font.family: Services.Theme.fontSymbols
                         font.pixelSize: 11
                         text: (root.activePlayer?.loop ?? MprisLoopState.None) === MprisLoopState.Track ? Services.Icons.mediaLoopOne : Services.Icons.mediaLoopAll
-                        color: (root.activePlayer?.loop ?? MprisLoopState.None) !== MprisLoopState.None ? Services.Theme.accent : Services.Theme.textSecondary
+                        color: (root.activePlayer?.loop ?? MprisLoopState.None) !== MprisLoopState.None ? Services.Theme.accent : (rpArea.containsMouse ? Services.Theme.textPrimary : Services.Theme.textSecondary)
+                        Behavior on color { ColorAnimation { duration: 120 } }
                     }
                     MouseArea {
                         id: rpArea; anchors.fill: parent; hoverEnabled: true
+                        cursorShape: (root.activePlayer?.loopSupported ?? false) ? Qt.PointingHandCursor : Qt.ArrowCursor
                         enabled: root.activePlayer?.loopSupported ?? false
                         onClicked: (mouse) => {
                             const l = root.activePlayer?.loop ?? MprisLoopState.None

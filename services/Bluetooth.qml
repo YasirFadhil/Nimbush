@@ -8,8 +8,11 @@ Singleton {
 
     property bool enabled: false
     property var devices: []
+    property var unpairedDevices: []
     property var tempDevices: []
     property bool refreshing: false
+    property bool scanning: false
+    property string pairingMac: ""
     property int statusIndex: 0
 
     function refresh() {
@@ -24,6 +27,32 @@ Singleton {
     function listDevices() {
         refreshing = true
         pairedProc.running = true
+    }
+
+    function startScan() {
+        if (!enabled) {
+            toggleProc.command = ["bluetoothctl", "power", "on"]
+            toggleProc.running = true
+        }
+        scanning = true
+        scanProc.command = ["bluetoothctl", "--timeout", "15", "scan", "on"]
+        scanProc.running = true
+    }
+
+    function stopScan() {
+        scanProc.running = false
+        scanning = false
+    }
+
+    function toggleScan() {
+        if (scanning) stopScan()
+        else startScan()
+    }
+
+    function pairAndConnect(mac) {
+        pairingMac = mac
+        pairProc.command = ["sh", "-c", "bluetoothctl pair \"$1\" && bluetoothctl trust \"$1\" && bluetoothctl connect \"$1\"", "sh", mac]
+        pairProc.running = true
     }
 
     function connectDevice(mac) {
@@ -41,10 +70,15 @@ Singleton {
         removeProc.running = true
     }
 
+    function unpairDevice(mac) {
+        removeDevice(mac)
+    }
+
     function checkNextStatus() {
         if (root.statusIndex >= root.tempDevices.length) {
             root.devices = root.tempDevices
             root.refreshing = false
+            allDevicesProc.running = true
             return
         }
         infoProc.command = ["bluetoothctl", "info", root.tempDevices[root.statusIndex].mac]
@@ -58,7 +92,7 @@ Singleton {
         triggeredOnStart: true
         onTriggered: {
             root.refresh()       // update enabled/power state
-            root.listDevices()   // update connected devices list for HUD detection
+            root.listDevices()   // update connected & unpaired devices list
         }
     }
 
@@ -80,7 +114,6 @@ Singleton {
         running: true
         stdout: SplitParser {
             onRead: data => {
-                // PropertiesChanged with "Connected" key → refresh device list immediately
                 root.listDevices()
             }
         }
@@ -94,7 +127,7 @@ Singleton {
             onRead: data => {
                 const line = data.trim()
                 const m = line.match(/^Device\s+([0-9A-Fa-f:]{17})\s+(.*)$/)
-                if (m) pairedProc.buffer.push({ mac: m[1], name: m[2], connected: false })
+                if (m) pairedProc.buffer.push({ mac: m[1], name: m[2], connected: false, paired: true })
             }
         }
         onRunningChanged: { if (running) buffer = [] }
@@ -102,6 +135,30 @@ Singleton {
             root.tempDevices = pairedProc.buffer
             root.statusIndex = 0
             root.checkNextStatus()
+        }
+    }
+
+    Process {
+        id: allDevicesProc
+        command: ["bluetoothctl", "devices"]
+        property var buffer: []
+        stdout: SplitParser {
+            onRead: data => {
+                const line = data.trim()
+                const m = line.match(/^Device\s+([0-9A-Fa-f:]{17})\s+(.*)$/)
+                if (m) {
+                    const mac = m[1]
+                    const name = m[2]
+                    const isPaired = root.devices.some(d => d.mac.toLowerCase() === mac.toLowerCase())
+                    if (!isPaired) {
+                        allDevicesProc.buffer.push({ mac: mac, name: name, connected: false, paired: false })
+                    }
+                }
+            }
+        }
+        onRunningChanged: { if (running) buffer = [] }
+        onExited: {
+            root.unpairedDevices = allDevicesProc.buffer
         }
     }
 
@@ -141,6 +198,42 @@ Singleton {
             }
             root.statusIndex++
             root.checkNextStatus()
+        }
+    }
+
+    Process {
+        id: scanProc
+        command: ["bluetoothctl", "--timeout", "15", "scan", "on"]
+        stdout: SplitParser {
+            onRead: data => {
+                const line = data.trim()
+                const m = line.match(/(?:\[NEW\]\s+)?Device\s+([0-9A-Fa-f:]{17})\s+(.*)$/)
+                if (m) {
+                    const mac = m[1]
+                    const name = m[2]
+                    const isPaired = root.devices.some(d => d.mac.toLowerCase() === mac.toLowerCase())
+                    if (!isPaired) {
+                        const exists = root.unpairedDevices.some(d => d.mac.toLowerCase() === mac.toLowerCase())
+                        if (!exists) {
+                            const updated = root.unpairedDevices.slice()
+                            updated.push({ mac: mac, name: name, connected: false, paired: false })
+                            root.unpairedDevices = updated
+                        }
+                    }
+                }
+            }
+        }
+        onExited: {
+            root.scanning = false
+            root.listDevices()
+        }
+    }
+
+    Process {
+        id: pairProc
+        onExited: {
+            root.pairingMac = ""
+            root.listDevices()
         }
     }
 

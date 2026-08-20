@@ -188,12 +188,12 @@ PanelWindow {
                 opacity: searchField.text.length > 0 ? 1 : 0
                 visible: opacity > 0
                 clip: true
-                spacing: 2
+                spacing: 4
                 model: Services.Applications.filteredApps
                 currentIndex: 0
                 keyNavigationEnabled: false
-                topMargin: 6; bottomMargin: 6
-                leftMargin: 6; rightMargin: 6
+                topMargin: 4; bottomMargin: 4
+                leftMargin: 8; rightMargin: 8
 
                 Behavior on Layout.preferredHeight {
                     NumberAnimation { duration: 220; easing.type: Easing.OutCubic }
@@ -202,31 +202,28 @@ PanelWindow {
                     NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
                 }
 
-                highlight: Rectangle {
-                    radius: 10
-                    color: Services.Theme.surfaceSolid
-                    x: 6
-                    border.color: Services.Theme.borderHighlight
-                    border.width: 1
-                    width: resultList.width - 12
-                    z: 1
-                }
-                highlightMoveDuration: 130
-                highlightResizeDuration: 0
-                highlightFollowsCurrentItem: true
-
-                delegate: Item {
+                delegate: Rectangle {
                     id: appItem
                     required property var modelData
                     required property int index
-                    width: resultList.width - 12
+                    width: resultList.width - 16
                     height: 48
+                    radius: 10
+
+                    readonly property bool isCurrent: appItem.index === resultList.currentIndex
+
+                    color: isCurrent 
+                        ? Services.Theme.surfaceVariant 
+                        : (hoverArea.containsMouse ? Services.Theme.bgHover : "transparent")
+                    border.color: isCurrent ? Services.Theme.accent : "transparent"
+                    border.width: isCurrent ? 1 : 0
+                    Behavior on color { ColorAnimation { duration: 100 } }
+                    Behavior on border.color { ColorAnimation { duration: 100 } }
 
                     RowLayout {
                         anchors.fill: parent
                         anchors.leftMargin: 12; anchors.rightMargin: 12
                         spacing: 12
-                        z: 2
 
                         // App Icon
                         Item {

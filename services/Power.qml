@@ -3,6 +3,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import Quickshell.Services.UPower
+import "." as Services
 
 Singleton {
     id: root
@@ -10,7 +11,16 @@ Singleton {
     property bool ready: false
     property bool charging: isChargingState(UPower.displayDevice.state)
     property real percentage: UPower.displayDevice.percentage
-    readonly property bool isWarning: !charging && ready && !isNaN(percentage) && (percentage * 100 <= 15)
+    readonly property bool hasBattery: UPower.displayDevice.isPresent && !isNaN(percentage)
+    readonly property string stateString: {
+        const st = UPower.displayDevice.state
+        if (st === UPowerDeviceState.Charging) return "Charging"
+        if (st === UPowerDeviceState.FullyCharged) return "Fully Charged"
+        if (st === UPowerDeviceState.Discharging) return "Discharging"
+        if (st === UPowerDeviceState.Empty) return "Empty"
+        return "AC Power / Unknown"
+    }
+    readonly property bool isWarning: !charging && ready && !isNaN(percentage) && (percentage * 100 <= (Services.Config ? Services.Config.batteryLowThreshold : 20))
     readonly property bool isLow: !charging && ready && !isNaN(percentage) && (percentage * 100 <= 10)
 
     property bool warn20Sent: false
@@ -39,6 +49,7 @@ Singleton {
     }
 
     function checkBatteryWarnings() {
+        if (Services.Config && !Services.Config.batteryShowWarnings) return
         if (!ready || isNaN(percentage)) return
         const pct = Math.round(percentage * 100)
 

@@ -59,17 +59,28 @@ Rectangle {
                     Behavior on border.color { ColorAnimation { duration: 150 } }
                 }
 
-                IconImage {
+                Image {
                     id: trayImg
                     anchors.centerIn: parent
                     width: 16
                     height: 16
-                    source: trayItem.item.icon || ""
+                    source: {
+                        const icon = trayItem.item.icon || ""
+                        if (!icon) return ""
+                        if (icon.startsWith("/") || icon.startsWith("file://") || icon.startsWith("http") || icon.startsWith("image://"))
+                            return icon
+                        return Quickshell.iconPath(icon, true)
+                    }
+                    fillMode: Image.PreserveAspectFit
+                    asynchronous: true
+                    cache: true
+                    sourceSize: Qt.size(32, 32)
+                    visible: status === Image.Ready
                 }
 
                 Text {
                     anchors.centerIn: parent
-                    visible: !trayImg.visible || trayImg.status === Image.Error
+                    visible: !trayImg.visible
                     text: "󰍹"
                     font.family: Services.Theme.fontMono
                     font.pixelSize: Services.Theme.fontSizeLg

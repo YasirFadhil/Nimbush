@@ -15,12 +15,15 @@ import "modules/calendar" as CalendarModule
 import "modules/lockscreen" as LockscreenModule
 import "modules/dashboard" as DashboardModule
 import "modules/wallpaper" as WallpaperModule
+import "modules/settings" as SettingsModule
+import "modules/welcome" as WelcomeModule
 
 ShellRoot {
     WallpaperModule.Wallpaper {}
 
     Osd.Osd {}
     Notif.Center {}
+    Notif.Popup {}
     // Osd.PowerOsd {} // Disabled — charging status is now shown in DynamicIsland
     Launcher.Launcher  { id: launcherWindow }
     DashboardModule.Dashboard { id: dashboardWindow }
@@ -30,12 +33,18 @@ ShellRoot {
     ControlCenter.ControlCenter { id: controlCenter }
     CalendarModule.Calendar {}
     LockscreenModule.Lockscreen { id: lockscreenWindow }
+    SettingsModule.Settings { id: settingsWindow }
+    WelcomeModule.Welcome { id: welcomeWindow }
 
 
     Connections {
         target: Services.OverlayManager
         function onLauncherToggleRequested() { launcherWindow.toggle() }
         function onDashboardToggleRequested() { dashboardWindow.toggle() }
+        function onSettingsToggleRequested() { settingsWindow.toggle() }
+        function onSettingsShowRequested() { settingsWindow.show() }
+        function onWelcomeToggleRequested() { welcomeWindow.toggle() }
+        function onWelcomeShowRequested() { welcomeWindow.show() }
     }
 
     // ── Notification center (history panel) ──────────────────────────────────
@@ -93,6 +102,52 @@ ShellRoot {
         function show()   { lockscreenWindow.show() }
         function hide()   { lockscreenWindow.hide() }
         function lock()   { lockscreenWindow.lock() }
+    }
+
+    // ── Settings ─────────────────────────────────────────────────────────────
+    IpcHandler {
+        target: "settings"
+        function toggle(): void { if (!Services.OverlayManager.isLocked) settingsWindow.toggle() }
+        function show():   void { if (!Services.OverlayManager.isLocked) settingsWindow.show() }
+        function hide():   void { settingsWindow.hide() }
+    }
+
+    // ── Welcome Setup Wizard ─────────────────────────────────────────────────
+    IpcHandler {
+        target: "welcome"
+        function toggle(): void { if (!Services.OverlayManager.isLocked) welcomeWindow.toggle() }
+        function show():   void { if (!Services.OverlayManager.isLocked) welcomeWindow.show() }
+        function hide():   void { welcomeWindow.hide() }
+    }
+
+    // ── Shell lifecycle / reload ──────────────────────────────────────────────
+    Process {
+        id: reloadTriggerProc
+        command: ["sh", "-c", "touch \"" + (Quickshell.env("HOME") || "/home/" + (Quickshell.env("USER") || "user")) + "/.config/quickshell/shell.qml\" || pkill -USR1 qs || pkill -USR1 quickshell"]
+    }
+
+    IpcHandler {
+        target: "shell"
+        function reload(): void {
+            reloadTriggerProc.running = true
+        }
+    }
+
+    // ── Auto-lock on system suspend / sleep ──────────────────────────────────
+    Process {
+        id: sleepWatcher
+        command: [
+            "dbus-monitor", "--system",
+            "type='signal',interface='org.freedesktop.login1.Manager',member='PrepareForSleep'"
+        ]
+        running: true
+        stdout: SplitParser {
+            onRead: data => {
+                if (data.includes("boolean true")) {
+                    lockscreenWindow.lock()
+                }
+            }
+        }
     }
 }
 

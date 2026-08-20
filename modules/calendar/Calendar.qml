@@ -12,7 +12,7 @@ PanelWindow {
     color: "transparent"
     exclusiveZone: 0
     visible: Services.OverlayManager.calendarVisible
-    WlrLayershell.layer: WlrLayer.Overlay
+    WlrLayershell.layer: WlrLayer.Top
     WlrLayershell.namespace: "quickshell:calendar"
     WlrLayershell.keyboardFocus: WlrKeyboardFocus.OnDemand
 
@@ -24,6 +24,11 @@ PanelWindow {
 
     property date viewDate: new Date()
     readonly property date today: new Date()
+    readonly property bool isBottom: Services.Config ? (Services.Config.barPosition === "bottom") : false
+    readonly property string barStyle: Services.Config ? Services.Config.barStyle : "islands"
+    readonly property bool isCenteredBar: barStyle !== "islands"
+    readonly property int topMargin: 12
+    readonly property int bottomMargin: 12
 
     function close() {
         Services.OverlayManager.calendarVisible = false
@@ -52,22 +57,26 @@ PanelWindow {
 
         Rectangle {
             id: panel
-            anchors { top: parent.top; right: parent.right }
-            anchors.rightMargin: 12
-            anchors.topMargin: 12
             width: 300
             height: col.implicitHeight + 32
+            x: root.isCenteredBar ? Math.round((parent.width - width) / 2) : (parent.width - width - 12)
+            y: root.isBottom ? (parent.height - height - 12) : 12
             radius: Services.Theme.radiusLg
             color: Services.Theme.surface
             border.color: Services.Theme.border
             border.width: 1
             clip: true
 
+            Behavior on x { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
+
             opacity: Services.OverlayManager.calendarVisible ? 1 : 0
-            scale: 1
-            y: Services.OverlayManager.calendarVisible ? 0 : -24
+            transform: Translate {
+                y: Services.OverlayManager.calendarVisible ? 0 : (root.isBottom ? 32 : -32)
+                Behavior on y { NumberAnimation { duration: 240; easing.type: Easing.OutBack; easing.overshoot: 0.5 } }
+            }
+            scale: Services.OverlayManager.calendarVisible ? 1 : 0.96
+            Behavior on scale { NumberAnimation { duration: 240; easing.type: Easing.OutCubic } }
             Behavior on opacity { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
-            Behavior on y { NumberAnimation { duration: 220; easing.type: Easing.OutBack; easing.overshoot: 0.6 } }
 
             MouseArea { anchors.fill: parent; onClicked: {} }
 
@@ -79,6 +88,7 @@ PanelWindow {
 
                 RowLayout {
                     Layout.fillWidth: true
+                    spacing: 6
 
                     Text {
                         Layout.fillWidth: true
@@ -88,25 +98,46 @@ PanelWindow {
                         font.pixelSize: 14
                     }
 
-                    Text {
-                        text: Services.Icons.chevLeft
-                        font.family: Services.Theme.fontSymbols
-                        font.pixelSize: 12
-                        color: Services.Theme.textSecondary
+                    Rectangle {
+                        width: 24; height: 24; radius: 6
+                        color: prevMonthMouse.containsMouse ? Services.Theme.bgHover : "transparent"
+                        Behavior on color { ColorAnimation { duration: 120 } }
+
+                        Text {
+                            anchors.centerIn: parent
+                            text: Services.Icons.chevLeft
+                            font.family: Services.Theme.fontSymbols
+                            font.pixelSize: 11
+                            color: prevMonthMouse.containsMouse ? Services.Theme.accent : Services.Theme.textSecondary
+                            Behavior on color { ColorAnimation { duration: 120 } }
+                        }
                         MouseArea {
+                            id: prevMonthMouse
                             anchors.fill: parent
-                            anchors.margins: -6
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
                             onClicked: root.viewDate = new Date(root.viewDate.getFullYear(), root.viewDate.getMonth() - 1, 1)
                         }
                     }
-                    Text {
-                        text: Services.Icons.chevRight
-                        font.family: Services.Theme.fontSymbols
-                        font.pixelSize: 12
-                        color: Services.Theme.textSecondary
+
+                    Rectangle {
+                        width: 24; height: 24; radius: 6
+                        color: nextMonthMouse.containsMouse ? Services.Theme.bgHover : "transparent"
+                        Behavior on color { ColorAnimation { duration: 120 } }
+
+                        Text {
+                            anchors.centerIn: parent
+                            text: Services.Icons.chevRight
+                            font.family: Services.Theme.fontSymbols
+                            font.pixelSize: 11
+                            color: nextMonthMouse.containsMouse ? Services.Theme.accent : Services.Theme.textSecondary
+                            Behavior on color { ColorAnimation { duration: 120 } }
+                        }
                         MouseArea {
+                            id: nextMonthMouse
                             anchors.fill: parent
-                            anchors.margins: -6
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
                             onClicked: root.viewDate = new Date(root.viewDate.getFullYear(), root.viewDate.getMonth() + 1, 1)
                         }
                     }
@@ -116,7 +147,7 @@ PanelWindow {
                     Layout.fillWidth: true
                     columns: 7
                     columnSpacing: 2
-                    rowSpacing: 6
+                    rowSpacing: 4
 
                     Repeater {
                         model: ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"]
@@ -144,13 +175,28 @@ PanelWindow {
                             Layout.preferredWidth: 34
                             Layout.preferredHeight: 30
                             radius: 8
-                            color: isToday ? Services.Theme.accent : "transparent"
+                            color: isToday ? Services.Theme.accent : (modelData > 0 && dayMouse.containsMouse ? Services.Theme.bgHover : "transparent")
+                            border.color: (!isToday && modelData > 0 && dayMouse.containsMouse) ? Services.Theme.border : "transparent"
+                            border.width: 1
+
+                            Behavior on color { ColorAnimation { duration: 120 } }
+                            Behavior on border.color { ColorAnimation { duration: 120 } }
 
                             Text {
                                 anchors.centerIn: parent
                                 text: modelData > 0 ? modelData : ""
                                 font.pixelSize: 11
-                                color: isToday ? Services.Theme.bgDeep : Services.Theme.textPrimary
+                                font.bold: isToday
+                                color: isToday ? Services.Theme.bgOnAccent : (dayMouse.containsMouse ? Services.Theme.accent : Services.Theme.textPrimary)
+                                Behavior on color { ColorAnimation { duration: 120 } }
+                            }
+
+                            MouseArea {
+                                id: dayMouse
+                                anchors.fill: parent
+                                enabled: modelData > 0
+                                hoverEnabled: true
+                                cursorShape: modelData > 0 ? Qt.PointingHandCursor : Qt.ArrowCursor
                             }
                         }
                     }
