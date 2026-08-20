@@ -84,16 +84,18 @@ Item {
 
     Timer {
         id: cameraPollTimer
-        interval: 1500
+        interval: 4000
         running: true
         repeat: true
         triggeredOnStart: true
-        onTriggered: cameraProc.running = true
+        onTriggered: {
+            if (!cameraProc.running) cameraProc.running = true
+        }
     }
 
     Process {
         id: cameraProc
-        command: ["sh", "-c", "[ -n \"$(fuser /dev/video* 2>/dev/null)\" ] && echo \"1\" || echo \"0\""]
+        command: ["sh", "-c", "ls /dev/video* >/dev/null 2>&1 && fuser /dev/video* 2>/dev/null | grep -q [0-9] && echo 1 || echo 0"]
         stdout: SplitParser {
             onRead: data => {
                 const isActive = data.trim() === "1"
@@ -104,16 +106,18 @@ Item {
 
     Timer {
         id: capsLockPollTimer
-        interval: 400
+        interval: 1200
         running: true
         repeat: true
         triggeredOnStart: true
-        onTriggered: capsLockProc.running = true
+        onTriggered: {
+            if (!capsLockProc.running) capsLockProc.running = true
+        }
     }
 
     Process {
         id: capsLockProc
-        command: ["sh", "-c", "cat /sys/class/leds/*capslock*/brightness 2>/dev/null | head -n 1"]
+        command: ["sh", "-c", "grep -qh 1 /sys/class/leds/*capslock*/brightness 2>/dev/null && echo 1 || echo 0"]
         stdout: SplitParser {
             onRead: data => {
                 const isActive = data.trim() === "1"

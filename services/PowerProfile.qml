@@ -3,6 +3,8 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 
+import "." as Services
+
 Singleton {
     id: root
     property string profile: "balanced" // performance | balanced | power-saver
@@ -24,12 +26,20 @@ Singleton {
         setProfile(root.saverEnabled ? "balanced" : "power-saver")
     }
 
+    // Periodic check (20s interval)
     Timer {
-        interval: 4000
+        interval: 20000
         running: true
         repeat: true
         triggeredOnStart: true
         onTriggered: root.refresh()
+    }
+
+    Connections {
+        target: Services.Power
+        function onChargingChanged() {
+            root.refresh()
+        }
     }
 
     Process {

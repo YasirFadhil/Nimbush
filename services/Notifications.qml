@@ -611,7 +611,18 @@ Singleton {
         command: ["sh", "-c", "mkdir -p ~/.cache/quickshell && printf '%s' \"$1\" > \"" + historyCachePath + "\"", "sh", jsonPayload]
     }
 
+    Timer {
+        id: saveHistoryDebounce
+        interval: 400
+        repeat: false
+        onTriggered: root._doSaveHistory()
+    }
+
     function saveHistory() {
+        saveHistoryDebounce.restart()
+    }
+
+    function _doSaveHistory() {
         const arr = []
         for (let i = 0; i < historyModel.count; i++) {
             const item = historyModel.get(i)

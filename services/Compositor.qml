@@ -90,9 +90,41 @@ Singleton {
         return p.length > 0 ? p : (Quickshell.env("HOME") + "/.config/quickshell/scripts/compositor-helper.py")
     }
 
-    // ── Internal Queue for async option updates ───────────────────────────────
-    property var _pendingQueue: []
-    property bool _isApplying: false
+    // ── Fast Direct Key Mapping for Hyprland (0ms Latency) ────────────────────
+    readonly property var hyprKeyMap: ({
+        "blur": "decoration:blur:enabled",
+        "blur_size": "decoration:blur:size",
+        "blur_passes": "decoration:blur:passes",
+        "anim": "animations:enabled",
+        "shadow": "decoration:shadow:enabled",
+        "shadow_range": "decoration:shadow:range",
+        "shadow_power": "decoration:shadow:render_power",
+        "rounding": "decoration:rounding",
+        "border_size": "general:border_size",
+        "gaps_in": "general:gaps_in",
+        "gaps_out": "general:gaps_out",
+        "active_opacity": "decoration:active_opacity",
+        "inactive_opacity": "decoration:inactive_opacity",
+        "dim_inactive": "decoration:dim_inactive",
+        "dim_strength": "decoration:dim_strength",
+        "layout": "general:layout",
+        "touchpad_natural": "input:touchpad:natural_scroll",
+        "touchpad_tap": "input:touchpad:tap-to-click",
+        "touchpad_dwt": "input:touchpad:disable_while_typing",
+        "sensitivity": "input:sensitivity",
+        "resize_border": "general:resize_on_border",
+        "disable_hyprland_logo": "misc:disable_hyprland_logo"
+    })
+
+    // Coalesced pending changes for batch & zero-latency execution
+    property var _pendingChanges: ({})
+
+    Timer {
+        id: batchTimer
+        interval: 16 // 60fps coalescing timer
+        repeat: false
+        onTriggered: root._flushPendingChanges()
+    }
 
     Component.onCompleted: {
         refreshState()
@@ -103,21 +135,55 @@ Singleton {
         queryProcess.running = true
     }
 
-    // ── Option Application Queue ──────────────────────────────────────────────
+    // ── Direct & Fast Option Application ──────────────────────────────────────
     function setOption(optName, optVal) {
-        _pendingQueue.push({ name: optName, val: optVal })
-        _processQueue()
+        _pendingChanges[optName] = optVal
+        if (!batchTimer.running) {
+            batchTimer.restart()
+        }
     }
 
-    function _processQueue() {
-        if (_isApplying || _pendingQueue.length === 0) return
-        const next = _pendingQueue.shift()
-        _isApplying = true
+    function _flushPendingChanges() {
+        const keys = Object.keys(_pendingChanges)
+        if (keys.length === 0) return
 
-        applyProcess.targetOpt = next.name
-        applyProcess.targetVal = String(next.val)
-        applyProcess.command = [helperScript, "set", next.name, String(next.val)]
-        applyProcess.running = true
+        if (activeCompositor === "hyprland") {
+            // Build batch of hyprctl keyword calls into a single fast shell command
+            let cmdParts = []
+            for (let i = 0; i < keys.length; i++) {
+                const k = keys[i]
+                const v = _pendingChanges[k]
+                const hyprKey = hyprKeyMap[k]
+                if (hyprKey) {
+                    let formattedVal = String(v)
+                    if (typeof v === "boolean") formattedVal = v ? "1" : "0"
+                    cmdParts.push("hyprctl keyword " + hyprKey + " " + formattedVal)
+                }
+            }
+            _pendingChanges = {}
+
+            if (cmdParts.length > 0) {
+                fastHyprProc.command = ["sh", "-c", cmdParts.join(" && ")]
+                fastHyprProc.running = true
+            }
+        } else {
+            // Fallback to helper script for other compositors
+            for (let i = 0; i < keys.length; i++) {
+                const k = keys[i]
+                const v = _pendingChanges[k]
+                applyProcess.command = [helperScript, "set", k, String(v)]
+                applyProcess.running = true
+            }
+            _pendingChanges = {}
+        }
+    }
+
+    Process {
+        id: fastHyprProc
+    }
+
+    Process {
+        id: applyProcess
     }
 
     // ── Live Setting Updates & Helpers ────────────────────────────────────────
@@ -301,21 +367,6 @@ Singleton {
     // ── Sub-processes ─────────────────────────────────────────────────────────
 
     Process {
-        id: applyProcess
-        property string targetOpt: ""
-        property string targetVal: ""
-        property string outData: ""
-        stdout: SplitParser {
-            onRead: chunk => applyProcess.outData += chunk
-        }
-        onExited: (exitCode) => {
-            root._isApplying = false
-            applyProcess.outData = ""
-            root._processQueue()
-        }
-    }
-
-    Process {
         id: openEditorProc
     }
 
@@ -384,7 +435,7 @@ Singleton {
                 if (res && res.ok) {
                     root.originalContent = root.currentContent
                     root.saveStatus = "saved"
-                    root.statusMessage = "Saved successfully! Backup created: " + (res.backup ? res.backup.split('/').pop() : "")
+                    root.statusMessage = "Saved successfully! Backup created: " + (res.backup ? res.backup.split("/").pop() : "")
                     root.reloadCompositor()
                 } else if (res && res.syntax_error) {
                     root.saveStatus = "error"

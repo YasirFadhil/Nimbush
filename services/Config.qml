@@ -63,6 +63,11 @@ Singleton {
     property string lockscreenClockStyle: "hero"  // "hero" | "modern" | "compact" | "minimal" | "vertical" | "typographic" | "radial" | "cyber"
     property string lockscreenAuthStyle: "pill"   // "pill" | "card"
     property string lockscreenLayout: "center"    // "center" | "left" | "right"
+    property string lockscreenAvatarShape: "circle" // "circle" | "squircle" | "rounded"
+    property bool lockscreenAvatarRing: true
+    property string lockscreenInputStyle: "pill"  // "pill" | "underline" | "box" | "dots"
+    property bool lockscreenShowAvatar: true
+    property bool lockscreenShowGreeting: true
     property bool lockscreenShowMedia: true
     property string lockscreenMediaStyle: "pill"  // "pill" | "card"
     property bool lockscreenShowWeather: true
@@ -210,6 +215,11 @@ Singleton {
         if (data.lockscreenClockStyle !== undefined) lockscreenClockStyle = data.lockscreenClockStyle
         if (data.lockscreenAuthStyle !== undefined) lockscreenAuthStyle = data.lockscreenAuthStyle
         if (data.lockscreenLayout !== undefined) lockscreenLayout = data.lockscreenLayout
+        if (data.lockscreenAvatarShape !== undefined) lockscreenAvatarShape = data.lockscreenAvatarShape
+        if (data.lockscreenAvatarRing !== undefined) lockscreenAvatarRing = Boolean(data.lockscreenAvatarRing)
+        if (data.lockscreenInputStyle !== undefined) lockscreenInputStyle = data.lockscreenInputStyle
+        if (data.lockscreenShowAvatar !== undefined) lockscreenShowAvatar = Boolean(data.lockscreenShowAvatar)
+        if (data.lockscreenShowGreeting !== undefined) lockscreenShowGreeting = Boolean(data.lockscreenShowGreeting)
         if (data.lockscreenShowMedia !== undefined) lockscreenShowMedia = Boolean(data.lockscreenShowMedia)
         if (data.lockscreenMediaStyle !== undefined) lockscreenMediaStyle = data.lockscreenMediaStyle
         if (data.lockscreenShowWeather !== undefined) lockscreenShowWeather = Boolean(data.lockscreenShowWeather)
@@ -276,6 +286,11 @@ Singleton {
             lockscreenClockStyle: lockscreenClockStyle,
             lockscreenAuthStyle: lockscreenAuthStyle,
             lockscreenLayout: lockscreenLayout,
+            lockscreenAvatarShape: lockscreenAvatarShape,
+            lockscreenAvatarRing: lockscreenAvatarRing,
+            lockscreenInputStyle: lockscreenInputStyle,
+            lockscreenShowAvatar: lockscreenShowAvatar,
+            lockscreenShowGreeting: lockscreenShowGreeting,
             lockscreenShowMedia: lockscreenShowMedia,
             lockscreenMediaStyle: lockscreenMediaStyle,
             lockscreenShowWeather: lockscreenShowWeather,
@@ -344,6 +359,11 @@ Singleton {
         notificationPosition = "top_right"
 
         lockscreenClockStyle = "hero"
+        lockscreenAvatarShape = "circle"
+        lockscreenAvatarRing = true
+        lockscreenInputStyle = "pill"
+        lockscreenShowAvatar = true
+        lockscreenShowGreeting = true
         lockscreenShowMedia = true
         lockscreenMediaStyle = "pill"
         lockscreenShowWeather = true
@@ -481,6 +501,11 @@ Singleton {
     function setLockscreenClockStyle(style) { lockscreenClockStyle = style; saveConfig() }
     function setLockscreenAuthStyle(style) { lockscreenAuthStyle = style; saveConfig() }
     function setLockscreenLayout(layout) { lockscreenLayout = layout; saveConfig() }
+    function setLockscreenAvatarShape(shape) { lockscreenAvatarShape = shape; saveConfig() }
+    function setLockscreenAvatarRing(val) { lockscreenAvatarRing = val; saveConfig() }
+    function setLockscreenInputStyle(style) { lockscreenInputStyle = style; saveConfig() }
+    function setLockscreenShowAvatar(val) { lockscreenShowAvatar = val; saveConfig() }
+    function setLockscreenShowGreeting(val) { lockscreenShowGreeting = val; saveConfig() }
     function setLockscreenShowMedia(val) { lockscreenShowMedia = val; saveConfig() }
     function setLockscreenMediaStyle(style) { lockscreenMediaStyle = style; saveConfig() }
     function setLockscreenShowWeather(val) { lockscreenShowWeather = val; saveConfig() }

@@ -23,31 +23,52 @@ Singleton {
     property string diskTotalStr: ""
     property string uptimeStr: ""
 
+    // Fast loop: CPU usage, RAM, and Temperature (3s interval, single shell read)
     Timer {
+        id: fastTimer
         interval: 3000
         running: true
         repeat: true
         triggeredOnStart: true
         onTriggered: {
-            cpuProc.running = true
-            ramProc.running = true
-            tempProc.running = true
-            diskProc.running = true
-            uptimeProc.running = true
+            if (!fastProc.running) fastProc.running = true
+        }
+    }
+
+    // Slow loop: Disk usage and Uptime (30s interval)
+    Timer {
+        id: slowTimer
+        interval: 30000
+        running: true
+        repeat: true
+        triggeredOnStart: true
+        onTriggered: {
+            if (!slowProc.running) slowProc.running = true
         }
     }
 
     property real _prevTotal: 0
     property real _prevIdle: 0
 
-    // CPU usage via single /proc/stat read calculated over timer interval
+    // Single unified process for CPU, RAM (/proc/meminfo), and CPU Temp
     Process {
-        id: cpuProc
-        command: ["sh", "-c", "read _ u n s i io irq sirq _ < /proc/stat; echo \"$((u+n+s+i+io+irq+sirq))|$i\""]
+        id: fastProc
+        command: ["sh", "-c",
+            "read _ u n s i io irq sirq _ < /proc/stat; " +
+            "total=$((u+n+s+i+io+irq+sirq)); " +
+            "while read k v _; do case \"$k\" in MemTotal:) mt=$v ;; MemAvailable:) ma=$v ;; esac; [ -n \"$mt\" ] && [ -n \"$ma\" ] && break; done < /proc/meminfo; " +
+            "mu=$((mt - ma)); ram_pct=$(( (mu * 100) / mt )); " +
+            "used_g=$(awk -v u=$mu 'BEGIN {printf \"%.1fG\", u/1048576}'); " +
+            "tot_g=$(awk -v t=$mt 'BEGIN {printf \"%.1fG\", t/1048576}'); " +
+            "temp=0; " +
+            "for z in /sys/class/thermal/thermal_zone*; do t=$(cat \"$z/type\" 2>/dev/null); if [ \"$t\" = \"x86_pkg_temp\" ] || [ \"$t\" = \"TCPU\" ] || [ \"$t\" = \"cpu_thermal\" ] || [ \"$t\" = \"coretemp\" ]; then temp=$(cat \"$z/temp\" 2>/dev/null); break; fi; done; " +
+            "[ \"$temp\" = \"0\" ] && temp=$(cat " + root.thermalZone + " 2>/dev/null || echo 0); " +
+            "echo \"$total|$i|$ram_pct|$used_g|$tot_g|$temp\""]
         stdout: SplitParser {
             onRead: data => {
                 const parts = data.trim().split("|")
-                if (parts.length >= 2) {
+                if (parts.length >= 6) {
+                    // CPU
                     const total = parseFloat(parts[0])
                     const idle = parseFloat(parts[1])
                     if (root._prevTotal > 0) {
@@ -59,64 +80,46 @@ Singleton {
                     }
                     root._prevTotal = total
                     root._prevIdle = idle
+
+                    // RAM
+                    const ramPct = parseFloat(parts[2])
+                    if (!isNaN(ramPct)) root.ramUsage = ramPct
+                    root.ramUsedStr = parts[3] || ""
+                    root.ramTotalStr = parts[4] || ""
+
+                    // Temp
+                    const tempRaw = parseFloat(parts[5])
+                    if (!isNaN(tempRaw) && tempRaw > 0) {
+                        root.cpuTemp = tempRaw > 1000 ? (tempRaw / 1000) : tempRaw
+                    }
                 }
             }
         }
     }
 
-    // RAM usage via free
+    // Single unified process for Disk and Uptime
     Process {
-        id: ramProc
-        command: ["sh", "-c", "pct=$(free | awk '/Mem:/{printf \"%.0f\", ($2-$7)/$2*100}'); set -- $(free -h | awk '/Mem:/{print $3, $2}'); echo \"$pct|$1|$2\""]
+        id: slowProc
+        command: ["sh", "-c",
+            "df -h / | awk 'NR==2{gsub(\"%\",\"\",$5); print $5\"|\"$3\"|\"$2}'; " +
+            "read up _ < /proc/uptime; s=${up%.*}; " +
+            "d=$((s/86400)); h=$(((s%86400)/3600)); m=$(((s%3600)/60)); " +
+            "if [ $d -gt 0 ]; then echo \"$d\"d \"$h\"h \"$m\"m; elif [ $h -gt 0 ]; then echo \"$h\"h \"$m\"m; else echo \"$m\"m; fi"]
         stdout: SplitParser {
             onRead: data => {
-                const parts = data.trim().split("|")
-                if (parts.length >= 3) {
-                    const v = parseFloat(parts[0])
-                    if (!isNaN(v)) root.ramUsage = v
-                    root.ramUsedStr = parts[1]
-                    root.ramTotalStr = parts[2]
+                const lines = data.trim().split("\n")
+                if (lines.length >= 1 && lines[0].includes("|")) {
+                    const parts = lines[0].split("|")
+                    if (parts.length >= 3) {
+                        const v = parseFloat(parts[0])
+                        if (!isNaN(v)) root.diskUsage = v
+                        root.diskUsedStr = parts[1]
+                        root.diskTotalStr = parts[2]
+                    }
                 }
-            }
-        }
-    }
-
-    // CPU temp
-    Process {
-        id: tempProc
-        command: ["sh", "-c", "for z in /sys/class/thermal/thermal_zone*; do type=$(cat \"$z/type\" 2>/dev/null); if [ \"$type\" = \"x86_pkg_temp\" ] || [ \"$type\" = \"TCPU\" ] || [ \"$type\" = \"cpu_thermal\" ] || [ \"$type\" = \"coretemp\" ]; then cat \"$z/temp\" 2>/dev/null; exit 0; fi; done; cat " + root.thermalZone + " 2>/dev/null || echo 0"]
-        stdout: SplitParser {
-            onRead: data => {
-                const v = parseFloat(data)
-                if (!isNaN(v) && v > 0) root.cpuTemp = v / 1000
-            }
-        }
-    }
-
-    // Disk usage
-    Process {
-        id: diskProc
-        command: ["sh", "-c", "df -h / | awk 'NR==2{gsub(\"%\",\"\",$5); print $5\"|\"$3\"|\"$2}'"]
-        stdout: SplitParser {
-            onRead: data => {
-                const parts = data.trim().split("|")
-                if (parts.length >= 3) {
-                    const v = parseFloat(parts[0])
-                    if (!isNaN(v)) root.diskUsage = v
-                    root.diskUsedStr = parts[1]
-                    root.diskTotalStr = parts[2]
+                if (lines.length >= 2 && lines[1].trim().length > 0) {
+                    root.uptimeStr = lines[1].trim()
                 }
-            }
-        }
-    }
-
-    // Uptime
-    Process {
-        id: uptimeProc
-        command: ["sh", "-c", "awk '{s=int($1); d=int(s/86400); h=int((s%86400)/3600); m=int((s%3600)/60); if(d>0) print d\"d \"h\"h \"m\"m\"; else if(h>0) print h\"h \"m\"m\"; else print m\"m\"}' /proc/uptime"]
-        stdout: SplitParser {
-            onRead: data => {
-                if (data.trim().length > 0) root.uptimeStr = data.trim()
             }
         }
     }

@@ -19,11 +19,17 @@ import select
 def get_kde_device_notification_paths():
     try:
         raw = subprocess.check_output(
-            "busctl --user tree org.kde.kdeconnect 2>/dev/null | grep -E '/modules/kdeconnect/devices/[^/]+/notifications$' | awk '{print $NF}'",
-            shell=True,
-            text=True
+            ["busctl", "--user", "tree", "org.kde.kdeconnect"],
+            stderr=subprocess.DEVNULL,
+            text=True,
+            timeout=1.2
         )
-        return [line.strip() for line in raw.strip().splitlines() if line.strip()]
+        paths = []
+        for line in raw.splitlines():
+            line = line.strip().split()[-1] if line.strip() else ""
+            if line.startswith("/modules/kdeconnect/devices/") and line.endswith("/notifications"):
+                paths.append(line)
+        return paths
     except Exception:
         return []
 
@@ -33,9 +39,10 @@ def get_active_notifications():
     for d in devs:
         try:
             ids_raw = subprocess.check_output(
-                f"busctl --user call org.kde.kdeconnect {d} org.kde.kdeconnect.device.notifications activeNotifications",
-                shell=True,
-                text=True
+                ["busctl", "--user", "call", "org.kde.kdeconnect", d, "org.kde.kdeconnect.device.notifications", "activeNotifications"],
+                stderr=subprocess.DEVNULL,
+                text=True,
+                timeout=1.0
             )
             parts = ids_raw.strip().split()
             if len(parts) >= 2 and parts[0] == "as":
@@ -44,24 +51,28 @@ def get_active_notifications():
                     p = f"{d}/{nid}"
                     try:
                         app = subprocess.check_output(
-                            f"busctl --user get-property org.kde.kdeconnect {p} org.kde.kdeconnect.device.notifications.notification appName",
-                            shell=True,
-                            text=True
+                            ["busctl", "--user", "get-property", "org.kde.kdeconnect", p, "org.kde.kdeconnect.device.notifications.notification", "appName"],
+                            stderr=subprocess.DEVNULL,
+                            text=True,
+                            timeout=0.6
                         ).strip().split(" ", 1)[-1].strip('"')
                         title = subprocess.check_output(
-                            f"busctl --user get-property org.kde.kdeconnect {p} org.kde.kdeconnect.device.notifications.notification title",
-                            shell=True,
-                            text=True
+                            ["busctl", "--user", "get-property", "org.kde.kdeconnect", p, "org.kde.kdeconnect.device.notifications.notification", "title"],
+                            stderr=subprocess.DEVNULL,
+                            text=True,
+                            timeout=0.6
                         ).strip().split(" ", 1)[-1].strip('"')
                         text = subprocess.check_output(
-                            f"busctl --user get-property org.kde.kdeconnect {p} org.kde.kdeconnect.device.notifications.notification text",
-                            shell=True,
-                            text=True
+                            ["busctl", "--user", "get-property", "org.kde.kdeconnect", p, "org.kde.kdeconnect.device.notifications.notification", "text"],
+                            stderr=subprocess.DEVNULL,
+                            text=True,
+                            timeout=0.6
                         ).strip().split(" ", 1)[-1].strip('"')
                         reply_id = subprocess.check_output(
-                            f"busctl --user get-property org.kde.kdeconnect {p} org.kde.kdeconnect.device.notifications.notification replyId",
-                            shell=True,
-                            text=True
+                            ["busctl", "--user", "get-property", "org.kde.kdeconnect", p, "org.kde.kdeconnect.device.notifications.notification", "replyId"],
+                            stderr=subprocess.DEVNULL,
+                            text=True,
+                            timeout=0.6
                         ).strip().split(" ", 1)[-1].strip('"')
                         notifs.append({
                             "id": nid,
@@ -268,9 +279,9 @@ def do_watch():
                         "notifications": current
                     }), flush=True)
 
-            # Periodic sync every 10 seconds
+            # Periodic sync fallback (every 45 seconds) - live events handled immediately above
             now = time.time()
-            if now - last_sync_time >= 10.0:
+            if now - last_sync_time >= 45.0:
                 last_sync_time = now
                 current = get_active_notifications()
                 current_ids = set(n["id"] for n in current)

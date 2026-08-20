@@ -49,11 +49,6 @@ PanelWindow {
         onTriggered: root.visible = false
     }
 
-    Process {
-        id: settingsProc
-        command: ["quickshell", "ipc", "call", "settings", "show"]
-    }
-
     Item {
         id: keyFocus
         focus: root.isOpen
@@ -64,130 +59,51 @@ PanelWindow {
         anchors.fill: parent
         onClicked: root.close()
 
-        // ── Panel ──────────────────────────────────────────────────────────
+        // ── Main Dashboard Floating Window ───────────────────────────────────
         Rectangle {
             id: panel
             anchors.left: parent.left
-            anchors.leftMargin: 12
-            y: root.isBottom ? (parent.height - height - 12) : 12
-            width: 360
-            implicitHeight: mainCol.implicitHeight + 32
+            anchors.leftMargin: 16
+            y: root.isBottom ? (parent.height - height - 16) : 16
+            width: 350
+            implicitHeight: mainCol.implicitHeight + 28
 
             radius: Services.Theme.radiusLg
-            color: Services.Theme.surface
+            color: Services.Theme.bgElevated
             border.color: Services.Theme.border
             border.width: 1
             clip: true
 
             opacity: root.isOpen ? 1 : 0
             transform: Translate {
-                y: root.isOpen ? 0 : (root.isBottom ? 32 : -32)
-                Behavior on y { NumberAnimation { duration: 240; easing.type: Easing.OutBack; easing.overshoot: 0.5 } }
+                y: root.isOpen ? 0 : (root.isBottom ? 24 : -24)
+                Behavior on y { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
             }
-            scale: root.isOpen ? 1 : 0.96
-            Behavior on scale { NumberAnimation { duration: 240; easing.type: Easing.OutCubic } }
-            Behavior on opacity { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
+            scale: root.isOpen ? 1 : 0.97
+            Behavior on scale { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
+            Behavior on opacity { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
 
             MouseArea { anchors.fill: parent; onClicked: {} }
 
-            // Reusable metric card component (2-col grid)
-            component MetricCard: Rectangle {
-                id: card
-                property string iconGlyph: ""
-                property string label: ""
-                property string valueText: ""
-                property real progress: 0.0
-                property bool critical: false
-                property string iconFont: Services.Theme.fontSymbols
-
-                Layout.fillWidth: true
-                implicitHeight: 58
-                radius: Services.Theme.radiusMd
-                color: Services.Theme.surfaceVariant
-
-                ColumnLayout {
-                    anchors.fill: parent
-                    anchors.margins: 10
-                    spacing: 7
-
-                    // Row: icon + label + value
-                    RowLayout {
-                        Layout.fillWidth: true
-                        spacing: 7
-
-                        // Icon bubble
-                        Rectangle {
-                            width: 22; height: 22; radius: 6
-                            color: card.critical ? Qt.rgba(0.54, 0.32, 0.32, 0.25) : Qt.rgba(0.83, 0.83, 0.83, 0.1)
-                            Behavior on color { ColorAnimation { duration: 300 } }
-
-                            Text {
-                                anchors.centerIn: parent
-                                text: card.iconGlyph
-                                font.family: card.iconFont
-                                font.pixelSize: 11
-                                color: card.critical ? Services.Theme.danger : Services.Theme.accent
-                                Behavior on color { ColorAnimation { duration: 300 } }
-                            }
-                        }
-
-                        Text {
-                            text: card.label
-                            font.pixelSize: 10
-                            font.bold: true
-                            color: Services.Theme.textPrimary
-                        }
-
-                        Item { Layout.fillWidth: true }
-
-                        Text {
-                            text: card.valueText
-                            font.pixelSize: 10
-                            font.bold: true
-                            color: card.critical ? Services.Theme.danger : Services.Theme.textSecondary
-                            Behavior on color { ColorAnimation { duration: 300 } }
-                        }
-                    }
-
-                    // Progress bar track
-                    Rectangle {
-                        Layout.fillWidth: true
-                        height: 5
-                        radius: 3
-                        color: Qt.rgba(0.1, 0.1, 0.1, 0.6)
-                        clip: true
-
-                        // Fill
-                        Rectangle {
-                            height: parent.height
-                            width: Math.max(0, Math.min(parent.width, parent.width * card.progress))
-                            radius: parent.radius
-                            color: card.critical ? Services.Theme.danger : Services.Theme.accent
-                            Behavior on width { NumberAnimation { duration: 350; easing.type: Easing.OutCubic } }
-                            Behavior on color { ColorAnimation { duration: 300 } }
-                        }
-                    }
-                }
-            }
-
-            // ── Main Column ────────────────────────────────────────────────
+            // ── Main Content Column ──────────────────────────────────────────
             ColumnLayout {
                 id: mainCol
                 anchors.fill: parent
-                anchors.margins: 16
-                spacing: 14
+                anchors.margins: 14
+                spacing: 12
 
-                // ── Header ──────────────────────────────────────────────────
+                // ── 1. Profile Header ─────────────────────────────────────────
                 RowLayout {
                     Layout.fillWidth: true
-                    spacing: 12
+                    spacing: 10
 
-                    // Avatar
+                    // Avatar / Distro Glyph
                     Rectangle {
-                        width: 46; height: 46
-                        radius: 23
+                        width: 38
+                        height: 38
+                        radius: 19
                         color: Services.Theme.surfaceVariant
-                        border.color: Services.Theme.borderHighlight
+                        border.color: Services.Theme.border
                         border.width: 1
                         antialiasing: true
                         smooth: true
@@ -200,10 +116,9 @@ PanelWindow {
                             fillMode: Image.PreserveAspectCrop
                             asynchronous: true
                             cache: true
-                            sourceSize: Qt.size(90, 90)
+                            sourceSize: Qt.size(76, 76)
                             visible: false
                             smooth: true
-                            mipmap: true
                         }
 
                         MultiEffect {
@@ -219,88 +134,111 @@ PanelWindow {
                             anchors.fill: avatarImg
                             visible: false
                             layer.enabled: true
-                            layer.smooth: true
-                            layer.samples: 8
                             Rectangle {
                                 anchors.fill: parent
-                                radius: 22
+                                radius: 18
                                 color: "black"
-                                antialiasing: true
                             }
                         }
 
                         Text {
                             anchors.centerIn: parent
                             visible: avatarImg.status !== Image.Ready
-                            text: Services.OsInfo.logoGlyph !== "" ? Services.OsInfo.logoGlyph : "\uf007"
+                            text: Services.OsInfo.logoGlyph || "\uf17c"
                             font.family: Services.Theme.fontSymbols
-                            font.pixelSize: 20
+                            font.pixelSize: 18
                             color: Services.Theme.accent
                         }
                     }
 
-                    // User info
+                    // User Identity
                     ColumnLayout {
-                        spacing: 3
                         Layout.fillWidth: true
-
-                        Text {
-                            text: Services.OsInfo.username.length > 0 ? Services.OsInfo.username : "User"
-                            font.pixelSize: 16
-                            font.weight: Font.Bold
-                            color: Services.Theme.textPrimary
-                            elide: Text.ElideRight
-                        }
+                        spacing: 1
 
                         RowLayout {
-                            spacing: 5
-
+                            spacing: 6
                             Text {
-                                text: Services.OsInfo.hostname.length > 0 ? "@" + Services.OsInfo.hostname : ""
-                                font.pixelSize: 10
-                                color: Services.Theme.textSecondary
+                                text: Services.OsInfo.username || "User"
+                                font.pixelSize: 14
+                                font.weight: Font.DemiBold
+                                color: Services.Theme.textPrimary
+                                elide: Text.ElideRight
                             }
 
                             Text {
-                                visible: Services.OsInfo.hostname.length > 0 && Services.OsInfo.distroName.length > 0
                                 text: "·"
                                 font.pixelSize: 10
                                 color: Services.Theme.textDisabled
                             }
 
                             Text {
-                                text: Services.OsInfo.distroName.length > 0 ? Services.OsInfo.distroName : "Linux"
+                                text: Services.OsInfo.distroName || "Linux"
                                 font.pixelSize: 10
                                 color: Services.Theme.accent
                                 elide: Text.ElideRight
                             }
                         }
-                    }
-
-                    // Settings Button
-                    Rectangle {
-                        width: 28; height: 28; radius: 14
-                        color: sHover.containsMouse ? Services.Theme.surfaceVariant : "transparent"
-                        border.color: sHover.containsMouse ? Services.Theme.border : "transparent"
-                        border.width: 1
-                        Behavior on color { ColorAnimation { duration: 100 } }
 
                         Text {
-                            anchors.centerIn: parent
-                            text: Services.Icons.settings
-                            font.family: Services.Theme.fontSymbols
-                            font.pixelSize: 13
-                            color: sHover.containsMouse ? Services.Theme.accent : Services.Theme.textSecondary
+                            text: "@" + (Services.OsInfo.hostname || "local")
+                            font.pixelSize: 10
+                            color: Services.Theme.textSecondary
+                        }
+                    }
+
+                    // Settings & Close Actions
+                    RowLayout {
+                        spacing: 4
+
+                        Rectangle {
+                            width: 28
+                            height: 28
+                            radius: 6
+                            color: setBtnArea.containsMouse ? Services.Theme.bgHover : "transparent"
+                            Behavior on color { ColorAnimation { duration: 120 } }
+
+                            Text {
+                                anchors.centerIn: parent
+                                text: Services.Icons.settings
+                                font.family: Services.Theme.fontSymbols
+                                font.pixelSize: 12
+                                color: setBtnArea.containsMouse ? Services.Theme.accent : Services.Theme.textSecondary
+                            }
+
+                            MouseArea {
+                                id: setBtnArea
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: {
+                                    root.close()
+                                    Services.OverlayManager.openSettings()
+                                }
+                            }
                         }
 
-                        MouseArea {
-                            id: sHover
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: {
-                                root.close()
-                                Services.OverlayManager.openSettings()
+                        Rectangle {
+                            width: 28
+                            height: 28
+                            radius: 6
+                            color: closeBtnArea.containsMouse ? Qt.rgba(0.9, 0.2, 0.2, 0.12) : "transparent"
+                            Behavior on color { ColorAnimation { duration: 120 } }
+
+                            Text {
+                                anchors.centerIn: parent
+                                text: "×"
+                                font.pixelSize: 16
+                                font.bold: true
+                                color: closeBtnArea.containsMouse ? Services.Theme.danger : Services.Theme.textSecondary
+                            }
+
+                            MouseArea {
+                                id: closeBtnArea
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: root.close()
                             }
                         }
                     }
@@ -311,265 +249,248 @@ PanelWindow {
                     Layout.fillWidth: true
                     height: 1
                     color: Services.Theme.border
-                    opacity: 0.7
+                    opacity: 0.6
                 }
 
-                // ── System Performance Section ────────────────────────────────
-                ColumnLayout {
+                // ── 2. Minimal Metrics Grid ──────────────────────────────────
+                GridLayout {
                     Layout.fillWidth: true
-                    spacing: 10
+                    columns: 2
+                    columnSpacing: 8
+                    rowSpacing: 8
 
-                    // Section label
-                    RowLayout {
+                    component MinimalMetric: Rectangle {
+                        id: mmRoot
+                        property string icon: ""
+                        property string name: ""
+                        property string value: ""
+                        property real ratio: 0.0
+                        property color barColor: Services.Theme.accent
+
                         Layout.fillWidth: true
+                        implicitHeight: 52
+                        radius: Services.Theme.radiusSm
+                        color: Services.Theme.surfaceVariant
+                        border.color: Services.Theme.border
+                        border.width: 1
 
-                        Text {
-                            text: "System Performance"
-                            font.pixelSize: 10
-                            font.bold: true
-                            font.letterSpacing: 0.5
-                            color: Services.Theme.textDisabled
-                        }
-
-                        Item { Layout.fillWidth: true }
-
-                        // Live indicator dot
-                        Rectangle {
-                            width: 6; height: 6; radius: 3
-                            color: Services.Theme.success
-                            SequentialAnimation on opacity {
-                                loops: Animation.Infinite
-                                NumberAnimation { to: 0.3; duration: 900; easing.type: Easing.InOutSine }
-                                NumberAnimation { to: 1.0; duration: 900; easing.type: Easing.InOutSine }
-                            }
-                        }
-                    }
-
-                    // Row 1: CPU + RAM
-                    RowLayout {
-                        Layout.fillWidth: true
-                        spacing: 8
-
-                        MetricCard {
-                            iconGlyph: Services.Icons.cpu
-                            label: "CPU"
-                            valueText: Math.round(Services.Sysmon.cpuUsage) + "%"
-                            progress: Services.Sysmon.cpuUsage / 100.0
-                            critical: Services.Sysmon.cpuUsage > 85
-                        }
-
-                        MetricCard {
-                            iconGlyph: Services.Icons.ram
-                            iconFont: Services.Theme.fontMono
-                            label: "RAM"
-                            valueText: Services.Sysmon.ramUsedStr.length > 0
-                                       ? Services.Sysmon.ramUsedStr + "/" + Services.Sysmon.ramTotalStr
-                                       : Math.round(Services.Sysmon.ramUsage) + "%"
-                            progress: Services.Sysmon.ramUsage / 100.0
-                            critical: Services.Sysmon.ramUsage > 85
-                        }
-                    }
-
-                    // Row 2: Disk + Temp
-                    RowLayout {
-                        Layout.fillWidth: true
-                        spacing: 8
-
-                        MetricCard {
-                            iconGlyph: Services.Icons.disk
-                            label: "Disk"
-                            valueText: Services.Sysmon.diskUsedStr.length > 0
-                                       ? Services.Sysmon.diskUsedStr + "/" + Services.Sysmon.diskTotalStr
-                                       : Math.round(Services.Sysmon.diskUsage) + "%"
-                            progress: Services.Sysmon.diskUsage / 100.0
-                            critical: Services.Sysmon.diskUsage > 90
-                        }
-
-                        MetricCard {
-                            iconGlyph: Services.Icons.temp
-                            label: "Temp"
-                            valueText: Math.round(Services.Sysmon.cpuTemp) + "°C"
-                            progress: Math.min(1.0, Services.Sysmon.cpuTemp / 100.0)
-                            critical: Services.Sysmon.cpuTemp > 75
-                        }
-                    }
-                }
-
-                // ── System Details Card ───────────────────────────────────────
-                Rectangle {
-                    Layout.fillWidth: true
-                    implicitHeight: detailGrid.implicitHeight + 20
-                    radius: Services.Theme.radiusMd
-                    color: Services.Theme.surfaceVariant
-
-                    GridLayout {
-                        id: detailGrid
-                        anchors.fill: parent
-                        anchors.margins: 10
-                        columns: 2
-                        columnSpacing: 8
-                        rowSpacing: 8
-
-                        // Kernel
-                        RowLayout {
-                            spacing: 6
-                            Text {
-                                text: Services.Icons.kernel
-                                font.family: Services.Theme.fontSymbols
-                                font.pixelSize: 11
-                                color: Services.Theme.accent
-                            }
-                            Text {
-                                text: "Kernel"
-                                font.pixelSize: 10
-                                color: Services.Theme.textDisabled
-                                font.bold: true
-                            }
-                            Text {
-                                text: Services.OsInfo.kernel.length > 0 ? Services.OsInfo.kernel : "-"
-                                font.pixelSize: 10
-                                color: Services.Theme.textPrimary
-                                elide: Text.ElideRight
-                                Layout.fillWidth: true
-                            }
-                        }
-
-                        // Uptime
-                        RowLayout {
-                            spacing: 6
-                            Text {
-                                text: Services.Icons.uptime
-                                font.family: Services.Theme.fontSymbols
-                                font.pixelSize: 11
-                                color: Services.Theme.accent
-                            }
-                            Text {
-                                text: "Uptime"
-                                font.pixelSize: 10
-                                color: Services.Theme.textDisabled
-                                font.bold: true
-                            }
-                            Text {
-                                text: Services.Sysmon.uptimeStr.length > 0 ? Services.Sysmon.uptimeStr : "-"
-                                font.pixelSize: 10
-                                color: Services.Theme.textPrimary
-                                elide: Text.ElideRight
-                                Layout.fillWidth: true
-                            }
-                        }
-
-                        // Shell
-                        RowLayout {
-                            spacing: 6
-                            Text {
-                                text: Services.Icons.shell
-                                font.family: Services.Theme.fontSymbols
-                                font.pixelSize: 11
-                                color: Services.Theme.accent
-                            }
-                            Text {
-                                text: "Shell"
-                                font.pixelSize: 10
-                                color: Services.Theme.textDisabled
-                                font.bold: true
-                            }
-                            Text {
-                                text: Services.OsInfo.shellName.length > 0 ? Services.OsInfo.shellName : "-"
-                                font.pixelSize: 10
-                                color: Services.Theme.textPrimary
-                                elide: Text.ElideRight
-                                Layout.fillWidth: true
-                            }
-                        }
-
-                        // Power / Battery
-                        RowLayout {
-                            visible: Services.Power.ready && !isNaN(Services.Power.percentage) && Services.Power.percentage > 0
-                            spacing: 6
-                            Text {
-                                text: Services.Icons.powerIcon(Services.Power.charging, Services.Power.percentage * 100)
-                                font.family: Services.Theme.fontSymbols
-                                font.pixelSize: 11
-                                color: Services.Power.charging ? Services.Theme.success : (Services.Power.isLow ? Services.Theme.danger : Services.Theme.accent)
-                                Behavior on color { ColorAnimation { duration: 250 } }
-                            }
-                            Text {
-                                text: "Power"
-                                font.pixelSize: 10
-                                color: Services.Theme.textDisabled
-                                font.bold: true
-                            }
-                            Text {
-                                text: Math.round(Services.Power.percentage * 100) + "%"
-                                font.pixelSize: 10
-                                color: Services.Theme.textPrimary
-                                elide: Text.ElideRight
-                                Layout.fillWidth: true
-                            }
-                        }
-                    }
-                }
-
-                // ── Wallpaper Picker Section ──────────────────────────────────
-                ColumnLayout {
-                    Layout.fillWidth: true
-                    spacing: 8
-
-                    // Section header
-                    RowLayout {
-                        Layout.fillWidth: true
-
-                        RowLayout {
-                            spacing: 6
-                            Text {
-                                text: Services.Icons.image
-                                font.family: Services.Theme.fontSymbols
-                                font.pixelSize: 11
-                                color: Services.Theme.accent
-                            }
-                            Text {
-                                text: "Wallpaper"
-                                font.pixelSize: 10
-                                font.bold: true
-                                font.letterSpacing: 0.5
-                                color: Services.Theme.textDisabled
-                            }
-                        }
-
-                        Item { Layout.fillWidth: true }
-
-                        // Upload custom button
-                        Rectangle {
-                            height: 24
-                            implicitWidth: customBtnRow.implicitWidth + 14
-                            radius: 12
-                            color: customBtnMouse.containsMouse ? Services.Theme.bgHover : Services.Theme.surfaceVariant
-                            border.color: customBtnMouse.containsMouse ? Services.Theme.borderHighlight : Qt.rgba(1, 1, 1, 0.08)
-                            border.width: 1
-                            Behavior on color { ColorAnimation { duration: 120 } }
+                        ColumnLayout {
+                            anchors.fill: parent
+                            anchors.margins: 8
+                            spacing: 4
 
                             RowLayout {
-                                id: customBtnRow
-                                anchors.centerIn: parent
-                                spacing: 4
+                                Layout.fillWidth: true
+                                spacing: 5
 
                                 Text {
-                                    text: Services.Wallpaper.isPicking ? Services.Icons.spinner : Services.Icons.plus
+                                    text: mmRoot.icon
                                     font.family: Services.Theme.fontSymbols
-                                    font.pixelSize: 10
-                                    color: Services.Theme.accent
+                                    font.pixelSize: 11
+                                    color: mmRoot.barColor
                                 }
 
                                 Text {
-                                    text: "Custom..."
+                                    text: mmRoot.name
+                                    font.pixelSize: 10
+                                    color: Services.Theme.textSecondary
+                                }
+
+                                Item { Layout.fillWidth: true }
+
+                                Text {
+                                    text: mmRoot.value
                                     font.pixelSize: 10
                                     font.bold: true
                                     color: Services.Theme.textPrimary
                                 }
                             }
 
+                            Rectangle {
+                                Layout.fillWidth: true
+                                height: 3
+                                radius: 1.5
+                                color: Qt.rgba(Services.Theme.textPrimary.r, Services.Theme.textPrimary.g, Services.Theme.textPrimary.b, 0.08)
+                                clip: true
+
+                                Rectangle {
+                                    height: parent.height
+                                    width: Math.max(0, Math.min(parent.width, parent.width * mmRoot.ratio))
+                                    radius: parent.radius
+                                    color: mmRoot.barColor
+                                    Behavior on width { NumberAnimation { duration: 300; easing.type: Easing.OutCubic } }
+                                }
+                            }
+                        }
+                    }
+
+                    MinimalMetric {
+                        icon: Services.Icons.cpu
+                        name: "CPU"
+                        value: Math.round(Services.Sysmon.cpuUsage) + "%"
+                        ratio: Services.Sysmon.cpuUsage / 100.0
+                        barColor: Services.Sysmon.cpuUsage > 80 ? Services.Theme.danger : Services.Theme.accent
+                    }
+
+                    MinimalMetric {
+                        icon: Services.Icons.ram
+                        name: "RAM"
+                        value: Services.Sysmon.ramUsedStr || (Math.round(Services.Sysmon.ramUsage) + "%")
+                        ratio: Services.Sysmon.ramUsage / 100.0
+                        barColor: Services.Sysmon.ramUsage > 85 ? Services.Theme.danger : Services.Theme.accent
+                    }
+
+                    MinimalMetric {
+                        icon: Services.Icons.disk
+                        name: "Disk"
+                        value: Services.Sysmon.diskUsedStr || (Math.round(Services.Sysmon.diskUsage) + "%")
+                        ratio: Services.Sysmon.diskUsage / 100.0
+                        barColor: Services.Sysmon.diskUsage > 90 ? Services.Theme.danger : Services.Theme.accent
+                    }
+
+                    MinimalMetric {
+                        icon: Services.Icons.temp
+                        name: "Temp"
+                        value: Math.round(Services.Sysmon.cpuTemp) + "°C"
+                        ratio: Math.min(1.0, Services.Sysmon.cpuTemp / 100.0)
+                        barColor: Services.Sysmon.cpuTemp > 75 ? Services.Theme.danger : Services.Theme.accent
+                    }
+                }
+
+                // ── 3. Minimal Specs Bar ─────────────────────────────────────
+                Rectangle {
+                    Layout.fillWidth: true
+                    implicitHeight: 26
+                    radius: Services.Theme.radiusSm
+                    color: Services.Theme.surfaceVariant
+                    border.color: Services.Theme.border
+                    border.width: 1
+
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.leftMargin: 8
+                        anchors.rightMargin: 8
+                        spacing: 6
+
+                        Text {
+                            text: Services.Icons.uptime
+                            font.family: Services.Theme.fontSymbols
+                            font.pixelSize: 10
+                            color: Services.Theme.accent
+                        }
+                        Text {
+                            text: Services.Sysmon.uptimeStr || "0m"
+                            font.pixelSize: 9
+                            color: Services.Theme.textPrimary
+                        }
+
+                        Item { Layout.fillWidth: true }
+                        Text { text: "·"; font.pixelSize: 9; color: Services.Theme.textDisabled }
+                        Item { Layout.fillWidth: true }
+
+                        Text {
+                            text: Services.Icons.kernel
+                            font.family: Services.Theme.fontSymbols
+                            font.pixelSize: 10
+                            color: Services.Theme.accent
+                        }
+                        Text {
+                            text: (Services.OsInfo.kernel ? Services.OsInfo.kernel.split("-")[0] : "Linux")
+                            font.pixelSize: 9
+                            color: Services.Theme.textPrimary
+                        }
+
+                        Item { Layout.fillWidth: true }
+                        Text { text: "·"; font.pixelSize: 9; color: Services.Theme.textDisabled }
+                        Item { Layout.fillWidth: true }
+
+                        Text {
+                            text: Services.Icons.shell
+                            font.family: Services.Theme.fontSymbols
+                            font.pixelSize: 10
+                            color: Services.Theme.accent
+                        }
+                        Text {
+                            text: Services.OsInfo.shellName || "sh"
+                            font.pixelSize: 9
+                            color: Services.Theme.textPrimary
+                        }
+
+                        Item {
+                            visible: Services.Power.ready && !isNaN(Services.Power.percentage)
+                            Layout.fillWidth: true
+                        }
+                        Text {
+                            visible: Services.Power.ready && !isNaN(Services.Power.percentage)
+                            text: "·"
+                            font.pixelSize: 9
+                            color: Services.Theme.textDisabled
+                        }
+                        Item {
+                            visible: Services.Power.ready && !isNaN(Services.Power.percentage)
+                            Layout.fillWidth: true
+                        }
+
+                        Text {
+                            visible: Services.Power.ready && !isNaN(Services.Power.percentage)
+                            text: Services.Icons.powerIcon(Services.Power.charging, Services.Power.percentage * 100)
+                            font.family: Services.Theme.fontSymbols
+                            font.pixelSize: 10
+                            color: Services.Power.charging ? Services.Theme.success : Services.Theme.accent
+                        }
+                        Text {
+                            visible: Services.Power.ready && !isNaN(Services.Power.percentage)
+                            text: Math.round(Services.Power.percentage * 100) + "%"
+                            font.pixelSize: 9
+                            color: Services.Theme.textPrimary
+                        }
+                    }
+                }
+
+                // ── 4. Wallpaper Strip ───────────────────────────────────────
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 6
+
+                    RowLayout {
+                        Layout.fillWidth: true
+
+                        Text {
+                            text: "Wallpaper"
+                            font.pixelSize: 10
+                            font.bold: true
+                            color: Services.Theme.textSecondary
+                        }
+
+                        Item { Layout.fillWidth: true }
+
+                        Rectangle {
+                            implicitHeight: 18
+                            implicitWidth: addTxt.implicitWidth + 10
+                            radius: 4
+                            color: addMouse.containsMouse ? Services.Theme.bgHover : "transparent"
+                            border.color: Services.Theme.border
+                            border.width: 1
+
+                            RowLayout {
+                                anchors.centerIn: parent
+                                spacing: 3
+                                Text {
+                                    text: "+"
+                                    font.pixelSize: 11
+                                    font.bold: true
+                                    color: Services.Theme.accent
+                                }
+                                Text {
+                                    id: addTxt
+                                    text: "Custom"
+                                    font.pixelSize: 9
+                                    color: Services.Theme.textPrimary
+                                }
+                            }
+
                             MouseArea {
-                                id: customBtnMouse
+                                id: addMouse
                                 anchors.fill: parent
                                 hoverEnabled: true
                                 cursorShape: Qt.PointingHandCursor
@@ -578,18 +499,18 @@ PanelWindow {
                         }
                     }
 
-                    // Wallpapers Carousel / Horizontal Scroll
+                    // Wallpapers Carousel
                     Flickable {
                         Layout.fillWidth: true
-                        implicitHeight: 68
+                        implicitHeight: 52
                         contentWidth: wallRow.implicitWidth
-                        contentHeight: 68
+                        contentHeight: 52
                         clip: true
                         boundsBehavior: Flickable.StopAtBounds
 
                         RowLayout {
                             id: wallRow
-                            spacing: 8
+                            spacing: 6
 
                             Repeater {
                                 model: Services.Wallpaper.allWallpapers
@@ -599,97 +520,60 @@ PanelWindow {
                                     property var itemData: modelData
                                     property bool isActive: Services.Wallpaper.currentWallpaper === itemData.path
 
-                                    width: 96
-                                    height: 64
+                                    width: 78
+                                    height: 50
                                     radius: Services.Theme.radiusSm
                                     color: Services.Theme.surfaceVariant
-                                    border.color: isActive ? Services.Theme.accent : (cardMouse.containsMouse ? Services.Theme.borderHighlight : Qt.rgba(1, 1, 1, 0.1))
+                                    border.color: isActive ? Services.Theme.accent : (wMouse.containsMouse ? Services.Theme.borderHighlight : Services.Theme.border)
                                     border.width: isActive ? 2 : 1
                                     clip: true
 
-                                    Behavior on border.color { ColorAnimation { duration: 150 } }
-
-                                    // Wallpaper Image Preview
                                     Image {
                                         anchors.fill: parent
                                         source: "file://" + itemData.path
                                         fillMode: Image.PreserveAspectCrop
                                         asynchronous: true
                                         cache: true
-                                        sourceSize: Qt.size(160, 90)
+                                        sourceSize: Qt.size(140, 80)
                                         smooth: true
-                                        mipmap: true
-                                        opacity: cardMouse.containsMouse || isActive ? 1.0 : 0.82
-                                        Behavior on opacity { NumberAnimation { duration: 150 } }
+                                        opacity: isActive || wMouse.containsMouse ? 1.0 : 0.7
                                     }
 
-                                    // Dark gradient overlay for text readability
-                                    Rectangle {
-                                        anchors.fill: parent
-                                        color: "transparent"
-                                        gradient: Gradient {
-                                            GradientStop { position: 0.0; color: "transparent" }
-                                            GradientStop { position: 1.0; color: Qt.rgba(0, 0, 0, 0.65) }
-                                        }
-                                    }
-
-                                    // Active Checkmark Badge
+                                    // Active checkmark badge
                                     Rectangle {
                                         visible: isActive
                                         anchors.top: parent.top
                                         anchors.right: parent.right
-                                        anchors.margins: 4
-                                        width: 18; height: 18; radius: 9
+                                        anchors.margins: 3
+                                        width: 14; height: 14; radius: 7
                                         color: Services.Theme.accent
 
                                         Text {
                                             anchors.centerIn: parent
                                             text: Services.Icons.check
                                             font.family: Services.Theme.fontSymbols
-                                            font.pixelSize: 9
+                                            font.pixelSize: 7
                                             color: Services.Theme.bgOnAccent
                                         }
                                     }
 
-                                    // Delete custom wallpaper button (on hover)
-                                    Rectangle {
-                                        visible: itemData.isCustom && cardMouse.containsMouse && !isActive
-                                        anchors.top: parent.top
-                                        anchors.right: parent.right
-                                        anchors.margins: 4
-                                        width: 18; height: 18; radius: 9
-                                        color: Qt.rgba(0, 0, 0, 0.7)
-
-                                        Text {
-                                            anchors.centerIn: parent
-                                            text: Services.Icons.trash
-                                            font.family: Services.Theme.fontSymbols
-                                            font.pixelSize: 9
-                                            color: Services.Theme.danger
-                                        }
-
-                                        MouseArea {
-                                            anchors.fill: parent
-                                            cursorShape: Qt.PointingHandCursor
-                                            onClicked: Services.Wallpaper.removeCustomWallpaper(itemData.path)
-                                        }
-                                    }
-
-                                    // Wallpaper Name
+                                    // Name Label
                                     Text {
                                         anchors.left: parent.left
                                         anchors.right: parent.right
                                         anchors.bottom: parent.bottom
-                                        anchors.margins: 6
+                                        anchors.margins: 4
                                         text: itemData.name
-                                        font.pixelSize: 9
+                                        font.pixelSize: 8
                                         font.bold: isActive
-                                        color: isActive ? "#ffffff" : Services.Theme.textPrimary
+                                        color: "#ffffff"
                                         elide: Text.ElideRight
+                                        style: Text.Outline
+                                        styleColor: Qt.rgba(0, 0, 0, 0.8)
                                     }
 
                                     MouseArea {
-                                        id: cardMouse
+                                        id: wMouse
                                         anchors.fill: parent
                                         hoverEnabled: true
                                         cursorShape: Qt.PointingHandCursor
@@ -701,44 +585,40 @@ PanelWindow {
                     }
                 }
 
-                // ── Action Buttons ────────────────────────────────────────────
+                // ── 5. Minimal Quick Session Actions ─────────────────────────
                 RowLayout {
                     Layout.fillWidth: true
-                    spacing: 8
+                    spacing: 6
 
-                    // Lock Screen
+                    // Lock Button
                     Rectangle {
                         Layout.fillWidth: true
-                        implicitHeight: 38
-                        radius: Services.Theme.radiusMd
-                        color: lockMouse.containsMouse ? Services.Theme.bgHover : Services.Theme.surfaceVariant
-                        border.color: lockMouse.containsMouse ? Services.Theme.borderHighlight : "transparent"
+                        implicitHeight: 30
+                        radius: Services.Theme.radiusSm
+                        color: lockActionMouse.containsMouse ? Services.Theme.bgHover : Services.Theme.surfaceVariant
+                        border.color: lockActionMouse.containsMouse ? Services.Theme.borderHighlight : Services.Theme.border
                         border.width: 1
                         Behavior on color { ColorAnimation { duration: 120 } }
 
                         RowLayout {
                             anchors.centerIn: parent
-                            spacing: 7
-
+                            spacing: 5
                             Text {
                                 text: Services.Icons.lock
                                 font.family: Services.Theme.fontSymbols
-                                font.pixelSize: 13
-                                color: lockMouse.containsMouse ? Services.Theme.textPrimary : Services.Theme.textSecondary
-                                Behavior on color { ColorAnimation { duration: 120 } }
+                                font.pixelSize: 10
+                                color: Services.Theme.textPrimary
                             }
-
                             Text {
-                                text: "Lock Screen"
-                                font.pixelSize: 11
-                                font.bold: true
-                                color: lockMouse.containsMouse ? Services.Theme.textPrimary : Services.Theme.textSecondary
-                                Behavior on color { ColorAnimation { duration: 120 } }
+                                text: "Lock"
+                                font.pixelSize: 10
+                                font.weight: Font.Medium
+                                color: Services.Theme.textPrimary
                             }
                         }
 
                         MouseArea {
-                            id: lockMouse
+                            id: lockActionMouse
                             anchors.fill: parent
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
@@ -749,38 +629,74 @@ PanelWindow {
                         }
                     }
 
-                    // Power Menu
+                    // Reload Shell Button
                     Rectangle {
                         Layout.fillWidth: true
-                        implicitHeight: 38
-                        radius: Services.Theme.radiusMd
-                        color: pwrMouse.containsMouse ? Qt.rgba(0.54, 0.32, 0.32, 0.35) : Services.Theme.surfaceVariant
-                        border.color: pwrMouse.containsMouse ? Services.Theme.danger : "transparent"
+                        implicitHeight: 30
+                        radius: Services.Theme.radiusSm
+                        color: reloadActionMouse.containsMouse ? Services.Theme.bgHover : Services.Theme.surfaceVariant
+                        border.color: reloadActionMouse.containsMouse ? Services.Theme.borderHighlight : Services.Theme.border
                         border.width: 1
                         Behavior on color { ColorAnimation { duration: 120 } }
 
                         RowLayout {
                             anchors.centerIn: parent
-                            spacing: 7
-
+                            spacing: 5
                             Text {
-                                text: Services.Icons.power
+                                text: Services.Icons.refresh
                                 font.family: Services.Theme.fontSymbols
-                                font.pixelSize: 13
-                                color: Services.Theme.danger
+                                font.pixelSize: 10
+                                color: Services.Theme.textPrimary
                             }
-
                             Text {
-                                text: "Power Menu"
-                                font.pixelSize: 11
-                                font.bold: true
-                                color: pwrMouse.containsMouse ? Services.Theme.textPrimary : Services.Theme.textSecondary
-                                Behavior on color { ColorAnimation { duration: 120 } }
+                                text: "Reload"
+                                font.pixelSize: 10
+                                font.weight: Font.Medium
+                                color: Services.Theme.textPrimary
                             }
                         }
 
                         MouseArea {
-                            id: pwrMouse
+                            id: reloadActionMouse
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: {
+                                root.close()
+                                reloadProc.running = true
+                            }
+                        }
+                    }
+
+                    // Power Menu Button
+                    Rectangle {
+                        Layout.fillWidth: true
+                        implicitHeight: 30
+                        radius: Services.Theme.radiusSm
+                        color: pwrActionMouse.containsMouse ? Qt.rgba(0.9, 0.2, 0.2, 0.12) : Services.Theme.surfaceVariant
+                        border.color: pwrActionMouse.containsMouse ? Services.Theme.danger : Services.Theme.border
+                        border.width: 1
+                        Behavior on color { ColorAnimation { duration: 120 } }
+
+                        RowLayout {
+                            anchors.centerIn: parent
+                            spacing: 5
+                            Text {
+                                text: Services.Icons.power
+                                font.family: Services.Theme.fontSymbols
+                                font.pixelSize: 10
+                                color: Services.Theme.danger
+                            }
+                            Text {
+                                text: "Power"
+                                font.pixelSize: 10
+                                font.weight: Font.Medium
+                                color: Services.Theme.danger
+                            }
+                        }
+
+                        MouseArea {
+                            id: pwrActionMouse
                             anchors.fill: parent
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
@@ -797,4 +713,5 @@ PanelWindow {
 
     Process { id: lockProc; command: ["sh", "-c", "qs ipc call lockscreen lock || hyprlock || swaylock"] }
     Process { id: pwrProc; command: ["quickshell", "ipc", "call", "powermenu", "open"] }
+    Process { id: reloadProc; command: ["quickshell", "ipc", "call", "shell", "reload"] }
 }

@@ -3,6 +3,8 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 
+import "." as Services
+
 Singleton {
     id: root
 
@@ -17,8 +19,13 @@ Singleton {
     property string lastError: ""
 
     function refresh() {
-        radioProc.running = true
-        savedProc.running = true
+        if (!radioProc.running) radioProc.running = true
+    }
+
+    function refreshAll() {
+        refresh()
+        if (!savedProc.running) savedProc.running = true
+        if (root.enabled) scan()
     }
 
     function isSaved(targetSsid) {
@@ -36,6 +43,7 @@ Singleton {
     }
 
     function scan() {
+        if (scanning || rescanProc.running) return
         scanning = true
         lastError = ""
         rescanProc.running = true
@@ -57,20 +65,31 @@ Singleton {
         disconnectProc.running = true
     }
 
+    // Background connection status check (7s interval, passive - no hardware scan)
     Timer {
-        interval: 5000
+        interval: 7000
         running: true
         repeat: true
         triggeredOnStart: true
         onTriggered: root.refresh()
     }
-    
+
+    // Periodic active rescan ONLY when the user is actively viewing the WiFi panel in Control Center
     Timer {
-      id: autoRescanTimer
-      interval: 15000  // 15 seconds periodic rescan
-      running: true
-      repeat: true
-      onTriggered: root.scan()  // trigger the same scan function as manual refresh button
+        id: autoRescanTimer
+        interval: 15000
+        running: Services.OverlayManager ? Services.OverlayManager.wifiPanelVisible : false
+        repeat: true
+        onTriggered: root.scan()
+    }
+
+    Connections {
+        target: Services.OverlayManager
+        function onWifiPanelVisibleChanged() {
+            if (Services.OverlayManager.wifiPanelVisible) {
+                root.refreshAll()
+            }
+        }
     }
 
     // Radio on/off

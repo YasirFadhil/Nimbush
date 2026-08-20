@@ -9,125 +9,325 @@ import "../../services" as Services
 
 FloatingWindow {
     id: rootWindow
-    title: "Settings - Quickshell Desktop"
+
+    title: "Settings"
     visible: false
-    implicitWidth: 920
+    implicitWidth: 960
     implicitHeight: 660
-    color: Services.Theme.bg
+    color: Services.Theme.bgElevated
 
+    property string overlayId: "settings"
     property int currentTab: 0
-    property string confirmResetMode: "" // "" | "settings" | "full"
 
-    onVisibleChanged: {
-        if (!visible) {
-            confirmResetMode = ""
-        } else {
-            keyFocus.forceActiveFocus()
-            if (Services.Compositor) {
-                Services.Compositor.refreshState()
-            }
-        }
-    }
+    Component.onCompleted: Services.OverlayManager.register(rootWindow)
 
     function show() {
-        visible = false
+        Services.OverlayManager.closeAllExcept(rootWindow)
         visible = true
-        confirmResetMode = ""
         keyFocus.forceActiveFocus()
-        if (Services.Wallpaper && Services.Config) {
-            Services.Config.generateMatugen(Services.Wallpaper.currentWallpaper)
-        }
-        if (Services.Compositor) {
-            Services.Compositor.refreshState()
-        }
     }
 
     function hide() {
         visible = false
-        confirmResetMode = ""
     }
 
     function toggle() {
-        if (visible) {
-            hide()
-        } else {
-            show()
-        }
+        visible ? hide() : show()
     }
+
+    function open() { show() }
+    function close() { hide() }
 
     Item {
         id: keyFocus
         focus: rootWindow.visible
-        Keys.onEscapePressed: rootWindow.hide()
-        Keys.onTabPressed: (event) => {
-            rootWindow.currentTab = (rootWindow.currentTab + 1) % 8
-            event.accepted = true
-        }
+        Keys.onEscapePressed: rootWindow.close()
     }
 
     // ═════════════════════════════════════════════════════════════════════════
-    // REUSABLE MODERN SETTINGS CONTROLS & OVERVIEW SELECTORS
+    // REUSABLE BALANCED "MEDIUM" SETTINGS COMPONENTS
     // ═════════════════════════════════════════════════════════════════════════
 
-    // ── 1. Settings Switch (Modern iOS / macOS Toggle with Fixed-Width Icon Box)
+    // ── 1. Section Header & Inset Grouped Card ───────────────────────────────
+    component SettingsSection: ColumnLayout {
+        id: secRoot
+        property string title: ""
+        property string icon: ""
+        default property alias content: cardContent.data
+
+        Layout.fillWidth: true
+        spacing: 6
+
+        RowLayout {
+            visible: secRoot.title.length > 0
+            spacing: 6
+            Layout.leftMargin: 2
+
+            Text {
+                visible: secRoot.icon.length > 0
+                text: secRoot.icon
+                font.family: Services.Theme.fontSymbols
+                font.pixelSize: 11
+                color: Services.Theme.accent
+                Layout.alignment: Qt.AlignVCenter
+            }
+
+            Text {
+                text: secRoot.title.toUpperCase()
+                font.pixelSize: 10
+                font.weight: Font.DemiBold
+                font.letterSpacing: 0.8
+                color: Services.Theme.textSecondary
+                Layout.alignment: Qt.AlignVCenter
+            }
+        }
+
+        Rectangle {
+            Layout.fillWidth: true
+            implicitHeight: cardContent.implicitHeight + 4
+            radius: Services.Theme.radiusMd
+            color: Services.Theme.surfaceVariant
+            border.color: Services.Theme.border
+            border.width: 1
+
+            ColumnLayout {
+                id: cardContent
+                anchors.fill: parent
+                anchors.margins: 4
+                spacing: 0
+            }
+        }
+    }
+
+    // ── 2. Settings Row (Clean Typography on Left, Control on Right) ──────────
+    component SettingsRow: Rectangle {
+        id: rowRoot
+        property string title: ""
+        property string subtitle: ""
+        default property alias control: controlSlot.data
+
+        Layout.fillWidth: true
+        implicitHeight: Math.max(42, textCol.implicitHeight + 16)
+        radius: Services.Theme.radiusSm
+        color: "transparent"
+
+        RowLayout {
+            anchors.fill: parent
+            anchors.leftMargin: 10
+            anchors.rightMargin: 10
+            spacing: 12
+
+            ColumnLayout {
+                id: textCol
+                Layout.fillWidth: true
+                Layout.alignment: Qt.AlignVCenter
+                spacing: 1
+
+                Text {
+                    Layout.fillWidth: true
+                    text: rowRoot.title
+                    font.pixelSize: Services.Theme.fontSizeMd
+                    font.weight: Font.Medium
+                    color: Services.Theme.textPrimary
+                    elide: Text.ElideRight
+                }
+
+                Text {
+                    visible: rowRoot.subtitle.length > 0
+                    Layout.fillWidth: true
+                    text: rowRoot.subtitle
+                    font.pixelSize: Services.Theme.fontSizeXs
+                    color: Services.Theme.textSecondary
+                    elide: Text.ElideRight
+                }
+            }
+
+            Item {
+                id: controlSlot
+                Layout.alignment: Qt.AlignVCenter
+                implicitWidth: childrenRect.width
+                implicitHeight: childrenRect.height
+            }
+        }
+    }
+
+    // ── 3. Settings Dropdown / ComboBox (Clean Modern Popover) ────────────────
+    component SettingsDropdown: Item {
+        id: dropRoot
+        property var model: [] // [{ id, label }]
+        property var currentValue: null
+        signal selected(var val)
+
+        readonly property var currentItem: {
+            for (let i = 0; i < model.length; i++) {
+                if (model[i].id === currentValue) return model[i]
+            }
+            return model.length > 0 ? model[0] : { label: "Select..." }
+        }
+
+        implicitHeight: 28
+        implicitWidth: Math.max(140, dropBtnText.implicitWidth + 36)
+
+        Rectangle {
+            id: dropBtn
+            anchors.fill: parent
+            radius: 6
+            color: dropArea.containsMouse ? Qt.rgba(1, 1, 1, 0.06) : Services.Theme.bgElevated
+            border.color: dropMenu.visible ? Services.Theme.accent : Services.Theme.border
+            border.width: 1
+
+            RowLayout {
+                anchors.fill: parent
+                anchors.leftMargin: 10
+                anchors.rightMargin: 8
+                spacing: 6
+
+                Text {
+                    id: dropBtnText
+                    Layout.fillWidth: true
+                    text: dropRoot.currentItem ? dropRoot.currentItem.label : ""
+                    font.pixelSize: Services.Theme.fontSizeSm
+                    font.weight: Font.Medium
+                    color: Services.Theme.textPrimary
+                    elide: Text.ElideRight
+                }
+
+                Text {
+                    text: "▾"
+                    font.pixelSize: 8
+                    color: Services.Theme.textSecondary
+                }
+            }
+
+            MouseArea {
+                id: dropArea
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: {
+                    if (dropMenu.visible) dropMenu.close()
+                    else dropMenu.open()
+                }
+            }
+
+            Popup {
+                id: dropMenu
+                y: dropBtn.height + 4
+                x: Math.min(0, dropBtn.width - width)
+                width: Math.max(dropBtn.width, 175)
+                height: Math.min(240, menuCol.implicitHeight + 8)
+                padding: 4
+                closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutsideParent
+                modal: false
+                focus: true
+
+                background: Rectangle {
+                    radius: 8
+                    color: Services.Theme.bgElevated
+                    border.color: Services.Theme.borderHighlight
+                    border.width: 1
+                }
+
+                contentItem: Flickable {
+                    contentHeight: menuCol.implicitHeight
+                    clip: true
+                    boundsBehavior: Flickable.StopAtBounds
+                    ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+
+                    ColumnLayout {
+                        id: menuCol
+                        width: parent.width
+                        spacing: 2
+
+                        Repeater {
+                            model: dropRoot.model
+                            delegate: Rectangle {
+                                required property var modelData
+                                Layout.fillWidth: true
+                                height: 28
+                                radius: 5
+                                readonly property bool isSelected: dropRoot.currentValue === modelData.id
+
+                                color: isSelected 
+                                    ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.12)
+                                    : (itemArea.containsMouse ? Qt.rgba(1, 1, 1, 0.05) : "transparent")
+
+                                RowLayout {
+                                    anchors.fill: parent
+                                    anchors.leftMargin: 8
+                                    anchors.rightMargin: 8
+                                    spacing: 6
+
+                                    Text {
+                                        Layout.fillWidth: true
+                                        text: modelData.label
+                                        font.pixelSize: Services.Theme.fontSizeSm
+                                        font.weight: isSelected ? Font.DemiBold : Font.Normal
+                                        color: isSelected ? Services.Theme.accent : (itemArea.containsMouse ? Services.Theme.textPrimary : Services.Theme.textSecondary)
+                                        elide: Text.ElideRight
+                                    }
+
+                                    Text {
+                                        visible: isSelected
+                                        text: Services.Icons.check
+                                        font.family: Services.Theme.fontSymbols
+                                        font.pixelSize: 9
+                                        color: Services.Theme.accent
+                                    }
+                                }
+
+                                MouseArea {
+                                    id: itemArea
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: {
+                                        dropRoot.selected(modelData.id)
+                                        dropMenu.close()
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ── 4. Settings Switch (Modern Minimal Capsule Toggle) ────────────────────
     component SettingsSwitch: Rectangle {
         id: switchRoot
-        property string icon: ""
         property string title: ""
         property string subtitle: ""
         property bool checked: false
         signal toggled(bool newState)
 
         Layout.fillWidth: true
-        implicitHeight: Math.max(50, switchRow.implicitHeight + 14)
+        implicitHeight: Math.max(42, switchTextCol.implicitHeight + 16)
         radius: Services.Theme.radiusSm
-        color: switchMouse.containsMouse ? Services.Theme.bgHover : "transparent"
-        Behavior on color { ColorAnimation { duration: 180; easing.type: Easing.OutCubic } }
+        color: "transparent"
 
         RowLayout {
-            id: switchRow
             anchors.fill: parent
-            anchors.leftMargin: 8
-            anchors.rightMargin: 8
+            anchors.leftMargin: 10
+            anchors.rightMargin: 10
             spacing: 12
 
-            // Uniform 32x32 Icon Container for aligned text starts
-            Rectangle {
-                visible: switchRoot.icon.length > 0
-                Layout.preferredWidth: 32
-                Layout.preferredHeight: 32
-                Layout.alignment: Qt.AlignVCenter
-                radius: 8
-                color: switchRoot.checked ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.15) : Services.Theme.bgElevated
-                border.color: switchRoot.checked ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.3) : Services.Theme.border
-                border.width: 1
-                Behavior on color { ColorAnimation { duration: 180; easing.type: Easing.OutCubic } }
-                Behavior on border.color { ColorAnimation { duration: 180; easing.type: Easing.OutCubic } }
-
-                Text {
-                    anchors.centerIn: parent
-                    text: switchRoot.icon
-                    font.family: Services.Theme.fontSymbols
-                    font.pixelSize: 14
-                    color: switchRoot.checked ? Services.Theme.accent : Services.Theme.textSecondary
-                    Behavior on color { ColorAnimation { duration: 180; easing.type: Easing.OutCubic } }
-                }
-            }
-
-            // Title + Subtitle Column
             ColumnLayout {
+                id: switchTextCol
                 Layout.fillWidth: true
                 Layout.alignment: Qt.AlignVCenter
-                spacing: 2
+                spacing: 1
 
                 Text {
                     Layout.fillWidth: true
                     text: switchRoot.title
                     font.pixelSize: Services.Theme.fontSizeMd
-                    font.bold: true
+                    font.weight: Font.Medium
                     color: Services.Theme.textPrimary
                     elide: Text.ElideRight
                 }
+
                 Text {
                     visible: switchRoot.subtitle.length > 0
                     Layout.fillWidth: true
@@ -138,27 +338,23 @@ FloatingWindow {
                 }
             }
 
-            // Switch Toggle Capsule
             Rectangle {
-                Layout.preferredWidth: 44
-                Layout.preferredHeight: 24
+                Layout.preferredWidth: 38
+                Layout.preferredHeight: 20
                 Layout.alignment: Qt.AlignVCenter
-                radius: 12
-                color: switchRoot.checked ? Services.Theme.accent : Services.Theme.bgElevated
+                radius: 10
+                color: switchRoot.checked ? Services.Theme.accent : (switchMouse.containsMouse ? Qt.rgba(1, 1, 1, 0.12) : Services.Theme.bgElevated)
                 border.color: switchRoot.checked ? Services.Theme.accent : Services.Theme.border
                 border.width: 1
-                Behavior on color { ColorAnimation { duration: 200; easing.type: Easing.OutCubic } }
-                Behavior on border.color { ColorAnimation { duration: 200; easing.type: Easing.OutCubic } }
 
                 Rectangle {
-                    width: 18
-                    height: 18
-                    radius: 9
+                    width: 14
+                    height: 14
+                    radius: 7
                     y: 2
-                    x: switchRoot.checked ? 23 : 3
+                    x: switchRoot.checked ? 20 : 2
                     color: switchRoot.checked ? Services.Theme.bgOnAccent : Services.Theme.textSecondary
-                    Behavior on x { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
-                    Behavior on color { ColorAnimation { duration: 200; easing.type: Easing.OutCubic } }
+                    Behavior on x { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
                 }
             }
         }
@@ -172,10 +368,9 @@ FloatingWindow {
         }
     }
 
-    // ── 2. Settings Slider (Continuous & Stepped with Live Thumb & Track) ──────
+    // ── 5. Settings Slider (Ultra-Clean Track with Live Badge) ────────────────
     component SettingsSlider: ColumnLayout {
         id: sliderRoot
-        property string icon: ""
         property string title: ""
         property string subtitle: ""
         property real from: 0
@@ -188,48 +383,28 @@ FloatingWindow {
         signal moved(real newValue)
 
         Layout.fillWidth: true
-        spacing: 8
+        spacing: 4
+        Layout.leftMargin: 10
+        Layout.rightMargin: 10
+        Layout.topMargin: 6
+        Layout.bottomMargin: 6
 
-        // Header Row: Uniform Icon + Title + Value Badge Pill
         RowLayout {
             Layout.fillWidth: true
-            spacing: 12
-
-            Rectangle {
-                visible: sliderRoot.icon.length > 0
-                Layout.preferredWidth: 32
-                Layout.preferredHeight: 32
-                Layout.alignment: Qt.AlignVCenter
-                radius: 8
-                color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.15)
-                border.color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.3)
-                border.width: 1
-
-                Text {
-                    anchors.centerIn: parent
-                    text: sliderRoot.icon
-                    font.family: Services.Theme.fontSymbols
-                    font.pixelSize: 14
-                    color: Services.Theme.accent
-                }
-            }
 
             ColumnLayout {
                 Layout.fillWidth: true
-                Layout.alignment: Qt.AlignVCenter
-                spacing: 2
+                spacing: 1
 
                 Text {
-                    Layout.fillWidth: true
                     text: sliderRoot.title
                     font.pixelSize: Services.Theme.fontSizeMd
-                    font.bold: true
+                    font.weight: Font.Medium
                     color: Services.Theme.textPrimary
                     elide: Text.ElideRight
                 }
                 Text {
                     visible: sliderRoot.subtitle.length > 0
-                    Layout.fillWidth: true
                     text: sliderRoot.subtitle
                     font.pixelSize: Services.Theme.fontSizeXs
                     color: Services.Theme.textSecondary
@@ -238,45 +413,40 @@ FloatingWindow {
             }
 
             Rectangle {
-                Layout.preferredHeight: 24
+                Layout.preferredHeight: 18
                 Layout.alignment: Qt.AlignVCenter
-                implicitWidth: valText.implicitWidth + 18
-                radius: 12
+                implicitWidth: valBadgeText.implicitWidth + 12
+                radius: 4
                 color: Services.Theme.bgElevated
                 border.color: Services.Theme.border
                 border.width: 1
 
                 Text {
-                    id: valText
+                    id: valBadgeText
                     anchors.centerIn: parent
                     text: sliderRoot.valuePrefix + (sliderRoot.decimals > 0 ? Number(sliderRoot.value).toFixed(sliderRoot.decimals) : Math.round(sliderRoot.value)) + sliderRoot.valueSuffix
                     font.family: Services.Theme.fontMono
-                    font.pixelSize: Services.Theme.fontSizeXs
+                    font.pixelSize: 10
                     font.bold: true
                     color: Services.Theme.accent
                 }
             }
         }
 
-        // Interactive Track & Thumb
         Item {
             id: trackContainer
             Layout.fillWidth: true
-            height: 24
+            height: 16
 
             Rectangle {
-                id: bgTrack
                 anchors.left: parent.left
                 anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter
-                height: 6
-                radius: 3
+                height: 4
+                radius: 2
                 color: Services.Theme.bgDeep
-                border.color: Services.Theme.border
-                border.width: 1
 
                 Rectangle {
-                    id: activeTrack
                     height: parent.height
                     radius: parent.radius
                     color: Services.Theme.accent
@@ -285,27 +455,18 @@ FloatingWindow {
             }
 
             Rectangle {
-                id: thumb
-                width: 18
-                height: 18
-                radius: 9
+                width: 14
+                height: 14
+                radius: 7
                 anchors.verticalCenter: parent.verticalCenter
                 x: Math.max(0, Math.min(trackContainer.width - width, ((sliderRoot.value - sliderRoot.from) / Math.max(0.0001, sliderRoot.to - sliderRoot.from)) * (trackContainer.width - width)))
-                color: sliderDragArea.pressed ? Services.Theme.accent : Services.Theme.bgElevated
+                color: sDrag.pressed ? Services.Theme.accent : Services.Theme.bgElevated
                 border.color: Services.Theme.accent
                 border.width: 2
-
-                Rectangle {
-                    anchors.centerIn: parent
-                    width: 6
-                    height: 6
-                    radius: 3
-                    color: sliderDragArea.pressed ? Services.Theme.bgOnAccent : Services.Theme.accent
-                }
             }
 
             MouseArea {
-                id: sliderDragArea
+                id: sDrag
                 anchors.fill: parent
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
@@ -321,3148 +482,1471 @@ FloatingWindow {
                 }
 
                 onPressed: (mouse) => updateVal(mouse.x)
-                onPositionChanged: (mouse) => {
-                    if (pressed) updateVal(mouse.x)
-                }
+                onPositionChanged: (mouse) => { if (pressed) updateVal(mouse.x) }
             }
         }
     }
 
-    // ── 3. Settings Segmented Overview (Visual Card Switcher) ─────────────────
-    component SettingsSegmentedOverview: ColumnLayout {
-        id: segRoot
-        property string icon: ""
-        property string title: ""
-        property string subtitle: ""
-        property var model: [] // [{ id, label, icon?, desc? }]
-        property var currentValue: null
-        signal selected(var val)
-
-        Layout.fillWidth: true
-        spacing: 10
-
-        RowLayout {
-            Layout.fillWidth: true
-            spacing: 12
-
-            Rectangle {
-                visible: segRoot.icon.length > 0
-                Layout.preferredWidth: 32
-                Layout.preferredHeight: 32
-                Layout.alignment: Qt.AlignVCenter
-                radius: 8
-                color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.15)
-                border.color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.3)
-                border.width: 1
-
-                Text {
-                    anchors.centerIn: parent
-                    text: segRoot.icon
-                    font.family: Services.Theme.fontSymbols
-                    font.pixelSize: 14
-                    color: Services.Theme.accent
-                }
-            }
-
-            ColumnLayout {
-                Layout.fillWidth: true
-                Layout.alignment: Qt.AlignVCenter
-                spacing: 2
-
-                Text {
-                    Layout.fillWidth: true
-                    text: segRoot.title
-                    font.pixelSize: Services.Theme.fontSizeMd
-                    font.bold: true
-                    color: Services.Theme.textPrimary
-                    elide: Text.ElideRight
-                }
-                Text {
-                    visible: segRoot.subtitle.length > 0
-                    Layout.fillWidth: true
-                    text: segRoot.subtitle
-                    font.pixelSize: Services.Theme.fontSizeXs
-                    color: Services.Theme.textSecondary
-                    elide: Text.ElideRight
-                }
-            }
-        }
-
-        // Horizontal Overview Cards
-        RowLayout {
-            Layout.fillWidth: true
-            spacing: 8
-
-            Repeater {
-                model: segRoot.model
-                delegate: Rectangle {
-                    required property var modelData
-                    Layout.fillWidth: true
-                    height: modelData.desc ? 58 : 44
-                    radius: Services.Theme.radiusSm
-                    readonly property bool isCur: segRoot.currentValue === modelData.id
-
-                    color: isCur 
-                        ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.15) 
-                        : (cardHover.containsMouse ? Services.Theme.bgHover : Services.Theme.bgElevated)
-                    border.color: isCur 
-                        ? Services.Theme.accent 
-                        : (cardHover.containsMouse ? Services.Theme.borderHighlight : Services.Theme.border)
-                    border.width: isCur ? 2 : 1
-                    Behavior on color { ColorAnimation { duration: 180; easing.type: Easing.OutCubic } }
-                    Behavior on border.color { ColorAnimation { duration: 180; easing.type: Easing.OutCubic } }
-
-                    RowLayout {
-                        anchors.fill: parent
-                        anchors.leftMargin: 12
-                        anchors.rightMargin: 12
-                        spacing: 10
-
-                        // Icon badge
-                        Rectangle {
-                            visible: Boolean(modelData.icon)
-                            Layout.preferredWidth: 32
-                            Layout.preferredHeight: 32
-                            Layout.alignment: Qt.AlignVCenter
-                            radius: 6
-                            color: isCur ? Services.Theme.accent : (cardHover.containsMouse ? Services.Theme.bgHover : Services.Theme.bgDeep)
-                            Behavior on color { ColorAnimation { duration: 180; easing.type: Easing.OutCubic } }
-                            Text {
-                                anchors.centerIn: parent
-                                text: modelData.icon || ""
-                                font.family: Services.Theme.fontSymbols
-                                font.pixelSize: 13
-                                color: isCur ? Services.Theme.bgOnAccent : (cardHover.containsMouse ? Services.Theme.textPrimary : Services.Theme.textSecondary)
-                                Behavior on color { ColorAnimation { duration: 180; easing.type: Easing.OutCubic } }
-                            }
-                        }
-
-                        ColumnLayout {
-                            Layout.fillWidth: true
-                            Layout.alignment: Qt.AlignVCenter
-                            spacing: 2
-
-                            Text {
-                                Layout.fillWidth: true
-                                text: modelData.label || ""
-                                font.pixelSize: Services.Theme.fontSizeSm
-                                font.bold: isCur
-                                color: isCur ? Services.Theme.textPrimary : (cardHover.containsMouse ? Services.Theme.textPrimary : Services.Theme.textSecondary)
-                                elide: Text.ElideRight
-                                Behavior on color { ColorAnimation { duration: 180; easing.type: Easing.OutCubic } }
-                            }
-                            Text {
-                                visible: Boolean(modelData.desc)
-                                Layout.fillWidth: true
-                                text: modelData.desc || ""
-                                font.pixelSize: 9
-                                color: Services.Theme.textDisabled
-                                elide: Text.ElideRight
-                            }
-                        }
-
-                        // Check indicator
-                        Rectangle {
-                            opacity: isCur ? 1.0 : 0.0
-                            scale: isCur ? 1.0 : 0.6
-                            Layout.preferredWidth: 20
-                            Layout.preferredHeight: 20
-                            Layout.alignment: Qt.AlignVCenter
-                            radius: 10
-                            color: Services.Theme.accent
-                            Behavior on opacity { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
-                            Behavior on scale { NumberAnimation { duration: 180; easing.type: Easing.OutBack } }
-                            Text {
-                                anchors.centerIn: parent
-                                text: Services.Icons.check
-                                font.family: Services.Theme.fontSymbols
-                                font.pixelSize: 9
-                                color: Services.Theme.bgOnAccent
-                            }
-                        }
-                    }
-
-                    MouseArea {
-                        id: cardHover
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: segRoot.selected(modelData.id)
-                    }
-                }
-            }
-        }
-    }
-
-    // ── 4. Card Container Component ──────────────────────────────────────────
-    component SettingsCard: Rectangle {
-        Layout.fillWidth: true
-        radius: Services.Theme.radiusMd
-        color: Services.Theme.surfaceVariant
-        border.color: Services.Theme.border
-        border.width: 1
-    }
-
-    // ── 5. Clean Card Item Divider ───────────────────────────────────────────
+    // ── 6. Hairline Divider ──────────────────────────────────────────────────
     component SettingsDivider: Rectangle {
         Layout.fillWidth: true
         height: 1
-        color: Qt.rgba(1, 1, 1, 0.05)
+        color: Qt.rgba(1, 1, 1, 0.04)
     }
 
     // ═════════════════════════════════════════════════════════════════════════
-    // MAIN SETTINGS WINDOW LAYOUT
+    // WINDOW ROOT LAYOUT
     // ═════════════════════════════════════════════════════════════════════════
-    Rectangle {
+
+    ColumnLayout {
         anchors.fill: parent
-        color: Services.Theme.bg
-        radius: Services.Theme.radiusLg
-        clip: true
-        border.color: Services.Theme.border
-        border.width: 1
+        spacing: 0
 
-        ColumnLayout {
-            anchors.fill: parent
-            spacing: 0
+        // ── WINDOW TITLEBAR ──────────────────────────────────────────────────
+        Rectangle {
+            Layout.fillWidth: true
+            height: 46
+            color: Services.Theme.surfaceVariant
 
-            // ── TOP TITLE BAR ────────────────────────────────────────────────
             Rectangle {
-                Layout.fillWidth: true
-                height: 48
-                color: Services.Theme.surfaceVariant
-                border.color: Services.Theme.border
-                border.width: 0
+                anchors.bottom: parent.bottom
+                anchors.left: parent.left
+                anchors.right: parent.right
+                height: 1
+                color: Services.Theme.border
+            }
 
-                Rectangle {
-                    anchors.bottom: parent.bottom
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                    height: 1
-                    color: Services.Theme.border
-                }
+            RowLayout {
+                anchors.fill: parent
+                anchors.leftMargin: 16
+                anchors.rightMargin: 16
+                spacing: 12
 
+                // Window Title & Tab Breadcrumb
                 RowLayout {
-                    anchors.fill: parent
-                    anchors.leftMargin: 16
-                    anchors.rightMargin: 16
-                    spacing: 12
-
-                    // Traffic Light Window Buttons
-                    RowLayout {
-                        spacing: 8
-                        Rectangle {
-                            width: 12; height: 12; radius: 6
-                            color: "#ff5f56"
-                            MouseArea {
-                                anchors.fill: parent
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: rootWindow.hide()
-                            }
-                        }
-                        Rectangle {
-                            width: 12; height: 12; radius: 6
-                            color: "#ffbd2e"
-                            MouseArea {
-                                anchors.fill: parent
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: rootWindow.hide()
-                            }
-                        }
-                        Rectangle {
-                            width: 12; height: 12; radius: 6
-                            color: "#27c93f"
-                        }
-                    }
-
-                    Item { Layout.preferredWidth: 12 }
+                    spacing: 8
 
                     Text {
-                        text: Services.Icons.settings
+                        text: Services.Icons.settings || ""
                         font.family: Services.Theme.fontSymbols
-                        font.pixelSize: 14
+                        font.pixelSize: 13
                         color: Services.Theme.accent
+                        Layout.alignment: Qt.AlignVCenter
                     }
 
                     Text {
-                        text: "System Settings"
-                        font.family: Services.Theme.fontDisplay
-                        font.pixelSize: Services.Theme.fontSizeMd
-                        font.bold: true
+                        text: "Settings"
+                        font.pixelSize: 13
+                        font.weight: Font.DemiBold
                         color: Services.Theme.textPrimary
                     }
 
                     Text {
-                        text: "•"
-                        font.pixelSize: 10
+                        text: "/"
+                        font.pixelSize: 12
                         color: Services.Theme.textDisabled
                     }
 
                     Text {
                         text: {
                             const tabs = ["Appearance", "Bar & Island", "Notifications", "Sound & Audio", "Lock & Power", "Compositor", "Backup & Reset", "About & Keys"]
-                            return tabs[rootWindow.currentTab] || "Overview"
+                            return tabs[rootWindow.currentTab] || "Preferences"
                         }
-                        font.pixelSize: Services.Theme.fontSizeSm
+                        font.pixelSize: 13
+                        font.weight: Font.Medium
                         color: Services.Theme.accent
-                        font.bold: true
+                    }
+                }
+
+                Item { Layout.fillWidth: true }
+
+                // Esc key badge
+                Rectangle {
+                    implicitHeight: 20
+                    implicitWidth: escText.implicitWidth + 12
+                    radius: 4
+                    color: Services.Theme.bgElevated
+                    border.color: Services.Theme.border
+                    border.width: 1
+                    Text {
+                        id: escText
+                        anchors.centerIn: parent
+                        text: "Esc"
+                        font.family: Services.Theme.fontMono
+                        font.pixelSize: 9
+                        color: Services.Theme.textDisabled
+                    }
+                }
+
+                // Close button
+                Rectangle {
+                    width: 24; height: 24; radius: 5
+                    color: closeMouse.containsMouse ? Qt.rgba(0.9, 0.2, 0.2, 0.15) : "transparent"
+                    Text {
+                        anchors.centerIn: parent
+                        text: Services.Icons.close || "✕"
+                        font.family: Services.Theme.fontSymbols
+                        font.pixelSize: 12
+                        color: closeMouse.containsMouse ? Services.Theme.danger : Services.Theme.textSecondary
+                    }
+                    MouseArea {
+                        id: closeMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: rootWindow.close()
+                    }
+                }
+            }
+        }
+
+        // ── MAIN BODY: SIDEBAR + CONTENT PANE ─────────────────────────────────
+        RowLayout {
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            spacing: 0
+
+            // ── LEFT SIDEBAR (210px) ─────────────────────────────────────────
+            Rectangle {
+                Layout.preferredWidth: 210
+                Layout.fillHeight: true
+                color: Services.Theme.surfaceVariant
+
+                Rectangle {
+                    anchors.right: parent.right
+                    anchors.top: parent.top
+                    anchors.bottom: parent.bottom
+                    width: 1
+                    color: Services.Theme.border
+                }
+
+                ColumnLayout {
+                    anchors.fill: parent
+                    anchors.margins: 8
+                    spacing: 4
+
+                    ListView {
+                        id: navList
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        spacing: 2
+                        clip: true
+                        interactive: false
+
+                        model: [
+                            { id: 0, title: "Appearance",   icon: Services.Icons.palette },
+                            { id: 1, title: "Bar & Island",  icon: Services.Icons.controlcenter },
+                            { id: 2, title: "Notifications", icon: Services.Icons.bell },
+                            { id: 3, title: "Sound & Audio", icon: Services.Icons.speaker },
+                            { id: 4, title: "Lock & Power",  icon: Services.Icons.power },
+                            { id: 5, title: "Compositor",    icon: Services.Icons.display },
+                            { id: 6, title: "Backup & Reset",icon: Services.Icons.undo },
+                            { id: 7, title: "About & Keys",  icon: Services.Icons.info }
+                        ]
+
+                        delegate: Rectangle {
+                            width: navList.width
+                            height: 36
+                            radius: 6
+                            readonly property bool isCur: rootWindow.currentTab === modelData.id
+
+                            color: isCur 
+                                ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.12)
+                                : (tabMouse.containsMouse ? Qt.rgba(1, 1, 1, 0.04) : "transparent")
+                            border.color: isCur ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.25) : "transparent"
+                            border.width: 1
+
+                            RowLayout {
+                                anchors.fill: parent
+                                anchors.leftMargin: 10
+                                anchors.rightMargin: 10
+                                spacing: 10
+
+                                Text {
+                                    text: modelData.icon
+                                    font.family: Services.Theme.fontSymbols
+                                    font.pixelSize: 12
+                                    color: isCur ? Services.Theme.accent : (tabMouse.containsMouse ? Services.Theme.textPrimary : Services.Theme.textSecondary)
+                                    Layout.alignment: Qt.AlignVCenter
+                                }
+
+                                Text {
+                                    Layout.fillWidth: true
+                                    Layout.alignment: Qt.AlignVCenter
+                                    text: modelData.title
+                                    font.pixelSize: Services.Theme.fontSizeSm
+                                    font.weight: isCur ? Font.Medium : Font.Normal
+                                    color: isCur ? Services.Theme.textPrimary : (tabMouse.containsMouse ? Services.Theme.textPrimary : Services.Theme.textSecondary)
+                                    elide: Text.ElideRight
+                                }
+
+                                Rectangle {
+                                    opacity: isCur ? 1.0 : 0.0
+                                    Layout.preferredWidth: 3
+                                    Layout.preferredHeight: 12
+                                    Layout.alignment: Qt.AlignVCenter
+                                    radius: 1.5
+                                    color: Services.Theme.accent
+                                }
+                            }
+
+                            MouseArea {
+                                id: tabMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: rootWindow.currentTab = modelData.id
+                            }
+                        }
                     }
 
-                    Item { Layout.fillWidth: true }
-
-                    // Close Button Icon
+                    // Sidebar Footer: Distro info
                     Rectangle {
-                        width: 28; height: 28; radius: 6
-                        color: closeMouse.containsMouse ? Services.Theme.bgHover : "transparent"
-                        Behavior on color { ColorAnimation { duration: 180; easing.type: Easing.OutCubic } }
-                        Text {
-                            anchors.centerIn: parent
-                            text: Services.Icons.close
-                            font.family: Services.Theme.fontSymbols
-                            font.pixelSize: 12
-                            color: closeMouse.containsMouse ? Services.Theme.danger : Services.Theme.textSecondary
-                            Behavior on color { ColorAnimation { duration: 180; easing.type: Easing.OutCubic } }
-                        }
-                        MouseArea {
-                            id: closeMouse
+                        Layout.fillWidth: true
+                        height: 34
+                        radius: 6
+                        color: Services.Theme.bgElevated
+                        border.color: Services.Theme.border
+                        border.width: 1
+
+                        RowLayout {
                             anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: rootWindow.hide()
+                            anchors.leftMargin: 10
+                            anchors.rightMargin: 10
+                            spacing: 8
+
+                            Text {
+                                text: Services.OsInfo.logoGlyph || Services.Icons.kernel || "󰌽"
+                                font.family: Services.Theme.fontSymbols
+                                font.pixelSize: 13
+                                color: Services.Theme.accent
+                            }
+
+                            Text {
+                                Layout.fillWidth: true
+                                text: Services.OsInfo.distroName || "Linux"
+                                font.pixelSize: 10
+                                font.weight: Font.Medium
+                                color: Services.Theme.textSecondary
+                                elide: Text.ElideRight
+                            }
                         }
                     }
                 }
             }
 
-            // ── MAIN BODY (SIDEBAR + CONTENT) ────────────────────────────────
-            RowLayout {
+            // ── RIGHT SETTINGS CONTENT PANE ──────────────────────────────────
+            Rectangle {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                spacing: 0
+                color: Services.Theme.bg
+                clip: true
 
-                // ── SIDEBAR NAVIGATION ───────────────────────────────────────
-                Rectangle {
-                    Layout.preferredWidth: 230
-                    Layout.fillHeight: true
-                    color: Services.Theme.surfaceVariant
+                Flickable {
+                    id: contentFlick
+                    anchors.fill: parent
+                    anchors.margins: 16
+                    contentHeight: contentCol.implicitHeight + 24
+                    contentWidth: width
+                    clip: true
+                    boundsBehavior: Flickable.StopAtBounds
 
-                    Rectangle {
-                        anchors.right: parent.right
-                        anchors.top: parent.top
-                        anchors.bottom: parent.bottom
-                        width: 1
-                        color: Services.Theme.border
-                    }
+                    ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
 
                     ColumnLayout {
-                        anchors.fill: parent
-                        anchors.margins: 10
-                        spacing: 6
+                        id: contentCol
+                        width: contentFlick.width - 10
+                        spacing: 14
 
-                        ListView {
-                            id: tabList
-                            Layout.fillWidth: true
-                            Layout.fillHeight: true
-                            spacing: 4
-                            clip: true
-                            interactive: false
-
-                            model: [
-                                { id: 0, title: "Appearance",  sub: "Wallpaper & Colors", icon: Services.Icons.palette },
-                                { id: 1, title: "Bar & Island", sub: "Widgets & HUD",    icon: Services.Icons.controlcenter },
-                                { id: 2, title: "Notifications",sub: "Alerts & Timing",  icon: Services.Icons.bell },
-                                { id: 3, title: "Sound & Audio",sub: "Feedback sounds",  icon: Services.Icons.speaker },
-                                { id: 4, title: "Lock & Power", sub: "Screen & battery", icon: Services.Icons.power },
-                                { id: 5, title: "Compositor",   sub: "Hyprland & Window",icon: Services.Icons.display },
-                                { id: 6, title: "Backup & Reset",sub: "Restore defaults", icon: Services.Icons.undo },
-                                { id: 7, title: "About & Keys", sub: "System & guide",   icon: Services.Icons.info }
-                            ]
-
-                            delegate: Rectangle {
-                                width: tabList.width
-                                height: 44
-                                radius: Services.Theme.radiusSm
-                                readonly property bool isSelected: rootWindow.currentTab === modelData.id
-
-                                color: isSelected 
-                                    ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.15)
-                                    : (itemMouse.containsMouse ? Services.Theme.bgHover : "transparent")
-                                border.color: isSelected ? Services.Theme.accent : (itemMouse.containsMouse ? Services.Theme.borderSubtle : "transparent")
-                                border.width: 1
-                                Behavior on color { ColorAnimation { duration: 180; easing.type: Easing.OutCubic } }
-                                Behavior on border.color { ColorAnimation { duration: 180; easing.type: Easing.OutCubic } }
-
-                                RowLayout {
-                                    anchors.fill: parent
-                                    anchors.leftMargin: 10
-                                    anchors.rightMargin: 10
-                                    spacing: 10
-
-                                    Rectangle {
-                                        Layout.preferredWidth: 26
-                                        Layout.preferredHeight: 26
-                                        Layout.alignment: Qt.AlignVCenter
-                                        radius: 6
-                                        color: isSelected ? Services.Theme.accent : (itemMouse.containsMouse ? Services.Theme.bgElevated : Services.Theme.surfaced)
-                                        Behavior on color { ColorAnimation { duration: 180; easing.type: Easing.OutCubic } }
-
-                                        Text {
-                                            anchors.centerIn: parent
-                                            text: modelData.icon
-                                            font.family: Services.Theme.fontSymbols
-                                            font.pixelSize: 12
-                                            color: isSelected ? Services.Theme.bgOnAccent : (itemMouse.containsMouse ? Services.Theme.textPrimary : Services.Theme.textSecondary)
-                                            Behavior on color { ColorAnimation { duration: 180; easing.type: Easing.OutCubic } }
-                                        }
-                                    }
-
-                                    ColumnLayout {
-                                        Layout.fillWidth: true
-                                        Layout.alignment: Qt.AlignVCenter
-                                        spacing: 1
-
-                                        Text {
-                                            Layout.fillWidth: true
-                                            text: modelData.title
-                                            font.pixelSize: Services.Theme.fontSizeMd
-                                            font.bold: isSelected
-                                            color: isSelected ? Services.Theme.textPrimary : (itemMouse.containsMouse ? Services.Theme.textPrimary : Services.Theme.textSecondary)
-                                            elide: Text.ElideRight
-                                            Behavior on color { ColorAnimation { duration: 180; easing.type: Easing.OutCubic } }
-                                        }
-                                        Text {
-                                            Layout.fillWidth: true
-                                            text: modelData.sub
-                                            font.pixelSize: 9
-                                            color: Services.Theme.textDisabled
-                                            elide: Text.ElideRight
-                                        }
-                                    }
-
-                                    Rectangle {
-                                        opacity: isSelected ? 1.0 : 0.0
-                                        scale: isSelected ? 1.0 : 0.4
-                                        Layout.preferredWidth: 3
-                                        Layout.preferredHeight: 14
-                                        Layout.alignment: Qt.AlignVCenter
-                                        radius: 2
-                                        color: Services.Theme.accent
-                                        Behavior on opacity { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
-                                        Behavior on scale { NumberAnimation { duration: 180; easing.type: Easing.OutBack } }
-                                    }
-                                }
-
-                                MouseArea {
-                                    id: itemMouse
-                                    anchors.fill: parent
-                                    hoverEnabled: true
-                                    cursorShape: Qt.PointingHandCursor
-                                    onClicked: rootWindow.currentTab = modelData.id
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // ── RIGHT CONTENT VIEW ───────────────────────────────────────
-                Rectangle {
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
-                    color: Services.Theme.bg
-                    clip: true
-
-                    Flickable {
-                        id: contentFlick
-                        anchors.fill: parent
-                        anchors.margins: 18
-                        contentHeight: contentCol.implicitHeight + 40
-                        contentWidth: width
-                        clip: true
-                        boundsBehavior: Flickable.StopAtBounds
-
-                        ScrollBar.vertical: ScrollBar {
-                            policy: ScrollBar.AsNeeded
-                        }
-
+                        // ═════════════════════════════════════════════
+                        // TAB 0: APPEARANCE & THEMING
+                        // ═════════════════════════════════════════════
                         ColumnLayout {
-                            id: contentCol
-                            width: contentFlick.width - 12
-                            spacing: 16
+                            visible: rootWindow.currentTab === 0
+                            Layout.fillWidth: true
+                            spacing: 14
 
-                            // ─────────────────────────────────────────────────
-                            // PAGE 0: APPEARANCE, WALLPAPER & THEMING
-                            // ─────────────────────────────────────────────────
-                            ColumnLayout {
-                                visible: rootWindow.currentTab === 0
-                                Layout.fillWidth: true
-                                spacing: 14
+                            // Wallpaper Section
+                            SettingsSection {
+                                title: "Desktop Wallpaper"
+                                icon: Services.Icons.image
 
-                                // Wallpaper Gallery Card
-                                SettingsCard {
-                                    implicitHeight: wallCol.implicitHeight + 28
+                                Item {
+                                    Layout.fillWidth: true
+                                    implicitHeight: 88
+                                    Layout.margins: 8
 
-                                    ColumnLayout {
-                                        id: wallCol
+                                    Flickable {
                                         anchors.fill: parent
-                                        anchors.margins: 14
-                                        spacing: 12
-
-                                        RowLayout {
-                                            Layout.fillWidth: true
-                                            ColumnLayout {
-                                                Layout.fillWidth: true
-                                                Layout.alignment: Qt.AlignVCenter
-                                                spacing: 2
-                                                Text {
-                                                    text: "Wallpaper & Background"
-                                                    font.pixelSize: Services.Theme.fontSizeLg
-                                                    font.bold: true
-                                                    color: Services.Theme.textPrimary
-                                                }
-                                                Text {
-                                                    text: "Select desktop wallpaper or add custom images"
-                                                    font.pixelSize: Services.Theme.fontSizeXs
-                                                    color: Services.Theme.textSecondary
-                                                }
-                                            }
-
-                                            // + Add Wallpaper Button
-                                            Rectangle {
-                                                Layout.alignment: Qt.AlignVCenter
-                                                height: 32
-                                                implicitWidth: addWpText.implicitWidth + 24
-                                                radius: Services.Theme.radiusSm
-                                                color: addWpMouse.containsMouse ? Services.Theme.accent : Services.Theme.bgElevated
-                                                border.color: addWpMouse.containsMouse ? Services.Theme.accent : Services.Theme.border
-                                                border.width: 1
-                                                Behavior on color { ColorAnimation { duration: 180; easing.type: Easing.OutCubic } }
-                                                Behavior on border.color { ColorAnimation { duration: 180; easing.type: Easing.OutCubic } }
-
-                                                RowLayout {
-                                                    anchors.centerIn: parent
-                                                    spacing: 6
-                                                    Text {
-                                                        text: Services.Icons.plus
-                                                        font.family: Services.Theme.fontSymbols
-                                                        font.pixelSize: 11
-                                                        color: addWpMouse.containsMouse ? Services.Theme.bgOnAccent : Services.Theme.accent
-                                                        Behavior on color { ColorAnimation { duration: 180; easing.type: Easing.OutCubic } }
-                                                    }
-                                                    Text {
-                                                        id: addWpText
-                                                        text: "Add Image..."
-                                                        font.pixelSize: Services.Theme.fontSizeSm
-                                                        font.bold: true
-                                                        color: addWpMouse.containsMouse ? Services.Theme.bgOnAccent : Services.Theme.textPrimary
-                                                        Behavior on color { ColorAnimation { duration: 180; easing.type: Easing.OutCubic } }
-                                                    }
-                                                }
-
-                                                MouseArea {
-                                                    id: addWpMouse
-                                                    anchors.fill: parent
-                                                    hoverEnabled: true
-                                                    cursorShape: Qt.PointingHandCursor
-                                                    onClicked: {
-                                                        if (Services.Wallpaper) {
-                                                            Services.Wallpaper.pickCustomWallpaper()
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-
-                                        // Wallpaper Horizontal Carousel
-                                        Flickable {
-                                            Layout.fillWidth: true
-                                            height: 84
-                                            contentWidth: wpRow.implicitWidth + 20
-                                            contentHeight: 84
-                                            clip: true
-                                            boundsBehavior: Flickable.StopAtBounds
-
-                                            RowLayout {
-                                                id: wpRow
-                                                spacing: 12
-                                                anchors.verticalCenter: parent.verticalCenter
-
-                                                Repeater {
-                                                    model: Services.Wallpaper ? Services.Wallpaper.allWallpapers : []
-                                                    delegate: Rectangle {
-                                                        required property var modelData
-                                                        width: 124; height: 76
-                                                        radius: 8
-                                                        clip: true
-                                                        readonly property bool isCurrent: modelData.isDynamic 
-                                                            ? (Services.Wallpaper && Services.Wallpaper.isWallblerActive)
-                                                            : (Services.Wallpaper && Services.Wallpaper.currentWallpaper === modelData.path)
-                                                        border.color: isCurrent ? Services.Theme.accent : (wpCardMouse.containsMouse ? Services.Theme.borderHighlight : Services.Theme.border)
-                                                        border.width: isCurrent ? 2 : 1
-                                                        color: Services.Theme.bgElevated
-                                                        Behavior on border.color { ColorAnimation { duration: 180; easing.type: Easing.OutCubic } }
-
-                                                        Image {
-                                                            anchors.fill: parent
-                                                            source: modelData.path.startsWith("/") ? ("file://" + modelData.path) : modelData.path
-                                                            fillMode: Image.PreserveAspectCrop
-                                                            asynchronous: true
-                                                            smooth: true
-                                                        }
-
-                                                        Rectangle {
-                                                            opacity: isCurrent ? 1.0 : 0.0
-                                                            scale: isCurrent ? 1.0 : 0.6
-                                                            anchors.top: parent.top; anchors.left: parent.left
-                                                            anchors.margins: 5
-                                                            width: 20; height: 20; radius: 10
-                                                            color: Services.Theme.accent
-                                                            z: 5
-                                                            Behavior on opacity { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
-                                                            Behavior on scale { NumberAnimation { duration: 180; easing.type: Easing.OutBack } }
-                                                            Text { anchors.centerIn: parent; text: Services.Icons.check; font.family: Services.Theme.fontSymbols; font.pixelSize: 10; color: Services.Theme.bgOnAccent }
-                                                        }
-
-                                                        // Dynamic Badge (for Wallbler)
-                                                        Rectangle {
-                                                            visible: Boolean(modelData.isDynamic)
-                                                            anchors.bottom: parent.bottom; anchors.right: parent.right
-                                                            anchors.margins: 5
-                                                            height: 18
-                                                            implicitWidth: dynRow.implicitWidth + 10
-                                                            radius: 9
-                                                            color: Qt.rgba(0, 0, 0, 0.75)
-                                                            border.color: Qt.rgba(255, 255, 255, 0.25)
-                                                            border.width: 1
-                                                            z: 5
-
-                                                            RowLayout {
-                                                                id: dynRow
-                                                                anchors.centerIn: parent
-                                                                spacing: 3
-                                                                Text {
-                                                                    text: Services.Icons.sun
-                                                                    font.family: Services.Theme.fontSymbols
-                                                                    font.pixelSize: 8
-                                                                    color: "#ffbd2e"
-                                                                }
-                                                                Text {
-                                                                    text: "Dynamic"
-                                                                    font.pixelSize: 8
-                                                                    font.bold: true
-                                                                    color: "#ffffff"
-                                                                }
-                                                            }
-                                                        }
-
-                                                        Rectangle {
-                                                            visible: Boolean(modelData.isCustom)
-                                                            anchors.top: parent.top; anchors.right: parent.right
-                                                            anchors.margins: 5
-                                                            width: 22; height: 22; radius: 11
-                                                            color: delMouse.containsMouse ? Services.Theme.danger : Qt.rgba(0, 0, 0, 0.75)
-                                                            border.color: Services.Theme.danger
-                                                            border.width: 1
-                                                            z: 10
-                                                            Behavior on color { ColorAnimation { duration: 180; easing.type: Easing.OutCubic } }
-
-                                                            Text {
-                                                                anchors.centerIn: parent
-                                                                text: Services.Icons.trash
-                                                                font.family: Services.Theme.fontSymbols
-                                                                font.pixelSize: 10
-                                                                color: "#ffffff"
-                                                            }
-
-                                                            MouseArea {
-                                                                id: delMouse
-                                                                anchors.fill: parent
-                                                                hoverEnabled: true
-                                                                cursorShape: Qt.PointingHandCursor
-                                                                onClicked: {
-                                                                    if (Services.Wallpaper) {
-                                                                        Services.Wallpaper.deleteCustomWallpaper(modelData.path)
-                                                                    }
-                                                                }
-                                                            }
-                                                        }
-
-                                                        MouseArea {
-                                                            id: wpCardMouse
-                                                            anchors.fill: parent
-                                                            hoverEnabled: true
-                                                            cursorShape: Qt.PointingHandCursor
-                                                            onClicked: {
-                                                                if (Services.Wallpaper) {
-                                                                    Services.Wallpaper.setWallpaper(modelData.path)
-                                                                    if (Services.Config && Services.Config.useMatugen) {
-                                                                        Services.Config.generateMatugen(Services.Wallpaper.currentWallpaper)
-                                                                    }
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-
-                                // Theme & Color Scheme Overview Card
-                                SettingsCard {
-                                    implicitHeight: themeCol.implicitHeight + 28
-
-                                    ColumnLayout {
-                                        id: themeCol
-                                        anchors.fill: parent
-                                        anchors.margins: 14
-                                        spacing: 14
-
-                                        // Theme Mode Overview
-                                        SettingsSegmentedOverview {
-                                            icon: Services.Icons.moon
-                                            title: "Theme Mode"
-                                            subtitle: "Switch between Dark and Light color schemes"
-                                            currentValue: Services.Config ? Services.Config.themeMode : "dark"
-                                            model: [
-                                                { id: "dark",  label: "Dark Mode",  desc: "High contrast dark surfaces", icon: Services.Icons.moon },
-                                                { id: "light", label: "Light Mode", desc: "Clean bright elevated surfaces", icon: Services.Icons.sun }
-                                            ]
-                                            onSelected: (val) => {
-                                                if (Services.Config) Services.Config.setThemeMode(val)
-                                            }
-                                        }
-
-                                        SettingsDivider {}
-
-                                        // Color Palette Preset Overview Grid
-                                        ColumnLayout {
-                                            Layout.fillWidth: true
-                                            spacing: 10
-
-                                            RowLayout {
-                                                Layout.fillWidth: true
-                                                spacing: 12
-
-                                                Rectangle {
-                                                    Layout.preferredWidth: 32
-                                                    Layout.preferredHeight: 32
-                                                    Layout.alignment: Qt.AlignVCenter
-                                                    radius: 8
-                                                    color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.15)
-                                                    border.color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.3)
-                                                    border.width: 1
-
-                                                    Text {
-                                                        anchors.centerIn: parent
-                                                        text: Services.Icons.palette
-                                                        font.family: Services.Theme.fontSymbols
-                                                        font.pixelSize: 14
-                                                        color: Services.Theme.accent
-                                                    }
-                                                }
-
-                                                ColumnLayout {
-                                                    Layout.fillWidth: true
-                                                    Layout.alignment: Qt.AlignVCenter
-                                                    spacing: 2
-
-                                                    Text {
-                                                        Layout.fillWidth: true
-                                                        text: "Color Palette & Accent Presets"
-                                                        font.pixelSize: Services.Theme.fontSizeMd
-                                                        font.bold: true
-                                                        color: Services.Theme.textPrimary
-                                                    }
-                                                    Text {
-                                                        Layout.fillWidth: true
-                                                        text: "Curated system palettes or wallpaper-adaptive Matugen theme"
-                                                        font.pixelSize: Services.Theme.fontSizeXs
-                                                        color: Services.Theme.textSecondary
-                                                    }
-                                                }
-                                            }
-
-                                            // Grid of Palettes
-                                            GridLayout {
-                                                Layout.fillWidth: true
-                                                columns: 3
-                                                columnSpacing: 8
-                                                rowSpacing: 8
-
-                                                Repeater {
-                                                    model: Services.Config ? Services.Config.accentPresets : []
-                                                    delegate: Rectangle {
-                                                        required property var modelData
-                                                        Layout.fillWidth: true
-                                                        height: 44
-                                                        radius: Services.Theme.radiusSm
-                                                        readonly property bool isCur: Services.Config && Services.Config.accentName === modelData.name
-
-                                                        color: isCur 
-                                                            ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.15) 
-                                                            : (palMouse.containsMouse ? Services.Theme.bgHover : Services.Theme.bgElevated)
-                                                        border.color: isCur 
-                                                            ? Services.Theme.accent 
-                                                            : (palMouse.containsMouse ? Services.Theme.borderHighlight : Services.Theme.border)
-                                                        border.width: isCur ? 2 : 1
-                                                        Behavior on color { ColorAnimation { duration: 180; easing.type: Easing.OutCubic } }
-                                                        Behavior on border.color { ColorAnimation { duration: 180; easing.type: Easing.OutCubic } }
-
-                                                        RowLayout {
-                                                            anchors.fill: parent
-                                                            anchors.leftMargin: 10
-                                                            anchors.rightMargin: 10
-                                                            spacing: 8
-
-                                                            Rectangle {
-                                                                Layout.preferredWidth: 20
-                                                                Layout.preferredHeight: 20
-                                                                Layout.alignment: Qt.AlignVCenter
-                                                                radius: 10
-                                                                color: modelData.preview || Services.Theme.accent
-                                                                border.color: Qt.rgba(1, 1, 1, 0.2)
-                                                                border.width: 1
-                                                            }
-
-                                                            Text {
-                                                                Layout.fillWidth: true
-                                                                Layout.alignment: Qt.AlignVCenter
-                                                                text: modelData.name
-                                                                font.pixelSize: Services.Theme.fontSizeSm
-                                                                font.bold: isCur
-                                                                color: isCur ? Services.Theme.textPrimary : (palMouse.containsMouse ? Services.Theme.textPrimary : Services.Theme.textSecondary)
-                                                                elide: Text.ElideRight
-                                                                Behavior on color { ColorAnimation { duration: 180; easing.type: Easing.OutCubic } }
-                                                            }
-
-                                                            Rectangle {
-                                                                opacity: isCur ? 1.0 : 0.0
-                                                                scale: isCur ? 1.0 : 0.6
-                                                                Layout.preferredWidth: 18
-                                                                Layout.preferredHeight: 18
-                                                                Layout.alignment: Qt.AlignVCenter
-                                                                radius: 9
-                                                                color: Services.Theme.accent
-                                                                Behavior on opacity { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
-                                                                Behavior on scale { NumberAnimation { duration: 180; easing.type: Easing.OutBack } }
-                                                                Text {
-                                                                    anchors.centerIn: parent
-                                                                    text: Services.Icons.check
-                                                                    font.family: Services.Theme.fontSymbols
-                                                                    font.pixelSize: 8
-                                                                    color: Services.Theme.bgOnAccent
-                                                                }
-                                                            }
-                                                        }
-
-                                                        MouseArea {
-                                                            id: palMouse
-                                                            anchors.fill: parent
-                                                            hoverEnabled: true
-                                                            cursorShape: Qt.PointingHandCursor
-                                                            onClicked: {
-                                                                if (Services.Config) {
-                                                                    const hex = (Services.Config.themeMode === "light") ? modelData.lightHex : modelData.darkHex
-                                                                    Services.Config.setAccent(hex, modelData.name, modelData.isMatugen)
-                                                                    if (modelData.isMatugen && Services.Wallpaper) {
-                                                                        Services.Config.generateMatugen(Services.Wallpaper.currentWallpaper)
-                                                                    }
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-
-                                // Typography & Geometry Card
-                                SettingsCard {
-                                    implicitHeight: geomCol.implicitHeight + 28
-
-                                    ColumnLayout {
-                                        id: geomCol
-                                        anchors.fill: parent
-                                        anchors.margins: 14
-                                        spacing: 14
-
-                                        Text {
-                                            text: "Typography & Shell Geometry"
-                                            font.pixelSize: Services.Theme.fontSizeLg
-                                            font.bold: true
-                                            color: Services.Theme.textPrimary
-                                        }
-
-                                        // UI Corner Radius Slider
-                                        SettingsSlider {
-                                            icon: Services.Icons.sliders
-                                            title: "Shell Corner Radius"
-                                            subtitle: "Corner rounding for panels, popups, and dialogs"
-                                            from: 0
-                                            to: 28
-                                            stepSize: 1
-                                            valueSuffix: "px"
-                                            value: Services.Config ? Services.Config.cornerRadius : 16
-                                            onMoved: (v) => {
-                                                if (Services.Config) Services.Config.setCornerRadius(Math.round(v))
-                                            }
-                                        }
-
-                                        SettingsDivider {}
-
-                                        // Font Family Overview
-                                        SettingsSegmentedOverview {
-                                            icon: Services.Icons.font
-                                            title: "UI Font Family"
-                                            subtitle: "Global monospace & display typography"
-                                            currentValue: {
-                                                const f = Services.Config ? Services.Config.fontFamily : ""
-                                                if (f.indexOf("JetBrains") !== -1) return "jetbrains"
-                                                if (f.indexOf("SFMono") !== -1) return "sfmono"
-                                                if (f.indexOf("Inter") !== -1) return "inter"
-                                                return "firacode"
-                                            }
-                                            model: [
-                                                { id: "sfmono",    label: "SFMono Nerd",  desc: "Apple Monospace" },
-                                                { id: "jetbrains", label: "JetBrains",    desc: "Developer Mono" },
-                                                { id: "inter",     label: "Inter UI",     desc: "Clean Sans-Serif" },
-                                                { id: "firacode",  label: "FiraCode",     desc: "Ligature Mono" }
-                                            ]
-                                            onSelected: (val) => {
-                                                if (!Services.Config) return
-                                                if (val === "sfmono") Services.Config.setFontFamily("Liga SFMono Nerd Font, monospace")
-                                                else if (val === "jetbrains") Services.Config.setFontFamily("JetBrainsMono Nerd Font, monospace")
-                                                else if (val === "inter") Services.Config.setFontFamily("Inter, Sans-Serif")
-                                                else Services.Config.setFontFamily("FiraCode Nerd Font, monospace")
-                                            }
-                                        }
-
-                                        SettingsDivider {}
-
-                                        // UI Scale Slider
-                                        SettingsSlider {
-                                            icon: Services.Icons.display
-                                            title: "Global UI Scale Factor"
-                                            subtitle: "Proportional scaling for quickshell panels and widgets"
-                                            from: 75
-                                            to: 135
-                                            stepSize: 5
-                                            valueSuffix: "%"
-                                            value: Services.Config ? Math.round(Services.Config.uiScale * 100) : 100
-                                            onMoved: (v) => {
-                                                if (Services.Config) Services.Config.setUiScale(v / 100)
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-
-                            // ─────────────────────────────────────────────────
-                            // PAGE 1: BAR & DYNAMIC ISLAND
-                            // ─────────────────────────────────────────────────
-                            ColumnLayout {
-                                visible: rootWindow.currentTab === 1
-                                Layout.fillWidth: true
-                                spacing: 14
-
-                                // ── 1. BAR LAYOUT & DESIGN PRESET CARD ──
-                                SettingsCard {
-                                    implicitHeight: barStyleCol.implicitHeight + 28
-
-                                    ColumnLayout {
-                                        id: barStyleCol
-                                        anchors.fill: parent
-                                        anchors.margins: 14
-                                        spacing: 12
-
-                                        RowLayout {
-                                            Layout.fillWidth: true
-                                            spacing: 12
-
-                                            Rectangle {
-                                                Layout.preferredWidth: 32
-                                                Layout.preferredHeight: 32
-                                                Layout.alignment: Qt.AlignVCenter
-                                                radius: 8
-                                                color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.15)
-                                                border.color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.3)
-                                                border.width: 1
-
-                                                Text {
-                                                    anchors.centerIn: parent
-                                                    text: Services.Icons.palette
-                                                    font.family: Services.Theme.fontSymbols
-                                                    font.pixelSize: 14
-                                                    color: Services.Theme.accent
-                                                }
-                                            }
-
-                                            ColumnLayout {
-                                                Layout.fillWidth: true
-                                                Layout.alignment: Qt.AlignVCenter
-                                                spacing: 2
-
-                                                Text {
-                                                    Layout.fillWidth: true
-                                                    text: "Bar Layout & Design Preset"
-                                                    font.pixelSize: Services.Theme.fontSizeMd
-                                                    font.bold: true
-                                                    color: Services.Theme.textPrimary
-                                                }
-                                                Text {
-                                                    Layout.fillWidth: true
-                                                    text: "Choose the overall visual architecture and surface styling for your status bar"
-                                                    font.pixelSize: Services.Theme.fontSizeXs
-                                                    color: Services.Theme.textSecondary
-                                                }
-                                            }
-                                        }
-
-                                        GridLayout {
-                                            Layout.fillWidth: true
-                                            columns: 2
-                                            columnSpacing: 10
-                                            rowSpacing: 10
-
-                                            Repeater {
-                                                model: [
-                                                    { id: "islands",  label: "Islands (Discrete)",    desc: "Floating capsules with dynamic island & clear backdrop", icon: Services.Icons.palette },
-                                                    { id: "floating", label: "Floating Glass",        desc: "Continuous floating glass bar with screen edge margins",   icon: Services.Icons.display },
-                                                    { id: "unified",  label: "Unified Edge-to-Edge",  desc: "Classic full-width continuous dock status bar",          icon: Services.Icons.sliders },
-                                                    { id: "minimal",  label: "Minimalist Flat",       desc: "Ultra-slim low-profile bar with borderless flat styling", icon: Services.Icons.sparkles }
-                                                ]
-
-                                                delegate: Rectangle {
-                                                    required property var modelData
-                                                    Layout.fillWidth: true
-                                                    implicitHeight: 64
-                                                    radius: Services.Theme.radiusSm
-                                                    readonly property bool isCur: (Services.Config ? Services.Config.barStyle : "islands") === modelData.id
-
-                                                    color: isCur 
-                                                        ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.15) 
-                                                        : (styleMouse.containsMouse ? Services.Theme.bgHover : Services.Theme.bgElevated)
-                                                    border.color: isCur 
-                                                        ? Services.Theme.accent 
-                                                        : (styleMouse.containsMouse ? Services.Theme.borderHighlight : Services.Theme.border)
-                                                    border.width: isCur ? 2 : 1
-                                                    Behavior on color { ColorAnimation { duration: 180; easing.type: Easing.OutCubic } }
-                                                    Behavior on border.color { ColorAnimation { duration: 180; easing.type: Easing.OutCubic } }
-
-                                                    RowLayout {
-                                                        anchors.fill: parent
-                                                        anchors.leftMargin: 12
-                                                        anchors.rightMargin: 12
-                                                        spacing: 10
-
-                                                        Rectangle {
-                                                            Layout.preferredWidth: 34
-                                                            Layout.preferredHeight: 34
-                                                            Layout.alignment: Qt.AlignVCenter
-                                                            radius: 8
-                                                            color: isCur ? Services.Theme.accent : (styleMouse.containsMouse ? Services.Theme.bgHover : Services.Theme.bgDeep)
-                                                            Behavior on color { ColorAnimation { duration: 180; easing.type: Easing.OutCubic } }
-                                                            Text {
-                                                                anchors.centerIn: parent
-                                                                text: modelData.icon || ""
-                                                                font.family: Services.Theme.fontSymbols
-                                                                font.pixelSize: 14
-                                                                color: isCur ? Services.Theme.bgOnAccent : (styleMouse.containsMouse ? Services.Theme.textPrimary : Services.Theme.textSecondary)
-                                                                Behavior on color { ColorAnimation { duration: 180; easing.type: Easing.OutCubic } }
-                                                            }
-                                                        }
-
-                                                        ColumnLayout {
-                                                            Layout.fillWidth: true
-                                                            Layout.alignment: Qt.AlignVCenter
-                                                            spacing: 2
-
-                                                            Text {
-                                                                Layout.fillWidth: true
-                                                                text: modelData.label
-                                                                font.pixelSize: Services.Theme.fontSizeSm
-                                                                font.bold: isCur
-                                                                color: isCur ? Services.Theme.textPrimary : (styleMouse.containsMouse ? Services.Theme.textPrimary : Services.Theme.textSecondary)
-                                                                elide: Text.ElideRight
-                                                            }
-                                                            Text {
-                                                                Layout.fillWidth: true
-                                                                text: modelData.desc
-                                                                font.pixelSize: 10
-                                                                color: Services.Theme.textDisabled
-                                                                wrapMode: Text.WordWrap
-                                                                maximumLineCount: 2
-                                                                elide: Text.ElideRight
-                                                            }
-                                                        }
-
-                                                        Rectangle {
-                                                            opacity: isCur ? 1.0 : 0.0
-                                                            scale: isCur ? 1.0 : 0.6
-                                                            Layout.preferredWidth: 20
-                                                            Layout.preferredHeight: 20
-                                                            Layout.alignment: Qt.AlignVCenter
-                                                            radius: 10
-                                                            color: Services.Theme.accent
-                                                            Behavior on opacity { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
-                                                            Behavior on scale { NumberAnimation { duration: 180; easing.type: Easing.OutBack } }
-                                                            Text {
-                                                                anchors.centerIn: parent
-                                                                text: Services.Icons.check
-                                                                font.family: Services.Theme.fontSymbols
-                                                                font.pixelSize: 9
-                                                                color: Services.Theme.bgOnAccent
-                                                            }
-                                                        }
-                                                    }
-
-                                                    MouseArea {
-                                                        id: styleMouse
-                                                        anchors.fill: parent
-                                                        hoverEnabled: true
-                                                        cursorShape: Qt.PointingHandCursor
-                                                        onClicked: {
-                                                            if (Services.Config) Services.Config.setBarStyle(modelData.id)
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-
-                                // ── 2. BAR SCREEN POSITION CARD ──
-                                SettingsCard {
-                                    implicitHeight: barPlaceCol.implicitHeight + 28
-
-                                    ColumnLayout {
-                                        id: barPlaceCol
-                                        anchors.fill: parent
-                                        anchors.margins: 14
-                                        spacing: 14
-
-                                        SettingsSegmentedOverview {
-                                            icon: Services.Icons.controlcenter
-                                            title: "Bar Screen Position"
-                                            subtitle: "Dock the system status bar at the top or bottom of your display"
-                                            currentValue: Services.Config ? Services.Config.barPosition : "top"
-                                            model: [
-                                                { id: "top",    label: "Top Status Bar",  desc: "Docked to top edge with downward drop panels", icon: Services.Icons.sun },
-                                                { id: "bottom", label: "Bottom Dock Bar", desc: "Docked to bottom edge with upward drop panels", icon: Services.Icons.moon }
-                                            ]
-                                            onSelected: (val) => {
-                                                if (Services.Config) Services.Config.setBarPosition(val)
-                                            }
-                                        }
-                                    }
-                                }
-
-                                // ── 3. WORKSPACE PAGER STYLE CARD ──
-                                SettingsCard {
-                                    implicitHeight: wsStyleCol.implicitHeight + 28
-
-                                    ColumnLayout {
-                                        id: wsStyleCol
-                                        anchors.fill: parent
-                                        anchors.margins: 14
-                                        spacing: 12
-
-                                        SettingsSegmentedOverview {
-                                            icon: Services.Icons.display
-                                            title: "Workspace Pager Appearance"
-                                            subtitle: "Choose how virtual desktop workspaces are visually displayed"
-                                            currentValue: Services.Config ? Services.Config.workspaceStyle : "pills"
-                                            model: [
-                                                { id: "pills",   label: "Dynamic Pills", desc: "Expanding capsules", icon: Services.Icons.display },
-                                                { id: "numbers", label: "Numbered",      desc: "Digits 1, 2, 3...",  icon: Services.Icons.terminal },
-                                                { id: "dots",    label: "Minimal Dots",  desc: "Compact dots",       icon: Services.Icons.checkCircle },
-                                                { id: "icons",   label: "Context Icons", desc: "Task glyphs",        icon: Services.Icons.folder }
-                                            ]
-                                            onSelected: (val) => {
-                                                if (Services.Config) Services.Config.setWorkspaceStyle(val)
-                                            }
-                                        }
-
-                                        SettingsDivider {}
-
-                                        SettingsSwitch {
-                                            icon: Services.Icons.check
-                                            title: "Always Show Primary Workspaces (1–5)"
-                                            subtitle: "Keep primary workspaces visible even when inactive or empty"
-                                            checked: Services.Config ? Services.Config.workspaceShowAll : true
-                                            onToggled: (st) => {
-                                                if (Services.Config) Services.Config.setWorkspaceShowAll(st)
-                                            }
-                                        }
-                                    }
-                                }
-
-                                // ── 4. DYNAMIC ISLAND HUD MODE CARD ──
-                                SettingsCard {
-                                    implicitHeight: islandCol.implicitHeight + 28
-
-                                    ColumnLayout {
-                                        id: islandCol
-                                        anchors.fill: parent
-                                        anchors.margins: 14
-                                        spacing: 12
-
-                                        SettingsSegmentedOverview {
-                                            icon: Services.Icons.sparkles
-                                            title: "Dynamic Island HUD Mode"
-                                            subtitle: (Services.Config && Services.Config.barStyle === "islands")
-                                                ? "Interactive central notch for media controls, system status & notifications"
-                                                : "Dynamic Island is active in 'Islands' bar mode (in floating/unified/minimal, bar uses a centered clock)"
-                                            currentValue: Services.Config ? Services.Config.islandStyle : "expanded"
-                                            model: [
-                                                { id: "expanded", label: "Full Dynamic Island", desc: "Full media controls & system HUD", icon: Services.Icons.sparkles },
-                                                { id: "compact",  label: "Compact HUD",         desc: "Essential alerts & status badge",  icon: Services.Icons.sliders },
-                                                { id: "hidden",   label: "Hidden / Off",        desc: "Disable island for clean center",   icon: Services.Icons.close }
-                                            ]
-                                            onSelected: (val) => {
-                                                if (Services.Config) Services.Config.setIslandStyle(val)
-                                            }
-                                        }
-                                    }
-                                }
-
-                                // ── 5. STATUS BAR MODULES & WIDGETS CARD ──
-                                SettingsCard {
-                                    implicitHeight: barWidgetsCol.implicitHeight + 28
-
-                                    ColumnLayout {
-                                        id: barWidgetsCol
-                                        anchors.fill: parent
-                                        anchors.margins: 14
-                                        spacing: 4
-
-                                        Text {
-                                            text: "Status Bar Modules & Widgets"
-                                            font.pixelSize: Services.Theme.fontSizeLg
-                                            font.bold: true
-                                            color: Services.Theme.textPrimary
-                                        }
-                                        Text {
-                                            text: "Toggle individual status indicators and modules visible on the bar"
-                                            font.pixelSize: Services.Theme.fontSizeXs
-                                            color: Services.Theme.textSecondary
-                                        }
-
-                                        Item { Layout.preferredHeight: 4 }
-
-                                        SettingsSwitch {
-                                            icon: Services.Icons.display
-                                            title: "Workspaces Pager"
-                                            subtitle: "Show virtual workspace tags and active indicators"
-                                            checked: Services.Config ? Services.Config.showWorkspaces : true
-                                            onToggled: (st) => { if (Services.Config) Services.Config.setShowWorkspaces(st) }
-                                        }
-                                        SettingsDivider {}
-
-                                        SettingsSwitch {
-                                            icon: Services.Icons.tray
-                                            title: "System Tray"
-                                            subtitle: "Show background running application icons (SNI)"
-                                            checked: Services.Config ? Services.Config.showSysTray : true
-                                            onToggled: (st) => { if (Services.Config) Services.Config.setShowSysTray(st) }
-                                        }
-                                        SettingsDivider {}
-
-                                        SettingsSwitch {
-                                            icon: Services.Icons.cpu
-                                            title: "System Monitor"
-                                            subtitle: "Show real-time CPU, RAM, and thermals meter"
-                                            checked: Services.Config ? Services.Config.showSysmonTray : true
-                                            onToggled: (st) => { if (Services.Config) Services.Config.setShowSysmonTray(st) }
-                                        }
-                                        SettingsDivider {}
-
-                                        SettingsSwitch {
-                                            icon: Services.Icons.speaker
-                                            title: "Volume & Brightness"
-                                            subtitle: "Show speaker volume level and slider module"
-                                            checked: Services.Config ? Services.Config.showVolumeTray : true
-                                            onToggled: (st) => { if (Services.Config) Services.Config.setShowVolumeTray(st) }
-                                        }
-                                        SettingsDivider {}
-
-                                        SettingsSwitch {
-                                            icon: Services.Icons.tree
-                                            title: "Battery & Power Indicator"
-                                            subtitle: "Show battery level percentage and charging state"
-                                            checked: Services.Config ? Services.Config.showBatteryTray : true
-                                            onToggled: (st) => { if (Services.Config) Services.Config.setShowBatteryTray(st) }
-                                        }
-                                        SettingsDivider {}
-
-                                        SettingsSwitch {
-                                            icon: Services.Icons.sliders
-                                            title: "Control Center Trigger"
-                                            subtitle: "Show quick settings and toggles trigger pill"
-                                            checked: Services.Config ? Services.Config.showControlCenterTray : true
-                                            onToggled: (st) => { if (Services.Config) Services.Config.setShowControlCenterTray(st) }
-                                        }
-                                        SettingsDivider {}
-
-                                        SettingsSwitch {
-                                            icon: Services.Icons.uptime
-                                            title: "Digital Clock & Calendar"
-                                            subtitle: "Show current time with calendar popup integration"
-                                            checked: Services.Config ? Services.Config.showClockTray : true
-                                            onToggled: (st) => { if (Services.Config) Services.Config.setShowClockTray(st) }
-                                        }
-                                    }
-                                }
-
-                                // ── 6. CLOCK & TIME FORMAT CARD ──
-                                SettingsCard {
-                                    implicitHeight: clockFmtCol.implicitHeight + 28
-
-                                    ColumnLayout {
-                                        id: clockFmtCol
-                                        anchors.fill: parent
-                                        anchors.margins: 14
-                                        spacing: 4
-
-                                        Text {
-                                            text: "Clock & Time Format"
-                                            font.pixelSize: Services.Theme.fontSizeLg
-                                            font.bold: true
-                                            color: Services.Theme.textPrimary
-                                        }
-
-                                        Item { Layout.preferredHeight: 4 }
-
-                                        SettingsSwitch {
-                                            icon: Services.Icons.uptime
-                                            title: "24-Hour Time Format"
-                                            subtitle: "Use 24h military clock instead of 12h AM/PM"
-                                            checked: Services.Config ? Services.Config.clock24h : true
-                                            onToggled: (st) => { if (Services.Config) Services.Config.setClock24h(st) }
-                                        }
-                                        SettingsDivider {}
-
-                                        SettingsSwitch {
-                                            icon: Services.Icons.uptime
-                                            title: "Display Live Seconds"
-                                            subtitle: "Render real-time ticking seconds in bar clock"
-                                            checked: Services.Config ? Services.Config.clockShowSeconds : false
-                                            onToggled: (st) => { if (Services.Config) Services.Config.setClockShowSeconds(st) }
-                                        }
-                                        SettingsDivider {}
-
-                                        SettingsSwitch {
-                                            icon: Services.Icons.uptime
-                                            title: "Display Date Text"
-                                            subtitle: "Show current day and date prefix in the bar"
-                                            checked: Services.Config ? Services.Config.clockShowDate : true
-                                            onToggled: (st) => { if (Services.Config) Services.Config.setClockShowDate(st) }
-                                        }
-                                        SettingsDivider {}
-
-                                        SettingsSegmentedOverview {
-                                            icon: Services.Icons.uptime
-                                            title: "Date Format"
-                                            subtitle: "Format style for date text"
-                                            currentValue: Services.Config ? Services.Config.clockDateFormat : "short"
-                                            model: [
-                                                { id: "short", label: "Short (Mon, 19 Jan)", desc: "Abbreviated day and month", icon: Services.Icons.uptime },
-                                                { id: "full",  label: "Full (Monday, 19 January)", desc: "Full weekday and month name", icon: Services.Icons.calendar || Services.Icons.uptime }
-                                            ]
-                                            onSelected: (val) => {
-                                                if (Services.Config) Services.Config.setClockDateFormat(val)
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-
-                            // ─────────────────────────────────────────────────
-                            // PAGE 2: NOTIFICATIONS
-                            // ─────────────────────────────────────────────────
-                            ColumnLayout {
-                                visible: rootWindow.currentTab === 2
-                                Layout.fillWidth: true
-                                spacing: 14
-
-                                SettingsCard {
-                                    implicitHeight: notifCol.implicitHeight + 28
-
-                                    ColumnLayout {
-                                        id: notifCol
-                                        anchors.fill: parent
-                                        anchors.margins: 14
-                                        spacing: 14
-
-                                        Text {
-                                            text: "Notification Behavior & Alerts"
-                                            font.pixelSize: Services.Theme.fontSizeLg
-                                            font.bold: true
-                                            color: Services.Theme.textPrimary
-                                        }
-
-                                        SettingsSwitch {
-                                            icon: Services.Icons.bell
-                                            title: "Do Not Disturb Mode"
-                                            subtitle: "Mute all on-screen notification popups and sound alerts"
-                                            checked: Services.Notifications.doNotDisturb
-                                            onToggled: (st) => {
-                                                Services.Notifications.doNotDisturb = st
-                                            }
-                                        }
-
-                                        SettingsDivider {}
-
-                                        SettingsSlider {
-                                            icon: Services.Icons.uptime
-                                            title: "Notification Popup Duration"
-                                            subtitle: "How long bubble popups remain on screen before dismissing"
-                                            from: 2
-                                            to: 15
-                                            stepSize: 1
-                                            valueSuffix: "s"
-                                            value: Services.Config ? Services.Config.notificationTimeout : 5
-                                            onMoved: (v) => {
-                                                if (Services.Config) Services.Config.setNotificationTimeout(Math.round(v))
-                                            }
-                                        }
-
-                                        SettingsDivider {}
-
-                                        SettingsSlider {
-                                            icon: Services.Icons.uptime
-                                            title: "Notification History Retention"
-                                            subtitle: "How many days notifications stay in history before expiring (1 to 7 days)"
-                                            from: 1
-                                            to: 7
-                                            stepSize: 1
-                                            valueSuffix: (Services.Config && Services.Config.notificationRetentionDays === 1) ? " day" : " days"
-                                            value: Services.Config ? Services.Config.notificationRetentionDays : 7
-                                            onMoved: (v) => {
-                                                if (Services.Config) Services.Config.setNotificationRetentionDays(Math.round(v))
-                                            }
-                                        }
-
-                                        SettingsDivider {}
-
-                                        // Action Buttons
-                                        RowLayout {
-                                            Layout.fillWidth: true
-                                            spacing: 8
-
-                                            Rectangle {
-                                                Layout.fillWidth: true
-                                                height: 38
-                                                radius: Services.Theme.radiusSm
-                                                color: testNotifMouse.containsMouse ? Services.Theme.bgHover : Services.Theme.bgElevated
-                                                border.color: testNotifMouse.containsMouse ? Services.Theme.borderHighlight : Services.Theme.border
-                                                border.width: 1
-                                                Behavior on color { ColorAnimation { duration: 180; easing.type: Easing.OutCubic } }
-                                                Behavior on border.color { ColorAnimation { duration: 180; easing.type: Easing.OutCubic } }
-
-                                                RowLayout {
-                                                    anchors.centerIn: parent
-                                                    spacing: 6
-                                                    Text { text: Services.Icons.bell; font.family: Services.Theme.fontSymbols; font.pixelSize: 12; color: Services.Theme.accent }
-                                                    Text { text: "Send Test Notification"; font.pixelSize: Services.Theme.fontSizeMd; font.bold: true; color: Services.Theme.textPrimary }
-                                                }
-
-                                                MouseArea {
-                                                    id: testNotifMouse
-                                                    anchors.fill: parent
-                                                    hoverEnabled: true
-                                                    cursorShape: Qt.PointingHandCursor
-                                                    onClicked: testNotifProc.running = true
-                                                }
-                                            }
-
-                                            Rectangle {
-                                                Layout.fillWidth: true
-                                                height: 38
-                                                radius: Services.Theme.radiusSm
-                                                color: clearNotifMouse.containsMouse ? Qt.rgba(Services.Theme.danger.r, Services.Theme.danger.g, Services.Theme.danger.b, 0.15) : Services.Theme.bgElevated
-                                                border.color: clearNotifMouse.containsMouse ? Services.Theme.danger : Services.Theme.border
-                                                border.width: 1
-                                                Behavior on color { ColorAnimation { duration: 180; easing.type: Easing.OutCubic } }
-                                                Behavior on border.color { ColorAnimation { duration: 180; easing.type: Easing.OutCubic } }
-
-                                                RowLayout {
-                                                    anchors.centerIn: parent
-                                                    spacing: 6
-                                                    Text { text: Services.Icons.trash; font.family: Services.Theme.fontSymbols; font.pixelSize: 12; color: Services.Theme.danger }
-                                                    Text { text: "Clear History"; font.pixelSize: Services.Theme.fontSizeMd; font.bold: true; color: Services.Theme.textPrimary }
-                                                }
-
-                                                MouseArea {
-                                                    id: clearNotifMouse
-                                                    anchors.fill: parent
-                                                    hoverEnabled: true
-                                                    cursorShape: Qt.PointingHandCursor
-                                                    onClicked: {
-                                                        if (Services.Notifications) Services.Notifications.clearHistory()
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-
-                            // ─────────────────────────────────────────────────
-                            // PAGE 3: SOUND & AUDIO EFFECTS
-                            // ─────────────────────────────────────────────────
-                            ColumnLayout {
-                                visible: rootWindow.currentTab === 3
-                                Layout.fillWidth: true
-                                spacing: 14
-
-                                SettingsCard {
-                                    implicitHeight: sndCol.implicitHeight + 28
-
-                                    ColumnLayout {
-                                        id: sndCol
-                                        anchors.fill: parent
-                                        anchors.margins: 14
-                                        spacing: 14
-
-                                        Text {
-                                            text: "System Sound Feedback"
-                                            font.pixelSize: Services.Theme.fontSizeLg
-                                            font.bold: true
-                                            color: Services.Theme.textPrimary
-                                        }
-
-                                        SettingsSwitch {
-                                            icon: Services.Icons.speaker
-                                            title: "Enable UI Sound Effects"
-                                            subtitle: "Play audible feedback on volume adjustments and alerts"
-                                            checked: Services.Config ? Services.Config.soundFeedback : true
-                                            onToggled: (st) => {
-                                                if (Services.Config) Services.Config.setSoundFeedback(st)
-                                            }
-                                        }
-
-                                        SettingsDivider {}
-
-                                        Text { text: "Audition System Sound Effects:"; font.pixelSize: Services.Theme.fontSizeSm; font.bold: true; color: Services.Theme.textSecondary }
-
-                                        RowLayout {
-                                            Layout.fillWidth: true
-                                            spacing: 8
-
-                                            Repeater {
-                                                model: [
-                                                    { label: "Notification", sound: "playNotification" },
-                                                    { label: "Volume Step",  sound: "playVolumeChange" },
-                                                    { label: "Device Added", sound: "playDeviceAdded" }
-                                                ]
-                                                delegate: Rectangle {
-                                                    required property var modelData
-                                                    Layout.fillWidth: true
-                                                    height: 36
-                                                    radius: Services.Theme.radiusSm
-                                                    color: sHover.containsMouse ? Services.Theme.bgHover : Services.Theme.bgElevated
-                                                    border.color: sHover.containsMouse ? Services.Theme.borderHighlight : Services.Theme.border
-                                                    border.width: 1
-                                                    Behavior on color { ColorAnimation { duration: 180; easing.type: Easing.OutCubic } }
-                                                    Behavior on border.color { ColorAnimation { duration: 180; easing.type: Easing.OutCubic } }
-
-                                                    RowLayout {
-                                                        anchors.centerIn: parent
-                                                        spacing: 6
-                                                        Text { text: Services.Icons.speaker; font.family: Services.Theme.fontSymbols; font.pixelSize: 11; color: Services.Theme.accent }
-                                                        Text { text: modelData.label; font.pixelSize: Services.Theme.fontSizeSm; font.bold: true; color: Services.Theme.textPrimary }
-                                                    }
-
-                                                    MouseArea {
-                                                        id: sHover
-                                                        anchors.fill: parent
-                                                        hoverEnabled: true
-                                                        cursorShape: Qt.PointingHandCursor
-                                                        onClicked: {
-                                                            if (Services.SoundFeedback && typeof Services.SoundFeedback[modelData.sound] === "function") {
-                                                                Services.SoundFeedback[modelData.sound]()
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-
-                            // ─────────────────────────────────────────────────
-                            // PAGE 4: LOCKSCREEN & POWER
-                            // ─────────────────────────────────────────────────
-                            // ── PAGE 4: LOCKSCREEN & POWER ───────────────────────────────────
-                            ColumnLayout {
-                                visible: rootWindow.currentTab === 4
-                                Layout.fillWidth: true
-                                spacing: 14
-
-                                // ── Card 0: Live Lockscreen Interactive Preview ──
-                                SettingsCard {
-                                    implicitHeight: 220
-
-                                    Item {
-                                        anchors.fill: parent
-                                        anchors.margins: 14
+                                        contentWidth: wpListRow.implicitWidth
+                                        contentHeight: parent.height
                                         clip: true
+                                        boundsBehavior: Flickable.StopAtBounds
 
-                                        // Miniature Lockscreen Canvas Frame
-                                        Rectangle {
-                                            anchors.fill: parent
-                                            radius: Services.Theme.radiusSm
-                                            clip: true
-                                            color: Services.Theme.bgDeep
-                                            border.color: Services.Theme.borderHighlight
-                                            border.width: 1
+                                        RowLayout {
+                                            id: wpListRow
+                                            spacing: 8
 
-                                            // Mini Wallpaper Background
-                                            Image {
-                                                id: miniLsBg
-                                                anchors.fill: parent
-                                                source: {
-                                                    if (Services.Config && Services.Config.lockscreenWallpaperMode === "custom" && Services.Config.lockscreenCustomWallpaper.length > 0) {
-                                                        return "file://" + Services.Config.lockscreenCustomWallpaper
-                                                    }
-                                                    return Services.Wallpaper.currentWallpaper.length > 0 ? ("file://" + Services.Wallpaper.currentWallpaper) : ("file://" + Services.Wallpaper.darkWallbler)
-                                                }
-                                                fillMode: Image.PreserveAspectCrop
-                                                asynchronous: true
-                                                smooth: true
-                                                visible: !(Services.Config && Services.Config.lockscreenBlur && (Services.Config.lockscreenBlurRadius > 0))
-                                            }
-
-                                            MultiEffect {
-                                                anchors.fill: miniLsBg
-                                                source: miniLsBg
-                                                blurEnabled: (Services.Config && Services.Config.lockscreenBlur) || false
-                                                blur: (Services.Config ? Services.Config.lockscreenBlurRadius : 0.40)
-                                                blurMax: 32
-                                                visible: (Services.Config && Services.Config.lockscreenBlur && (Services.Config.lockscreenBlurRadius > 0)) || false
-                                            }
-
-                                            // Mini Dimming
-                                            Rectangle {
-                                                anchors.fill: parent
-                                                color: Services.Theme.bgDeep
-                                                opacity: Services.Config ? Services.Config.lockscreenDim : 0.45
-                                            }
-
-                                            // Mini Top Header (Dynamic Island & Status Pill)
-                                            Item {
-                                                anchors.top: parent.top
-                                                anchors.left: parent.left
-                                                anchors.right: parent.right
-                                                anchors.margins: 8
-                                                height: 18
-
-                                                // Dynamic Island pill
-                                                Rectangle {
-                                                    anchors.centerIn: parent
-                                                    width: 38; height: 14; radius: 7
+                                            Repeater {
+                                                model: Services.Wallpaper ? Services.Wallpaper.allWallpapers : []
+                                                delegate: Rectangle {
+                                                    required property var modelData
+                                                    width: 108; height: 72
+                                                    radius: 6
+                                                    clip: true
+                                                    readonly property bool isCur: Services.Wallpaper && Services.Wallpaper.currentWallpaper === modelData.path
+                                                    border.color: isCur ? Services.Theme.accent : (wCardMouse.containsMouse ? Services.Theme.borderHighlight : Services.Theme.border)
+                                                    border.width: isCur ? 2 : 1
                                                     color: Services.Theme.bgDeep
-                                                    border.color: Services.Theme.border; border.width: 1
-                                                    Text {
-                                                        anchors.centerIn: parent
-                                                        text: "󰌾"
-                                                        font.family: Services.Theme.fontSymbols
-                                                        font.pixelSize: 8
-                                                        color: Services.Theme.accent
-                                                    }
-                                                }
-
-                                                // Mini Status Pill
-                                                Rectangle {
-                                                    anchors.right: parent.right
-                                                    height: 14
-                                                    width: 44
-                                                    radius: 7
-                                                    color: Services.Theme.surfaceVariant
-                                                    visible: Services.Config ? Services.Config.lockscreenShowStatusPill : true
-                                                    RowLayout {
-                                                        anchors.centerIn: parent
-                                                        spacing: 3
-                                                        Text { text: Services.Icons.wifi; font.family: Services.Theme.fontSymbols; font.pixelSize: 7; color: Services.Theme.accent }
-                                                        Text { text: Math.round((Services.Power.percentage || 0) * 100) + "%"; font.pixelSize: 7; font.bold: true; color: Services.Theme.textPrimary }
-                                                    }
-                                                }
-                                            }
-
-                                            // Mini Clock Display (Reflects selected lockscreenClockStyle)
-                                            ColumnLayout {
-                                                anchors.centerIn: parent
-                                                anchors.verticalCenterOffset: -18
-                                                spacing: 2
-
-                                                // Date (for hero/modern/minimal)
-                                                Text {
-                                                    visible: (Services.Config ? Services.Config.lockscreenClockStyle : "hero") !== "compact" && (Services.Config ? Services.Config.lockscreenClockStyle : "hero") !== "vertical" && (Services.Config ? Services.Config.lockscreenClockStyle : "hero") !== "typographic" && (Services.Config ? Services.Config.lockscreenClockStyle : "hero") !== "radial" && (Services.Config ? Services.Config.lockscreenClockStyle : "hero") !== "cyber"
-                                                    Layout.alignment: Qt.AlignHCenter
-                                                    text: Qt.formatDateTime(new Date(), (Services.Config && Services.Config.lockscreenClockStyle === "minimal") ? "dddd, MMMM d" : "dddd, MMMM d").toUpperCase()
-                                                    color: Services.Theme.textPrimary
-                                                    font.pixelSize: 8
-                                                    font.bold: true
-                                                }
-
-                                                // Hero
-                                                Text {
-                                                    visible: (Services.Config ? Services.Config.lockscreenClockStyle : "hero") === "hero"
-                                                    Layout.alignment: Qt.AlignHCenter
-                                                    text: Qt.formatDateTime(new Date(), (Services.Config && Services.Config.lockscreen24h) ? "hh:mm" : "h:mm")
-                                                    color: Services.Theme.white
-                                                    font.pixelSize: 32
-                                                    font.bold: true
-                                                    font.family: Services.Theme.fontDisplay
-                                                }
-
-                                                // Modern
-                                                ColumnLayout {
-                                                    visible: (Services.Config ? Services.Config.lockscreenClockStyle : "hero") === "modern"
-                                                    Layout.alignment: Qt.AlignHCenter
-                                                    spacing: -8
-                                                    Text { Layout.alignment: Qt.AlignHCenter; text: Qt.formatDateTime(new Date(), (Services.Config && Services.Config.lockscreen24h) ? "hh" : "h"); color: Services.Theme.accent; font.pixelSize: 20; font.bold: true; font.family: Services.Theme.fontDisplay }
-                                                    Text { Layout.alignment: Qt.AlignHCenter; text: Qt.formatDateTime(new Date(), "mm"); color: Services.Theme.white; font.pixelSize: 20; font.bold: true; font.family: Services.Theme.fontDisplay }
-                                                }
-
-                                                // Compact
-                                                Rectangle {
-                                                    visible: (Services.Config ? Services.Config.lockscreenClockStyle : "hero") === "compact"
-                                                    Layout.alignment: Qt.AlignHCenter
-                                                    height: 20
-                                                    width: 110
-                                                    radius: 10
-                                                    color: Qt.rgba(Services.Theme.bgDeep.r, Services.Theme.bgDeep.g, Services.Theme.bgDeep.b, 0.7)
-                                                    border.color: Services.Theme.borderHighlight; border.width: 1
-                                                    RowLayout {
-                                                        anchors.centerIn: parent
-                                                        spacing: 6
-                                                        Text { text: Qt.formatDateTime(new Date(), (Services.Config && Services.Config.lockscreen24h) ? "hh:mm" : "h:mm"); color: Services.Theme.accent; font.pixelSize: 10; font.bold: true }
-                                                        Rectangle { width: 1; height: 8; color: Services.Theme.border }
-                                                        Text { text: Qt.formatDateTime(new Date(), "MMM d"); color: Services.Theme.textPrimary; font.pixelSize: 8 }
-                                                    }
-                                                }
-
-                                                // Minimal
-                                                Text {
-                                                    visible: (Services.Config ? Services.Config.lockscreenClockStyle : "hero") === "minimal"
-                                                    Layout.alignment: Qt.AlignHCenter
-                                                    text: Qt.formatDateTime(new Date(), (Services.Config && Services.Config.lockscreen24h) ? "hh:mm" : "h:mm")
-                                                    color: Services.Theme.white
-                                                    font.pixelSize: 26
-                                                    font.weight: Font.ExtraLight
-                                                    font.letterSpacing: 2
-                                                    font.family: Services.Theme.fontDisplay
-                                                }
-
-                                                // Vertical
-                                                RowLayout {
-                                                    visible: (Services.Config ? Services.Config.lockscreenClockStyle : "hero") === "vertical"
-                                                    Layout.alignment: Qt.AlignHCenter
-                                                    spacing: 6
-                                                    ColumnLayout {
-                                                        spacing: -6
-                                                        Text { text: Qt.formatDateTime(new Date(), (Services.Config && Services.Config.lockscreen24h) ? "hh" : "h"); color: Services.Theme.accent; font.pixelSize: 16; font.bold: true; font.family: Services.Theme.fontDisplay }
-                                                        Text { text: Qt.formatDateTime(new Date(), "mm"); color: Services.Theme.white; font.pixelSize: 16; font.bold: true; font.family: Services.Theme.fontDisplay }
-                                                    }
-                                                    Rectangle { width: 2; height: 26; color: Services.Theme.accent; radius: 1 }
-                                                    ColumnLayout {
-                                                        spacing: 1
-                                                        Text { text: Qt.formatDateTime(new Date(), "dddd"); color: Services.Theme.accent; font.pixelSize: 8; font.bold: true }
-                                                        Text { text: Qt.formatDateTime(new Date(), "MMM d"); color: Services.Theme.textPrimary; font.pixelSize: 7 }
-                                                    }
-                                                }
-
-                                                // Typographic
-                                                ColumnLayout {
-                                                    visible: (Services.Config ? Services.Config.lockscreenClockStyle : "hero") === "typographic"
-                                                    Layout.alignment: Qt.AlignHCenter
-                                                    spacing: 1
-                                                    Text { Layout.alignment: Qt.AlignHCenter; text: "ELEVEN"; color: Services.Theme.accent; font.pixelSize: 14; font.bold: true; font.family: Services.Theme.fontDisplay }
-                                                    Text { Layout.alignment: Qt.AlignHCenter; text: "FORTY TWO"; color: Services.Theme.white; font.pixelSize: 14; font.bold: true; font.family: Services.Theme.fontDisplay }
-                                                }
-
-                                                // Radial
-                                                Rectangle {
-                                                    visible: (Services.Config ? Services.Config.lockscreenClockStyle : "hero") === "radial"
-                                                    Layout.alignment: Qt.AlignHCenter
-                                                    width: 48; height: 48; radius: 24
-                                                    color: Qt.rgba(Services.Theme.bgDeep.r, Services.Theme.bgDeep.g, Services.Theme.bgDeep.b, 0.6)
-                                                    border.color: Services.Theme.accent; border.width: 1.5
-                                                    ColumnLayout {
-                                                        anchors.centerIn: parent; spacing: 0
-                                                        Text { Layout.alignment: Qt.AlignHCenter; text: Qt.formatDateTime(new Date(), (Services.Config && Services.Config.lockscreen24h) ? "hh:mm" : "h:mm"); color: Services.Theme.white; font.pixelSize: 10; font.bold: true }
-                                                        Text { Layout.alignment: Qt.AlignHCenter; text: Qt.formatDateTime(new Date(), "MMM d"); color: Services.Theme.accent; font.pixelSize: 6; font.bold: true }
-                                                    }
-                                                }
-
-                                                // Cyberpunk HUD
-                                                Rectangle {
-                                                    visible: (Services.Config ? Services.Config.lockscreenClockStyle : "hero") === "cyber"
-                                                    Layout.alignment: Qt.AlignHCenter
-                                                    width: 120; height: 36; radius: 4
-                                                    color: Qt.rgba(0, 0, 0, 0.75)
-                                                    border.color: Services.Theme.accent; border.width: 1
-                                                    ColumnLayout {
-                                                        anchors.centerIn: parent; spacing: 1
-                                                        Text { Layout.alignment: Qt.AlignHCenter; text: "┌[ SYS: LOCKED ]┐"; color: Services.Theme.accent; font.pixelSize: 6; font.family: Services.Theme.fontMono }
-                                                        Text { Layout.alignment: Qt.AlignHCenter; text: Qt.formatDateTime(new Date(), "hh:mm:ss"); color: Services.Theme.white; font.pixelSize: 11; font.bold: true; font.family: Services.Theme.fontMono }
-                                                        Text { Layout.alignment: Qt.AlignHCenter; text: "└[ " + Qt.formatDateTime(new Date(), "yyyy.MM.dd") + " ]┘"; color: Services.Theme.textSecondary; font.pixelSize: 6; font.family: Services.Theme.fontMono }
-                                                    }
-                                                }
-
-                                                // Mini Greeting
-                                                Text {
-                                                    visible: (Services.Config ? Services.Config.lockscreenShowWeather : true) && (Services.Config ? Services.Config.lockscreenClockStyle : "hero") !== "vertical" && (Services.Config ? Services.Config.lockscreenClockStyle : "hero") !== "radial" && (Services.Config ? Services.Config.lockscreenClockStyle : "hero") !== "cyber"
-                                                    Layout.alignment: Qt.AlignHCenter
-                                                    text: "Welcome back, " + (Services.OsInfo.username || "User")
-                                                    color: Services.Theme.textSecondary
-                                                    font.pixelSize: 7
-                                                }
-                                            }
-
-                                            // Mini Auth Input Bar
-                                            Rectangle {
-                                                anchors.horizontalCenter: parent.horizontalCenter
-                                                anchors.bottom: parent.bottom
-                                                anchors.bottomMargin: 26
-                                                width: 130; height: 16; radius: 8
-                                                color: Qt.rgba(Services.Theme.surfaceVariant.r, Services.Theme.surfaceVariant.g, Services.Theme.surfaceVariant.b, 0.75)
-                                                border.color: Services.Theme.border; border.width: 1
-                                                RowLayout {
-                                                    anchors.fill: parent
-                                                    anchors.leftMargin: 8; anchors.rightMargin: 8
-                                                    Text { text: "••••••••"; color: Services.Theme.textDisabled; font.pixelSize: 7; Layout.fillWidth: true }
-                                                    Text { text: "󰌾"; font.family: Services.Theme.fontSymbols; font.pixelSize: 7; color: Services.Theme.accent }
-                                                }
-                                            }
-
-                                            // Mini Power Button (Bottom Right)
-                                            Rectangle {
-                                                anchors.right: parent.right
-                                                anchors.bottom: parent.bottom
-                                                anchors.margins: 6
-                                                height: 14; width: 14; radius: 7
-                                                color: Qt.rgba(Services.Theme.bgDeep.r, Services.Theme.bgDeep.g, Services.Theme.bgDeep.b, 0.75)
-                                                border.color: Services.Theme.border; border.width: 1
-                                                visible: Services.Config ? Services.Config.lockscreenShowQuickPower : true
-                                                Text {
-                                                    anchors.centerIn: parent
-                                                    text: Services.Icons.power
-                                                    font.family: Services.Theme.fontSymbols
-                                                    font.pixelSize: 7
-                                                    color: Services.Theme.danger
-                                                }
-                                            }
-
-                                            // Live Preview Tag Badge
-                                            Rectangle {
-                                                anchors.left: parent.left
-                                                anchors.bottom: parent.bottom
-                                                anchors.margins: 6
-                                                height: 14; width: 66; radius: 4
-                                                color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.2)
-                                                border.color: Services.Theme.accent; border.width: 1
-                                                Text {
-                                                    anchors.centerIn: parent
-                                                    text: "LIVE PREVIEW"
-                                                    font.pixelSize: 7
-                                                    font.bold: true
-                                                    color: Services.Theme.accent
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-
-                                // ── Card 1: Lockscreen Wallpaper & Backdrop ──
-                                SettingsCard {
-                                    implicitHeight: lockBgCol.implicitHeight + 28
-
-                                    ColumnLayout {
-                                        id: lockBgCol
-                                        anchors.fill: parent
-                                        anchors.margins: 14
-                                        spacing: 14
-
-                                        Text {
-                                            text: "Lockscreen Wallpaper & Backdrop"
-                                            font.pixelSize: Services.Theme.fontSizeLg
-                                            font.bold: true
-                                            color: Services.Theme.textPrimary
-                                        }
-
-                                        SettingsSegmentedOverview {
-                                            icon: Services.Icons.palette
-                                            title: "Lockscreen Wallpaper Source"
-                                            subtitle: "Choose whether lockscreen syncs with desktop wallpaper or uses dedicated image"
-                                            currentValue: Services.Config ? Services.Config.lockscreenWallpaperMode : "sync"
-                                            model: [
-                                                { id: "sync",   label: "Sync Desktop Wallpaper", desc: "Follows active wallpaper automatically", icon: Services.Icons.display },
-                                                { id: "custom", label: "Custom Lock Image",      desc: "Choose dedicated lockscreen background", icon: Services.Icons.image }
-                                            ]
-                                            onSelected: (val) => {
-                                                if (Services.Config) Services.Config.setLockscreenWallpaperMode(val)
-                                            }
-                                        }
-
-                                        // Custom Image Picker Row (visible if mode is custom)
-                                        Rectangle {
-                                            visible: (Services.Config ? Services.Config.lockscreenWallpaperMode : "sync") === "custom"
-                                            Layout.fillWidth: true
-                                            implicitHeight: customPickRow.implicitHeight + 20
-                                            radius: Services.Theme.radiusSm
-                                            color: Services.Theme.bgElevated
-                                            border.color: Services.Theme.border
-                                            border.width: 1
-
-                                            RowLayout {
-                                                id: customPickRow
-                                                anchors.fill: parent
-                                                anchors.margins: 10
-                                                spacing: 12
-
-                                                Rectangle {
-                                                    width: 40; height: 40; radius: 8
-                                                    color: Services.Theme.surfaceVariant
-                                                    border.color: Services.Theme.border; border.width: 1
 
                                                     Image {
                                                         anchors.fill: parent
-                                                        anchors.margins: 1
-                                                        source: (Services.Config && Services.Config.lockscreenCustomWallpaper.length > 0) ? ("file://" + Services.Config.lockscreenCustomWallpaper) : ""
+                                                        source: modelData.path.startsWith("/") ? ("file://" + modelData.path) : modelData.path
                                                         fillMode: Image.PreserveAspectCrop
-                                                        visible: source.toString().length > 0
+                                                        asynchronous: true
+                                                        smooth: true
+                                                        opacity: isCur || wCardMouse.containsMouse ? 1.0 : 0.75
                                                     }
 
-                                                    Text {
-                                                        anchors.centerIn: parent
-                                                        text: Services.Icons.image
-                                                        font.family: Services.Theme.fontSymbols
-                                                        font.pixelSize: 18
+                                                    Rectangle {
+                                                        visible: isCur
+                                                        anchors.top: parent.top; anchors.right: parent.right
+                                                        anchors.margins: 4
+                                                        width: 16; height: 16; radius: 8
                                                         color: Services.Theme.accent
-                                                        visible: !(Services.Config && Services.Config.lockscreenCustomWallpaper.length > 0)
-                                                    }
-                                                }
-
-                                                ColumnLayout {
-                                                    Layout.fillWidth: true
-                                                    spacing: 2
-                                                    Text {
-                                                        text: (Services.Config && Services.Config.lockscreenCustomWallpaper.length > 0) 
-                                                            ? Services.Config.lockscreenCustomWallpaper.substring(Services.Config.lockscreenCustomWallpaper.lastIndexOf("/") + 1)
-                                                            : "No custom image selected"
-                                                        font.pixelSize: Services.Theme.fontSizeSm
-                                                        font.bold: true
-                                                        color: Services.Theme.textPrimary
-                                                        elide: Text.ElideMiddle
-                                                        Layout.fillWidth: true
-                                                    }
-                                                    Text {
-                                                        text: (Services.Config && Services.Config.lockscreenCustomWallpaper.length > 0) 
-                                                            ? Services.Config.lockscreenCustomWallpaper
-                                                            : "Click button to select an image from disk"
-                                                        font.pixelSize: Services.Theme.fontSizeXs
-                                                        color: Services.Theme.textSecondary
-                                                        elide: Text.ElideMiddle
-                                                        Layout.fillWidth: true
-                                                    }
-                                                }
-
-                                                Rectangle {
-                                                    height: 32
-                                                    implicitWidth: btnPickLsTxt.implicitWidth + 24
-                                                    radius: Services.Theme.radiusSm
-                                                    color: pickLsMouse.containsMouse ? Services.Theme.accent : Services.Theme.surfaceVariant
-                                                    border.color: pickLsMouse.containsMouse ? Services.Theme.accent : Services.Theme.border
-                                                    border.width: 1
-                                                    Behavior on color { ColorAnimation { duration: 140 } }
-
-                                                    Text {
-                                                        id: btnPickLsTxt
-                                                        anchors.centerIn: parent
-                                                        text: "Choose Image..."
-                                                        font.pixelSize: Services.Theme.fontSizeSm
-                                                        font.bold: true
-                                                        color: pickLsMouse.containsMouse ? Services.Theme.bgDeep : Services.Theme.textPrimary
+                                                        Text { anchors.centerIn: parent; text: Services.Icons.check; font.family: Services.Theme.fontSymbols; font.pixelSize: 8; color: Services.Theme.bgOnAccent }
                                                     }
 
                                                     MouseArea {
-                                                        id: pickLsMouse
+                                                        id: wCardMouse
                                                         anchors.fill: parent
                                                         hoverEnabled: true
                                                         cursorShape: Qt.PointingHandCursor
                                                         onClicked: {
-                                                            if (Services.Wallpaper) Services.Wallpaper.pickLockscreenWallpaper()
+                                                            if (Services.Wallpaper) {
+                                                                Services.Wallpaper.setWallpaper(modelData.path)
+                                                                if (Services.Config && Services.Config.useMatugen) Services.Config.generateMatugen(modelData.path)
+                                                            }
                                                         }
                                                     }
                                                 }
                                             }
                                         }
-
-                                        SettingsDivider {}
-
-                                        SettingsSwitch {
-                                            icon: Services.Icons.sparkle
-                                            title: "Wallpaper Blur (Frosted Glass)"
-                                            subtitle: "Apply hardware-accelerated frosted glass blur on the lockscreen background"
-                                            checked: Services.Config ? Services.Config.lockscreenBlur : true
-                                            onToggled: (st) => {
-                                                if (Services.Config) Services.Config.setLockscreenBlur(st)
-                                            }
-                                        }
-
-                                        SettingsSlider {
-                                            visible: Services.Config ? Services.Config.lockscreenBlur : true
-                                            icon: Services.Icons.sliders
-                                            title: "Backdrop Blur Radius"
-                                            subtitle: "Adjust frosted glass blur intensity for subtle or deep translucent aesthetic"
-                                            from: 10
-                                            to: 100
-                                            stepSize: 5
-                                            valueSuffix: "%"
-                                            value: Math.round((Services.Config ? Services.Config.lockscreenBlurRadius : 0.40) * 100)
-                                            onMoved: (v) => {
-                                                if (Services.Config) Services.Config.setLockscreenBlurRadius(Number((v / 100).toFixed(2)))
-                                            }
-                                        }
-
-                                        SettingsDivider {}
-
-                                        SettingsSlider {
-                                            icon: Services.Icons.moon
-                                            title: "Lockscreen Backdrop Dimming"
-                                            subtitle: "Dark vignette opacity over lockscreen background wallpaper"
-                                            from: 10
-                                            to: 85
-                                            stepSize: 5
-                                            valueSuffix: "%"
-                                            value: Math.round((Services.Config ? Services.Config.lockscreenDim : 0.45) * 100)
-                                            onMoved: (v) => {
-                                                if (Services.Config) Services.Config.setLockscreenDim(Number((v / 100).toFixed(2)))
-                                            }
-                                        }
-
-                                        SettingsDivider {}
-
-                                        SettingsSwitch {
-                                            icon: Services.Icons.expand
-                                            title: "Ken Burns Wallpaper Zoom"
-                                            subtitle: "Smooth subtle wallpaper zoom animation when unlocking or revealing"
-                                            checked: Services.Config ? Services.Config.lockscreenWallpaperZoom : true
-                                            onToggled: (st) => {
-                                                if (Services.Config) Services.Config.setLockscreenWallpaperZoom(st)
-                                            }
-                                        }
                                     }
                                 }
 
-                                // ── Card 2: Lockscreen Typography & Presentation ──
-                                SettingsCard {
-                                    implicitHeight: lockVisualCol.implicitHeight + 28
+                                SettingsDivider {}
 
-                                    ColumnLayout {
-                                        id: lockVisualCol
-                                        anchors.fill: parent
-                                        anchors.margins: 14
-                                        spacing: 14
+                                SettingsRow {
+                                    title: "Custom Wallpaper"
+                                    subtitle: "Add image file from local storage"
+
+                                    Rectangle {
+                                        implicitHeight: 26
+                                        implicitWidth: addBtnText.implicitWidth + 14
+                                        radius: 4
+                                        color: addWpMouse.containsMouse ? Qt.rgba(1, 1, 1, 0.08) : Services.Theme.bgElevated
+                                        border.color: Services.Theme.border
+                                        border.width: 1
 
                                         Text {
-                                            text: "Clock Typography & Presentation"
-                                            font.pixelSize: Services.Theme.fontSizeLg
-                                            font.bold: true
+                                            id: addBtnText
+                                            anchors.centerIn: parent
+                                            text: "+ Add Image..."
+                                            font.pixelSize: 11
+                                            font.weight: Font.Medium
                                             color: Services.Theme.textPrimary
                                         }
 
-                                        SettingsSegmentedOverview {
-                                            icon: Services.Icons.clock
-                                            title: "Lock Clock Typography Style"
-                                            subtitle: "Choose visual time and date presentation on the lockscreen"
-                                            currentValue: Services.Config ? Services.Config.lockscreenClockStyle : "hero"
-                                            model: [
-                                                { id: "hero",        label: "Hero Display",       desc: "Huge Apple-style bold clock", icon: Services.Icons.clock },
-                                                { id: "modern",      label: "Modern Stack",       desc: "Two-tone stacked Hour/Minute", icon: Services.Icons.dashboard },
-                                                { id: "compact",     label: "Compact Pill",       desc: "Discrete minimal capsule pill", icon: Services.Icons.controlcenter },
-                                                { id: "minimal",     label: "Minimalist",         desc: "Clean ultra-light display font", icon: Services.Icons.sparkle },
-                                                { id: "vertical",    label: "Vertical Style",     desc: "Aesthetic side-by-side vertical block", icon: Services.Icons.layout },
-                                                { id: "typographic", label: "Typographic Words",  desc: "Bold editorial text hour & minute words", icon: Services.Icons.notes || Services.Icons.dashboard },
-                                                { id: "radial",      label: "Radial Ring",        desc: "Circular ring gauge with digital core", icon: Services.Icons.sysmon },
-                                                { id: "cyber",       label: "Cyberpunk HUD",      desc: "Futuristic monospace telemetry terminal", icon: Services.Icons.terminal }
-                                            ]
-                                            onSelected: (val) => {
-                                                if (Services.Config) Services.Config.setLockscreenClockStyle(val)
-                                            }
-                                        }
-
-                                        SettingsDivider {}
-
-                                        SettingsSegmentedOverview {
-                                            icon: Services.Icons.pmLock
-                                            title: "Authentication Box Style"
-                                            subtitle: "Choose between a compact floating capsule or a glass profile card"
-                                            currentValue: Services.Config ? Services.Config.lockscreenAuthStyle : "pill"
-                                            model: [
-                                                { id: "pill", label: "Minimalist Pill", desc: "Compact capsule password input", icon: Services.Icons.pmLock },
-                                                { id: "card", label: "Glass Card",      desc: "Frosted glass card with greeting", icon: Services.Icons.controlcenter }
-                                            ]
-                                            onSelected: (val) => {
-                                                if (Services.Config) Services.Config.setLockscreenAuthStyle(val)
-                                            }
-                                        }
-
-                                        SettingsDivider {}
-
-                                        SettingsSwitch {
-                                            icon: Services.Icons.clock
-                                            title: "24-Hour Time Format"
-                                            subtitle: "Display 00:00 to 23:59 time on lockscreen instead of 12-hour format"
-                                            checked: Services.Config ? Services.Config.lockscreen24h : false
-                                            onToggled: (st) => {
-                                                if (Services.Config) Services.Config.setLockscreen24h(st)
-                                            }
-                                        }
-
-                                        SettingsDivider {}
-
-                                        SettingsSwitch {
-                                            icon: Services.Icons.sun
-                                            title: "Ambient Greeting & Username"
-                                            subtitle: "Show time-of-day greeting (Good Morning / Afternoon) and user info"
-                                            checked: Services.Config ? Services.Config.lockscreenShowWeather : true
-                                            onToggled: (st) => {
-                                                if (Services.Config) Services.Config.setLockscreenShowWeather(st)
-                                            }
+                                        MouseArea {
+                                            id: addWpMouse
+                                            anchors.fill: parent
+                                            hoverEnabled: true
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: { if (Services.Wallpaper) Services.Wallpaper.pickCustomWallpaper() }
                                         }
                                     }
                                 }
+                            }
 
-                                // ── Card 3: Lockscreen Widgets & Quick Controls ──
-                                SettingsCard {
-                                    implicitHeight: lockWidgetCol.implicitHeight + 28
+                            // Theme Mode Section
+                            SettingsSection {
+                                title: "Theme & Palette Strategy"
+                                icon: Services.Icons.palette || "🎨"
 
-                                    ColumnLayout {
-                                        id: lockWidgetCol
-                                        anchors.fill: parent
-                                        anchors.margins: 14
-                                        spacing: 14
+                                SettingsRow {
+                                    title: "Theme Mode"
+                                    subtitle: "Global color scheme"
 
-                                        Text {
-                                            text: "Widgets & Status on Lockscreen"
-                                            font.pixelSize: Services.Theme.fontSizeLg
-                                            font.bold: true
-                                            color: Services.Theme.textPrimary
-                                        }
-
-                                        SettingsSwitch {
-                                            icon: Services.Icons.musicNote
-                                            title: "Show Now Playing Media"
-                                            subtitle: "Show active media controls and track info on lockscreen"
-                                            checked: Services.Config ? Services.Config.lockscreenShowMedia : true
-                                            onToggled: (st) => {
-                                                if (Services.Config) Services.Config.setLockscreenShowMedia(st)
-                                            }
-                                        }
-
-                                        SettingsSegmentedOverview {
-                                            visible: Services.Config ? Services.Config.lockscreenShowMedia : true
-                                            icon: Services.Icons.sliders
-                                            title: "Media Widget Display Style"
-                                            subtitle: "Choose between compact bottom capsule or interactive media player card"
-                                            currentValue: Services.Config ? Services.Config.lockscreenMediaStyle : "pill"
-                                            model: [
-                                                { id: "pill", label: "Minimalist Pill", desc: "Compact capsule bar at bottom", icon: Services.Icons.musicNote },
-                                                { id: "card", label: "Interactive Card", desc: "Full player with album art & progress", icon: Services.Icons.sliders }
-                                            ]
-                                            onSelected: (val) => {
-                                                if (Services.Config) Services.Config.setLockscreenMediaStyle(val)
-                                            }
-                                        }
-
-                                        SettingsDivider {}
-
-                                        SettingsSwitch {
-                                            icon: Services.Icons.bell
-                                            title: "Show Notification Previews"
-                                            subtitle: "Display stacked recent notifications below authentication pill"
-                                            checked: Services.Config ? Services.Config.lockscreenShowNotifs : true
-                                            onToggled: (st) => {
-                                                if (Services.Config) Services.Config.setLockscreenShowNotifs(st)
-                                            }
-                                        }
-
-                                        SettingsDivider {}
-
-                                        SettingsSwitch {
-                                            icon: Services.Icons.wifi
-                                            title: "Top Status Bar (Battery, Wi-Fi, BT)"
-                                            subtitle: "Display system connectivity and battery status pill in top header bar"
-                                            checked: Services.Config ? Services.Config.lockscreenShowStatusPill : true
-                                            onToggled: (st) => {
-                                                if (Services.Config) Services.Config.setLockscreenShowStatusPill(st)
-                                            }
-                                        }
-
-                                        SettingsDivider {}
-
-                                        SettingsSwitch {
-                                            icon: Services.Icons.clock
-                                            title: "Show System Uptime Chip"
-                                            subtitle: "Display live system uptime in the lockscreen top status bar"
-                                            checked: Services.Config ? Services.Config.lockscreenShowUptime : true
-                                            onToggled: (st) => {
-                                                if (Services.Config) Services.Config.setLockscreenShowUptime(st)
-                                            }
-                                        }
-
-                                        SettingsDivider {}
-
-                                        SettingsSwitch {
-                                            icon: Services.Icons.power
-                                            title: "Power Menu Button (Bottom Right)"
-                                            subtitle: "Display circular power button that reveals power options on lockscreen"
-                                            checked: Services.Config ? Services.Config.lockscreenShowQuickPower : true
-                                            onToggled: (st) => {
-                                                if (Services.Config) Services.Config.setLockscreenShowQuickPower(st)
-                                            }
-                                        }
+                                    SettingsDropdown {
+                                        currentValue: Services.Config ? Services.Config.themeMode : "light"
+                                        model: [
+                                            { id: "dark",  label: "Dark Mode" },
+                                            { id: "light", label: "Light Mode" }
+                                        ]
+                                        onSelected: (val) => { if (Services.Config) Services.Config.setThemeMode(val) }
                                     }
                                 }
 
-                                // ── Card 4: Power Profile & Battery Management ──
-                                SettingsCard {
-                                    implicitHeight: pwrCol.implicitHeight + 28
+                                SettingsDivider {}
 
-                                    ColumnLayout {
-                                        id: pwrCol
+                                SettingsSwitch {
+                                    title: "Matugen Dynamic Theme"
+                                    subtitle: "Extract harmonious color palette directly from wallpaper"
+                                    checked: Services.Config ? Services.Config.useMatugen : false
+                                    onToggled: (st) => {
+                                        if (Services.Config) {
+                                            Services.Config.setUseMatugen(st, Services.Wallpaper ? Services.Wallpaper.currentWallpaper : "")
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Accent Color Presets
+                            SettingsSection {
+                                title: "Accent Color Swatches"
+                                icon: Services.Icons.brush
+
+                                Item {
+                                    Layout.fillWidth: true
+                                    implicitHeight: palGrid.implicitHeight + 12
+                                    Layout.margins: 6
+
+                                    GridLayout {
+                                        id: palGrid
                                         anchors.fill: parent
-                                        anchors.margins: 14
-                                        spacing: 14
+                                        columns: 3
+                                        columnSpacing: 6
+                                        rowSpacing: 6
 
-                                        Text {
-                                            text: "System Power Profile & Battery"
-                                            font.pixelSize: Services.Theme.fontSizeLg
-                                            font.bold: true
-                                            color: Services.Theme.textPrimary
-                                        }
+                                        Repeater {
+                                            model: Services.Config ? Services.Config.accentPresets : []
+                                            delegate: Rectangle {
+                                                required property var modelData
+                                                Layout.fillWidth: true
+                                                height: 32
+                                                radius: 6
+                                                readonly property bool isCur: Services.Config && Services.Config.accentName === modelData.name
 
-                                        SettingsSegmentedOverview {
-                                            icon: Services.Icons.power
-                                            title: "CPU Governor Power Profile"
-                                            subtitle: "Select CPU frequency scaling & battery consumption mode"
-                                            currentValue: Services.PowerProfile ? Services.PowerProfile.currentProfile : "balanced"
-                                            model: [
-                                                { id: "power-saver", label: "Power Saver", desc: "Throttles CPU to maximize battery", icon: Services.Icons.tree },
-                                                { id: "balanced",    label: "Balanced",    desc: "Dynamic balance of speed & power", icon: Services.Icons.sliders },
-                                                { id: "performance", label: "Performance", desc: "Max clocks for gaming & rendering", icon: Services.Icons.cpu }
-                                            ]
-                                            onSelected: (val) => {
-                                                if (Services.PowerProfile) Services.PowerProfile.setProfile(val)
-                                            }
-                                        }
-
-                                        SettingsDivider {}
-
-                                        // Live Battery Telemetry Gauge Card
-                                        Rectangle {
-                                            Layout.fillWidth: true
-                                            implicitHeight: battGaugeCol.implicitHeight + 24
-                                            radius: Services.Theme.radiusSm
-                                            color: Services.Theme.bgElevated
-                                            border.color: Services.Theme.border
-                                            border.width: 1
-
-                                            ColumnLayout {
-                                                id: battGaugeCol
-                                                anchors.fill: parent
-                                                anchors.margins: 12
-                                                spacing: 10
+                                                color: isCur ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.12) : (palItemMouse.containsMouse ? Qt.rgba(1, 1, 1, 0.05) : Services.Theme.bgElevated)
+                                                border.color: isCur ? Services.Theme.accent : Services.Theme.border
+                                                border.width: isCur ? 1.5 : 1
 
                                                 RowLayout {
-                                                    Layout.fillWidth: true
-                                                    spacing: 10
+                                                    anchors.fill: parent
+                                                    anchors.leftMargin: 8
+                                                    anchors.rightMargin: 8
+                                                    spacing: 6
 
                                                     Rectangle {
-                                                        Layout.preferredWidth: 36
-                                                        Layout.preferredHeight: 36
-                                                        Layout.alignment: Qt.AlignVCenter
-                                                        radius: 8
-                                                        color: Services.Power.charging 
-                                                            ? Qt.rgba(Services.Theme.success.r, Services.Theme.success.g, Services.Theme.success.b, 0.15) 
-                                                            : (Services.Power.isLow ? Qt.rgba(Services.Theme.danger.r, Services.Theme.danger.g, Services.Theme.danger.b, 0.15) : Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.15))
-
-                                                        Text {
-                                                            anchors.centerIn: parent
-                                                            text: Services.Icons.powerIcon(Services.Power.charging, Math.round((Services.Power.percentage || 0) * 100))
-                                                            font.family: Services.Theme.fontSymbols
-                                                            font.pixelSize: 18
-                                                            color: Services.Power.charging 
-                                                                ? Services.Theme.success 
-                                                                : (Services.Power.isLow ? Services.Theme.danger : (Services.Power.isWarning ? Services.Theme.warning : Services.Theme.accent))
-                                                        }
+                                                        width: 12; height: 12; radius: 6
+                                                        color: modelData.preview || Services.Theme.accent
                                                     }
 
-                                                    ColumnLayout {
+                                                    Text {
                                                         Layout.fillWidth: true
-                                                        Layout.alignment: Qt.AlignVCenter
-                                                        spacing: 2
-
-                                                        RowLayout {
-                                                            spacing: 8
-                                                            Text {
-                                                                text: Services.Power.hasBattery ? (Math.round((Services.Power.percentage || 0) * 100) + "% Battery Available") : "AC Power Connected"
-                                                                font.pixelSize: Services.Theme.fontSizeMd
-                                                                font.bold: true
-                                                                color: Services.Theme.textPrimary
-                                                            }
-                                                            Rectangle {
-                                                                height: 16; radius: 4
-                                                                implicitWidth: bStateTxt.implicitWidth + 8
-                                                                color: Services.Power.charging ? Qt.rgba(Services.Theme.success.r, Services.Theme.success.g, Services.Theme.success.b, 0.15) : Services.Theme.bgHover
-                                                                border.color: Services.Power.charging ? Services.Theme.success : Services.Theme.border
-                                                                border.width: 1
-                                                                Text {
-                                                                    id: bStateTxt
-                                                                    anchors.centerIn: parent
-                                                                    text: Services.Power.stateString || "Normal"
-                                                                    font.pixelSize: 8
-                                                                    font.bold: true
-                                                                    color: Services.Power.charging ? Services.Theme.success : Services.Theme.textSecondary
-                                                                }
-                                                            }
-                                                        }
-
-                                                        Text {
-                                                            text: Services.Power.charging ? "Device is actively charging" : (Services.Power.isLow ? "Battery low! Connect AC adapter" : "Operating on battery power")
-                                                            font.pixelSize: Services.Theme.fontSizeXs
-                                                            color: Services.Theme.textSecondary
-                                                        }
+                                                        text: modelData.name
+                                                        font.pixelSize: 11
+                                                        font.weight: isCur ? Font.DemiBold : Font.Normal
+                                                        color: isCur ? Services.Theme.textPrimary : Services.Theme.textSecondary
+                                                        elide: Text.ElideRight
                                                     }
-                                                }
-
-                                                // Progress bar
-                                                Rectangle {
-                                                    Layout.fillWidth: true
-                                                    height: 8
-                                                    radius: 4
-                                                    color: Services.Theme.bgDeep
-
-                                                    Rectangle {
-                                                        width: Math.max(8, parent.width * Math.min(1.0, Math.max(0.0, Services.Power.percentage || 0)))
-                                                        height: parent.height
-                                                        radius: 4
-                                                        color: Services.Power.charging 
-                                                            ? Services.Theme.success 
-                                                            : (Services.Power.isLow ? Services.Theme.danger : (Services.Power.isWarning ? Services.Theme.warning : Services.Theme.accent))
-                                                        Behavior on width { NumberAnimation { duration: 300; easing.type: Easing.OutCubic } }
-                                                        Behavior on color { ColorAnimation { duration: 200 } }
-                                                    }
-                                                }
-                                            }
-                                        }
-
-                                        SettingsDivider {}
-
-                                        SettingsSwitch {
-                                            icon: Services.Icons.speaker
-                                            title: "Low Battery Warning Alerts"
-                                            subtitle: "Play sound and show notifications when battery level is critically low"
-                                            checked: Services.Config ? Services.Config.batteryShowWarnings : true
-                                            onToggled: (st) => {
-                                                if (Services.Config) Services.Config.setBatteryShowWarnings(st)
-                                            }
-                                        }
-
-                                        SettingsDivider {}
-
-                                        SettingsSlider {
-                                            icon: Services.Icons.sliders
-                                            title: "Battery Warning Threshold"
-                                            subtitle: "Trigger low battery alerts when remaining charge drops below"
-                                            from: 10
-                                            to: 35
-                                            stepSize: 5
-                                            valueSuffix: "%"
-                                            value: Services.Config ? Services.Config.batteryLowThreshold : 20
-                                            onMoved: (v) => {
-                                                if (Services.Config) Services.Config.setBatteryLowThreshold(Math.round(v))
-                                            }
-                                        }
-                                    }
-                                }
-
-                                // ── Card 5: Quick Session & Power Actions ──
-                                SettingsCard {
-                                    implicitHeight: quickPwrCol.implicitHeight + 28
-
-                                    ColumnLayout {
-                                        id: quickPwrCol
-                                        anchors.fill: parent
-                                        anchors.margins: 14
-                                        spacing: 12
-
-                                        Text {
-                                            text: "Quick Session & Power Controls"
-                                            font.pixelSize: Services.Theme.fontSizeLg
-                                            font.bold: true
-                                            color: Services.Theme.textPrimary
-                                        }
-
-                                        GridLayout {
-                                            Layout.fillWidth: true
-                                            columns: 2
-                                            rowSpacing: 10
-                                            columnSpacing: 10
-
-                                            // Lock Screen Now
-                                            Rectangle {
-                                                Layout.fillWidth: true
-                                                height: 40
-                                                radius: Services.Theme.radiusSm
-                                                color: btnLockMouse.containsMouse ? Services.Theme.bgHover : Services.Theme.bgElevated
-                                                border.color: btnLockMouse.containsMouse ? Services.Theme.borderHighlight : Services.Theme.border
-                                                border.width: 1
-                                                Behavior on color { ColorAnimation { duration: 180; easing.type: Easing.OutCubic } }
-                                                Behavior on border.color { ColorAnimation { duration: 180; easing.type: Easing.OutCubic } }
-
-                                                RowLayout {
-                                                    anchors.centerIn: parent
-                                                    spacing: 6
-                                                    Text { text: "󰌾"; font.family: Services.Theme.fontSymbols; font.pixelSize: 13; color: Services.Theme.accent }
-                                                    Text { text: "Lock Screen Now"; font.pixelSize: Services.Theme.fontSizeSm; font.bold: true; color: Services.Theme.textPrimary }
-                                                }
-
-                                                MouseArea {
-                                                    id: btnLockMouse
-                                                    anchors.fill: parent
-                                                    hoverEnabled: true
-                                                    cursorShape: Qt.PointingHandCursor
-                                                    onClicked: {
-                                                        rootWindow.hide()
-                                                        lockSessionProc.running = true
-                                                    }
-                                                }
-                                            }
-
-                                            // Suspend System
-                                            Rectangle {
-                                                Layout.fillWidth: true
-                                                height: 40
-                                                radius: Services.Theme.radiusSm
-                                                color: btnSleepMouse.containsMouse ? Services.Theme.bgHover : Services.Theme.bgElevated
-                                                border.color: btnSleepMouse.containsMouse ? Services.Theme.borderHighlight : Services.Theme.border
-                                                border.width: 1
-                                                Behavior on color { ColorAnimation { duration: 180; easing.type: Easing.OutCubic } }
-                                                Behavior on border.color { ColorAnimation { duration: 180; easing.type: Easing.OutCubic } }
-
-                                                RowLayout {
-                                                    anchors.centerIn: parent
-                                                    spacing: 6
-                                                    Text { text: Services.Icons.pmSleep; font.family: Services.Theme.fontSymbols; font.pixelSize: 13; color: Services.Theme.accent }
-                                                    Text { text: "Suspend System"; font.pixelSize: Services.Theme.fontSizeSm; font.bold: true; color: Services.Theme.textPrimary }
-                                                }
-
-                                                MouseArea {
-                                                    id: btnSleepMouse
-                                                    anchors.fill: parent
-                                                    hoverEnabled: true
-                                                    cursorShape: Qt.PointingHandCursor
-                                                    onClicked: suspendProc.running = true
-                                                }
-                                            }
-
-                                            // Reboot System
-                                            Rectangle {
-                                                Layout.fillWidth: true
-                                                height: 40
-                                                radius: Services.Theme.radiusSm
-                                                color: btnRebootMouse.containsMouse ? Services.Theme.bgHover : Services.Theme.bgElevated
-                                                border.color: btnRebootMouse.containsMouse ? Services.Theme.warning : Services.Theme.border
-                                                border.width: 1
-                                                Behavior on color { ColorAnimation { duration: 180; easing.type: Easing.OutCubic } }
-                                                Behavior on border.color { ColorAnimation { duration: 180; easing.type: Easing.OutCubic } }
-
-                                                RowLayout {
-                                                    anchors.centerIn: parent
-                                                    spacing: 6
-                                                    Text { text: Services.Icons.pmRestart; font.family: Services.Theme.fontSymbols; font.pixelSize: 13; color: Services.Theme.warning }
-                                                    Text { text: "Reboot System"; font.pixelSize: Services.Theme.fontSizeSm; font.bold: true; color: Services.Theme.textPrimary }
-                                                }
-
-                                                MouseArea {
-                                                    id: btnRebootMouse
-                                                    anchors.fill: parent
-                                                    hoverEnabled: true
-                                                    cursorShape: Qt.PointingHandCursor
-                                                    onClicked: rebootProc.running = true
-                                                }
-                                            }
-
-                                            // Power Off System
-                                            Rectangle {
-                                                Layout.fillWidth: true
-                                                height: 40
-                                                radius: Services.Theme.radiusSm
-                                                color: btnPowerMouse.containsMouse ? Qt.rgba(Services.Theme.danger.r, Services.Theme.danger.g, Services.Theme.danger.b, 0.2) : Services.Theme.bgElevated
-                                                border.color: btnPowerMouse.containsMouse ? Services.Theme.danger : Services.Theme.border
-                                                border.width: 1
-                                                Behavior on color { ColorAnimation { duration: 180; easing.type: Easing.OutCubic } }
-                                                Behavior on border.color { ColorAnimation { duration: 180; easing.type: Easing.OutCubic } }
-
-                                                RowLayout {
-                                                    anchors.centerIn: parent
-                                                    spacing: 6
-                                                    Text { text: Services.Icons.power; font.family: Services.Theme.fontSymbols; font.pixelSize: 13; color: Services.Theme.danger }
-                                                    Text { text: "Power Off System"; font.pixelSize: Services.Theme.fontSizeSm; font.bold: true; color: Services.Theme.danger }
-                                                }
-
-                                                MouseArea {
-                                                    id: btnPowerMouse
-                                                    anchors.fill: parent
-                                                    hoverEnabled: true
-                                                    cursorShape: Qt.PointingHandCursor
-                                                    onClicked: poweroffProc.running = true
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-
-                            // ─────────────────────────────────────────────────
-                            // PAGE 5: COMPOSITOR & CONFIG EDITOR
-                            // ─────────────────────────────────────────────────
-                            ColumnLayout {
-                                visible: rootWindow.currentTab === 5
-                                Layout.fillWidth: true
-                                spacing: 14
-
-                                // Compositor Status Banner
-                                SettingsCard {
-                                    implicitHeight: compStatusCol.implicitHeight + 28
-
-                                    ColumnLayout {
-                                        id: compStatusCol
-                                        anchors.fill: parent
-                                        anchors.margins: 14
-                                        spacing: 12
-
-                                        RowLayout {
-                                            Layout.fillWidth: true
-                                            spacing: 14
-
-                                            Rectangle {
-                                                Layout.preferredWidth: 44
-                                                Layout.preferredHeight: 44
-                                                Layout.alignment: Qt.AlignVCenter
-                                                radius: 10
-                                                color: Services.Theme.accent
-                                                Text {
-                                                    anchors.centerIn: parent
-                                                    text: Services.Icons.display
-                                                    font.family: Services.Theme.fontSymbols
-                                                    font.pixelSize: 20
-                                                    color: Services.Theme.bgOnAccent
-                                                }
-                                            }
-
-                                            ColumnLayout {
-                                                Layout.fillWidth: true
-                                                Layout.alignment: Qt.AlignVCenter
-                                                spacing: 2
-
-                                                RowLayout {
-                                                    spacing: 8
-                                                    Text {
-                                                        text: Services.Compositor ? Services.Compositor.activeDisplayName : "Wayland Compositor"
-                                                        font.pixelSize: Services.Theme.fontSizeLg
-                                                        font.bold: true
-                                                        color: Services.Theme.textPrimary
-                                                    }
-                                                    Rectangle {
-                                                        height: 18; radius: 4
-                                                        implicitWidth: statTxt.implicitWidth + 10
-                                                        color: Qt.rgba(0.2, 0.8, 0.4, 0.2)
-                                                        border.color: Services.Theme.success
-                                                        border.width: 1
-                                                        Text {
-                                                            id: statTxt
-                                                            anchors.centerIn: parent
-                                                            text: "ACTIVE"
-                                                            font.pixelSize: 8
-                                                            font.bold: true
-                                                            color: Services.Theme.success
-                                                        }
-                                                    }
-                                                }
-                                                Text {
-                                                    text: "Live Hyprland IPC connected • Real-time decoration & geometry control"
-                                                    font.pixelSize: Services.Theme.fontSizeXs
-                                                    color: Services.Theme.textSecondary
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-
-                                // Visual Effects Card
-                                SettingsCard {
-                                    visible: Services.Compositor && Services.Compositor.activeCompositor === "hyprland"
-                                    implicitHeight: hyprCol.implicitHeight + 28
-
-                                    ColumnLayout {
-                                        id: hyprCol
-                                        anchors.fill: parent
-                                        anchors.margins: 14
-                                        spacing: 12
-
-                                        Text {
-                                            text: "Live Visual Effects & Decoration"
-                                            font.pixelSize: Services.Theme.fontSizeLg
-                                            font.bold: true
-                                            color: Services.Theme.textPrimary
-                                        }
-
-                                        SettingsSwitch {
-                                            icon: Services.Icons.wand
-                                            title: "Compositor Animations"
-                                            subtitle: "Enable smooth window transitions & popups"
-                                            checked: Services.Compositor ? Services.Compositor.hyprAnim : true
-                                            onToggled: () => { if (Services.Compositor) Services.Compositor.toggleHyprAnim() }
-                                        }
-                                        SettingsDivider {}
-
-                                        SettingsSwitch {
-                                            icon: Services.Icons.brush
-                                            title: "Dual Kawase Blur"
-                                            subtitle: "Background glass blur for windows & panels"
-                                            checked: Services.Compositor ? Services.Compositor.hyprBlur : true
-                                            onToggled: () => { if (Services.Compositor) Services.Compositor.toggleHyprBlur() }
-                                        }
-                                        SettingsDivider {}
-
-                                        SettingsSwitch {
-                                            icon: Services.Icons.moon
-                                            title: "Window Drop Shadows"
-                                            subtitle: "Floating window drop shadow rendering"
-                                            checked: Services.Compositor ? Services.Compositor.hyprShadow : true
-                                            onToggled: () => { if (Services.Compositor) Services.Compositor.toggleHyprShadow() }
-                                        }
-                                        SettingsDivider {}
-
-                                        SettingsSwitch {
-                                            icon: Services.Icons.eyeClosed
-                                            title: "Dim Inactive Windows"
-                                            subtitle: "Darken unfocused background windows"
-                                            checked: Services.Compositor ? Services.Compositor.hyprDimInactive : false
-                                            onToggled: () => { if (Services.Compositor) Services.Compositor.toggleHyprDimInactive() }
-                                        }
-
-                                        SettingsDivider {}
-
-                                        SettingsSlider {
-                                            icon: Services.Icons.brush
-                                            title: "Blur Size"
-                                            subtitle: "Radius of the gaussian/kawase blur convolution kernel"
-                                            from: 1; to: 16; stepSize: 1; valueSuffix: "px"
-                                            value: Services.Compositor ? Services.Compositor.hyprBlurSize : 4
-                                            onMoved: (v) => { if (Services.Compositor) Services.Compositor.setHyprBlurSize(Math.round(v)) }
-                                        }
-
-                                        SettingsDivider {}
-
-                                        SettingsSlider {
-                                            icon: Services.Icons.sliders
-                                            title: "Blur Passes"
-                                            subtitle: "Number of sampling passes (smoother glass effect)"
-                                            from: 1; to: 5; stepSize: 1; valueSuffix: "x"
-                                            value: Services.Compositor ? Services.Compositor.hyprBlurPasses : 2
-                                            onMoved: (v) => { if (Services.Compositor) Services.Compositor.setHyprBlurPasses(Math.round(v)) }
-                                        }
-
-                                        SettingsDivider {}
-
-                                        SettingsSlider {
-                                            icon: Services.Icons.moon
-                                            title: "Shadow Range"
-                                            subtitle: "Shadow spread distance in pixels"
-                                            from: 0; to: 36; stepSize: 1; valueSuffix: "px"
-                                            value: Services.Compositor ? Services.Compositor.hyprShadowRange : 12
-                                            onMoved: (v) => { if (Services.Compositor) Services.Compositor.setHyprShadowRange(Math.round(v)) }
-                                        }
-
-                                        SettingsDivider {}
-
-                                        SettingsSlider {
-                                            icon: Services.Icons.display
-                                            title: "Active Window Opacity"
-                                            subtitle: "Opacity multiplier for currently focused application"
-                                            from: 0.50; to: 1.00; stepSize: 0.01; decimals: 2
-                                            value: Services.Compositor ? Services.Compositor.hyprActiveOpacity : 0.9
-                                            onMoved: (v) => { if (Services.Compositor) Services.Compositor.setHyprActiveOpacity(Number(v.toFixed(2))) }
-                                        }
-
-                                        SettingsDivider {}
-
-                                        SettingsSlider {
-                                            icon: Services.Icons.display
-                                            title: "Inactive Window Opacity"
-                                            subtitle: "Opacity multiplier for unfocused background windows"
-                                            from: 0.50; to: 1.00; stepSize: 0.01; decimals: 2
-                                            value: Services.Compositor ? Services.Compositor.hyprInactiveOpacity : 0.95
-                                            onMoved: (v) => { if (Services.Compositor) Services.Compositor.setHyprInactiveOpacity(Number(v.toFixed(2))) }
-                                        }
-                                    }
-                                }
-
-                                // Geometry, Layout & Gaps Card
-                                SettingsCard {
-                                    visible: Services.Compositor && Services.Compositor.activeCompositor === "hyprland"
-                                    implicitHeight: hyprGeomCol.implicitHeight + 28
-
-                                    ColumnLayout {
-                                        id: hyprGeomCol
-                                        anchors.fill: parent
-                                        anchors.margins: 14
-                                        spacing: 14
-
-                                        Text {
-                                            text: "Window Geometry, Spacing & Layout"
-                                            font.pixelSize: Services.Theme.fontSizeLg
-                                            font.bold: true
-                                            color: Services.Theme.textPrimary
-                                        }
-
-                                        SettingsSlider {
-                                            icon: Services.Icons.sliders
-                                            title: "Window Corner Rounding"
-                                            subtitle: "Corner radius applied to all client windows"
-                                            from: 0; to: 28; stepSize: 1; valueSuffix: "px"
-                                            value: Services.Compositor ? Services.Compositor.hyprRounding : 10
-                                            onMoved: (v) => { if (Services.Compositor) Services.Compositor.setHyprRounding(Math.round(v)) }
-                                        }
-
-                                        SettingsDivider {}
-
-                                        SettingsSlider {
-                                            icon: Services.Icons.sliders
-                                            title: "Window Border Size"
-                                            subtitle: "Outline border thickness in pixels"
-                                            from: 0; to: 6; stepSize: 1; valueSuffix: "px"
-                                            value: Services.Compositor ? Services.Compositor.hyprBorderSize : 0
-                                            onMoved: (v) => { if (Services.Compositor) Services.Compositor.setHyprBorderSize(Math.round(v)) }
-                                        }
-
-                                        SettingsDivider {}
-
-                                        SettingsSlider {
-                                            icon: Services.Icons.sliders
-                                            title: "Gaps In (Window Spacing)"
-                                            subtitle: "Inner padding distance between tiled windows"
-                                            from: 0; to: 24; stepSize: 1; valueSuffix: "px"
-                                            value: Services.Compositor ? Services.Compositor.hyprGapsIn : 5
-                                            onMoved: (v) => { if (Services.Compositor) Services.Compositor.setHyprGapsIn(Math.round(v)) }
-                                        }
-
-                                        SettingsDivider {}
-
-                                        SettingsSlider {
-                                            icon: Services.Icons.sliders
-                                            title: "Gaps Out (Screen Margin)"
-                                            subtitle: "Outer margin distance from screen edges and desktop bar"
-                                            from: 0; to: 36; stepSize: 1; valueSuffix: "px"
-                                            value: Services.Compositor ? Services.Compositor.hyprGapsOut : 10
-                                            onMoved: (v) => { if (Services.Compositor) Services.Compositor.setHyprGapsOut(Math.round(v)) }
-                                        }
-
-                                        SettingsDivider {}
-
-                                        // Tiling Layout Overview
-                                        SettingsSegmentedOverview {
-                                            icon: Services.Icons.display
-                                            title: "Tiling Layout Engine"
-                                            subtitle: "Window management layout strategy"
-                                            currentValue: Services.Compositor ? Services.Compositor.hyprLayout : "dwindle"
-                                            model: [
-                                                { id: "scrolling", label: "Scrolling", desc: "Niri / PaperWM tape", icon: Services.Icons.sliders },
-                                                { id: "dwindle",   label: "Dwindle",   desc: "BSP dynamic split", icon: Services.Icons.display },
-                                                { id: "master",    label: "Master",    desc: "Master & vertical stack", icon: Services.Icons.terminal }
-                                            ]
-                                            onSelected: (val) => {
-                                                if (Services.Compositor) Services.Compositor.setHyprLayout(val)
-                                            }
-                                        }
-
-                                        SettingsDivider {}
-
-                                        SettingsSwitch {
-                                            icon: Services.Icons.sliders
-                                            title: "Resize on Border"
-                                            subtitle: "Allow dragging window borders directly with the mouse"
-                                            checked: Services.Compositor ? Services.Compositor.hyprResizeOnBorder : false
-                                            onToggled: () => { if (Services.Compositor) Services.Compositor.toggleHyprResizeBorder() }
-                                        }
-                                    }
-                                }
-
-                                // Input & Touchpad Card
-                                SettingsCard {
-                                    visible: Services.Compositor && Services.Compositor.activeCompositor === "hyprland"
-                                    implicitHeight: inputCol.implicitHeight + 28
-
-                                    ColumnLayout {
-                                        id: inputCol
-                                        anchors.fill: parent
-                                        anchors.margins: 14
-                                        spacing: 12
-
-                                        Text {
-                                            text: "Input & Touchpad Behavior"
-                                            font.pixelSize: Services.Theme.fontSizeLg
-                                            font.bold: true
-                                            color: Services.Theme.textPrimary
-                                        }
-
-                                        SettingsSwitch {
-                                            icon: Services.Icons.sliders
-                                            title: "Natural Scrolling"
-                                            subtitle: "Reverse touchpad scroll direction"
-                                            checked: Services.Compositor ? Services.Compositor.hyprTouchpadNatural : true
-                                            onToggled: () => { if (Services.Compositor) Services.Compositor.toggleHyprTouchpadNatural() }
-                                        }
-                                        SettingsDivider {}
-
-                                        SettingsSwitch {
-                                            icon: Services.Icons.checkCircle
-                                            title: "Tap-to-Click"
-                                            subtitle: "Single finger tap on touchpad simulates click"
-                                            checked: Services.Compositor ? Services.Compositor.hyprTouchpadTap : true
-                                            onToggled: () => { if (Services.Compositor) Services.Compositor.toggleHyprTouchpadTap() }
-                                        }
-                                        SettingsDivider {}
-
-                                        SettingsSwitch {
-                                            icon: Services.Icons.keyboard
-                                            title: "Disable While Typing (DWT)"
-                                            subtitle: "Freeze touchpad clicks while typing on keyboard"
-                                            checked: Services.Compositor ? Services.Compositor.hyprTouchpadDwt : false
-                                            onToggled: () => { if (Services.Compositor) Services.Compositor.toggleHyprTouchpadDwt() }
-                                        }
-                                        SettingsDivider {}
-
-                                        SettingsSlider {
-                                            icon: Services.Icons.sliders
-                                            title: "Pointer / Cursor Sensitivity"
-                                            subtitle: "Compositor cursor acceleration multiplier (-1.00 slow to +1.00 fast)"
-                                            from: -1.00; to: 1.00; stepSize: 0.05; decimals: 2
-                                            valuePrefix: (Services.Compositor && Services.Compositor.hyprSensitivity > 0) ? "+" : ""
-                                            value: Services.Compositor ? Services.Compositor.hyprSensitivity : 0.0
-                                            onMoved: (v) => { if (Services.Compositor) Services.Compositor.setHyprSensitivity(Number(v.toFixed(2))) }
-                                        }
-                                    }
-                                }
-
-                                // Detected Compositors List Card
-                                SettingsCard {
-                                    implicitHeight: instCol.implicitHeight + 28
-
-                                    ColumnLayout {
-                                        id: instCol
-                                        anchors.fill: parent
-                                        anchors.margins: 14
-                                        spacing: 10
-
-                                        Text {
-                                            text: "Detected Wayland Compositors"
-                                            font.pixelSize: Services.Theme.fontSizeMd
-                                            font.bold: true
-                                            color: Services.Theme.textPrimary
-                                        }
-
-                                        Repeater {
-                                            model: Services.Compositor ? Services.Compositor.installedCompositors : []
-                                            delegate: RowLayout {
-                                                required property var modelData
-                                                Layout.fillWidth: true
-                                                spacing: 10
-
-                                                Rectangle {
-                                                    Layout.preferredWidth: 28
-                                                    Layout.preferredHeight: 28
-                                                    Layout.alignment: Qt.AlignVCenter
-                                                    radius: 6
-                                                    readonly property bool isCur: modelData.id === (Services.Compositor ? Services.Compositor.activeCompositor : "")
-                                                    color: isCur ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.15) : Services.Theme.bgElevated
 
                                                     Text {
-                                                        anchors.centerIn: parent
-                                                        text: Services.Icons.terminal
+                                                        visible: isCur
+                                                        text: Services.Icons.check
                                                         font.family: Services.Theme.fontSymbols
-                                                        font.pixelSize: 12
-                                                        color: parent.isCur ? Services.Theme.accent : Services.Theme.textDisabled
-                                                    }
-                                                }
-
-                                                Text {
-                                                    Layout.fillWidth: true
-                                                    Layout.alignment: Qt.AlignVCenter
-                                                    text: modelData.name
-                                                    font.pixelSize: Services.Theme.fontSizeSm
-                                                    font.bold: true
-                                                    color: Services.Theme.textPrimary
-                                                }
-
-                                                Rectangle {
-                                                    Layout.preferredHeight: 20
-                                                    Layout.alignment: Qt.AlignVCenter
-                                                    implicitWidth: statusBadgeTxt.implicitWidth + 12
-                                                    radius: 4
-                                                    readonly property bool isActive: modelData.id === (Services.Compositor ? Services.Compositor.activeCompositor : "")
-                                                    color: isActive 
-                                                        ? Qt.rgba(0.2, 0.8, 0.4, 0.2) 
-                                                        : (modelData.isInstalled ? Qt.rgba(0.3, 0.6, 0.9, 0.15) : Qt.rgba(0.5, 0.5, 0.5, 0.1))
-                                                    border.color: isActive ? Services.Theme.success : (modelData.isInstalled ? Services.Theme.accent : Services.Theme.border)
-                                                    border.width: 1
-
-                                                    Text {
-                                                        id: statusBadgeTxt
-                                                        anchors.centerIn: parent
-                                                        text: parent.isActive ? "RUNNING" : (modelData.isInstalled ? "INSTALLED" : "NOT FOUND")
-                                                        font.pixelSize: 8
-                                                        font.bold: true
-                                                        color: parent.isActive ? Services.Theme.success : (modelData.isInstalled ? Services.Theme.accent : Services.Theme.textDisabled)
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-
-                            // ─────────────────────────────────────────────────
-                            // PAGE 6: BACKUP, RESTORE & RESET
-                            // ─────────────────────────────────────────────────
-                            ColumnLayout {
-                                visible: rootWindow.currentTab === 6
-                                Layout.fillWidth: true
-                                spacing: 14
-
-                                SettingsCard {
-                                    implicitHeight: backupNoticeCol.implicitHeight + 24
-                                    color: Qt.rgba(0.2, 0.5, 0.8, 0.12)
-                                    border.color: Services.Theme.accent
-
-                                    RowLayout {
-                                        id: backupNoticeCol
-                                        anchors.fill: parent
-                                        anchors.margins: 14
-                                        spacing: 12
-
-                                        Rectangle {
-                                            Layout.preferredWidth: 36
-                                            Layout.preferredHeight: 36
-                                            Layout.alignment: Qt.AlignVCenter
-                                            radius: 8
-                                            color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.2)
-
-                                            Text {
-                                                anchors.centerIn: parent
-                                                text: Services.Icons.info
-                                                font.family: Services.Theme.fontSymbols
-                                                font.pixelSize: 18
-                                                color: Services.Theme.accent
-                                            }
-                                        }
-
-                                        ColumnLayout {
-                                            Layout.fillWidth: true
-                                            Layout.alignment: Qt.AlignVCenter
-                                            spacing: 2
-                                            Text {
-                                                text: "Original File Snapshot Preserved"
-                                                font.pixelSize: Services.Theme.fontSizeMd
-                                                font.bold: true
-                                                color: Services.Theme.textPrimary
-                                            }
-                                            Text {
-                                                text: "All factory original configuration and component files are archived in .backup_original and defaults/. You can safely experiment and reset anytime."
-                                                font.pixelSize: Services.Theme.fontSizeXs
-                                                color: Services.Theme.textSecondary
-                                                wrapMode: Text.WordWrap
-                                                Layout.fillWidth: true
-                                            }
-                                        }
-                                    }
-                                }
-
-                                SettingsCard {
-                                    implicitHeight: rstCol.implicitHeight + 28
-
-                                    ColumnLayout {
-                                        id: rstCol
-                                        anchors.fill: parent
-                                        anchors.margins: 14
-                                        spacing: 12
-
-                                        Text {
-                                            text: "Reset & Restore Controls"
-                                            font.pixelSize: Services.Theme.fontSizeLg
-                                            font.bold: true
-                                            color: Services.Theme.textPrimary
-                                        }
-
-                                        Rectangle {
-                                            Layout.fillWidth: true
-                                            height: 42
-                                            radius: Services.Theme.radiusSm
-                                            color: rstSetMouse.containsMouse ? Qt.rgba(Services.Theme.danger.r, Services.Theme.danger.g, Services.Theme.danger.b, 0.12) : Services.Theme.bgElevated
-                                            border.color: rstSetMouse.containsMouse ? Services.Theme.danger : Services.Theme.border
-                                            border.width: 1
-                                            Behavior on color { ColorAnimation { duration: 180; easing.type: Easing.OutCubic } }
-                                            Behavior on border.color { ColorAnimation { duration: 180; easing.type: Easing.OutCubic } }
-
-                                            RowLayout {
-                                                anchors.centerIn: parent
-                                                spacing: 8
-                                                Text {
-                                                    text: Services.Icons.undo
-                                                    font.family: Services.Theme.fontSymbols
-                                                    font.pixelSize: 13
-                                                    color: rstSetMouse.containsMouse ? Services.Theme.danger : Services.Theme.accent
-                                                    Behavior on color { ColorAnimation { duration: 180; easing.type: Easing.OutCubic } }
-                                                }
-                                                Text { text: "Reset Preferences to Default"; font.pixelSize: Services.Theme.fontSizeMd; font.bold: true; color: Services.Theme.textPrimary }
-                                            }
-
-                                            MouseArea {
-                                                id: rstSetMouse
-                                                anchors.fill: parent
-                                                hoverEnabled: true
-                                                cursorShape: Qt.PointingHandCursor
-                                                onClicked: {
-                                                    if (Services.Config) Services.Config.resetToDefaults()
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-
-                            // ─────────────────────────────────────────────────
-                            // PAGE 7: ABOUT & KEYS
-                            // ─────────────────────────────────────────────────
-                            ColumnLayout {
-                                visible: rootWindow.currentTab === 7
-                                Layout.fillWidth: true
-                                spacing: 14
-
-                                SettingsCard {
-                                    implicitHeight: sysCol.implicitHeight + 28
-
-                                    RowLayout {
-                                        id: sysCol
-                                        anchors.fill: parent
-                                        anchors.margins: 14
-                                        spacing: 14
-
-                                        Rectangle {
-                                            Layout.preferredWidth: 52
-                                            Layout.preferredHeight: 52
-                                            Layout.alignment: Qt.AlignVCenter
-                                            radius: 12
-                                            color: Services.Theme.accent
-                                            Text {
-                                                anchors.centerIn: parent
-                                                text: Services.OsInfo.logoGlyph || Services.Icons.shell
-                                                font.family: Services.Theme.fontSymbols
-                                                font.pixelSize: 26
-                                                color: Services.Theme.bgOnAccent
-                                            }
-                                        }
-
-                                        ColumnLayout {
-                                            Layout.fillWidth: true
-                                            Layout.alignment: Qt.AlignVCenter
-                                            spacing: 2
-                                            Text {
-                                                text: (Services.OsInfo.distroName || "Linux Desktop")
-                                                font.pixelSize: Services.Theme.fontSize2xl
-                                                font.bold: true
-                                                color: Services.Theme.textPrimary
-                                            }
-                                            Text {
-                                                text: "Host: " + (Services.OsInfo.hostname || "localhost") + "  •  Kernel: " + (Services.OsInfo.kernel || "Linux")
-                                                font.pixelSize: Services.Theme.fontSizeXs
-                                                color: Services.Theme.textSecondary
-                                            }
-                                            Text {
-                                                text: "User: " + (Services.OsInfo.username || "user") + "  •  Compositor: " + (Services.Compositor ? Services.Compositor.activeDisplayName : "Wayland")
-                                                font.pixelSize: Services.Theme.fontSizeXs
-                                                color: Services.Theme.textSecondary
-                                            }
-                                        }
-                                    }
-                                }
-
-                                SettingsCard {
-                                    implicitHeight: scCol.implicitHeight + 28
-
-                                    ColumnLayout {
-                                        id: scCol
-                                        anchors.fill: parent
-                                        anchors.margins: 14
-                                        spacing: 10
-
-                                        Text {
-                                            text: "Desktop Keyboard Shortcuts"
-                                            font.pixelSize: Services.Theme.fontSizeLg
-                                            font.bold: true
-                                            color: Services.Theme.textPrimary
-                                        }
-
-                                        Repeater {
-                                            model: [
-                                                { key: "Super + D", desc: "Application Launcher" },
-                                                { key: "Super + A", desc: "System Dashboard" },
-                                                { key: "Super + C", desc: "Control Center" },
-                                                { key: "Super + V", desc: "Clipboard Manager" },
-                                                { key: "Super + L", desc: "Lock Screen" },
-                                                { key: "Super + Esc", desc: "Power Menu" }
-                                            ]
-                                            delegate: RowLayout {
-                                                required property var modelData
-                                                Layout.fillWidth: true
-                                                spacing: 12
-
-                                                Rectangle {
-                                                    Layout.preferredWidth: 120
-                                                    Layout.preferredHeight: 26
-                                                    Layout.alignment: Qt.AlignVCenter
-                                                    radius: 4
-                                                    color: Services.Theme.bgElevated
-                                                    border.color: Services.Theme.border
-                                                    border.width: 1
-
-                                                    Text {
-                                                        anchors.centerIn: parent
-                                                        text: modelData.key
-                                                        font.family: Services.Theme.fontMono
-                                                        font.pixelSize: 10
-                                                        font.bold: true
+                                                        font.pixelSize: 9
                                                         color: Services.Theme.accent
                                                     }
                                                 }
 
-                                                Text {
-                                                    Layout.fillWidth: true
-                                                    Layout.alignment: Qt.AlignVCenter
-                                                    text: modelData.desc
-                                                    font.pixelSize: Services.Theme.fontSizeSm
-                                                    color: Services.Theme.textPrimary
+                                                MouseArea {
+                                                    id: palItemMouse
+                                                    anchors.fill: parent
+                                                    hoverEnabled: true
+                                                    cursorShape: Qt.PointingHandCursor
+                                                    onClicked: {
+                                                        if (Services.Config) {
+                                                            const hex = (Services.Config.themeMode === "light") ? modelData.lightHex : modelData.darkHex
+                                                            Services.Config.setAccent(hex, modelData.name, modelData.isMatugen)
+                                                            if (modelData.isMatugen && Services.Wallpaper) Services.Config.generateMatugen(Services.Wallpaper.currentWallpaper)
+                                                        }
+                                                    }
                                                 }
                                             }
                                         }
+                                    }
+                                }
+                            }
+
+                            // Typography & UI Scale Section
+                            SettingsSection {
+                                title: "Typography & Geometry"
+                                icon: Services.Icons.font
+
+                                SettingsRow {
+                                    title: "UI Font Family"
+                                    subtitle: "Global font for labels, widgets, and clock"
+
+                                    SettingsDropdown {
+                                        currentValue: {
+                                            const f = Services.Config ? Services.Config.fontFamily : ""
+                                            if (f.indexOf("JetBrains") !== -1) return "jetbrains"
+                                            if (f.indexOf("SFMono") !== -1) return "sfmono"
+                                            if (f.indexOf("Inter") !== -1) return "inter"
+                                            if (f.indexOf("Fira") !== -1) return "firacode"
+                                            return "default"
+                                        }
+                                        model: [
+                                            { id: "sfmono",    label: "SFMono Nerd Font" },
+                                            { id: "jetbrains", label: "JetBrains Mono" },
+                                            { id: "inter",     label: "Inter UI" },
+                                            { id: "firacode",  label: "FiraCode Mono" }
+                                        ]
+                                        onSelected: (val) => {
+                                            if (!Services.Config) return
+                                            if (val === "sfmono") Services.Config.setFontFamily("Liga SFMono Nerd Font, monospace")
+                                            else if (val === "jetbrains") Services.Config.setFontFamily("JetBrainsMono Nerd Font, monospace")
+                                            else if (val === "inter") Services.Config.setFontFamily("Inter, Sans-Serif")
+                                            else if (val === "firacode") Services.Config.setFontFamily("FiraCode Nerd Font, monospace")
+                                        }
+                                    }
+                                }
+
+                                SettingsDivider {}
+
+                                SettingsSlider {
+                                    title: "Corner Rounding"
+                                    subtitle: "Radius for panels, widgets, and popup overlays"
+                                    from: 0; to: 28; stepSize: 1; valueSuffix: "px"
+                                    value: Services.Config ? Services.Config.cornerRadius : 16
+                                    onMoved: (v) => { if (Services.Config) Services.Config.setCornerRadius(Math.round(v)) }
+                                }
+
+                                SettingsDivider {}
+
+                                SettingsSlider {
+                                    title: "UI Scale"
+                                    subtitle: "Proportional scaling factor for all overlays"
+                                    from: 75; to: 135; stepSize: 5; valueSuffix: "%"
+                                    value: Services.Config ? Math.round(Services.Config.uiScale * 100) : 100
+                                    onMoved: (v) => { if (Services.Config) Services.Config.setUiScale(v / 100) }
+                                }
+
+                                SettingsDivider {}
+
+                                SettingsSlider {
+                                    title: "Surface Glass Opacity"
+                                    subtitle: "Transparency level of quickshell overlay cards"
+                                    from: 0.50; to: 1.00; stepSize: 0.05; decimals: 2
+                                    value: Services.Config ? Services.Config.glassOpacity : 0.85
+                                    onMoved: (v) => { if (Services.Config) Services.Config.setGlassOpacity(Number(v.toFixed(2))) }
+                                }
+                            }
+                        }
+
+                        // ═════════════════════════════════════════════
+                        // TAB 1: BAR & DYNAMIC ISLAND
+                        // ═════════════════════════════════════════════
+                        ColumnLayout {
+                            visible: rootWindow.currentTab === 1
+                            Layout.fillWidth: true
+                            spacing: 14
+
+                            SettingsSection {
+                                title: "Bar Architecture & Position"
+                                icon: Services.Icons.controlcenter
+
+                                SettingsRow {
+                                    title: "Bar Architecture Preset"
+                                    subtitle: "Overall layout and visual style"
+
+                                    SettingsDropdown {
+                                        currentValue: Services.Config ? Services.Config.barStyle : "islands"
+                                        model: [
+                                            { id: "islands",  label: "Islands (Capsules)" },
+                                            { id: "floating", label: "Floating Glass Bar" },
+                                            { id: "unified",  label: "Unified Edge-to-Edge" },
+                                            { id: "minimal",  label: "Minimalist Low-Profile" }
+                                        ]
+                                        onSelected: (val) => { if (Services.Config) Services.Config.setBarStyle(val) }
+                                    }
+                                }
+
+                                SettingsDivider {}
+
+                                SettingsRow {
+                                    title: "Screen Placement"
+                                    subtitle: "Dock to top or bottom edge"
+
+                                    SettingsDropdown {
+                                        currentValue: Services.Config ? Services.Config.barPosition : "top"
+                                        model: [
+                                            { id: "top",    label: "Top Status Bar" },
+                                            { id: "bottom", label: "Bottom Dock Bar" }
+                                        ]
+                                        onSelected: (val) => { if (Services.Config) Services.Config.setBarPosition(val) }
+                                    }
+                                }
+                            }
+
+                            SettingsSection {
+                                title: "Dynamic Island HUD"
+                                icon: Services.Icons.bell
+
+                                SettingsRow {
+                                    title: "Notch Display Mode"
+                                    subtitle: "Interactive media & status pill in bar center"
+
+                                    SettingsDropdown {
+                                        currentValue: Services.Config ? Services.Config.islandStyle : "expanded"
+                                        model: [
+                                            { id: "expanded", label: "Full Dynamic Island" },
+                                            { id: "compact",  label: "Compact HUD Notch" },
+                                            { id: "hidden",   label: "Hidden / Off" }
+                                        ]
+                                        onSelected: (val) => { if (Services.Config) Services.Config.setIslandStyle(val) }
+                                    }
+                                }
+                            }
+
+                            SettingsSection {
+                                title: "Workspaces Pager"
+                                icon: Services.Icons.grid
+
+                                SettingsRow {
+                                    title: "Pager Style"
+                                    subtitle: "Visual representation of workspaces"
+
+                                    SettingsDropdown {
+                                        currentValue: Services.Config ? Services.Config.workspaceStyle : "pills"
+                                        model: [
+                                            { id: "pills",   label: "Dynamic Pills" },
+                                            { id: "numbers", label: "Numbered (1, 2, 3...)" },
+                                            { id: "dots",    label: "Minimal Dots" },
+                                            { id: "icons",   label: "Context Icons" }
+                                        ]
+                                        onSelected: (val) => { if (Services.Config) Services.Config.setWorkspaceStyle(val) }
+                                    }
+                                }
+
+                                SettingsDivider {}
+
+                                SettingsSwitch {
+                                    title: "Always Show Primary Workspaces (1–5)"
+                                    subtitle: "Keep primary workspaces visible even when inactive"
+                                    checked: Services.Config ? Services.Config.workspaceShowAll : true
+                                    onToggled: (st) => { if (Services.Config) Services.Config.setWorkspaceShowAll(st) }
+                                }
+                            }
+
+                            SettingsSection {
+                                title: "Clock & Date Typography"
+                                icon: Services.Icons.clock
+
+                                SettingsRow {
+                                    title: "Date Format"
+                                    subtitle: "Display format for calendar date"
+
+                                    SettingsDropdown {
+                                        currentValue: Services.Config ? Services.Config.clockDateFormat : "short"
+                                        model: [
+                                            { id: "short", label: "Short (Kam, 20 Agt)" },
+                                            { id: "full",  label: "Full (Kamis, 20 Agustus)" }
+                                        ]
+                                        onSelected: (val) => { if (Services.Config) Services.Config.setClockDateFormat(val) }
+                                    }
+                                }
+
+                                SettingsDivider {}
+
+                                SettingsSwitch {
+                                    title: "24-Hour Time Format"
+                                    subtitle: "Use 24h clock instead of 12h AM/PM"
+                                    checked: Services.Config ? Services.Config.clock24h : true
+                                    onToggled: (st) => { if (Services.Config) Services.Config.setClock24h(st) }
+                                }
+
+                                SettingsDivider {}
+
+                                SettingsSwitch {
+                                    title: "Display Live Seconds"
+                                    subtitle: "Render real-time ticking seconds"
+                                    checked: Services.Config ? Services.Config.clockShowSeconds : false
+                                    onToggled: (st) => { if (Services.Config) Services.Config.setClockShowSeconds(st) }
+                                }
+
+                                SettingsDivider {}
+
+                                SettingsSwitch {
+                                    title: "Display Date Text"
+                                    subtitle: "Show current day and date prefix in the bar"
+                                    checked: Services.Config ? Services.Config.clockShowDate : true
+                                    onToggled: (st) => { if (Services.Config) Services.Config.setClockShowDate(st) }
+                                }
+                            }
+
+                            SettingsSection {
+                                title: "Bar Modules Visibility"
+                                icon: Services.Icons.eyeOpen || Services.Icons.eye
+
+                                SettingsSwitch {
+                                    title: "Workspaces Pager"
+                                    checked: Services.Config ? Services.Config.showWorkspaces : true
+                                    onToggled: (st) => { if (Services.Config) Services.Config.setShowWorkspaces(st) }
+                                }
+                                SettingsDivider {}
+                                SettingsSwitch {
+                                    title: "System Tray (SNI)"
+                                    checked: Services.Config ? Services.Config.showSysTray : true
+                                    onToggled: (st) => { if (Services.Config) Services.Config.setShowSysTray(st) }
+                                }
+                                SettingsDivider {}
+                                SettingsSwitch {
+                                    title: "System Resource Monitor"
+                                    checked: Services.Config ? Services.Config.showSysmonTray : true
+                                    onToggled: (st) => { if (Services.Config) Services.Config.setShowSysmonTray(st) }
+                                }
+                                SettingsDivider {}
+                                SettingsSwitch {
+                                    title: "Volume & Audio Pill"
+                                    checked: Services.Config ? Services.Config.showVolumeTray : true
+                                    onToggled: (st) => { if (Services.Config) Services.Config.setShowVolumeTray(st) }
+                                }
+                                SettingsDivider {}
+                                SettingsSwitch {
+                                    title: "Battery & Power Indicator"
+                                    checked: Services.Config ? Services.Config.showBatteryTray : true
+                                    onToggled: (st) => { if (Services.Config) Services.Config.setShowBatteryTray(st) }
+                                }
+                                SettingsDivider {}
+                                SettingsSwitch {
+                                    title: "Control Center Trigger Pill"
+                                    checked: Services.Config ? Services.Config.showControlCenterTray : true
+                                    onToggled: (st) => { if (Services.Config) Services.Config.setShowControlCenterTray(st) }
+                                }
+                                SettingsDivider {}
+                                SettingsSwitch {
+                                    title: "Clock & Calendar Pill"
+                                    checked: Services.Config ? Services.Config.showClockTray : true
+                                    onToggled: (st) => { if (Services.Config) Services.Config.setShowClockTray(st) }
+                                }
+                            }
+                        }
+
+                        // ═════════════════════════════════════════════
+                        // TAB 2: NOTIFICATIONS
+                        // ═════════════════════════════════════════════
+                        ColumnLayout {
+                            visible: rootWindow.currentTab === 2
+                            Layout.fillWidth: true
+                            spacing: 14
+
+                            SettingsSection {
+                                title: "Notification Alerts"
+                                icon: Services.Icons.bell
+
+                                SettingsSwitch {
+                                    title: "Do Not Disturb"
+                                    subtitle: "Mute all popups and banner alerts"
+                                    checked: Services.Notifications.doNotDisturb
+                                    onToggled: (st) => { Services.Notifications.doNotDisturb = st }
+                                }
+
+                                SettingsDivider {}
+
+                                SettingsRow {
+                                    title: "Popup Placement"
+                                    subtitle: "Screen corner for notification toasts"
+
+                                    SettingsDropdown {
+                                        currentValue: Services.Config ? Services.Config.notificationPosition : "top_right"
+                                        model: [
+                                            { id: "top_right",    label: "Top Right Corner" },
+                                            { id: "top_center",   label: "Top Center (Notch)" },
+                                            { id: "top_left",     label: "Top Left Corner" },
+                                            { id: "bottom_right", label: "Bottom Right Corner" }
+                                        ]
+                                        onSelected: (val) => { if (Services.Config) Services.Config.setNotificationPosition(val) }
+                                    }
+                                }
+
+                                SettingsDivider {}
+
+                                SettingsSlider {
+                                    title: "Popup Duration"
+                                    subtitle: "How long bubble popups remain on screen"
+                                    from: 2; to: 15; stepSize: 1; valueSuffix: "s"
+                                    value: Services.Config ? Services.Config.notificationTimeout : 5
+                                    onMoved: (v) => { if (Services.Config) Services.Config.setNotificationTimeout(Math.round(v)) }
+                                }
+
+                                SettingsDivider {}
+
+                                SettingsSlider {
+                                    title: "History Retention"
+                                    subtitle: "Days before history entries expire"
+                                    from: 1; to: 7; stepSize: 1; valueSuffix: " days"
+                                    value: Services.Config ? Services.Config.notificationRetentionDays : 7
+                                    onMoved: (v) => { if (Services.Config) Services.Config.setNotificationRetentionDays(Math.round(v)) }
+                                }
+
+                                SettingsDivider {}
+
+                                SettingsRow {
+                                    title: "Test & Actions"
+
+                                    RowLayout {
+                                        spacing: 8
+
+                                        Rectangle {
+                                            height: 28
+                                            implicitWidth: testNotifTxt.implicitWidth + 16
+                                            radius: 5
+                                            color: tNotifMouse.containsMouse ? Qt.rgba(1, 1, 1, 0.08) : Services.Theme.bgElevated
+                                            border.color: Services.Theme.border
+                                            border.width: 1
+                                            Text { id: testNotifTxt; anchors.centerIn: parent; text: "Send Test"; font.pixelSize: 11; font.weight: Font.Medium; color: Services.Theme.textPrimary }
+                                            MouseArea {
+                                                id: tNotifMouse
+                                                anchors.fill: parent
+                                                hoverEnabled: true
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: testNotifProc.running = true
+                                            }
+                                        }
+
+                                        Rectangle {
+                                            height: 28
+                                            implicitWidth: clrNotifTxt.implicitWidth + 16
+                                            radius: 5
+                                            color: clrNotifMouse.containsMouse ? Qt.rgba(0.9, 0.2, 0.2, 0.15) : Services.Theme.bgElevated
+                                            border.color: Services.Theme.border
+                                            border.width: 1
+                                            Text { id: clrNotifTxt; anchors.centerIn: parent; text: "Clear History"; font.pixelSize: 11; font.weight: Font.Medium; color: Services.Theme.danger }
+                                            MouseArea {
+                                                id: clrNotifMouse
+                                                anchors.fill: parent
+                                                hoverEnabled: true
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: { if (Services.Notifications) Services.Notifications.clearHistory() }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // ═════════════════════════════════════════════
+                        // TAB 3: SOUND & AUDIO
+                        // ═════════════════════════════════════════════
+                        ColumnLayout {
+                            visible: rootWindow.currentTab === 3
+                            Layout.fillWidth: true
+                            spacing: 14
+
+                            SettingsSection {
+                                title: "Audio Feedback"
+                                icon: Services.Icons.speaker
+
+                                SettingsSwitch {
+                                    title: "UI Sound Effects"
+                                    subtitle: "Audible feedback for volume adjustments and alerts"
+                                    checked: Services.Config ? Services.Config.soundFeedback : true
+                                    onToggled: (st) => { if (Services.Config) Services.Config.setSoundFeedback(st) }
+                                }
+
+                                SettingsDivider {}
+
+                                SettingsSwitch {
+                                    title: "Volume Adjustment Feedback"
+                                    subtitle: "Tick chime on volume step change"
+                                    checked: Services.Config ? Services.Config.soundVolumeFeedback : true
+                                    onToggled: (st) => { if (Services.Config) Services.Config.setSoundVolumeFeedback(st) }
+                                }
+
+                                SettingsDivider {}
+
+                                SettingsSwitch {
+                                    title: "Notification Chime Sound"
+                                    subtitle: "Audible alert on incoming notification"
+                                    checked: Services.Config ? Services.Config.soundNotifFeedback : true
+                                    onToggled: (st) => { if (Services.Config) Services.Config.setSoundNotifFeedback(st) }
+                                }
+
+                                SettingsDivider {}
+
+                                SettingsRow {
+                                    title: "Audition Sounds"
+
+                                    RowLayout {
+                                        spacing: 6
+
+                                        Rectangle {
+                                            height: 26
+                                            implicitWidth: s1Txt.implicitWidth + 12
+                                            radius: 4
+                                            color: s1Mouse.containsMouse ? Qt.rgba(1, 1, 1, 0.08) : Services.Theme.bgElevated
+                                            border.color: Services.Theme.border; border.width: 1
+                                            Text { id: s1Txt; anchors.centerIn: parent; text: "Notification"; font.pixelSize: 10; color: Services.Theme.textPrimary }
+                                            MouseArea {
+                                                id: s1Mouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                                                onClicked: { if (Services.SoundFeedback && typeof Services.SoundFeedback.playNotification === "function") Services.SoundFeedback.playNotification() }
+                                            }
+                                        }
+
+                                        Rectangle {
+                                            height: 26
+                                            implicitWidth: s2Txt.implicitWidth + 12
+                                            radius: 4
+                                            color: s2Mouse.containsMouse ? Qt.rgba(1, 1, 1, 0.08) : Services.Theme.bgElevated
+                                            border.color: Services.Theme.border; border.width: 1
+                                            Text { id: s2Txt; anchors.centerIn: parent; text: "Volume Step"; font.pixelSize: 10; color: Services.Theme.textPrimary }
+                                            MouseArea {
+                                                id: s2Mouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                                                onClicked: { if (Services.SoundFeedback && typeof Services.SoundFeedback.playVolumeChange === "function") Services.SoundFeedback.playVolumeChange() }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // ═════════════════════════════════════════════
+                        // TAB 4: LOCKSCREEN & POWER
+                        // ═════════════════════════════════════════════
+                        ColumnLayout {
+                            visible: rootWindow.currentTab === 4
+                            Layout.fillWidth: true
+                            spacing: 14
+
+                            SettingsSection {
+                                title: "Lockscreen Display"
+                                icon: Services.Icons.lock
+
+                                SettingsRow {
+                                    title: "Clock Presentation Style"
+                                    subtitle: "Visual typography layout of lockscreen clock"
+
+                                    SettingsDropdown {
+                                        currentValue: Services.Config ? Services.Config.lockscreenClockStyle : "hero"
+                                        model: [
+                                            { id: "hero",        label: "Hero Large" },
+                                            { id: "modern",      label: "Modern Stacked" },
+                                            { id: "minimal",     label: "Minimal Thin" },
+                                            { id: "compact",     label: "Compact Capsule" },
+                                            { id: "vertical",    label: "Vertical Split" },
+                                            { id: "typographic", label: "Typographic Words" },
+                                            { id: "cyber",       label: "Cyberpunk HUD" }
+                                        ]
+                                        onSelected: (val) => { if (Services.Config) Services.Config.setLockscreenClockStyle(val) }
+                                    }
+                                }
+
+                                SettingsDivider {}
+
+                                SettingsRow {
+                                    title: "Wallpaper Backdrop Source"
+                                    subtitle: "Sync with active desktop or choose custom image"
+
+                                    SettingsDropdown {
+                                        currentValue: Services.Config ? Services.Config.lockscreenWallpaperMode : "sync"
+                                        model: [
+                                            { id: "sync",   label: "Sync Desktop Wallpaper" },
+                                            { id: "custom", label: "Custom Dedicated Image" }
+                                        ]
+                                        onSelected: (val) => { if (Services.Config) Services.Config.setLockscreenWallpaperMode(val) }
+                                    }
+                                }
+
+                                SettingsDivider {}
+
+                                SettingsSwitch {
+                                    title: "Blur Wallpaper on Lockscreen"
+                                    subtitle: "Gaussian blur backdrop on locked screen"
+                                    checked: Services.Config ? Services.Config.lockscreenBlur : true
+                                    onToggled: (st) => { if (Services.Config) Services.Config.setLockscreenBlur(st) }
+                                }
+
+                                SettingsDivider {}
+
+                                SettingsSlider {
+                                    title: "Dimming Level"
+                                    subtitle: "Backdrop darkness percentage"
+                                    from: 0.10; to: 0.85; stepSize: 0.05; decimals: 2
+                                    value: Services.Config ? Services.Config.lockscreenDim : 0.45
+                                    onMoved: (v) => { if (Services.Config) Services.Config.setLockscreenDim(Number(v.toFixed(2))) }
+                                }
+
+                                SettingsDivider {}
+
+                                SettingsSwitch {
+                                    title: "Show Status Pill (Battery, Wi-Fi)"
+                                    checked: Services.Config ? Services.Config.lockscreenShowStatusPill : true
+                                    onToggled: (st) => { if (Services.Config) Services.Config.setLockscreenShowStatusPill(st) }
+                                }
+
+                                SettingsDivider {}
+
+                                SettingsSwitch {
+                                    title: "Show System Uptime Tag"
+                                    checked: Services.Config ? Services.Config.lockscreenShowUptime : true
+                                    onToggled: (st) => { if (Services.Config) Services.Config.setLockscreenShowUptime(st) }
+                                }
+                            }
+
+                            // User Profile & Avatar Styling Section
+                            SettingsSection {
+                                title: "User Profile & Avatar"
+                                icon: Services.Icons.user
+
+                                SettingsRow {
+                                    title: "Avatar Profile Shape"
+                                    subtitle: "Geometry and curvature of avatar frame"
+
+                                    SettingsDropdown {
+                                        currentValue: Services.Config ? Services.Config.lockscreenAvatarShape : "circle"
+                                        model: [
+                                            { id: "circle",   label: "Circular (Round 360°)" },
+                                            { id: "squircle", label: "Squircle (Smooth Curvature)" },
+                                            { id: "rounded",  label: "Rounded Square (Radius 16)" }
+                                        ]
+                                        onSelected: (val) => { if (Services.Config) Services.Config.setLockscreenAvatarShape(val) }
+                                    }
+                                }
+
+                                SettingsDivider {}
+
+                                SettingsSwitch {
+                                    title: "Accent Glow Focus Ring"
+                                    subtitle: "Outer breathing glow ring around avatar picture"
+                                    checked: Services.Config ? Services.Config.lockscreenAvatarRing : true
+                                    onToggled: (st) => { if (Services.Config) Services.Config.setLockscreenAvatarRing(st) }
+                                }
+
+                                SettingsDivider {}
+
+                                SettingsSwitch {
+                                    title: "Display Profile Picture"
+                                    subtitle: "Show user avatar or initials monogram"
+                                    checked: Services.Config ? Services.Config.lockscreenShowAvatar : true
+                                    onToggled: (st) => { if (Services.Config) Services.Config.setLockscreenShowAvatar(st) }
+                                }
+
+                                SettingsDivider {}
+
+                                SettingsSwitch {
+                                    title: "Display Greeting Subtitle"
+                                    subtitle: "Show greeting and user@hostname tag"
+                                    checked: Services.Config ? Services.Config.lockscreenShowGreeting : true
+                                    onToggled: (st) => { if (Services.Config) Services.Config.setLockscreenShowGreeting(st) }
+                                }
+                            }
+
+                            // Password Input Styling Section
+                            SettingsSection {
+                                title: "Password Authentication Input"
+                                icon: Services.Icons.keyboard
+
+                                SettingsRow {
+                                    title: "Input Field Design"
+                                    subtitle: "Visual style of password entry field"
+
+                                    SettingsDropdown {
+                                        currentValue: Services.Config ? Services.Config.lockscreenInputStyle : "pill"
+                                        model: [
+                                            { id: "pill",      label: "Capsule Glass Pill" },
+                                            { id: "underline", label: "Minimalist Underline" },
+                                            { id: "box",       label: "Modern Inset Box" },
+                                            { id: "dots",      label: "Discrete Dot Slots" }
+                                        ]
+                                        onSelected: (val) => { if (Services.Config) Services.Config.setLockscreenInputStyle(val) }
+                                    }
+                                }
+                            }
+
+                            SettingsSection {
+                                title: "Power Profile & Battery"
+                                icon: Services.Icons.power
+
+                                SettingsRow {
+                                    title: "CPU Governor Profile"
+                                    subtitle: "Performance vs battery consumption strategy"
+
+                                    SettingsDropdown {
+                                        currentValue: Services.PowerProfile ? Services.PowerProfile.currentProfile : "balanced"
+                                        model: [
+                                            { id: "power-saver", label: "Power Saver (Battery)" },
+                                            { id: "balanced",    label: "Balanced (Dynamic)" },
+                                            { id: "performance", label: "Performance (Max Clocks)" }
+                                        ]
+                                        onSelected: (val) => { if (Services.PowerProfile) Services.PowerProfile.setProfile(val) }
+                                    }
+                                }
+
+                                SettingsDivider {}
+
+                                SettingsSwitch {
+                                    title: "Low Battery Warning Alerts"
+                                    subtitle: "Notify when charge level drops critically low"
+                                    checked: Services.Config ? Services.Config.batteryShowWarnings : true
+                                    onToggled: (st) => { if (Services.Config) Services.Config.setBatteryShowWarnings(st) }
+                                }
+
+                                SettingsDivider {}
+
+                                SettingsSlider {
+                                    title: "Low Battery Alert Threshold"
+                                    from: 10; to: 35; stepSize: 5; valueSuffix: "%"
+                                    value: Services.Config ? Services.Config.batteryLowThreshold : 20
+                                    onMoved: (v) => { if (Services.Config) Services.Config.setBatteryLowThreshold(Math.round(v)) }
+                                }
+                            }
+
+                            SettingsSection {
+                                title: "Quick Power Actions"
+                                icon: Services.Icons.refresh || Services.Icons.reboot
+
+                                Item {
+                                    Layout.fillWidth: true
+                                    implicitHeight: 36
+                                    Layout.margins: 6
+
+                                    RowLayout {
+                                        anchors.fill: parent
+                                        spacing: 6
+
+                                        Rectangle {
+                                            Layout.fillWidth: true; Layout.fillHeight: true; radius: 4
+                                            color: p1Mouse.containsMouse ? Qt.rgba(1, 1, 1, 0.08) : Services.Theme.bgElevated
+                                            border.color: Services.Theme.border; border.width: 1
+                                            Text { anchors.centerIn: parent; text: "Lock Screen"; font.pixelSize: 11; font.weight: Font.Medium; color: Services.Theme.textPrimary }
+                                            MouseArea { id: p1Mouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: { rootWindow.close(); lockSessionProc.running = true } }
+                                        }
+
+                                        Rectangle {
+                                            Layout.fillWidth: true; Layout.fillHeight: true; radius: 4
+                                            color: p2Mouse.containsMouse ? Qt.rgba(1, 1, 1, 0.08) : Services.Theme.bgElevated
+                                            border.color: Services.Theme.border; border.width: 1
+                                            Text { anchors.centerIn: parent; text: "Suspend"; font.pixelSize: 11; font.weight: Font.Medium; color: Services.Theme.textPrimary }
+                                            MouseArea { id: p2Mouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: suspendProc.running = true }
+                                        }
+
+                                        Rectangle {
+                                            Layout.fillWidth: true; Layout.fillHeight: true; radius: 4
+                                            color: p3Mouse.containsMouse ? Qt.rgba(1, 1, 1, 0.08) : Services.Theme.bgElevated
+                                            border.color: Services.Theme.border; border.width: 1
+                                            Text { anchors.centerIn: parent; text: "Reboot"; font.pixelSize: 11; font.weight: Font.Medium; color: Services.Theme.warning }
+                                            MouseArea { id: p3Mouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: rebootProc.running = true }
+                                        }
+
+                                        Rectangle {
+                                            Layout.fillWidth: true; Layout.fillHeight: true; radius: 4
+                                            color: p4Mouse.containsMouse ? Qt.rgba(0.9, 0.2, 0.2, 0.15) : Services.Theme.bgElevated
+                                            border.color: Services.Theme.border; border.width: 1
+                                            Text { anchors.centerIn: parent; text: "Power Off"; font.pixelSize: 11; font.weight: Font.Medium; color: Services.Theme.danger }
+                                            MouseArea { id: p4Mouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: poweroffProc.running = true }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // ═════════════════════════════════════════════
+                        // TAB 5: COMPOSITOR (HYPRLAND)
+                        // ═════════════════════════════════════════════
+                        ColumnLayout {
+                            visible: rootWindow.currentTab === 5
+                            Layout.fillWidth: true
+                            spacing: 14
+
+                            SettingsSection {
+                                title: "Visual & Window Effects"
+                                icon: Services.Icons.sparkle || Services.Icons.wand
+
+                                SettingsSwitch {
+                                    title: "Window Animations"
+                                    subtitle: "Smooth window open/close and resize transitions"
+                                    checked: Services.Compositor ? Services.Compositor.hyprAnim : true
+                                    onToggled: () => { if (Services.Compositor) Services.Compositor.toggleHyprAnim() }
+                                }
+
+                                SettingsDivider {}
+
+                                SettingsSwitch {
+                                    title: "Dual Kawase Background Blur"
+                                    subtitle: "Glass blur behind translucent windows and overlays"
+                                    checked: Services.Compositor ? Services.Compositor.hyprBlur : true
+                                    onToggled: () => { if (Services.Compositor) Services.Compositor.toggleHyprBlur() }
+                                }
+
+                                SettingsDivider {}
+
+                                SettingsSlider {
+                                    title: "Blur Size"
+                                    from: 1; to: 16; stepSize: 1; valueSuffix: "px"
+                                    value: Services.Compositor ? Services.Compositor.hyprBlurSize : 4
+                                    onMoved: (v) => { if (Services.Compositor) Services.Compositor.setHyprBlurSize(Math.round(v)) }
+                                }
+
+                                SettingsDivider {}
+
+                                SettingsSlider {
+                                    title: "Blur Passes"
+                                    from: 1; to: 5; stepSize: 1; valueSuffix: "x"
+                                    value: Services.Compositor ? Services.Compositor.hyprBlurPasses : 2
+                                    onMoved: (v) => { if (Services.Compositor) Services.Compositor.setHyprBlurPasses(Math.round(v)) }
+                                }
+
+                                SettingsDivider {}
+
+                                SettingsSwitch {
+                                    title: "Window Drop Shadows"
+                                    checked: Services.Compositor ? Services.Compositor.hyprShadow : true
+                                    onToggled: () => { if (Services.Compositor) Services.Compositor.toggleHyprShadow() }
+                                }
+
+                                SettingsDivider {}
+
+                                SettingsSlider {
+                                    title: "Shadow Range"
+                                    from: 0; to: 36; stepSize: 1; valueSuffix: "px"
+                                    value: Services.Compositor ? Services.Compositor.hyprShadowRange : 12
+                                    onMoved: (v) => { if (Services.Compositor) Services.Compositor.setHyprShadowRange(Math.round(v)) }
+                                }
+
+                                SettingsDivider {}
+
+                                SettingsSwitch {
+                                    title: "Dim Inactive Windows"
+                                    subtitle: "Darken unfocused background windows"
+                                    checked: Services.Compositor ? Services.Compositor.hyprDimInactive : false
+                                    onToggled: () => { if (Services.Compositor) Services.Compositor.toggleHyprDimInactive() }
+                                }
+
+                                SettingsDivider {}
+
+                                SettingsSlider {
+                                    title: "Active Window Opacity"
+                                    from: 0.50; to: 1.00; stepSize: 0.01; decimals: 2
+                                    value: Services.Compositor ? Services.Compositor.hyprActiveOpacity : 0.90
+                                    onMoved: (v) => { if (Services.Compositor) Services.Compositor.setHyprActiveOpacity(Number(v.toFixed(2))) }
+                                }
+
+                                SettingsDivider {}
+
+                                SettingsSlider {
+                                    title: "Inactive Window Opacity"
+                                    from: 0.50; to: 1.00; stepSize: 0.01; decimals: 2
+                                    value: Services.Compositor ? Services.Compositor.hyprInactiveOpacity : 0.95
+                                    onMoved: (v) => { if (Services.Compositor) Services.Compositor.setHyprInactiveOpacity(Number(v.toFixed(2))) }
+                                }
+                            }
+
+                            SettingsSection {
+                                title: "Window Geometry & Tiling"
+                                icon: Services.Icons.layout || Services.Icons.display
+
+                                SettingsRow {
+                                    title: "Tiling Layout Engine"
+                                    subtitle: "Window management layout strategy"
+
+                                    SettingsDropdown {
+                                        currentValue: Services.Compositor ? Services.Compositor.hyprLayout : "dwindle"
+                                        model: [
+                                            { id: "dwindle",   label: "Dwindle (BSP Split)" },
+                                            { id: "master",    label: "Master (Stack)" },
+                                            { id: "scrolling", label: "Scrolling Tape" }
+                                        ]
+                                        onSelected: (val) => { if (Services.Compositor) Services.Compositor.setHyprLayout(val) }
+                                    }
+                                }
+
+                                SettingsDivider {}
+
+                                SettingsSlider {
+                                    title: "Window Corner Radius"
+                                    from: 0; to: 28; stepSize: 1; valueSuffix: "px"
+                                    value: Services.Compositor ? Services.Compositor.hyprRounding : 10
+                                    onMoved: (v) => { if (Services.Compositor) Services.Compositor.setHyprRounding(Math.round(v)) }
+                                }
+
+                                SettingsDivider {}
+
+                                SettingsSlider {
+                                    title: "Window Border Thickness"
+                                    from: 0; to: 6; stepSize: 1; valueSuffix: "px"
+                                    value: Services.Compositor ? Services.Compositor.hyprBorderSize : 0
+                                    onMoved: (v) => { if (Services.Compositor) Services.Compositor.setHyprBorderSize(Math.round(v)) }
+                                }
+
+                                SettingsDivider {}
+
+                                SettingsSlider {
+                                    title: "Gaps In (Window Spacing)"
+                                    from: 0; to: 24; stepSize: 1; valueSuffix: "px"
+                                    value: Services.Compositor ? Services.Compositor.hyprGapsIn : 5
+                                    onMoved: (v) => { if (Services.Compositor) Services.Compositor.setHyprGapsIn(Math.round(v)) }
+                                }
+
+                                SettingsDivider {}
+
+                                SettingsSlider {
+                                    title: "Gaps Out (Screen Margin)"
+                                    from: 0; to: 36; stepSize: 1; valueSuffix: "px"
+                                    value: Services.Compositor ? Services.Compositor.hyprGapsOut : 10
+                                    onMoved: (v) => { if (Services.Compositor) Services.Compositor.setHyprGapsOut(Math.round(v)) }
+                                }
+                            }
+                        }
+
+                        // ═════════════════════════════════════════════
+                        // TAB 6: BACKUP & RESET
+                        // ═════════════════════════════════════════════
+                        ColumnLayout {
+                            visible: rootWindow.currentTab === 6
+                            Layout.fillWidth: true
+                            spacing: 14
+
+                            SettingsSection {
+                                title: "Configuration Management"
+                                icon: Services.Icons.undo
+
+                                SettingsRow {
+                                    title: "Export Configuration"
+                                    subtitle: "Save a backup snapshot of your current settings"
+
+                                    Rectangle {
+                                        height: 26
+                                        implicitWidth: expTxt.implicitWidth + 14
+                                        radius: 4
+                                        color: expMouse.containsMouse ? Qt.rgba(1, 1, 1, 0.08) : Services.Theme.bgElevated
+                                        border.color: Services.Theme.border; border.width: 1
+                                        Text { id: expTxt; anchors.centerIn: parent; text: "Backup..."; font.pixelSize: 11; color: Services.Theme.textPrimary }
+                                        MouseArea {
+                                            id: expMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                                            onClicked: { if (Services.Config) Services.Config.exportConfig() }
+                                        }
+                                    }
+                                }
+
+                                SettingsDivider {}
+
+                                SettingsRow {
+                                    title: "Import Configuration"
+                                    subtitle: "Restore previously exported settings snapshot"
+
+                                    Rectangle {
+                                        height: 26
+                                        implicitWidth: impTxt.implicitWidth + 14
+                                        radius: 4
+                                        color: impMouse.containsMouse ? Qt.rgba(1, 1, 1, 0.08) : Services.Theme.bgElevated
+                                        border.color: Services.Theme.border; border.width: 1
+                                        Text { id: impTxt; anchors.centerIn: parent; text: "Restore..."; font.pixelSize: 11; color: Services.Theme.textPrimary }
+                                        MouseArea {
+                                            id: impMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                                            onClicked: { if (Services.Config) Services.Config.importConfig() }
+                                        }
+                                    }
+                                }
+
+                                SettingsDivider {}
+
+                                SettingsRow {
+                                    title: "Reset to Defaults"
+                                    subtitle: "Restore factory theme, layout, and configuration"
+
+                                    Rectangle {
+                                        height: 26
+                                        implicitWidth: rstTxt.implicitWidth + 14
+                                        radius: 4
+                                        color: rstMouse.containsMouse ? Qt.rgba(0.9, 0.2, 0.2, 0.15) : Services.Theme.bgElevated
+                                        border.color: Services.Theme.border; border.width: 1
+                                        Text { id: rstTxt; anchors.centerIn: parent; text: "Reset All"; font.pixelSize: 11; color: Services.Theme.danger }
+                                        MouseArea {
+                                            id: rstMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                                            onClicked: { if (Services.Config) Services.Config.resetToDefaults() }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // ═════════════════════════════════════════════
+                        // TAB 7: ABOUT & SHORTCUTS
+                        // ═════════════════════════════════════════════
+                        ColumnLayout {
+                            visible: rootWindow.currentTab === 7
+                            Layout.fillWidth: true
+                            spacing: 14
+
+                            SettingsSection {
+                                title: "System Information"
+                                icon: Services.Icons.info
+
+                                SettingsRow {
+                                    title: "OS Distro"
+                                    Text { text: Services.OsInfo.distroName || "Linux"; font.pixelSize: 11; color: Services.Theme.accent }
+                                }
+                                SettingsDivider {}
+                                SettingsRow {
+                                    title: "Kernel"
+                                    Text { text: Services.OsInfo.kernel || "-"; font.pixelSize: 11; color: Services.Theme.textSecondary }
+                                }
+                                SettingsDivider {}
+                                SettingsRow {
+                                    title: "Host Machine"
+                                    Text { text: Services.OsInfo.hostname || "local"; font.pixelSize: 11; color: Services.Theme.textSecondary }
+                                }
+                                SettingsDivider {}
+                                SettingsRow {
+                                    title: "User Shell"
+                                    Text { text: Services.OsInfo.shellName || "sh"; font.pixelSize: 11; color: Services.Theme.textSecondary }
+                                }
+                            }
+
+                            SettingsSection {
+                                title: "Default Keyboard Shortcuts"
+                                icon: Services.Icons.keyboard
+
+                                Repeater {
+                                    model: [
+                                        { key: "Super + Space", desc: "Open Application Launcher" },
+                                        { key: "Super + S",     desc: "Toggle Settings Window" },
+                                        { key: "Super + D",     desc: "Toggle Dashboard" },
+                                        { key: "Super + Shift + L", desc: "Lock Screen" },
+                                        { key: "Esc",           desc: "Close Open Overlays & Windows" }
+                                    ]
+
+                                    delegate: ColumnLayout {
+                                        required property var modelData
+                                        required property int index
+                                        Layout.fillWidth: true
+                                        spacing: 0
+
+                                        SettingsRow {
+                                            title: modelData.desc
+                                            Rectangle {
+                                                height: 20
+                                                implicitWidth: kText.implicitWidth + 12
+                                                radius: 4
+                                                color: Services.Theme.bgElevated
+                                                border.color: Services.Theme.border
+                                                border.width: 1
+                                                Text {
+                                                    id: kText
+                                                    anchors.centerIn: parent
+                                                    text: modelData.key
+                                                    font.family: Services.Theme.fontMono
+                                                    font.pixelSize: 9
+                                                    font.bold: true
+                                                    color: Services.Theme.accent
+                                                }
+                                            }
+                                        }
+
+                                        SettingsDivider { visible: index < 4 }
                                     }
                                 }
                             }
@@ -3476,11 +1960,11 @@ FloatingWindow {
     // ── Helper Processes ─────────────────────────────────────────────────────
     Process {
         id: testNotifProc
-        command: ["notify-send", "-a", "Quickshell Settings", "Settings Preview", "Your theme & notification settings are working beautifully!"]
+        command: ["notify-send", "-a", "Quickshell Settings", "Settings Test", "Your notification preferences are working!"]
     }
     Process {
         id: lockSessionProc
-        command: ["loginctl", "lock-session"]
+        command: ["sh", "-c", "qs ipc call lockscreen lock || loginctl lock-session"]
     }
     Process {
         id: suspendProc

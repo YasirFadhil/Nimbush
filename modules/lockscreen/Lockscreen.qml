@@ -905,12 +905,13 @@ Scope {
                         }
 
                         // ── 2. Center Profile Picture & Password Input Pill ─────────────────────
+                        // ── 2. Center Profile Picture & Password Input System ───────────────────
                         ColumnLayout {
                             id: centerAuthColumn
                             anchors.horizontalCenter: parent.horizontalCenter
                             anchors.bottom: parent.bottom
-                            anchors.bottomMargin: root.isRevealed ? (parent.height * 0.29) : (parent.height * 0.29 - 45)
-                            spacing: 16
+                            anchors.bottomMargin: root.isRevealed ? (parent.height * 0.28) : (parent.height * 0.28 - 45)
+                            spacing: 14
                             opacity: root.isRevealed ? 1.0 : 0.0
                             scale: root.isRevealed ? 1.0 : 0.88
                             transformOrigin: Item.Center
@@ -918,118 +919,269 @@ Scope {
                             Behavior on opacity { NumberAnimation { duration: 350; easing.type: Easing.OutCubic } }
                             Behavior on scale { NumberAnimation { duration: 450; easing.type: Easing.OutBack; easing.overshoot: 1.1 } }
 
-                            // Rounded User Picture Avatar (Using .face image with MultiEffect mask)
-                            Rectangle {
+                            readonly property string avatarShape: Services.Config ? Services.Config.lockscreenAvatarShape : "circle"
+                            readonly property bool showAvatarRing: Services.Config ? Services.Config.lockscreenAvatarRing : true
+                            readonly property string inputStyle: Services.Config ? Services.Config.lockscreenInputStyle : "pill"
+
+                            readonly property int avatarRadius: {
+                                if (avatarShape === "circle") return 46
+                                if (avatarShape === "squircle") return 28
+                                return 16
+                            }
+                            readonly property int ringRadius: {
+                                if (avatarShape === "circle") return 53
+                                if (avatarShape === "squircle") return 33
+                                return 20
+                            }
+
+                            // ── User Avatar with Shape Options, Monogram Fallback & Glow Ring ──
+                            Item {
+                                visible: Services.Config ? Services.Config.lockscreenShowAvatar : true
                                 Layout.alignment: Qt.AlignHCenter
-                                width: 84; height: 84; radius: 22
-                                color: Services.Theme.surfaceVariant
-                                border.color: pwTextInput.activeFocus ? Services.Theme.accent : Services.Theme.borderHighlight
-                                border.width: 2
-                                antialiasing: true
-                                smooth: true
-                                Behavior on border.color { ColorAnimation { duration: 150 } }
+                                width: 106; height: 106
 
-                                Image {
-                                    id: userAvatarImg
-                                    anchors.fill: parent
-                                    anchors.margins: 2
-                                    source: Services.OsInfo.avatarPath.length > 0 ? Services.OsInfo.avatarPath : ("file://" + (Quickshell.env("HOME") || "/home/" + (Quickshell.env("USER") || "user")) + "/.face")
-                                    fillMode: Image.PreserveAspectCrop
-                                    asynchronous: true
-                                    smooth: true
-                                    mipmap: true
-                                    antialiasing: true
-                                    visible: false
-                                }
+                                // Outer Glow / Focus Ring
+                                Rectangle {
+                                    id: outerGlowRing
+                                    anchors.centerIn: parent
+                                    width: 104; height: 104
+                                    radius: centerAuthColumn.ringRadius
+                                    color: "transparent"
+                                    visible: centerAuthColumn.showAvatarRing
+                                    border.color: root.isError 
+                                        ? Services.Theme.danger 
+                                        : (pwTextInput.activeFocus 
+                                            ? Services.Theme.accent 
+                                            : Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.3))
+                                    border.width: pwTextInput.activeFocus ? 2 : 1.5
+                                    scale: pwTextInput.activeFocus ? 1.0 : 0.98
 
-                                MultiEffect {
-                                    anchors.fill: userAvatarImg
-                                    source: userAvatarImg
-                                    maskEnabled: true
-                                    maskSource: avatarMask
-                                    visible: userAvatarImg.status === Image.Ready
-                                }
+                                    Behavior on border.color { ColorAnimation { duration: 200 } }
+                                    Behavior on scale { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
-                                Item {
-                                    id: avatarMask
-                                    anchors.fill: userAvatarImg
-                                    visible: false
-                                    layer.enabled: true
-                                    layer.smooth: true
-                                    layer.samples: 8
-                                    Rectangle {
-                                        anchors.fill: parent
-                                        radius: 20
-                                        color: "black"
-                                        antialiasing: true
-                                        smooth: true
+                                    // Subtle focus breath animation
+                                    SequentialAnimation on opacity {
+                                        running: pwTextInput.activeFocus || root.isAuthenticating
+                                        loops: Animation.Infinite
+                                        NumberAnimation { from: 1.0; to: 0.5; duration: 1200; easing.type: Easing.InOutSine }
+                                        NumberAnimation { from: 0.5; to: 1.0; duration: 1200; easing.type: Easing.InOutSine }
                                     }
                                 }
 
-                                Text {
+                                // Main Avatar Container
+                                Rectangle {
+                                    id: avatarBox
                                     anchors.centerIn: parent
-                                    text: Services.Icons.user
-                                    font.family: Services.Theme.fontSymbols
-                                    font.pixelSize: 34
-                                    color: Services.Theme.textPrimary
-                                    visible: userAvatarImg.status !== Image.Ready
+                                    width: 92; height: 92
+                                    radius: centerAuthColumn.avatarRadius
+                                    color: Services.Theme.surfaceVariant
+                                    border.color: pwTextInput.activeFocus ? Services.Theme.accent : Services.Theme.border
+                                    border.width: 1.5
+                                    antialiasing: true
+                                    smooth: true
+                                    clip: true
+                                    Behavior on border.color { ColorAnimation { duration: 150 } }
+
+                                    // Monogram Fallback (Bold Initial Letter with Tinted Backdrop)
+                                    Rectangle {
+                                        anchors.fill: parent
+                                        color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.15)
+                                        visible: userAvatarImg.status !== Image.Ready
+
+                                        Text {
+                                            anchors.centerIn: parent
+                                            text: {
+                                                const u = (Services.OsInfo.username || root.username) || "U"
+                                                return u.charAt(0).toUpperCase()
+                                            }
+                                            font.family: Services.Theme.fontDisplay
+                                            font.pixelSize: 36
+                                            font.weight: Font.Bold
+                                            color: Services.Theme.accent
+                                        }
+                                    }
+
+                                    // User Avatar Image
+                                    Image {
+                                        id: userAvatarImg
+                                        anchors.fill: parent
+                                        source: Services.OsInfo.avatarPath.length > 0 ? Services.OsInfo.avatarPath : ("file://" + (Quickshell.env("HOME") || "/home/" + (Quickshell.env("USER") || "user")) + "/.face")
+                                        fillMode: Image.PreserveAspectCrop
+                                        asynchronous: true
+                                        smooth: true
+                                        mipmap: true
+                                        antialiasing: true
+                                        visible: false
+                                    }
+
+                                    MultiEffect {
+                                        anchors.fill: userAvatarImg
+                                        source: userAvatarImg
+                                        maskEnabled: true
+                                        maskSource: avatarMask
+                                        visible: userAvatarImg.status === Image.Ready
+                                    }
+
+                                    Item {
+                                        id: avatarMask
+                                        anchors.fill: userAvatarImg
+                                        visible: false
+                                        layer.enabled: true
+                                        layer.smooth: true
+                                        layer.samples: 8
+                                        Rectangle {
+                                            anchors.fill: parent
+                                            radius: centerAuthColumn.avatarRadius
+                                            color: "black"
+                                            antialiasing: true
+                                            smooth: true
+                                        }
+                                    }
                                 }
                             }
 
-                            // Username Label
-                            Text {
+                            // ── User Identity & Host Tag ──────────────────────────────
+                            ColumnLayout {
                                 Layout.alignment: Qt.AlignHCenter
-                                text: Services.OsInfo.username.length > 0 ? Services.OsInfo.username : root.username
-                                color: Services.Theme.textPrimary
-                                font.pixelSize: 17
-                                font.weight: Font.Bold
-                                font.letterSpacing: 0.3
-                                style: Text.Outline
-                                styleColor: Services.Theme.overlayDim
+                                spacing: 2
+
+                                Text {
+                                    Layout.alignment: Qt.AlignHCenter
+                                    text: Services.OsInfo.username.length > 0 ? Services.OsInfo.username : root.username
+                                    color: Services.Theme.textPrimary
+                                    font.pixelSize: 16
+                                    font.weight: Font.Bold
+                                    font.letterSpacing: 0.3
+                                    style: Text.Outline
+                                    styleColor: Services.Theme.overlayDim
+                                }
+
+                                RowLayout {
+                                    visible: Services.Config ? Services.Config.lockscreenShowGreeting : true
+                                    Layout.alignment: Qt.AlignHCenter
+                                    spacing: 4
+                                    opacity: 0.85
+
+                                    Text {
+                                        text: root.greetingStr + " • " + (Services.OsInfo.hostname || root.hostname)
+                                        color: Services.Theme.textSecondary
+                                        font.pixelSize: 11
+                                        font.weight: Font.Medium
+                                        style: Text.Outline
+                                        styleColor: Services.Theme.overlayDim
+                                    }
+                                }
                             }
 
-                            // Translucent Password Input Pill
+                            // ── Password Input System (Pill / Underline / Box / Dots) ─
                             Rectangle {
+                                id: inputContainer
                                 Layout.alignment: Qt.AlignHCenter
-                                width: 260
-                                height: 40
-                                radius: 20
-                                color: pwTextInput.activeFocus ? Services.Theme.surfaceVariant : Services.Theme.surface
-                                border.color: root.isError ? Services.Theme.danger : (pwTextInput.activeFocus ? Services.Theme.accent : Services.Theme.border)
-                                border.width: 1.5
+                                width: (centerAuthColumn.inputStyle === "underline") ? 250 : 270
+                                height: (centerAuthColumn.inputStyle === "box") ? 44 : 40
+                                radius: {
+                                    if (centerAuthColumn.inputStyle === "pill") return 20
+                                    if (centerAuthColumn.inputStyle === "box") return 8
+                                    return 0
+                                }
+                                color: {
+                                    if (centerAuthColumn.inputStyle === "underline" || centerAuthColumn.inputStyle === "dots") return "transparent"
+                                    if (centerAuthColumn.inputStyle === "box") return Services.Theme.bgElevated
+                                    return pwTextInput.activeFocus 
+                                        ? Qt.rgba(Services.Theme.surfaceVariant.r, Services.Theme.surfaceVariant.g, Services.Theme.surfaceVariant.b, 0.85) 
+                                        : Qt.rgba(Services.Theme.bgDeep.r, Services.Theme.bgDeep.g, Services.Theme.bgDeep.b, 0.65)
+                                }
+                                border.color: (centerAuthColumn.inputStyle === "underline" || centerAuthColumn.inputStyle === "dots")
+                                    ? "transparent"
+                                    : (root.isError ? Services.Theme.danger : (pwTextInput.activeFocus ? Services.Theme.accent : Services.Theme.border))
+                                border.width: (centerAuthColumn.inputStyle === "underline" || centerAuthColumn.inputStyle === "dots") ? 0 : 1.5
+
                                 Behavior on color { ColorAnimation { duration: 120 } }
                                 Behavior on border.color { ColorAnimation { duration: 120 } }
 
+                                // Underline bar for "underline" style
+                                Rectangle {
+                                    visible: centerAuthColumn.inputStyle === "underline"
+                                    anchors.bottom: parent.bottom
+                                    anchors.left: parent.left
+                                    anchors.right: parent.right
+                                    height: pwTextInput.activeFocus ? 2 : 1
+                                    color: root.isError ? Services.Theme.danger : (pwTextInput.activeFocus ? Services.Theme.accent : Services.Theme.border)
+                                    Behavior on color { ColorAnimation { duration: 150 } }
+                                    Behavior on height { NumberAnimation { duration: 120 } }
+                                }
+
                                 RowLayout {
                                     anchors.fill: parent
-                                    anchors.leftMargin: 14
+                                    anchors.leftMargin: (centerAuthColumn.inputStyle === "underline") ? 6 : 12
                                     anchors.rightMargin: 6
                                     spacing: 6
 
-                                    TextInput {
-                                        id: pwTextInput
-                                        Layout.fillWidth: true
-                                        text: root.passwordInput
-                                        echoMode: root.showPassword ? TextInput.Normal : TextInput.Password
-                                        font.pixelSize: Services.Theme.fontSize2xl
-                                        color: Services.Theme.textPrimary
-                                        selectByMouse: true
-                                        activeFocusOnPress: true
-                                        focus: true
-                                        enabled: !root.isAuthenticating
+                                    // Lock Icon Prefix
+                                    Text {
+                                        text: Services.Icons.lock
+                                        font.family: Services.Theme.fontSymbols
+                                        font.pixelSize: 11
+                                        color: pwTextInput.activeFocus ? Services.Theme.accent : Services.Theme.textDisabled
+                                        visible: centerAuthColumn.inputStyle !== "dots"
+                                    }
 
-                                        onTextChanged: {
-                                            root.passwordInput = text
-                                            if (text.length > 0 && root.isError) root.isError = false
+                                    // Real Text Input
+                                    Item {
+                                        Layout.fillWidth: true
+                                        Layout.fillHeight: true
+
+                                        // Standard Text Input (Pill, Box, Underline)
+                                        TextInput {
+                                            id: pwTextInput
+                                            anchors.fill: parent
+                                            verticalAlignment: TextInput.AlignVCenter
+                                            text: root.passwordInput
+                                            echoMode: root.showPassword ? TextInput.Normal : TextInput.Password
+                                            font.pixelSize: Services.Theme.fontSizeXl
+                                            color: Services.Theme.textPrimary
+                                            selectByMouse: true
+                                            activeFocusOnPress: true
+                                            focus: true
+                                            enabled: !root.isAuthenticating
+                                            visible: centerAuthColumn.inputStyle !== "dots"
+
+                                            onTextChanged: {
+                                                root.passwordInput = text
+                                                if (text.length > 0 && root.isError) root.isError = false
+                                            }
+
+                                            onAccepted: root.authenticate()
+
+                                            Text {
+                                                anchors.verticalCenter: parent.verticalCenter
+                                                text: root.isAuthenticating ? "Authenticating..." : "Password..."
+                                                color: Services.Theme.textDisabled
+                                                font.pixelSize: Services.Theme.fontSizeMd
+                                                visible: pwTextInput.text.length === 0 && !pwTextInput.activeFocus
+                                            }
                                         }
 
-                                        onAccepted: root.authenticate()
+                                        // Discrete Dot Slots Layout for "dots" style
+                                        RowLayout {
+                                            visible: centerAuthColumn.inputStyle === "dots"
+                                            anchors.centerIn: parent
+                                            spacing: 8
 
-                                        Text {
-                                            text: root.isAuthenticating ? "Authenticating..." : "Enter password..."
-                                            color: Services.Theme.textDisabled
-                                            font.pixelSize: Services.Theme.fontSizeXl
-                                            visible: pwTextInput.text.length === 0 && !pwTextInput.activeFocus
+                                            Repeater {
+                                                model: 6
+                                                delegate: Rectangle {
+                                                    required property int index
+                                                    width: 12; height: 12; radius: 6
+                                                    readonly property bool isFilled: root.passwordInput.length > index
+                                                    color: isFilled ? Services.Theme.accent : "transparent"
+                                                    border.color: root.isError ? Services.Theme.danger : (isFilled ? Services.Theme.accent : Services.Theme.border)
+                                                    border.width: 1.5
+                                                    scale: isFilled ? 1.2 : 1.0
+                                                    Behavior on scale { NumberAnimation { duration: 140; easing.type: Easing.OutBack } }
+                                                    Behavior on color { ColorAnimation { duration: 120 } }
+                                                }
+                                            }
                                         }
                                     }
 
@@ -1037,13 +1189,14 @@ Scope {
                                     Rectangle {
                                         width: 26; height: 26; radius: 13
                                         color: eyeMouse.containsMouse ? Services.Theme.bgHover : "transparent"
+                                        visible: centerAuthColumn.inputStyle !== "dots"
 
                                         Text {
                                             anchors.centerIn: parent
                                             text: root.showPassword ? Services.Icons.eyeOpen : Services.Icons.eyeClosed
                                             font.family: Services.Theme.fontSymbols
                                             font.pixelSize: Services.Theme.fontSizeMd
-                                            color: Services.Theme.textSecondary
+                                            color: root.showPassword ? Services.Theme.accent : Services.Theme.textSecondary
                                         }
 
                                         MouseArea {
@@ -1058,14 +1211,16 @@ Scope {
                                     // Submit Button / Loading Indicator
                                     Rectangle {
                                         width: 28; height: 28; radius: 14
-                                        color: submitMouse.containsMouse ? Services.Theme.white : (root.passwordInput.length > 0 ? Services.Theme.accent : Services.Theme.surfaceVariant)
+                                        color: submitMouse.containsMouse 
+                                            ? Services.Theme.textPrimary 
+                                            : (root.passwordInput.length > 0 ? Services.Theme.accent : Qt.rgba(1, 1, 1, 0.08))
                                         Behavior on color { ColorAnimation { duration: 100 } }
 
                                         Text {
                                             anchors.centerIn: parent
-                                            text: root.isAuthenticating ? Services.Icons.spinner : Services.Icons.arrowRight
+                                            text: root.isAuthenticating ? (Services.Icons.refresh || "󰑐") : (Services.Icons.arrowRight || "→")
                                             font.family: Services.Theme.fontSymbols
-                                            font.pixelSize: Services.Theme.fontSizeMd
+                                            font.pixelSize: 11
                                             color: root.passwordInput.length > 0 ? Services.Theme.bgDeep : Services.Theme.textDisabled
                                         }
 
@@ -1081,8 +1236,6 @@ Scope {
                                 }
                             }
 
-
-
                             // Caps Lock Warning Pill
                             RowLayout {
                                 Layout.alignment: Qt.AlignHCenter
@@ -1090,9 +1243,9 @@ Scope {
                                 visible: root.capsLockOn && !root.isError
 
                                 Text {
-                                    text: "󰌎"
+                                    text: Services.Icons.lock
                                     font.family: Services.Theme.fontSymbols
-                                    font.pixelSize: 13
+                                    font.pixelSize: 11
                                     color: Services.Theme.warning
                                 }
 
@@ -1113,16 +1266,16 @@ Scope {
                                 visible: root.isError && root.errorMessage.length > 0
 
                                 Text {
-                                    text: "󰅙"
+                                    text: Services.Icons.close
                                     font.family: Services.Theme.fontSymbols
-                                    font.pixelSize: 14
+                                    font.pixelSize: 11
                                     color: Services.Theme.danger
                                 }
 
                                 Text {
                                     text: root.errorMessage
                                     color: Services.Theme.danger
-                                    font.pixelSize: Services.Theme.fontSizeMd
+                                    font.pixelSize: Services.Theme.fontSizeSm
                                     font.bold: true
                                     style: Text.Outline
                                     styleColor: Services.Theme.overlayDim

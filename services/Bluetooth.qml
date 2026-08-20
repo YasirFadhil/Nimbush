@@ -3,6 +3,8 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 
+import "." as Services
+
 Singleton {
     id: root
 
@@ -16,7 +18,7 @@ Singleton {
     property int statusIndex: 0
 
     function refresh() {
-        powerProc.running = true
+        if (!powerProc.running) powerProc.running = true
     }
 
     function toggle() {
@@ -25,6 +27,13 @@ Singleton {
     }
 
     function listDevices() {
+        if (!enabled) {
+            devices = []
+            unpairedDevices = []
+            refreshing = false
+            return
+        }
+        if (refreshing || pairedProc.running) return
         refreshing = true
         pairedProc.running = true
     }
@@ -85,14 +94,27 @@ Singleton {
         infoProc.running = true
     }
 
+    // Fallback sync timer (15s interval) - live events are already handled instantly by D-Bus monitor below
     Timer {
-        interval: 5000
+        interval: 15000
         running: true
         repeat: true
         triggeredOnStart: true
         onTriggered: {
-            root.refresh()       // update enabled/power state
-            root.listDevices()   // update connected & unpaired devices list
+            root.refresh()
+            if (root.enabled) {
+                root.listDevices()
+            }
+        }
+    }
+
+    Connections {
+        target: Services.OverlayManager
+        function onBtPanelVisibleChanged() {
+            if (Services.OverlayManager.btPanelVisible) {
+                root.refresh()
+                root.listDevices()
+            }
         }
     }
 
