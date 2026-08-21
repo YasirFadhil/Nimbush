@@ -22,9 +22,9 @@ FloatingWindow {
     Component.onCompleted: Services.OverlayManager.register(rootWindow)
 
     function show() {
-        Services.OverlayManager.closeAllExcept(rootWindow)
         visible = true
         keyFocus.forceActiveFocus()
+        if (Services.Compositor) Services.Compositor.refreshState()
     }
 
     function hide() {
@@ -38,10 +38,20 @@ FloatingWindow {
     function open() { show() }
     function close() { hide() }
 
+    onVisibleChanged: {
+        if (visible) {
+            keyFocus.forceActiveFocus()
+        }
+    }
+
     Item {
         id: keyFocus
-        focus: rootWindow.visible
-        Keys.onEscapePressed: rootWindow.close()
+        anchors.fill: parent
+        focus: true
+        Keys.onEscapePressed: (event) => {
+            rootWindow.close()
+            event.accepted = true
+        }
     }
 
     // ═════════════════════════════════════════════════════════════════════════
@@ -695,7 +705,10 @@ FloatingWindow {
                                 anchors.fill: parent
                                 hoverEnabled: true
                                 cursorShape: Qt.PointingHandCursor
-                                onClicked: rootWindow.currentTab = modelData.id
+                                onClicked: {
+                                    rootWindow.currentTab = modelData.id
+                                    if (modelData.id === 5 && Services.Compositor) Services.Compositor.refreshState()
+                                }
                             }
                         }
                     }
@@ -815,6 +828,37 @@ FloatingWindow {
                                                         width: 16; height: 16; radius: 8
                                                         color: Services.Theme.accent
                                                         Text { anchors.centerIn: parent; text: Services.Icons.check; font.family: Services.Theme.fontSymbols; font.pixelSize: 8; color: Services.Theme.bgOnAccent }
+                                                    }
+
+                                                    Rectangle {
+                                                        visible: (modelData.isCustom === true) && (wCardMouse.containsMouse || delMouse.containsMouse)
+                                                        anchors.top: parent.top; anchors.left: parent.left
+                                                        anchors.margins: 4
+                                                        width: 18; height: 18; radius: 9
+                                                        color: delMouse.containsMouse ? Services.Theme.danger : Qt.rgba(0, 0, 0, 0.65)
+                                                        border.color: Qt.rgba(1, 1, 1, 0.2)
+                                                        border.width: 1
+                                                        z: 2
+
+                                                        Text {
+                                                            anchors.centerIn: parent
+                                                            text: Services.Icons.trash || ""
+                                                            font.family: Services.Theme.fontSymbols
+                                                            font.pixelSize: 9
+                                                            color: "#ffffff"
+                                                        }
+
+                                                        MouseArea {
+                                                            id: delMouse
+                                                            anchors.fill: parent
+                                                            hoverEnabled: true
+                                                            cursorShape: Qt.PointingHandCursor
+                                                            onClicked: {
+                                                                if (Services.Wallpaper) {
+                                                                    Services.Wallpaper.removeCustomWallpaper(modelData.path)
+                                                                }
+                                                            }
+                                                        }
                                                     }
 
                                                     MouseArea {
@@ -1432,12 +1476,13 @@ FloatingWindow {
                                     SettingsDropdown {
                                         currentValue: Services.Config ? Services.Config.lockscreenClockStyle : "hero"
                                         model: [
-                                            { id: "hero",        label: "Hero Large" },
-                                            { id: "modern",      label: "Modern Stacked" },
+                                            { id: "hero",        label: "Hero Large (96px)" },
+                                            { id: "modern",      label: "Modern Stacked (HH / MM)" },
                                             { id: "minimal",     label: "Minimal Thin" },
                                             { id: "compact",     label: "Compact Capsule" },
                                             { id: "vertical",    label: "Vertical Split" },
                                             { id: "typographic", label: "Typographic Words" },
+                                            { id: "radial",      label: "Radial Ring Gauge" },
                                             { id: "cyber",       label: "Cyberpunk HUD" }
                                         ]
                                         onSelected: (val) => { if (Services.Config) Services.Config.setLockscreenClockStyle(val) }
@@ -1544,9 +1589,9 @@ FloatingWindow {
                                 }
                             }
 
-                            // Password Input Styling Section
+                            // Password Input & Authentication Styling Section
                             SettingsSection {
-                                title: "Password Authentication Input"
+                                title: "Password Authentication & Media"
                                 icon: Services.Icons.keyboard
 
                                 SettingsRow {
@@ -1563,6 +1608,31 @@ FloatingWindow {
                                         ]
                                         onSelected: (val) => { if (Services.Config) Services.Config.setLockscreenInputStyle(val) }
                                     }
+                                }
+
+                                SettingsDivider {}
+
+                                SettingsRow {
+                                    title: "Media Player Layout"
+                                    subtitle: "Appearance of music and media widget on lockscreen"
+
+                                    SettingsDropdown {
+                                        currentValue: Services.Config ? Services.Config.lockscreenMediaStyle : "pill"
+                                        model: [
+                                            { id: "pill", label: "Floating Mini Capsule" },
+                                            { id: "card", label: "Full Glass Album Card" }
+                                        ]
+                                        onSelected: (val) => { if (Services.Config) Services.Config.setLockscreenMediaStyle(val) }
+                                    }
+                                }
+
+                                SettingsDivider {}
+
+                                SettingsSwitch {
+                                    title: "Show Media Player"
+                                    subtitle: "Display media playback controls when audio is playing"
+                                    checked: Services.Config ? Services.Config.lockscreenShowMedia : true
+                                    onToggled: (st) => { if (Services.Config) Services.Config.setLockscreenShowMedia(st) }
                                 }
                             }
 

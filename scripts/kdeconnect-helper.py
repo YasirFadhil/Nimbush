@@ -95,47 +95,55 @@ def do_reply(reply_id, notif_id, summary, body, message):
         return
 
     devs = get_kde_device_notification_paths()
-    replied_count = 0
     active = get_active_notifications()
+    replied = False
 
-    # 1. Direct match by reply_id
-    if reply_id and reply_id != "inline-reply":
-        for d in devs:
-            try:
-                subprocess.run(
-                    ["busctl", "--user", "call", "org.kde.kdeconnect", d,
-                     "org.kde.kdeconnect.device.notifications", "sendReply", "ss", reply_id, message],
-                    check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-                )
-                replied_count += 1
-            except Exception:
-                pass
-
-    # 2. Match by notif_id
+    # 1. Match by notif_id in active KDE notifications
     if notif_id:
         for item in active:
             if str(item.get("id")) == str(notif_id):
                 try:
-                    subprocess.run(
+                    res = subprocess.run(
                         ["busctl", "--user", "call", "org.kde.kdeconnect", item["path"],
                          "org.kde.kdeconnect.device.notifications.notification", "sendReply", "s", message],
                         check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
                     )
-                    replied_count += 1
+                    if res.returncode == 0:
+                        replied = True
+                        break
                 except Exception:
                     pass
-                if item.get("replyId"):
+
+                if not replied and item.get("replyId"):
                     try:
-                        subprocess.run(
+                        res = subprocess.run(
                             ["busctl", "--user", "call", "org.kde.kdeconnect", item["devPath"],
                              "org.kde.kdeconnect.device.notifications", "sendReply", "ss", item["replyId"], message],
                             check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
                         )
+                        if res.returncode == 0:
+                            replied = True
+                            break
                     except Exception:
                         pass
 
-    # 3. Match by content (summary/title/body) if not yet matched
-    if replied_count == 0 and (summary or body):
+    # 2. Match by direct reply_id on device if not yet replied
+    if not replied and reply_id and reply_id != "inline-reply":
+        for d in devs:
+            try:
+                res = subprocess.run(
+                    ["busctl", "--user", "call", "org.kde.kdeconnect", d,
+                     "org.kde.kdeconnect.device.notifications", "sendReply", "ss", reply_id, message],
+                    check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+                )
+                if res.returncode == 0:
+                    replied = True
+                    break
+            except Exception:
+                pass
+
+    # 3. Match by content (summary/title/body) if not yet replied
+    if not replied and (summary or body):
         sum_l = (summary or "").lower()
         bod_l = (body or "").lower()
         for item in active:
@@ -156,29 +164,37 @@ def do_reply(reply_id, notif_id, summary, body, message):
 
             if matched:
                 try:
-                    subprocess.run(
+                    res = subprocess.run(
                         ["busctl", "--user", "call", "org.kde.kdeconnect", item["path"],
                          "org.kde.kdeconnect.device.notifications.notification", "sendReply", "s", message],
                         check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
                     )
-                    replied_count += 1
+                    if res.returncode == 0:
+                        replied = True
+                        break
                 except Exception:
                     pass
-                if item.get("replyId"):
+
+                if not replied and item.get("replyId"):
                     try:
-                        subprocess.run(
+                        res = subprocess.run(
                             ["busctl", "--user", "call", "org.kde.kdeconnect", item["devPath"],
                              "org.kde.kdeconnect.device.notifications", "sendReply", "ss", item["replyId"], message],
                             check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
                         )
+                        if res.returncode == 0:
+                            replied = True
+                            break
                     except Exception:
                         pass
+                if replied:
+                    break
 
-    print(json.dumps({"status": "ok", "replied": replied_count > 0, "count": replied_count}))
+    print(json.dumps({"status": "ok", "replied": replied, "count": 1 if replied else 0}))
 
 def do_dismiss(notif_id, summary, body):
     active = get_active_notifications()
-    dismissed_count = 0
+    dismissed = False
 
     sum_l = (summary or "").lower()
     bod_l = (body or "").lower()
@@ -202,16 +218,18 @@ def do_dismiss(notif_id, summary, body):
 
         if matched:
             try:
-                subprocess.run(
+                res = subprocess.run(
                     ["busctl", "--user", "call", "org.kde.kdeconnect", item["path"],
                      "org.kde.kdeconnect.device.notifications.notification", "dismiss"],
                     check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
                 )
-                dismissed_count += 1
+                if res.returncode == 0:
+                    dismissed = True
+                    break
             except Exception:
                 pass
 
-    print(json.dumps({"status": "ok", "dismissed": dismissed_count > 0, "count": dismissed_count}))
+    print(json.dumps({"status": "ok", "dismissed": dismissed, "count": 1 if dismissed else 0}))
 
 def do_watch():
     # Initial sync

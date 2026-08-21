@@ -480,8 +480,8 @@ PanelWindow {
 
     Process {
         id: userInfoProc
-        command: ["sh", "-c", "echo $(whoami)@$(hostname)"]
-        running: false
+        command: ["sh", "-c", "echo $(whoami)@$(uname -n)"]
+        running: true
         stdout: SplitParser {
             onRead: data => {
                 const parts = data.trim().split("@")

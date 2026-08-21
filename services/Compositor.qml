@@ -90,7 +90,7 @@ Singleton {
         return p.length > 0 ? p : (Quickshell.env("HOME") + "/.config/quickshell/scripts/compositor-helper.py")
     }
 
-    // ── Fast Direct Key Mapping for Hyprland (0ms Latency) ────────────────────
+    // ── Fast Direct Key Mapping for Hyprland (.conf fallback) ─────────────────
     readonly property var hyprKeyMap: ({
         "blur": "decoration:blur:enabled",
         "blur_size": "decoration:blur:size",
@@ -116,8 +116,127 @@ Singleton {
         "disable_hyprland_logo": "misc:disable_hyprland_logo"
     })
 
+    // ── Lua Config Builder for Hyprland 0.56+ (hl.config) ──────────────────────
+    function buildLuaConfig(changes) {
+        let decor = {}
+        let general = {}
+        let anim = {}
+        let input = {}
+        let misc = {}
+
+        for (let k in changes) {
+            let v = changes[k]
+            switch (k) {
+                case "blur":
+                    if (!decor.blur) decor.blur = {}
+                    decor.blur.enabled = Boolean(v)
+                    break
+                case "blur_size":
+                    if (!decor.blur) decor.blur = {}
+                    decor.blur.size = Math.round(Number(v))
+                    break
+                case "blur_passes":
+                    if (!decor.blur) decor.blur = {}
+                    decor.blur.passes = Math.round(Number(v))
+                    break
+                case "shadow":
+                    if (!decor.shadow) decor.shadow = {}
+                    decor.shadow.enabled = Boolean(v)
+                    break
+                case "shadow_range":
+                    if (!decor.shadow) decor.shadow = {}
+                    decor.shadow.range = Math.round(Number(v))
+                    break
+                case "shadow_power":
+                    if (!decor.shadow) decor.shadow = {}
+                    decor.shadow.render_power = Math.round(Number(v))
+                    break
+                case "rounding":
+                    decor.rounding = Math.round(Number(v))
+                    break
+                case "active_opacity":
+                    decor.active_opacity = Number(Number(v).toFixed(2))
+                    break
+                case "inactive_opacity":
+                    decor.inactive_opacity = Number(Number(v).toFixed(2))
+                    break
+                case "dim_inactive":
+                    decor.dim_inactive = Boolean(v)
+                    break
+                case "dim_strength":
+                    decor.dim_strength = Number(Number(v).toFixed(2))
+                    break
+                case "anim":
+                    anim.enabled = Boolean(v)
+                    break
+                case "border_size":
+                    general.border_size = Math.round(Number(v))
+                    break
+                case "gaps_in":
+                    general.gaps_in = Math.round(Number(v))
+                    break
+                case "gaps_out":
+                    general.gaps_out = Math.round(Number(v))
+                    break
+                case "layout":
+                    general.layout = String(v)
+                    break
+                case "resize_border":
+                    general.resize_on_border = Boolean(v)
+                    break
+                case "touchpad_natural":
+                    if (!input.touchpad) input.touchpad = {}
+                    input.touchpad.natural_scroll = Boolean(v)
+                    break
+                case "touchpad_tap":
+                    if (!input.touchpad) input.touchpad = {}
+                    input.touchpad.tap_to_click = Boolean(v)
+                    break
+                case "touchpad_dwt":
+                    if (!input.touchpad) input.touchpad = {}
+                    input.touchpad.disable_while_typing = Boolean(v)
+                    break
+                case "sensitivity":
+                    input.sensitivity = Number(Number(v).toFixed(2))
+                    break
+                case "disable_hyprland_logo":
+                    misc.disable_hyprland_logo = Boolean(v)
+                    break
+                case "border_color_preset":
+                    if (!general.col) general.col = {}
+                    general.col.active_border = v
+                    break
+            }
+        }
+
+        function toLua(val) {
+            if (typeof val === "boolean") return val ? "true" : "false"
+            if (typeof val === "number") return String(val)
+            if (typeof val === "string") return '"' + val.replace(/"/g, '\\"') + '"'
+            if (typeof val === "object" && val !== null) {
+                let parts = []
+                for (let prop in val) {
+                    parts.push(prop + " = " + toLua(val[prop]))
+                }
+                return "{ " + parts.join(", ") + " }"
+            }
+            return "nil"
+        }
+
+        let rootTable = {}
+        if (Object.keys(decor).length > 0) rootTable.decoration = decor
+        if (Object.keys(general).length > 0) rootTable.general = general
+        if (Object.keys(anim).length > 0) rootTable.animations = anim
+        if (Object.keys(input).length > 0) rootTable.input = input
+        if (Object.keys(misc).length > 0) rootTable.misc = misc
+
+        if (Object.keys(rootTable).length === 0) return ""
+        return "hl.config(" + toLua(rootTable) + ")"
+    }
+
     // Coalesced pending changes for batch & zero-latency execution
     property var _pendingChanges: ({})
+    property bool _isApplying: false
 
     Timer {
         id: batchTimer
@@ -138,52 +257,79 @@ Singleton {
     // ── Direct & Fast Option Application ──────────────────────────────────────
     function setOption(optName, optVal) {
         _pendingChanges[optName] = optVal
-        if (!batchTimer.running) {
-            batchTimer.restart()
+        if (!_isApplying) {
+            if (!batchTimer.running) {
+                batchTimer.restart()
+            }
         }
     }
 
     function _flushPendingChanges() {
+        if (_isApplying) return
         const keys = Object.keys(_pendingChanges)
         if (keys.length === 0) return
 
+        const currentChanges = Object.assign({}, _pendingChanges)
+        _pendingChanges = {}
+        _isApplying = true
+
         if (activeCompositor === "hyprland") {
-            // Build batch of hyprctl keyword calls into a single fast shell command
-            let cmdParts = []
-            for (let i = 0; i < keys.length; i++) {
-                const k = keys[i]
-                const v = _pendingChanges[k]
-                const hyprKey = hyprKeyMap[k]
-                if (hyprKey) {
-                    let formattedVal = String(v)
-                    if (typeof v === "boolean") formattedVal = v ? "1" : "0"
-                    cmdParts.push("hyprctl keyword " + hyprKey + " " + formattedVal)
+            if (configType === "lua") {
+                const luaCode = buildLuaConfig(currentChanges)
+                if (luaCode.length > 0) {
+                    fastHyprProc.command = ["hyprctl", "eval", luaCode]
+                    fastHyprProc.running = true
+                    return
+                }
+            } else {
+                let cmdParts = []
+                for (let i = 0; i < keys.length; i++) {
+                    const k = keys[i]
+                    const v = currentChanges[k]
+                    const hyprKey = hyprKeyMap[k]
+                    if (hyprKey) {
+                        let formattedVal = String(v)
+                        if (typeof v === "boolean") formattedVal = v ? "1" : "0"
+                        cmdParts.push("keyword " + hyprKey + " " + formattedVal)
+                    }
+                }
+                if (cmdParts.length > 0) {
+                    fastHyprProc.command = ["hyprctl", "--batch", cmdParts.join(" ; ")]
+                    fastHyprProc.running = true
+                    return
                 }
             }
-            _pendingChanges = {}
-
-            if (cmdParts.length > 0) {
-                fastHyprProc.command = ["sh", "-c", cmdParts.join(" && ")]
-                fastHyprProc.running = true
-            }
+            _isApplying = false
         } else {
             // Fallback to helper script for other compositors
-            for (let i = 0; i < keys.length; i++) {
-                const k = keys[i]
-                const v = _pendingChanges[k]
-                applyProcess.command = [helperScript, "set", k, String(v)]
-                applyProcess.running = true
-            }
-            _pendingChanges = {}
+            const firstKey = keys[0]
+            const firstVal = currentChanges[firstKey]
+            delete currentChanges[firstKey]
+            _pendingChanges = Object.assign(currentChanges, _pendingChanges)
+
+            applyProcess.command = [helperScript, "set", firstKey, String(firstVal)]
+            applyProcess.running = true
         }
     }
 
     Process {
         id: fastHyprProc
+        onExited: {
+            root._isApplying = false
+            if (Object.keys(root._pendingChanges).length > 0) {
+                root._flushPendingChanges()
+            }
+        }
     }
 
     Process {
         id: applyProcess
+        onExited: {
+            root._isApplying = false
+            if (Object.keys(root._pendingChanges).length > 0) {
+                root._flushPendingChanges()
+            }
+        }
     }
 
     // ── Live Setting Updates & Helpers ────────────────────────────────────────
@@ -202,13 +348,13 @@ Singleton {
     }
 
     function setHyprBlurSize(val) {
-        hyprBlurSize = val
-        setOption("blur_size", val)
+        hyprBlurSize = Math.round(Number(val))
+        setOption("blur_size", hyprBlurSize)
     }
 
     function setHyprBlurPasses(val) {
-        hyprBlurPasses = val
-        setOption("blur_passes", val)
+        hyprBlurPasses = Math.round(Number(val))
+        setOption("blur_passes", hyprBlurPasses)
     }
 
     function toggleHyprShadow() {
@@ -217,23 +363,23 @@ Singleton {
     }
 
     function setHyprShadowRange(val) {
-        hyprShadowRange = val
-        setOption("shadow_range", val)
+        hyprShadowRange = Math.round(Number(val))
+        setOption("shadow_range", hyprShadowRange)
     }
 
     function setHyprShadowPower(val) {
-        hyprShadowPower = val
-        setOption("shadow_power", val)
+        hyprShadowPower = Math.round(Number(val))
+        setOption("shadow_power", hyprShadowPower)
     }
 
     function setHyprActiveOpacity(val) {
-        hyprActiveOpacity = val
-        setOption("active_opacity", val)
+        hyprActiveOpacity = Number(Number(val).toFixed(2))
+        setOption("active_opacity", hyprActiveOpacity)
     }
 
     function setHyprInactiveOpacity(val) {
-        hyprInactiveOpacity = val
-        setOption("inactive_opacity", val)
+        hyprInactiveOpacity = Number(Number(val).toFixed(2))
+        setOption("inactive_opacity", hyprInactiveOpacity)
     }
 
     function toggleHyprDimInactive() {
@@ -242,33 +388,33 @@ Singleton {
     }
 
     function setHyprDimStrength(val) {
-        hyprDimStrength = val
-        setOption("dim_strength", val)
+        hyprDimStrength = Number(Number(val).toFixed(2))
+        setOption("dim_strength", hyprDimStrength)
     }
 
     function setHyprRounding(val) {
-        hyprRounding = val
-        setOption("rounding", val)
+        hyprRounding = Math.round(Number(val))
+        setOption("rounding", hyprRounding)
     }
 
     function setHyprBorderSize(val) {
-        hyprBorderSize = val
-        setOption("border_size", val)
+        hyprBorderSize = Math.round(Number(val))
+        setOption("border_size", hyprBorderSize)
     }
 
     function setHyprGapsIn(val) {
-        hyprGapsIn = val
-        setOption("gaps_in", val)
+        hyprGapsIn = Math.round(Number(val))
+        setOption("gaps_in", hyprGapsIn)
     }
 
     function setHyprGapsOut(val) {
-        hyprGapsOut = val
-        setOption("gaps_out", val)
+        hyprGapsOut = Math.round(Number(val))
+        setOption("gaps_out", hyprGapsOut)
     }
 
     function setHyprLayout(val) {
-        hyprLayout = val
-        setOption("layout", val)
+        hyprLayout = String(val)
+        setOption("layout", hyprLayout)
     }
 
     function toggleHyprTouchpadNatural() {
@@ -287,8 +433,8 @@ Singleton {
     }
 
     function setHyprSensitivity(val) {
-        hyprSensitivity = val
-        setOption("sensitivity", val)
+        hyprSensitivity = Number(Number(val).toFixed(2))
+        setOption("sensitivity", hyprSensitivity)
     }
 
     function toggleHyprResizeBorder() {

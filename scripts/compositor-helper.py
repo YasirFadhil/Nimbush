@@ -89,119 +89,110 @@ def query_all():
         })
 
     if comp == "hyprland":
-        commands = {
-            "version": ["hyprctl", "version"],
-            "blur": ["hyprctl", "getoption", "decoration:blur:enabled", "-j"],
-            "blur_size": ["hyprctl", "getoption", "decoration:blur:size", "-j"],
-            "blur_passes": ["hyprctl", "getoption", "decoration:blur:passes", "-j"],
-            "anim": ["hyprctl", "getoption", "animations:enabled", "-j"],
-            "shadow": ["hyprctl", "getoption", "decoration:shadow:enabled", "-j"],
-            "shadow_range": ["hyprctl", "getoption", "decoration:shadow:range", "-j"],
-            "shadow_power": ["hyprctl", "getoption", "decoration:shadow:render_power", "-j"],
-            "rounding": ["hyprctl", "getoption", "decoration:rounding", "-j"],
-            "border_size": ["hyprctl", "getoption", "general:border_size", "-j"],
-            "gaps_in": ["hyprctl", "getoption", "general:gaps_in", "-j"],
-            "gaps_out": ["hyprctl", "getoption", "general:gaps_out", "-j"],
-            "active_opacity": ["hyprctl", "getoption", "decoration:active_opacity", "-j"],
-            "inactive_opacity": ["hyprctl", "getoption", "decoration:inactive_opacity", "-j"],
-            "dim_inactive": ["hyprctl", "getoption", "decoration:dim_inactive", "-j"],
-            "dim_strength": ["hyprctl", "getoption", "decoration:dim_strength", "-j"],
-            "layout": ["hyprctl", "getoption", "general:layout", "-j"],
-            "touchpad_natural": ["hyprctl", "getoption", "input:touchpad:natural_scroll", "-j"],
-            "touchpad_tap": ["hyprctl", "getoption", "input:touchpad:tap-to-click", "-j"],
-            "touchpad_dwt": ["hyprctl", "getoption", "input:touchpad:disable_while_typing", "-j"],
-            "sensitivity": ["hyprctl", "getoption", "input:sensitivity", "-j"],
-            "resize_border": ["hyprctl", "getoption", "general:resize_on_border", "-j"],
-            "disable_hyprland_logo": ["hyprctl", "getoption", "misc:disable_hyprland_logo", "-j"],
-            "monitors": ["hyprctl", "monitors", "-j"],
-            "workspaces": ["hyprctl", "workspaces", "-j"],
-            "clients": ["hyprctl", "clients", "-j"]
-        }
+        options_keys = [
+            ("blur", "decoration:blur:enabled", bool, True),
+            ("blur_size", "decoration:blur:size", int, 4),
+            ("blur_passes", "decoration:blur:passes", int, 2),
+            ("anim", "animations:enabled", bool, True),
+            ("shadow", "decoration:shadow:enabled", bool, True),
+            ("shadow_range", "decoration:shadow:range", int, 4),
+            ("shadow_power", "decoration:shadow:render_power", int, 3),
+            ("rounding", "decoration:rounding", int, 10),
+            ("border_size", "general:border_size", int, 0),
+            ("gaps_in", "general:gaps_in", "gap", 5),
+            ("gaps_out", "general:gaps_out", "gap", 10),
+            ("active_opacity", "decoration:active_opacity", float, 0.90),
+            ("inactive_opacity", "decoration:inactive_opacity", float, 0.95),
+            ("dim_inactive", "decoration:dim_inactive", bool, False),
+            ("dim_strength", "decoration:dim_strength", float, 0.50),
+            ("layout", "general:layout", str, "scrolling"),
+            ("touchpad_natural", "input:touchpad:natural_scroll", bool, True),
+            ("touchpad_tap", "input:touchpad:tap-to-click", bool, True),
+            ("touchpad_dwt", "input:touchpad:disable_while_typing", bool, True),
+            ("sensitivity", "input:sensitivity", float, 0.0),
+            ("resize_border", "general:resize_on_border", bool, False),
+            ("disable_hyprland_logo", "misc:disable_hyprland_logo", bool, False)
+        ]
 
-        with ThreadPoolExecutor(max_workers=12) as executor:
-            future_to_key = {executor.submit(run_proc, cmd): k for k, cmd in commands.items()}
-            raw = {}
-            for future in future_to_key:
-                k = future_to_key[future]
-                raw[k] = future.result()
+        batch_list = ["j/monitors", "j/workspaces", "j/clients"] + [f"j/getoption {opt[1]}" for opt in options_keys]
 
-        def b(k, default=True):
-            v = raw.get(k)
-            return v.get("bool", default) if isinstance(v, dict) else default
+        try:
+            ver_p = subprocess.run(["hyprctl", "version"], capture_output=True, text=True, timeout=0.8)
+            ver = ver_p.stdout.split("\n")[0] if ver_p.returncode == 0 else "Hyprland"
+        except Exception:
+            ver = "Hyprland"
 
-        def i(k, default=0):
-            v = raw.get(k)
-            return v.get("int", default) if isinstance(v, dict) else default
-
-        def f(k, default=1.0):
-            v = raw.get(k)
-            return v.get("float", default) if isinstance(v, dict) else default
-
-        def s(k, default=""):
-            v = raw.get(k)
-            if isinstance(v, dict):
-                return v.get("str") or v.get("css") or v.get("data") or default
-            return str(v) if v is not None else default
-
-        def parse_gap(v_str, default=5):
-            try:
-                parts = str(v_str).strip().split()
-                if parts:
-                    return int(parts[0])
-            except Exception:
-                pass
-            return default
-
-        ver_raw = raw.get("version") or "Hyprland"
-        ver = ver_raw.split("\n")[0] if isinstance(ver_raw, str) else "Hyprland"
-
-        monitors_raw = raw.get("monitors") if isinstance(raw.get("monitors"), list) else []
+        raw_opts = {k: dflt for k, _, _, dflt in options_keys}
         clean_monitors = []
-        for m in monitors_raw:
-            if isinstance(m, dict):
-                clean_monitors.append({
-                    "id": m.get("id", 0),
-                    "name": m.get("name", "Display"),
-                    "description": m.get("description", ""),
-                    "width": m.get("width", 1920),
-                    "height": m.get("height", 1080),
-                    "refreshRate": round(float(m.get("refreshRate", 60))),
-                    "scale": float(m.get("scale", 1.0)),
-                    "focused": bool(m.get("focused", False)),
-                    "vrr": bool(m.get("vrr", False)),
-                    "activeWorkspace": m.get("activeWorkspace", {}).get("name", "1") if isinstance(m.get("activeWorkspace"), dict) else "1"
-                })
+        workspaces_count = 1
+        windows_count = 0
 
-        workspaces_count = len(raw.get("workspaces")) if isinstance(raw.get("workspaces"), list) else 1
-        windows_count = len(raw.get("clients")) if isinstance(raw.get("clients"), list) else 0
+        try:
+            r = subprocess.run(["hyprctl", "--batch", " ; ".join(batch_list)], capture_output=True, text=True, timeout=1.0)
+            if r.returncode == 0:
+                import re
+                raw_items = [x.strip() for x in re.split(r"\n{2,}", r.stdout.strip()) if x.strip()]
+                if len(raw_items) >= 3:
+                    try:
+                        m_list = json.loads(raw_items[0])
+                        if isinstance(m_list, list):
+                            for m in m_list:
+                                if isinstance(m, dict):
+                                    clean_monitors.append({
+                                        "id": m.get("id", 0),
+                                        "name": m.get("name", "Display"),
+                                        "description": m.get("description", ""),
+                                        "width": m.get("width", 1920),
+                                        "height": m.get("height", 1080),
+                                        "refreshRate": round(float(m.get("refreshRate", 60))),
+                                        "scale": float(m.get("scale", 1.0)),
+                                        "focused": bool(m.get("focused", False)),
+                                        "vrr": bool(m.get("vrr", False)),
+                                        "activeWorkspace": m.get("activeWorkspace", {}).get("name", "1") if isinstance(m.get("activeWorkspace"), dict) else "1"
+                                    })
+                    except Exception:
+                        pass
+
+                    try:
+                        ws_list = json.loads(raw_items[1])
+                        if isinstance(ws_list, list):
+                            workspaces_count = max(1, len(ws_list))
+                    except Exception:
+                        pass
+
+                    try:
+                        c_list = json.loads(raw_items[2])
+                        if isinstance(c_list, list):
+                            windows_count = len(c_list)
+                    except Exception:
+                        pass
+
+                    for i, (k, _, typ, dflt) in enumerate(options_keys):
+                        item_idx = 3 + i
+                        if item_idx < len(raw_items):
+                            try:
+                                v_dict = json.loads(raw_items[item_idx])
+                                if typ == bool:
+                                    raw_opts[k] = v_dict.get("bool", dflt)
+                                elif typ == int:
+                                    raw_opts[k] = v_dict.get("int", dflt)
+                                elif typ == float:
+                                    raw_opts[k] = round(float(v_dict.get("float", dflt)), 2)
+                                elif typ == "gap":
+                                    s_val = str(v_dict.get("css") or v_dict.get("str") or dflt).strip().split()
+                                    raw_opts[k] = int(s_val[0]) if s_val else dflt
+                                elif typ == str:
+                                    raw_opts[k] = v_dict.get("str") or v_dict.get("data") or dflt
+                            except Exception:
+                                raw_opts[k] = dflt
+        except Exception:
+            pass
 
         res = {
             "activeCompositor": "hyprland",
             "activeDisplayName": "Hyprland",
             "configType": "lua" if is_lua_config() else "conf",
             "version": ver,
-            "blur": b("blur", True),
-            "blur_size": i("blur_size", 4),
-            "blur_passes": i("blur_passes", 2),
-            "anim": b("anim", True),
-            "shadow": b("shadow", True),
-            "shadow_range": i("shadow_range", 4),
-            "shadow_power": i("shadow_power", 3),
-            "rounding": i("rounding", 10),
-            "border_size": i("border_size", 0),
-            "gaps_in": parse_gap(s("gaps_in", "5"), 5),
-            "gaps_out": parse_gap(s("gaps_out", "10"), 10),
-            "active_opacity": round(f("active_opacity", 0.90), 2),
-            "inactive_opacity": round(f("inactive_opacity", 0.95), 2),
-            "dim_inactive": b("dim_inactive", False),
-            "dim_strength": round(f("dim_strength", 0.5), 2),
-            "layout": s("layout", "scrolling") or "scrolling",
-            "touchpad_natural": b("touchpad_natural", True),
-            "touchpad_tap": b("touchpad_tap", True),
-            "touchpad_dwt": b("touchpad_dwt", False),
-            "sensitivity": round(f("sensitivity", 0.0), 2),
-            "resize_border": b("resize_border", False),
-            "disable_hyprland_logo": b("disable_hyprland_logo", False),
             "monitorsCount": max(1, len(clean_monitors)),
             "monitors": clean_monitors,
             "workspacesCount": max(1, workspaces_count),
@@ -209,6 +200,7 @@ def query_all():
             "installedCompositors": installed_compositors,
             "discoveredConfigFiles": found_files
         }
+        res.update(raw_opts)
         return res
     else:
         return {

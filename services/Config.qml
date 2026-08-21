@@ -7,8 +7,8 @@ Singleton {
     id: root
 
     // ── Appearance Properties ────────────────────────────────────────────────
-    property string themeMode: "light"            // "dark" | "light" | "auto"
-    property string accentColor: "#2c2c2e"        // Hex string
+    property string themeMode: "dark"             // "dark" | "light" | "auto"
+    property string accentColor: "#d4d4d4"        // Hex string
     property string accentName: "Graphite"        // Human readable name
     property int cornerRadius: 16                 // 8 | 12 | 16 | 20 | 24
     property real uiScale: 1.0                    // 0.9 (compact) | 1.0 (normal) | 1.15 (large)
@@ -66,8 +66,8 @@ Singleton {
     property string lockscreenAvatarShape: "circle" // "circle" | "squircle" | "rounded"
     property bool lockscreenAvatarRing: true
     property string lockscreenInputStyle: "pill"  // "pill" | "underline" | "box" | "dots"
-    property bool lockscreenShowAvatar: true
-    property bool lockscreenShowGreeting: true
+    property bool lockscreenShowAvatar: false
+    property bool lockscreenShowGreeting: false
     property bool lockscreenShowMedia: true
     property string lockscreenMediaStyle: "pill"  // "pill" | "card"
     property bool lockscreenShowWeather: true

@@ -1168,7 +1168,7 @@ Item {
                 visible: root.replyMode
 
                 Text {
-                    text: root.currentNotif ? ("Balas: " + (root.currentNotif.summary || root.currentNotif.appName)) : "Balas Notifikasi"
+                    text: root.currentNotif ? ("Reply: " + (root.currentNotif.summary || root.currentNotif.appName)) : "Reply Notification"
                     color: Services.Theme.textSecondary
                     font.pixelSize: 11
                     font.bold: true
@@ -1194,7 +1194,7 @@ Item {
                         focus: root.replyMode
 
                         Text {
-                            text: "Tulis balasan..."
+                            text: (root.currentNotif && root.currentNotif.inlineReplyPlaceholder) ? root.currentNotif.inlineReplyPlaceholder : "Write a reply..."
                             color: Services.Theme.textDisabled
                             font.pixelSize: 12
                             visible: replyInput.text.length === 0 && !replyInput.activeFocus
@@ -1202,9 +1202,12 @@ Item {
 
                         Keys.onReturnPressed: {
                             if (root.currentNotif && replyInput.text.trim().length > 0) {
-                                Services.Notifications.invokeAction(root.currentNotif.notifId, root.activeReplyActionId, replyInput.text.trim())
+                                const msg = replyInput.text.trim()
+                                const nId = root.currentNotif.notifId
+                                const aId = root.activeReplyActionId
                                 root.replyMode = false
                                 replyInput.text = ""
+                                Services.Notifications.invokeAction(nId, aId, msg)
                             }
                         }
                     }
@@ -1226,7 +1229,7 @@ Item {
                         Text {
                             id: cancelTxt
                             anchors.centerIn: parent
-                            text: "Batal"
+                            text: "Cancel"
                             color: Services.Theme.textSecondary
                             font.pixelSize: 10
                             font.bold: true
@@ -1247,29 +1250,44 @@ Item {
                     // Send Button
                     Rectangle {
                         implicitHeight: 22
-                        implicitWidth: sendTxt.implicitWidth + 14
+                        implicitWidth: sendRow.implicitWidth + 16
                         radius: 6
                         color: sendMouse.containsMouse ? Qt.lighter(Services.Theme.accent, 1.1) : Services.Theme.accent
 
-                        Text {
-                            id: sendTxt
+                        RowLayout {
+                            id: sendRow
                             anchors.centerIn: parent
-                            text: "Kirim 󰏲"
-                            font.family: Services.Theme.fontMono
-                            color: Services.Theme.bgOnAccent
-                            font.pixelSize: 10
-                            font.bold: true
+                            spacing: 4
+
+                            Text {
+                                text: "Send"
+                                font.family: Services.Theme.fontMono
+                                color: Services.Theme.bgOnAccent
+                                font.pixelSize: 10
+                                font.bold: true
+                            }
+
+                            Text {
+                                text: Services.Icons.send || "\uf1d8"
+                                font.family: Services.Theme.fontSymbols
+                                color: Services.Theme.bgOnAccent
+                                font.pixelSize: 10
+                            }
                         }
 
                         MouseArea {
                             id: sendMouse
                             anchors.fill: parent
                             hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
                             onClicked: (mouse) => {
                                 if (root.currentNotif && replyInput.text.trim().length > 0) {
-                                    Services.Notifications.invokeAction(root.currentNotif.notifId, root.activeReplyActionId, replyInput.text.trim())
+                                    const msg = replyInput.text.trim()
+                                    const nId = root.currentNotif.notifId
+                                    const aId = root.activeReplyActionId
                                     root.replyMode = false
                                     replyInput.text = ""
+                                    Services.Notifications.invokeAction(nId, aId, msg)
                                 }
                                 mouse.accepted = true
                             }

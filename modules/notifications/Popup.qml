@@ -327,7 +327,7 @@ PanelWindow {
                             focus: card.isReplying
 
                             Text {
-                                text: "Write a reply..."
+                                text: (notifItem.inlineReplyPlaceholder && notifItem.inlineReplyPlaceholder.length > 0) ? notifItem.inlineReplyPlaceholder : "Write a reply..."
                                 color: Services.Theme.textDisabled
                                 font.pixelSize: 11
                                 visible: popReplyInput.text.length === 0 && !popReplyInput.activeFocus
@@ -335,15 +335,14 @@ PanelWindow {
 
                             Keys.onReturnPressed: {
                                 if (popReplyInput.text.trim().length > 0) {
-                                    Services.Notifications.invokeAction(
-                                        notifItem.notifId,
-                                        popupWin.activeReplyActionId,
-                                        popReplyInput.text.trim()
-                                    )
+                                    const msg = popReplyInput.text.trim()
+                                    const nId = notifItem.notifId
+                                    const aId = popupWin.activeReplyActionId
                                     popupWin.replyMode = false
                                     popupWin.activeReplyNotifId = -1
                                     Services.Notifications.replyingNotifId = -1
                                     popReplyInput.text = ""
+                                    Services.Notifications.invokeAction(nId, aId, msg)
                                 }
                             }
                         }
@@ -388,17 +387,29 @@ PanelWindow {
 
                         Rectangle {
                             implicitHeight: 22
-                            implicitWidth: sendTxt.implicitWidth + 14
+                            implicitWidth: popSendRow.implicitWidth + 16
                             radius: 6
-                            color: sendMouse.containsMouse ? Services.Theme.textPrimary : Services.Theme.accent
+                            color: sendMouse.containsMouse ? Qt.lighter(Services.Theme.accent, 1.1) : Services.Theme.accent
 
-                            Text {
-                                id: sendTxt
+                            RowLayout {
+                                id: popSendRow
                                 anchors.centerIn: parent
-                                text: "Send 󰏲"
-                                color: Services.Theme.bgDeep
-                                font.pixelSize: 10
-                                font.bold: true
+                                spacing: 4
+
+                                Text {
+                                    text: "Send"
+                                    font.family: Services.Theme.fontMono
+                                    color: Services.Theme.bgOnAccent
+                                    font.pixelSize: 10
+                                    font.bold: true
+                                }
+
+                                Text {
+                                    text: Services.Icons.send || "\uf1d8"
+                                    font.family: Services.Theme.fontSymbols
+                                    color: Services.Theme.bgOnAccent
+                                    font.pixelSize: 10
+                                }
                             }
 
                             MouseArea {
@@ -408,15 +419,14 @@ PanelWindow {
                                 cursorShape: Qt.PointingHandCursor
                                 onClicked: {
                                     if (popReplyInput.text.trim().length > 0) {
-                                        Services.Notifications.invokeAction(
-                                            notifItem.notifId,
-                                            popupWin.activeReplyActionId,
-                                            popReplyInput.text.trim()
-                                        )
+                                        const msg = popReplyInput.text.trim()
+                                        const nId = notifItem.notifId
+                                        const aId = popupWin.activeReplyActionId
                                         popupWin.replyMode = false
                                         popupWin.activeReplyNotifId = -1
                                         Services.Notifications.replyingNotifId = -1
                                         popReplyInput.text = ""
+                                        Services.Notifications.invokeAction(nId, aId, msg)
                                     }
                                 }
                             }

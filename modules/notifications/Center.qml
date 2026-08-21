@@ -712,17 +712,29 @@ PanelWindow {
                                     // Send Button
                                     Rectangle {
                                         implicitHeight: 22
-                                        implicitWidth: pSendTxt.implicitWidth + 14
+                                        implicitWidth: pSendRow.implicitWidth + 16
                                         radius: 6
-                                        color: pSendMouse.containsMouse ? centerWin.t.textPrimary : centerWin.t.accent
+                                        color: pSendMouse.containsMouse ? Qt.lighter(centerWin.t.accent, 1.1) : centerWin.t.accent
 
-                                        Text {
-                                            id: pSendTxt
+                                        RowLayout {
+                                            id: pSendRow
                                             anchors.centerIn: parent
-                                            text: "Send 󰏲"
-                                            color: Services.Theme.bgDeep
-                                            font.pixelSize: 10
-                                            font.bold: true
+                                            spacing: 4
+
+                                            Text {
+                                                text: "Send"
+                                                font.family: Services.Theme.fontMono
+                                                color: Services.Theme.bgOnAccent
+                                                font.pixelSize: 10
+                                                font.bold: true
+                                            }
+
+                                            Text {
+                                                text: Services.Icons.send || "\uf1d8"
+                                                font.family: Services.Theme.fontSymbols
+                                                color: Services.Theme.bgOnAccent
+                                                font.pixelSize: 10
+                                            }
                                         }
 
                                         MouseArea {
@@ -732,13 +744,12 @@ PanelWindow {
                                             cursorShape: Qt.PointingHandCursor
                                             onClicked: {
                                                 if (pReplyInput.text.trim().length > 0) {
-                                                    Services.Notifications.invokeAction(
-                                                        groupCard.primaryItem.notifId,
-                                                        groupCard.activeReplyActionId,
-                                                        pReplyInput.text.trim()
-                                                    )
+                                                    const msg = pReplyInput.text.trim()
+                                                    const nId = groupCard.primaryItem.notifId
+                                                    const aId = groupCard.activeReplyActionId
                                                     groupCard.replyMode = false
                                                     pReplyInput.text = ""
+                                                    Services.Notifications.invokeAction(nId, aId, msg)
                                                 }
                                             }
                                         }

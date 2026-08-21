@@ -130,12 +130,18 @@ Singleton {
     readonly property string sparkle:       "\uf0d0"   // alias
     readonly property string expand:        "\uf065"   // nf-fa-expand
     readonly property string layout:        "\uf009"   // nf-fa-th_large
+    readonly property string grid:          "\uf009"   // nf-fa-th_large / grid alias
+    readonly property string eye:           "\uf06e"   // nf-fa-eye alias
     readonly property string terminal:      "\uf120"   // nf-fa-terminal
     readonly property string info:          "\uf129"   // nf-fa-info
     readonly property string tray:          "\uf0c9"   // nf-fa-bars / tray
     readonly property string checkCircle:   "\uf058"   // nf-fa-check_circle
     readonly property string dotCircle:     "\uf192"   // nf-fa-dot_circle_o
     readonly property string slidersH:      "\uf1de"   // nf-fa-sliders
+    readonly property string send:          "\uf1d8"   // nf-fa-paper_plane / send
+    readonly property string paperPlane:    "\uf1d8"   // nf-fa-paper_plane
+    readonly property string error:         "\uf06a"   // nf-fa-exclamation_circle
+    readonly property string warning:       "\uf071"   // nf-fa-exclamation_triangle
 
     // ── Helper Functions ─────────────────────────────────────────────────────────
 

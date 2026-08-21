@@ -452,6 +452,7 @@ Singleton {
         if (text !== undefined && text !== "") {
             // Inline Reply execution
             if (isKde) {
+                // KDE Connect must use KDE Connect DBus helper to send the text message payload
                 console.log("[Notifications] sending reply via KDE Connect DBus helper, notif", notifId, "actionId", actionId)
                 kdeConnectReplyProc.replyId = (item && item.kdeReplyId) ? item.kdeReplyId : (actionId || "")
                 kdeConnectReplyProc.notifId = (item && item.kdeNotifId) ? item.kdeNotifId : ""
@@ -459,19 +460,24 @@ Singleton {
                 kdeConnectReplyProc.body = item ? (item.body || "") : ""
                 kdeConnectReplyProc.replyText = text
                 kdeConnectReplyProc.running = true
-            }
-
-            if (trackedNotif) {
+            } else if (trackedNotif) {
+                // Native freedesktop inline reply (e.g. desktop messaging apps)
                 if (trackedNotif.hasInlineReply) {
                     console.log("[Notifications] sending reply via native sendInlineReply for notif", notifId)
-                    trackedNotif.sendInlineReply(text)
-                } else {
+                    try {
+                        trackedNotif.sendInlineReply(text)
+                    } catch (e) { }
+                } else if (actionId && actionId !== "inline-reply") {
                     const act = trackedNotif.actions.find(a => a.identifier === actionId)
-                    if (act) act.invoke(text)
+                    if (act) {
+                        try {
+                            act.invoke()
+                        } catch (e) { }
+                    }
                 }
             }
         } else {
-            // Regular Action click
+            // Regular Action click (without text payload)
             if (isKde && (actionId === "1" || actionId === "mark-as-read" || actionId === "dismiss")) {
                 kdeConnectDismissProc.notifId = (item && item.kdeNotifId) ? item.kdeNotifId : ""
                 kdeConnectDismissProc.summary = item ? (item.summary || "") : ""
@@ -480,12 +486,18 @@ Singleton {
             }
             if (trackedNotif) {
                 const act = trackedNotif.actions.find(a => a.identifier === actionId)
-                if (act) act.invoke()
+                if (act) {
+                    try {
+                        act.invoke()
+                    } catch (e) { }
+                }
             }
         }
 
         if (trackedNotif) {
-            trackedNotif.dismiss()
+            try {
+                trackedNotif.dismiss()
+            } catch (e) { }
         }
 
         root.removePopup(notifId)
@@ -503,7 +515,12 @@ Singleton {
         }
 
         for (const n of server.trackedNotifications.values) {
-            if (n.id === notifId) { n.dismiss(); break }
+            if (n.id === notifId) {
+                try {
+                    n.dismiss()
+                } catch (e) { }
+                break
+            }
         }
         root.removePopup(notifId)
         root.removeFromHistory(notifId)

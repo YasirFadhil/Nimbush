@@ -80,9 +80,11 @@ QtObject {
     readonly property int radiusLg:   baseRadius
 
     // ─── Font Families ─────────────────────────────────────────────────────
+    readonly property string fontFamily: (Services.Config && Services.Config.fontFamily) ? Services.Config.fontFamily : "Liga SFMono Nerd Font, monospace"
     readonly property string fontMono:    (Services.Config && Services.Config.fontFamily) ? Services.Config.fontFamily : "Liga SFMono Nerd Font, monospace"              // bar & text UI
     readonly property string fontSymbols: "Symbols Nerd Font Mono, Liga SFMono Nerd Font, FontAwesome, monospace" // icons / glyphs
     readonly property string fontDisplay: (Services.Config && Services.Config.fontFamily) ? Services.Config.fontFamily : "SF Pro Display, Inter, Sans-Serif"  // headings / large display
+    readonly property string fontPrimary: fontDisplay
 
     // ─── Font Scale ─────────────────────────────────────────────────────────
     readonly property real scale: Services.Config ? Services.Config.uiScale : 1.0

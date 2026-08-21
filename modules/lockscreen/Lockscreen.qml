@@ -61,21 +61,21 @@ Scope {
         id: unlockTimer
         interval: 220
         onTriggered: {
+            root.isLocked = false
             Services.OverlayManager.isLocked = false
             sessionLock.locked = false
         }
     }
 
     function open() {
-        Services.OverlayManager.isLocked = true
-        Services.OverlayManager.closeAllExcept(root)
-        lockscreenCcOpen = false
-        lockscreenPwrOpen = false
+        if (isLocked) return
+        isLocked = true
         passwordInput = ""
         pendingPassword = ""
         isError = false
         errorMessage = ""
         showPassword = false
+        capsLockOn = false
         isAuthenticating = false
         isRevealed = false
         updateTime()
@@ -88,6 +88,7 @@ Scope {
             triggerShake("Password required!")
             return
         }
+        root.isLocked = false
         Services.OverlayManager.isLocked = false
         sessionLock.locked = false
     }
@@ -96,6 +97,7 @@ Scope {
     function show() { open() }
     function hide() {
         if (!isLocked) {
+            root.isLocked = false
             Services.OverlayManager.isLocked = false
             sessionLock.locked = false
         }
@@ -147,6 +149,7 @@ Scope {
         isAuthenticating = false
         pendingPassword = ""
         passwordInput = ""
+        if (typeof pwTextInput !== "undefined" && pwTextInput) pwTextInput.text = ""
         if (pam.active) pam.abort()
         if (typeof shakeAnim !== "undefined" && shakeAnim) shakeAnim.restart()
     }
@@ -156,8 +159,10 @@ Scope {
         errorMessage = ""
         passwordInput = ""
         pendingPassword = ""
+        if (typeof pwTextInput !== "undefined" && pwTextInput) pwTextInput.text = ""
         isAuthenticating = false
         isRevealed = false
+        capsLockOn = false
         lockscreenCcOpen = false
         lockscreenPwrOpen = false
         unlockTimer.start()
@@ -181,8 +186,8 @@ Scope {
     // System info process
     Process {
         id: userInfoProc
-        command: ["sh", "-c", "echo $USER && hostname"]
-        running: false
+        command: ["sh", "-c", "echo $USER && uname -n"]
+        running: true
         stdout: SplitParser {
             onRead: data => {
                 const lines = data.trim().split("\n")
@@ -225,11 +230,15 @@ Scope {
         id: sessionLock
 
         onLockedChanged: {
+            root.isLocked = sessionLock.locked
             Services.OverlayManager.isLocked = sessionLock.locked
             if (!sessionLock.locked) {
                 root.passwordInput = ""
                 root.pendingPassword = ""
                 root.isAuthenticating = false
+                root.isRevealed = false
+                root.capsLockOn = false
+                if (typeof pwTextInput !== "undefined" && pwTextInput) pwTextInput.text = ""
                 if (pam.active) pam.abort()
             }
         }
@@ -249,16 +258,28 @@ Scope {
                 Keys.onPressed: (event) => {
                     if (event.key === Qt.Key_Escape) {
                         root.passwordInput = ""
+                        if (typeof pwTextInput !== "undefined" && pwTextInput) pwTextInput.text = ""
                         root.triggerShake("Password required")
                         event.accepted = true
                     } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+                        if (typeof pwTextInput !== "undefined" && pwTextInput) root.passwordInput = pwTextInput.text
                         root.authenticate()
                         event.accepted = true
                     } else if (event.key === Qt.Key_CapsLock) {
                         root.capsLockOn = !root.capsLockOn
                         event.accepted = true
                     } else {
-                        if (!pwTextInput.activeFocus && event.text.length > 0) {
+                        // Intelligent CapsLock auto-detection heuristic based on typed character casing vs Shift key
+                        if (event.text && event.text.length === 1) {
+                            const c = event.text
+                            const isShift = !!(event.modifiers & Qt.ShiftModifier)
+                            if (c >= 'A' && c <= 'Z') {
+                                root.capsLockOn = !isShift
+                            } else if (c >= 'a' && c <= 'z') {
+                                root.capsLockOn = isShift
+                            }
+                        }
+                        if (typeof pwTextInput !== "undefined" && pwTextInput && !pwTextInput.activeFocus && event.text.length > 0) {
                             pwTextInput.forceActiveFocus()
                         }
                     }
@@ -560,16 +581,11 @@ Scope {
                             id: topClockColumn
                             anchors.horizontalCenter: parent.horizontalCenter
                             anchors.top: parent.top
-                            anchors.topMargin: root.isRevealed 
-                                ? (Services.Config && (Services.Config.lockscreenClockStyle === "modern" || Services.Config.lockscreenClockStyle === "vertical") ? (parent.height * 0.07) : (parent.height * 0.12)) 
-                                : (parent.height * 0.12 - 35)
-                            spacing: 4
+                            anchors.topMargin: Math.max(80, parent.height * 0.18)
+
+                            spacing: 6
                             opacity: root.isRevealed ? 1.0 : 0.0
-                            scale: root.isRevealed ? 1.0 : 0.92
-                            transformOrigin: Item.Center
-                            Behavior on anchors.topMargin { NumberAnimation { duration: 400; easing.type: Easing.OutCubic } }
-                            Behavior on opacity { NumberAnimation { duration: 350; easing.type: Easing.OutCubic } }
-                            Behavior on scale { NumberAnimation { duration: 400; easing.type: Easing.OutCubic } }
+                            Behavior on opacity { NumberAnimation { duration: 300; easing.type: Easing.OutCubic } }
 
                             readonly property string clockStyle: Services.Config ? Services.Config.lockscreenClockStyle : "hero"
 
@@ -577,6 +593,7 @@ Scope {
                             Text {
                                 visible: topClockColumn.clockStyle !== "compact" && topClockColumn.clockStyle !== "vertical" && topClockColumn.clockStyle !== "typographic" && topClockColumn.clockStyle !== "radial" && topClockColumn.clockStyle !== "cyber"
                                 Layout.alignment: Qt.AlignHCenter
+                                horizontalAlignment: Text.AlignHCenter
                                 text: topClockColumn.clockStyle === "minimal" ? root.dateStr.toUpperCase() : root.dateStr
                                 color: topClockColumn.clockStyle === "minimal" ? Services.Theme.accent : Services.Theme.textPrimary
                                 font.pixelSize: topClockColumn.clockStyle === "minimal" ? Services.Theme.fontSizeSm : Services.Theme.fontSize5xl
@@ -586,10 +603,11 @@ Scope {
                                 styleColor: Services.Theme.overlayDim
                             }
 
-                            // Style 1: Hero Clock (Single horizontal huge display)
+                            // Style 1: Hero Clock (Single horizontal huge display - Original)
                             Text {
                                 visible: topClockColumn.clockStyle === "hero"
                                 Layout.alignment: Qt.AlignHCenter
+                                horizontalAlignment: Text.AlignHCenter
                                 text: root.timeStr
                                 color: Services.Theme.white
                                 font.pixelSize: Services.Theme.fontSizeHero
@@ -599,58 +617,60 @@ Scope {
                                 styleColor: Services.Theme.overlayDim
                             }
 
-                            // Style 2: Modern Stacked Clock (Large Hour above Minute)
+                            // Style 2: Modern Stacked Clock (Bold Hour on top, Clean Minute below)
                             ColumnLayout {
                                 visible: topClockColumn.clockStyle === "modern"
                                 Layout.alignment: Qt.AlignHCenter
-                                spacing: -20
+                                spacing: -24
 
                                 Text {
                                     Layout.alignment: Qt.AlignHCenter
+                                    horizontalAlignment: Text.AlignHCenter
                                     text: root.hourStr
                                     color: Services.Theme.accent
-                                    font.pixelSize: 84
-                                    font.weight: Font.Bold
+                                    font.pixelSize: 92
+                                    font.weight: Font.Black
                                     font.family: Services.Theme.fontDisplay
                                     style: Text.Outline
                                     styleColor: Services.Theme.overlayDim
                                 }
                                 Text {
                                     Layout.alignment: Qt.AlignHCenter
+                                    horizontalAlignment: Text.AlignHCenter
                                     text: root.minStr
                                     color: Services.Theme.white
-                                    font.pixelSize: 84
-                                    font.weight: Font.Bold
+                                    font.pixelSize: 92
+                                    font.weight: Font.Black
                                     font.family: Services.Theme.fontDisplay
                                     style: Text.Outline
                                     styleColor: Services.Theme.overlayDim
                                 }
                             }
 
-                            // Style 3: Compact Pill Clock
+                            // Style 3: Compact Island Pill Clock
                             Rectangle {
                                 visible: topClockColumn.clockStyle === "compact"
                                 Layout.alignment: Qt.AlignHCenter
-                                height: 44
-                                implicitWidth: compactRow.implicitWidth + 28
-                                radius: 22
-                                color: Qt.rgba(Services.Theme.bgDeep.r, Services.Theme.bgDeep.g, Services.Theme.bgDeep.b, 0.65)
+                                height: 48
+                                implicitWidth: compactRow.implicitWidth + 32
+                                radius: 24
+                                color: Qt.rgba(Services.Theme.surfaceVariant.r, Services.Theme.surfaceVariant.g, Services.Theme.surfaceVariant.b, 0.75)
                                 border.color: Services.Theme.borderHighlight
                                 border.width: 1
 
                                 RowLayout {
                                     id: compactRow
                                     anchors.centerIn: parent
-                                    spacing: 12
+                                    spacing: 14
 
                                     Text {
                                         text: root.timeStr
                                         color: Services.Theme.accent
-                                        font.pixelSize: Services.Theme.fontSize3xl
+                                        font.pixelSize: Services.Theme.fontSize2xl
                                         font.bold: true
                                         font.family: Services.Theme.fontDisplay
                                     }
-                                    Rectangle { width: 1; height: 16; color: Services.Theme.border }
+                                    Rectangle { width: 1.5; height: 18; color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.4); radius: 1 }
                                     Text {
                                         text: root.dateStr
                                         color: Services.Theme.textPrimary
@@ -664,11 +684,12 @@ Scope {
                             Text {
                                 visible: topClockColumn.clockStyle === "minimal"
                                 Layout.alignment: Qt.AlignHCenter
+                                horizontalAlignment: Text.AlignHCenter
                                 text: root.timeStr
                                 color: Services.Theme.white
-                                font.pixelSize: 88
+                                font.pixelSize: 96
                                 font.weight: Font.ExtraLight
-                                font.letterSpacing: 2
+                                font.letterSpacing: 4
                                 font.family: Services.Theme.fontDisplay
                                 style: Text.Outline
                                 styleColor: Services.Theme.overlayDim
@@ -678,24 +699,26 @@ Scope {
                             RowLayout {
                                 visible: topClockColumn.clockStyle === "vertical"
                                 Layout.alignment: Qt.AlignHCenter
-                                spacing: 18
+                                spacing: 20
 
                                 ColumnLayout {
-                                    spacing: -14
+                                    spacing: -16
                                     Text {
+                                        Layout.alignment: Qt.AlignHCenter
                                         text: root.hourStr
                                         color: Services.Theme.accent
-                                        font.pixelSize: 64
-                                        font.weight: Font.Bold
+                                        font.pixelSize: 68
+                                        font.weight: Font.Black
                                         font.family: Services.Theme.fontDisplay
                                         style: Text.Outline
                                         styleColor: Services.Theme.overlayDim
                                     }
                                     Text {
+                                        Layout.alignment: Qt.AlignHCenter
                                         text: root.minStr
                                         color: Services.Theme.white
-                                        font.pixelSize: 64
-                                        font.weight: Font.Bold
+                                        font.pixelSize: 68
+                                        font.weight: Font.Black
                                         font.family: Services.Theme.fontDisplay
                                         style: Text.Outline
                                         styleColor: Services.Theme.overlayDim
@@ -703,10 +726,10 @@ Scope {
                                 }
 
                                 Rectangle {
-                                    width: 2
-                                    height: 80
+                                    width: 2.5
+                                    height: 86
                                     color: Services.Theme.accent
-                                    radius: 1
+                                    radius: 1.5
                                 }
 
                                 ColumnLayout {
@@ -714,7 +737,7 @@ Scope {
                                     Text {
                                         text: Qt.formatDateTime(new Date(), "dddd")
                                         color: Services.Theme.accent
-                                        font.pixelSize: Services.Theme.fontSizeLg
+                                        font.pixelSize: Services.Theme.fontSizeXl
                                         font.bold: true
                                     }
                                     Text {
@@ -735,26 +758,28 @@ Scope {
                             ColumnLayout {
                                 visible: topClockColumn.clockStyle === "typographic" || topClockColumn.clockStyle === "words"
                                 Layout.alignment: Qt.AlignHCenter
-                                spacing: 3
+                                spacing: 4
 
                                 Text {
                                     Layout.alignment: Qt.AlignHCenter
+                                    horizontalAlignment: Text.AlignHCenter
                                     text: root.hourWords
                                     color: Services.Theme.accent
-                                    font.pixelSize: 44
+                                    font.pixelSize: 46
                                     font.weight: Font.Black
-                                    font.letterSpacing: 2.5
+                                    font.letterSpacing: 3
                                     font.family: Services.Theme.fontDisplay
                                     style: Text.Outline
                                     styleColor: Services.Theme.overlayDim
                                 }
                                 Text {
                                     Layout.alignment: Qt.AlignHCenter
+                                    horizontalAlignment: Text.AlignHCenter
                                     text: root.minWords
                                     color: Services.Theme.white
-                                    font.pixelSize: 44
+                                    font.pixelSize: 46
                                     font.weight: Font.Black
-                                    font.letterSpacing: 2.5
+                                    font.letterSpacing: 3
                                     font.family: Services.Theme.fontDisplay
                                     style: Text.Outline
                                     styleColor: Services.Theme.overlayDim
@@ -766,6 +791,7 @@ Scope {
                                 }
                                 Text {
                                     Layout.alignment: Qt.AlignHCenter
+                                    horizontalAlignment: Text.AlignHCenter
                                     text: root.dateStr.toUpperCase()
                                     color: Services.Theme.textSecondary
                                     font.pixelSize: Services.Theme.fontSizeXs
@@ -780,29 +806,29 @@ Scope {
                             Rectangle {
                                 visible: topClockColumn.clockStyle === "radial"
                                 Layout.alignment: Qt.AlignHCenter
-                                width: 146; height: 146; radius: 73
-                                color: Qt.rgba(Services.Theme.bgDeep.r, Services.Theme.bgDeep.g, Services.Theme.bgDeep.b, 0.55)
+                                width: 154; height: 154; radius: 77
+                                color: Qt.rgba(Services.Theme.bgDeep.r, Services.Theme.bgDeep.g, Services.Theme.bgDeep.b, 0.65)
                                 border.color: Services.Theme.accent
                                 border.width: 2.5
 
                                 Rectangle {
                                     anchors.fill: parent
-                                    anchors.margins: 6
-                                    radius: 67
+                                    anchors.margins: 7
+                                    radius: 70
                                     color: "transparent"
-                                    border.color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.25)
+                                    border.color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.3)
                                     border.width: 1.5
                                 }
 
                                 ColumnLayout {
                                     anchors.centerIn: parent
-                                    spacing: 2
+                                    spacing: 3
 
                                     Text {
                                         Layout.alignment: Qt.AlignHCenter
                                         text: root.timeStr
                                         color: Services.Theme.white
-                                        font.pixelSize: 34
+                                        font.pixelSize: 36
                                         font.weight: Font.Bold
                                         font.family: Services.Theme.fontDisplay
                                     }
@@ -810,7 +836,7 @@ Scope {
                                         Layout.alignment: Qt.AlignHCenter
                                         text: Qt.formatDateTime(new Date(), "ddd, MMM d")
                                         color: Services.Theme.accent
-                                        font.pixelSize: 11
+                                        font.pixelSize: 12
                                         font.weight: Font.DemiBold
                                         font.letterSpacing: 0.5
                                     }
@@ -821,10 +847,10 @@ Scope {
                             Rectangle {
                                 visible: topClockColumn.clockStyle === "cyber"
                                 Layout.alignment: Qt.AlignHCenter
-                                implicitWidth: cyberCol.implicitWidth + 36
-                                implicitHeight: cyberCol.implicitHeight + 22
+                                implicitWidth: cyberCol.implicitWidth + 40
+                                implicitHeight: cyberCol.implicitHeight + 24
                                 radius: 8
-                                color: Qt.rgba(0, 0, 0, 0.7)
+                                color: Qt.rgba(0, 0, 0, 0.75)
                                 border.color: Services.Theme.accent
                                 border.width: 1.5
 
@@ -834,11 +860,11 @@ Scope {
                                     spacing: 4
 
                                     RowLayout {
-                                        spacing: 12
+                                        spacing: 14
                                         Text {
                                             text: "┌[ SYS: LOCKED ]"
                                             font.family: Services.Theme.fontMono
-                                            font.pixelSize: 10
+                                            font.pixelSize: 11
                                             color: Services.Theme.accent
                                             font.bold: true
                                         }
@@ -846,7 +872,7 @@ Scope {
                                         Text {
                                             text: "[ " + (Services.OsInfo.username || root.username) + "@" + (Services.OsInfo.hostname || root.hostname) + " ]┐"
                                             font.family: Services.Theme.fontMono
-                                            font.pixelSize: 10
+                                            font.pixelSize: 11
                                             color: Services.Theme.textSecondary
                                         }
                                     }
@@ -855,24 +881,24 @@ Scope {
                                         Layout.alignment: Qt.AlignHCenter
                                         text: root.timeStr + ":" + String(new Date().getSeconds()).padStart(2, "0")
                                         font.family: Services.Theme.fontMono
-                                        font.pixelSize: 42
+                                        font.pixelSize: 44
                                         font.bold: true
                                         color: Services.Theme.white
                                     }
 
                                     RowLayout {
-                                        spacing: 12
+                                        spacing: 14
                                         Text {
                                             text: "└[ DATE: " + Qt.formatDateTime(new Date(), "yyyy.MM.dd") + " ]"
                                             font.family: Services.Theme.fontMono
-                                            font.pixelSize: 10
+                                            font.pixelSize: 11
                                             color: Services.Theme.textSecondary
                                         }
                                         Item { Layout.fillWidth: true }
                                         Text {
                                             text: "[ BAT: " + Math.round((Services.Power.percentage || 0.9) * 100) + "% ]┘"
                                             font.family: Services.Theme.fontMono
-                                            font.pixelSize: 10
+                                            font.pixelSize: 11
                                             color: Services.Theme.accent
                                             font.bold: true
                                         }
@@ -904,20 +930,16 @@ Scope {
                             }
                         }
 
-                        // ── 2. Center Profile Picture & Password Input Pill ─────────────────────
                         // ── 2. Center Profile Picture & Password Input System ───────────────────
                         ColumnLayout {
                             id: centerAuthColumn
                             anchors.horizontalCenter: parent.horizontalCenter
-                            anchors.bottom: parent.bottom
-                            anchors.bottomMargin: root.isRevealed ? (parent.height * 0.28) : (parent.height * 0.28 - 45)
+                            anchors.top: topClockColumn.bottom
+                            anchors.topMargin: Math.max(90, Math.round(parent.height * 0.14))
+
                             spacing: 14
                             opacity: root.isRevealed ? 1.0 : 0.0
-                            scale: root.isRevealed ? 1.0 : 0.88
-                            transformOrigin: Item.Center
-                            Behavior on anchors.bottomMargin { NumberAnimation { duration: 420; easing.type: Easing.OutCubic } }
-                            Behavior on opacity { NumberAnimation { duration: 350; easing.type: Easing.OutCubic } }
-                            Behavior on scale { NumberAnimation { duration: 450; easing.type: Easing.OutBack; easing.overshoot: 1.1 } }
+                            Behavior on opacity { NumberAnimation { duration: 300; easing.type: Easing.OutCubic } }
 
                             readonly property string avatarShape: Services.Config ? Services.Config.lockscreenAvatarShape : "circle"
                             readonly property bool showAvatarRing: Services.Config ? Services.Config.lockscreenAvatarRing : true
@@ -936,7 +958,7 @@ Scope {
 
                             // ── User Avatar with Shape Options, Monogram Fallback & Glow Ring ──
                             Item {
-                                visible: Services.Config ? Services.Config.lockscreenShowAvatar : true
+                                visible: Services.Config ? Services.Config.lockscreenShowAvatar : false
                                 Layout.alignment: Qt.AlignHCenter
                                 width: 106; height: 106
 
@@ -1042,11 +1064,13 @@ Scope {
 
                             // ── User Identity & Host Tag ──────────────────────────────
                             ColumnLayout {
+                                visible: Services.Config ? Services.Config.lockscreenShowGreeting : false
                                 Layout.alignment: Qt.AlignHCenter
                                 spacing: 2
 
                                 Text {
                                     Layout.alignment: Qt.AlignHCenter
+                                    horizontalAlignment: Text.AlignHCenter
                                     text: Services.OsInfo.username.length > 0 ? Services.OsInfo.username : root.username
                                     color: Services.Theme.textPrimary
                                     font.pixelSize: 16
@@ -1057,7 +1081,7 @@ Scope {
                                 }
 
                                 RowLayout {
-                                    visible: Services.Config ? Services.Config.lockscreenShowGreeting : true
+                                    visible: Services.Config ? Services.Config.lockscreenShowGreeting : false
                                     Layout.alignment: Qt.AlignHCenter
                                     spacing: 4
                                     opacity: 0.85
@@ -1115,158 +1139,164 @@ Scope {
                                     anchors.fill: parent
                                     anchors.leftMargin: (centerAuthColumn.inputStyle === "underline") ? 6 : 12
                                     anchors.rightMargin: 6
-                                    spacing: 6
+                                    spacing: 8
 
-                                    // Lock Icon Prefix
+                                    // Leading Lock / State Icon
                                     Text {
-                                        text: Services.Icons.lock
+                                        text: root.isAuthenticating ? Services.Icons.spinner : (root.isError ? Services.Icons.error : Services.Icons.lock)
                                         font.family: Services.Theme.fontSymbols
-                                        font.pixelSize: 11
-                                        color: pwTextInput.activeFocus ? Services.Theme.accent : Services.Theme.textDisabled
-                                        visible: centerAuthColumn.inputStyle !== "dots"
+                                        font.pixelSize: Services.Theme.fontSizeSm
+                                        color: root.isError ? Services.Theme.danger : (pwTextInput.activeFocus ? Services.Theme.accent : Services.Theme.textSecondary)
+
+                                        RotationAnimation on rotation {
+                                            running: root.isAuthenticating
+                                            loops: Animation.Infinite
+                                            from: 0; to: 360; duration: 900
+                                        }
                                     }
 
-                                    // Real Text Input
+                                    // Actual Password Input Container
                                     Item {
                                         Layout.fillWidth: true
                                         Layout.fillHeight: true
 
-                                        // Standard Text Input (Pill, Box, Underline)
                                         TextInput {
                                             id: pwTextInput
                                             anchors.fill: parent
-                                            verticalAlignment: TextInput.AlignVCenter
-                                            text: root.passwordInput
-                                            echoMode: root.showPassword ? TextInput.Normal : TextInput.Password
-                                            font.pixelSize: Services.Theme.fontSizeXl
+                                            echoMode: TextInput.Password
+                                            passwordCharacter: "•"
                                             color: Services.Theme.textPrimary
-                                            selectByMouse: true
-                                            activeFocusOnPress: true
-                                            focus: true
+                                            font.pixelSize: Services.Theme.fontSizeMd
+                                            font.family: Services.Theme.fontMono
+                                            verticalAlignment: TextInput.AlignVCenter
+                                            clip: true
+                                            focus: root.isRevealed
+                                            cursorVisible: activeFocus
                                             enabled: !root.isAuthenticating
-                                            visible: centerAuthColumn.inputStyle !== "dots"
+
+                                            // Auto re-grab focus
+                                            Connections {
+                                                target: root
+                                                function onIsRevealedChanged() {
+                                                    if (root.isRevealed) {
+                                                        pwTextInput.forceActiveFocus()
+                                                    }
+                                                }
+                                            }
+
+                                            onAccepted: {
+                                                root.passwordInput = text
+                                                root.authenticate()
+                                            }
 
                                             onTextChanged: {
                                                 root.passwordInput = text
-                                                if (text.length > 0 && root.isError) root.isError = false
-                                            }
-
-                                            onAccepted: root.authenticate()
-
-                                            Text {
-                                                anchors.verticalCenter: parent.verticalCenter
-                                                text: root.isAuthenticating ? "Authenticating..." : "Password..."
-                                                color: Services.Theme.textDisabled
-                                                font.pixelSize: Services.Theme.fontSizeMd
-                                                visible: pwTextInput.text.length === 0 && !pwTextInput.activeFocus
-                                            }
-                                        }
-
-                                        // Discrete Dot Slots Layout for "dots" style
-                                        RowLayout {
-                                            visible: centerAuthColumn.inputStyle === "dots"
-                                            anchors.centerIn: parent
-                                            spacing: 8
-
-                                            Repeater {
-                                                model: 6
-                                                delegate: Rectangle {
-                                                    required property int index
-                                                    width: 12; height: 12; radius: 6
-                                                    readonly property bool isFilled: root.passwordInput.length > index
-                                                    color: isFilled ? Services.Theme.accent : "transparent"
-                                                    border.color: root.isError ? Services.Theme.danger : (isFilled ? Services.Theme.accent : Services.Theme.border)
-                                                    border.width: 1.5
-                                                    scale: isFilled ? 1.2 : 1.0
-                                                    Behavior on scale { NumberAnimation { duration: 140; easing.type: Easing.OutBack } }
-                                                    Behavior on color { ColorAnimation { duration: 120 } }
+                                                if (root.isError) {
+                                                    root.isError = false
+                                                    root.errorMessage = ""
                                                 }
                                             }
                                         }
-                                    }
 
-                                    // Eye Password Visibility Toggle
-                                    Rectangle {
-                                        width: 26; height: 26; radius: 13
-                                        color: eyeMouse.containsMouse ? Services.Theme.bgHover : "transparent"
-                                        visible: centerAuthColumn.inputStyle !== "dots"
-
+                                        // Placeholder prompt
                                         Text {
-                                            anchors.centerIn: parent
-                                            text: root.showPassword ? Services.Icons.eyeOpen : Services.Icons.eyeClosed
-                                            font.family: Services.Theme.fontSymbols
-                                            font.pixelSize: Services.Theme.fontSizeMd
-                                            color: root.showPassword ? Services.Theme.accent : Services.Theme.textSecondary
-                                        }
-
-                                        MouseArea {
-                                            id: eyeMouse
-                                            anchors.fill: parent
-                                            hoverEnabled: true
-                                            cursorShape: Qt.PointingHandCursor
-                                            onClicked: root.showPassword = !root.showPassword
+                                            anchors.left: parent.left
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            text: root.isAuthenticating ? "Authenticating..." : "Enter Password"
+                                            color: Qt.rgba(Services.Theme.textSecondary.r, Services.Theme.textSecondary.g, Services.Theme.textSecondary.b, 0.4)
+                                            font.pixelSize: Services.Theme.fontSizeSm
+                                            font.family: Services.Theme.fontPrimary
+                                            visible: pwTextInput.text.length === 0 && !root.isAuthenticating
                                         }
                                     }
 
-                                    // Submit Button / Loading Indicator
+                                    // Trailing Unlock Button / Enter Icon
                                     Rectangle {
                                         width: 28; height: 28; radius: 14
-                                        color: submitMouse.containsMouse 
-                                            ? Services.Theme.textPrimary 
-                                            : (root.passwordInput.length > 0 ? Services.Theme.accent : Qt.rgba(1, 1, 1, 0.08))
-                                        Behavior on color { ColorAnimation { duration: 100 } }
+                                        color: unlockMouse.containsMouse 
+                                            ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.2) 
+                                            : "transparent"
+                                        visible: pwTextInput.text.length > 0 && !root.isAuthenticating
 
                                         Text {
                                             anchors.centerIn: parent
-                                            text: root.isAuthenticating ? (Services.Icons.refresh || "󰑐") : (Services.Icons.arrowRight || "→")
+                                            text: Services.Icons.arrowRight
                                             font.family: Services.Theme.fontSymbols
-                                            font.pixelSize: 11
-                                            color: root.passwordInput.length > 0 ? Services.Theme.bgDeep : Services.Theme.textDisabled
+                                            font.pixelSize: Services.Theme.fontSizeSm
+                                            color: Services.Theme.accent
                                         }
 
                                         MouseArea {
-                                            id: submitMouse
+                                            id: unlockMouse
                                             anchors.fill: parent
                                             hoverEnabled: true
                                             cursorShape: Qt.PointingHandCursor
-                                            enabled: root.passwordInput.length > 0 && !root.isAuthenticating
-                                            onClicked: root.authenticate()
+                                            onClicked: {
+                                                root.passwordInput = pwTextInput.text
+                                                root.authenticate()
+                                            }
                                         }
                                     }
                                 }
                             }
 
-                            // Caps Lock Warning Pill
+                            // ── Modern PIN Dots Indicator Bar (Below input or in dots style) ──
                             RowLayout {
+                                visible: centerAuthColumn.inputStyle === "dots"
                                 Layout.alignment: Qt.AlignHCenter
-                                spacing: 6
+                                spacing: 10
+
+                                Repeater {
+                                    model: 6
+                                    Rectangle {
+                                        required property int index
+                                        width: 14; height: 14; radius: 7
+                                        color: (pwTextInput.text.length > index)
+                                            ? (root.isError ? Services.Theme.danger : Services.Theme.accent)
+                                            : Qt.rgba(Services.Theme.surfaceVariant.r, Services.Theme.surfaceVariant.g, Services.Theme.surfaceVariant.b, 0.7)
+                                        border.color: (pwTextInput.text.length > index)
+                                            ? (root.isError ? Services.Theme.danger : Services.Theme.accent)
+                                            : Services.Theme.border
+                                        border.width: 1.5
+                                        scale: (pwTextInput.text.length > index) ? 1.15 : 1.0
+
+                                        Behavior on color { ColorAnimation { duration: 120 } }
+                                        Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutBack } }
+                                    }
+                                }
+                            }
+
+                            // ── Caps Lock Warning Banner ──────────────────────────────
+                            RowLayout {
                                 visible: root.capsLockOn && !root.isError
+                                Layout.alignment: Qt.AlignHCenter
+                                spacing: 5
 
                                 Text {
-                                    text: Services.Icons.lock
+                                    text: Services.Icons.keyboard
                                     font.family: Services.Theme.fontSymbols
                                     font.pixelSize: 11
                                     color: Services.Theme.warning
                                 }
 
                                 Text {
-                                    text: "Caps Lock is ON"
+                                    text: "Caps Lock is on"
                                     color: Services.Theme.warning
-                                    font.pixelSize: Services.Theme.fontSizeSm
-                                    font.weight: Font.DemiBold
+                                    font.pixelSize: Services.Theme.fontSizeXs
+                                    font.bold: true
                                     style: Text.Outline
                                     styleColor: Services.Theme.overlayDim
                                 }
                             }
 
-                            // Error Warning Message Pill
+                            // ── PAM Authentication Error Banner ───────────────────────
                             RowLayout {
-                                Layout.alignment: Qt.AlignHCenter
-                                spacing: 6
                                 visible: root.isError && root.errorMessage.length > 0
+                                Layout.alignment: Qt.AlignHCenter
+                                spacing: 5
 
                                 Text {
-                                    text: Services.Icons.close
+                                    text: Services.Icons.error
                                     font.family: Services.Theme.fontSymbols
                                     font.pixelSize: 11
                                     color: Services.Theme.danger
@@ -1283,13 +1313,13 @@ Scope {
                             }
                         }
 
-                        // ── Floating Overlapping Notification Cards Overlay (Below input, persistent history) ──
+                        // ── Floating Overlapping Notification Cards Overlay ──
                         Item {
                             id: notifStackContainer
                             anchors.horizontalCenter: parent.horizontalCenter
                             anchors.top: centerAuthColumn.bottom
-                            anchors.topMargin: 24
-                            width: Math.min(mainContainer.width - 50, 305)
+                            anchors.topMargin: 36
+                            width: Math.min(mainContainer.width - 50, 320)
                             height: 90
                             z: 100
                             visible: root.notifCount > 0 && root.isRevealed && (Services.Config ? Services.Config.lockscreenShowNotifs : true)
@@ -1326,7 +1356,7 @@ Scope {
                         Rectangle {
                             anchors.horizontalCenter: parent.horizontalCenter
                             anchors.bottom: parent.bottom
-                            anchors.bottomMargin: root.isRevealed ? 24 : 0
+                            anchors.bottomMargin: 24
                             height: 34
                             implicitWidth: smallBarContent.implicitWidth + 24
                             radius: 17
@@ -1335,11 +1365,7 @@ Scope {
                             border.width: 1
                             visible: root.hasPlayer && (Services.Config ? Services.Config.lockscreenShowMedia : true) && ((Services.Config ? Services.Config.lockscreenMediaStyle : "pill") === "pill")
                             opacity: root.isRevealed ? 1.0 : 0.0
-                            scale: root.isRevealed ? 1.0 : 0.9
-                            transformOrigin: Item.Center
-                            Behavior on anchors.bottomMargin { NumberAnimation { duration: 450; easing.type: Easing.OutCubic } }
-                            Behavior on opacity { NumberAnimation { duration: 350; easing.type: Easing.OutCubic } }
-                            Behavior on scale { NumberAnimation { duration: 450; easing.type: Easing.OutCubic } }
+                            Behavior on opacity { NumberAnimation { duration: 300; easing.type: Easing.OutCubic } }
 
                             RowLayout {
                                 id: smallBarContent
@@ -1390,20 +1416,16 @@ Scope {
                         Rectangle {
                             anchors.horizontalCenter: parent.horizontalCenter
                             anchors.bottom: parent.bottom
-                            anchors.bottomMargin: root.isRevealed ? 24 : 0
+                            anchors.bottomMargin: 24
                             width: 320
                             implicitHeight: mediaCardCol.implicitHeight + 20
                             radius: Services.Theme.radiusLg
                             color: Qt.rgba(Services.Theme.bgDeep.r, Services.Theme.bgDeep.g, Services.Theme.bgDeep.b, 0.75)
                             border.color: Services.Theme.borderHighlight
                             border.width: 1
-                            visible: root.hasPlayer && (Services.Config ? Services.Config.lockscreenShowMedia : true) && ((Services.Config ? Services.Config.lockscreenMediaStyle : "pill") === "card")
+                            visible: root.hasPlayer && (Services.Config ? Services.Config.lockscreenShowMedia : true) && ((Services.Config ? Services.Config.lockscreenMediaStyle : "card") === "card")
                             opacity: root.isRevealed ? 1.0 : 0.0
-                            scale: root.isRevealed ? 1.0 : 0.92
-                            transformOrigin: Item.Center
-                            Behavior on anchors.bottomMargin { NumberAnimation { duration: 450; easing.type: Easing.OutCubic } }
-                            Behavior on opacity { NumberAnimation { duration: 350; easing.type: Easing.OutCubic } }
-                            Behavior on scale { NumberAnimation { duration: 450; easing.type: Easing.OutCubic } }
+                            Behavior on opacity { NumberAnimation { duration: 300; easing.type: Easing.OutCubic } }
 
                             ColumnLayout {
                                 id: mediaCardCol
