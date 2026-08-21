@@ -33,6 +33,11 @@
           slurp
           swappy
           zenity
+          fastfetch
+          sound-theme-freedesktop
+          matugen
+          wireplumber
+          swaybg
           (python3.withPackages (ps: with ps; [
             pygobject3
             dbus-python

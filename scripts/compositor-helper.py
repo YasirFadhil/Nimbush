@@ -11,6 +11,8 @@ import subprocess
 import time
 import shutil
 import base64
+import re
+import bisect
 from concurrent.futures import ThreadPoolExecutor
 
 HOME = os.path.expanduser("~")
@@ -111,7 +113,13 @@ def query_all():
             ("touchpad_dwt", "input:touchpad:disable_while_typing", bool, True),
             ("sensitivity", "input:sensitivity", float, 0.0),
             ("resize_border", "general:resize_on_border", bool, False),
-            ("disable_hyprland_logo", "misc:disable_hyprland_logo", bool, False)
+            ("disable_hyprland_logo", "misc:disable_hyprland_logo", bool, False),
+            ("smart_gaps", "dwindle:no_gaps_when_only", bool, False),
+            ("follow_mouse", "input:follow_mouse", int, 1),
+            ("workspace_swipe", "gestures:workspace_swipe", bool, True),
+            ("workspace_swipe_invert", "gestures:workspace_swipe_invert", bool, False),
+            ("vfr", "misc:vfr", bool, True),
+            ("allow_tearing", "general:allow_tearing", bool, False)
         ]
 
         batch_list = ["j/monitors", "j/workspaces", "j/clients"] + [f"j/getoption {opt[1]}" for opt in options_keys]
@@ -362,6 +370,379 @@ def save_config_b64(target_path, b64_str):
     except Exception as e:
         return {"ok": False, "error": f"Base64 decode error: {str(e)}"}
 
+# ── Keybindings Management ───────────────────────────────────────────────────
+
+def get_primary_config():
+    if is_lua_config():
+        return os.path.join(HOME, ".config/hypr/hyprland.lua"), "lua"
+    if os.path.exists(os.path.join(HOME, ".config/hypr/hyprland.conf")):
+        return os.path.join(HOME, ".config/hypr/hyprland.conf"), "hyprconf"
+    if os.path.exists(os.path.join(HOME, ".config/niri/config.kdl")):
+        return os.path.join(HOME, ".config/niri/config.kdl"), "niri"
+    return None, None
+
+def list_keybinds():
+    cfg_path, cfg_type = get_primary_config()
+    if not cfg_path or not os.path.exists(cfg_path):
+        return {"ok": False, "error": "No compositor config found", "binds": []}
+
+    try:
+        with open(cfg_path, "r", encoding="utf-8") as f:
+            full_text = f.read()
+    except Exception as e:
+        return {"ok": False, "error": str(e), "binds": []}
+
+    lines = full_text.splitlines()
+    binds = []
+
+    if cfg_type == "lua":
+        vars_dict = {}
+        var_re = re.compile(r'^\s*local\s+([a-zA-Z0-9_]+)\s*=\s*["\']([^"\']+)["\']')
+        for l in lines:
+            m = var_re.match(l)
+            if m:
+                vars_dict[m.group(1)] = m.group(2)
+
+        n = len(full_text)
+        line_starts = [0]
+        for pos, ch in enumerate(full_text):
+            if ch == '\n':
+                line_starts.append(pos + 1)
+
+        import bisect
+        def get_line_num(char_idx):
+            return bisect.bisect_right(line_starts, char_idx)
+
+        pattern = re.compile(r'(?:local\s+([a-zA-Z0-9_]+)\s*=\s*)?hl\.bind\s*\(')
+
+        for match in pattern.finditer(full_text):
+            start_char = match.start()
+            start_line = get_line_num(start_char)
+
+            line_str = lines[start_line - 1] if start_line <= len(lines) else ""
+            line_before_match = line_str[:line_str.find("hl.bind")].strip()
+            if line_before_match.startswith("--"):
+                continue
+
+            open_paren_idx = match.end() - 1
+            depth = 1
+            j = open_paren_idx + 1
+            in_str = False
+            str_char = ''
+            inner = ""
+            while j < n and depth > 0:
+                c = full_text[j]
+                if c in ('"', "'", '`') and not in_str:
+                    in_str = True
+                    str_char = c
+                    inner += c
+                elif in_str and c == str_char and full_text[j-1] != '\\':
+                    in_str = False
+                    inner += c
+                elif in_str:
+                    inner += c
+                elif c == '(':
+                    depth += 1
+                    inner += c
+                elif c == ')':
+                    depth -= 1
+                    if depth > 0:
+                        inner += c
+                else:
+                    inner += c
+                j += 1
+
+            end_line = get_line_num(j)
+            raw_snippet = full_text[start_char:j]
+
+            parts = []
+            cur = ""
+            depth_p = 0
+            depth_b = 0
+            in_s = False
+            s_char = ''
+            for c in inner:
+                if c in ('"', "'") and not in_s:
+                    in_s = True
+                    s_char = c
+                    cur += c
+                elif in_s and c == s_char:
+                    in_s = False
+                    cur += c
+                elif in_s:
+                    cur += c
+                elif c == '(':
+                    depth_p += 1
+                    cur += c
+                elif c == ')':
+                    depth_p -= 1
+                    cur += c
+                elif c == '{':
+                    depth_b += 1
+                    cur += c
+                elif c == '}':
+                    depth_b -= 1
+                    cur += c
+                elif c == ',' and depth_p == 0 and depth_b == 0:
+                    parts.append(cur.strip())
+                    cur = ""
+                else:
+                    cur += c
+            if cur.strip():
+                parts.append(cur.strip())
+
+            if len(parts) >= 2:
+                raw_combo = parts[0]
+                raw_action = parts[1]
+                opts = parts[2] if len(parts) > 2 else ""
+
+                combo = raw_combo
+                for vname, vval in vars_dict.items():
+                    combo = re.sub(r'\b' + vname + r'\b', f'"{vval}"', combo)
+                combo_parts = [p.strip().strip('"\'') for p in combo.split("..")]
+                clean_combo = " + ".join([p.strip().strip('+ ') for p in combo_parts if p.strip()])
+                clean_combo = clean_combo.replace(" + + ", " + ").replace("  ", " ")
+
+                action = raw_action
+                for vname, vval in vars_dict.items():
+                    action = re.sub(r'\b' + vname + r'\b', f'"{vval}"', action)
+
+                clean_action = action
+                if "hl.dsp.exec_cmd(" in action:
+                    m_act = re.search(r'hl\.dsp\.exec_cmd\(\s*["\']?(.*?)["\']?\s*\)', action, re.DOTALL)
+                    if m_act:
+                        clean_action = m_act.group(1).strip('"\'').strip()
+                elif "hl.dsp.window.close" in action:
+                    clean_action = "close window"
+                elif "hl.dsp.window.float" in action:
+                    clean_action = "toggle floating"
+                elif "hl.dsp.window.fullscreen" in action:
+                    clean_action = "toggle fullscreen"
+                elif "hl.dsp.window.drag" in action:
+                    clean_action = "drag window (move)"
+                elif "hl.dsp.window.resize" in action:
+                    clean_action = "resize window"
+                elif "hl.dsp.layout" in action:
+                    m_l = re.search(r'hl\.dsp\.layout\(\s*["\']?(.*?)["\']?\s*\)', action)
+                    clean_action = f"layout {m_l.group(1)}" if m_l else "toggle layout"
+                elif "hl.dsp.focus" in action:
+                    m_f = re.search(r'direction\s*=\s*["\'](.*?)["\']', action)
+                    m_ws = re.search(r'workspace\s*=\s*["\']?(.*?)["\']?\}', action)
+                    if m_f:
+                        clean_action = f"focus window ({m_f.group(1)})"
+                    elif m_ws:
+                        clean_action = f"focus workspace {m_ws.group(1)}"
+                    else:
+                        clean_action = "focus"
+                elif "hl.dsp.window.move" in action:
+                    m_ws = re.search(r'workspace\s*=\s*["\']?(.*?)["\']?\}', action)
+                    clean_action = f"move window to workspace {m_ws.group(1)}" if m_ws else "move window"
+
+                cat = "other"
+                ca_low = clean_action.lower()
+                cb_low = clean_combo.lower()
+                if "qs ipc call" in ca_low or "quickshell" in ca_low:
+                    cat = "quickshell"
+                elif any(x in ca_low for x in ["kitty", "alacritty", "foot", "nautilus", "thunar", "dolphin", "browser", "firefox", "chrome", "code"]):
+                    cat = "apps"
+                elif any(x in ca_low for x in ["close", "fullscreen", "floating", "focus", "workspace", "swapcol", "togglesplit", "drag", "resize"]):
+                    cat = "nav"
+                elif "screenshot" in ca_low or "grim" in ca_low or "print" in cb_low:
+                    cat = "screenshot"
+                elif any(x in ca_low for x in ["wpctl", "pactl", "volume", "brightnessctl", "playerctl", "mute", "audio"]):
+                    cat = "media"
+
+                key_tokens = [k.strip() for k in clean_combo.split("+") if k.strip()]
+
+                binds.append({
+                    "id": start_line,
+                    "startLine": start_line,
+                    "endLine": end_line,
+                    "keys": clean_combo,
+                    "keyTokens": key_tokens,
+                    "action": clean_action,
+                    "raw": raw_snippet.strip(),
+                    "category": cat,
+                    "opts": opts.strip()
+                })
+
+    elif cfg_type == "hyprconf":
+        bind_re = re.compile(r'^\s*bind[lrme]?\s*=\s*([^,]+),\s*([^,]+),\s*([^,]+)(?:,\s*(.*))?')
+        for idx, line in enumerate(lines):
+            line_str = line.strip()
+            if not line_str or line_str.startswith("#"):
+                continue
+            m = bind_re.match(line_str)
+            if m:
+                mod = m.group(1).strip()
+                key = m.group(2).strip()
+                disp = m.group(3).strip()
+                arg = m.group(4).strip() if m.group(4) else ""
+
+                combo = f"{mod} + {key}" if mod else key
+                action = f"{disp} {arg}".strip() if arg else disp
+                if disp == "exec":
+                    action = arg
+
+                cat = "other"
+                ca_low = action.lower()
+                cb_low = combo.lower()
+                if "qs ipc call" in ca_low or "quickshell" in ca_low:
+                    cat = "quickshell"
+                elif any(x in ca_low for x in ["kitty", "alacritty", "foot", "nautilus", "thunar", "dolphin", "browser", "firefox"]):
+                    cat = "apps"
+                elif any(x in ca_low for x in ["killactive", "fullscreen", "togglefloating", "workspace", "movetoworkspace", "splitratio"]):
+                    cat = "nav"
+                elif "screenshot" in ca_low or "grim" in ca_low or "print" in cb_low:
+                    cat = "screenshot"
+                elif any(x in ca_low for x in ["wpctl", "pactl", "volume", "brightnessctl", "playerctl"]):
+                    cat = "media"
+
+                key_tokens = [k.strip() for k in combo.split("+") if k.strip()]
+                binds.append({
+                    "id": idx + 1,
+                    "startLine": idx + 1,
+                    "endLine": idx + 1,
+                    "keys": combo,
+                    "keyTokens": key_tokens,
+                    "action": action,
+                    "raw": line_str,
+                    "category": cat,
+                    "opts": ""
+                })
+
+    return {
+        "ok": True,
+        "binds": binds,
+        "configPath": cfg_path,
+        "configType": cfg_type,
+        "total": len(binds)
+    }
+
+def add_keybind(keys, action, desc=""):
+    cfg_path, cfg_type = get_primary_config()
+    if not cfg_path or not os.path.exists(cfg_path):
+        return {"ok": False, "error": "No compositor config found"}
+
+    keys = keys.strip()
+    action = action.strip()
+    if not keys or not action:
+        return {"ok": False, "error": "Keys and action cannot be empty"}
+
+    try:
+        with open(cfg_path, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+    if cfg_type == "lua":
+        # Format hl.bind("COMBO", hl.dsp.exec_cmd("CMD"))
+        # Check if action is known dispatcher or exec
+        if action.startswith("hl.dsp."):
+            new_line = f'hl.bind("{keys}", {action})\n'
+        else:
+            escaped_action = action.replace('\\', '\\\\').replace('"', '\\"')
+            new_line = f'hl.bind("{keys}", hl.dsp.exec_cmd("{escaped_action}"))\n'
+
+        # Find insertion position: right before "WINDOW / LAYER RULES" or end of file
+        insert_idx = len(lines)
+        for i, l in enumerate(lines):
+            if "WINDOW / LAYER RULES" in l or "WINDOW RULES" in l or "LAYER RULES" in l:
+                insert_idx = max(0, i - 1)
+                break
+
+        lines.insert(insert_idx, new_line)
+
+    elif cfg_type == "hyprconf":
+        # Parse keys into mod and key
+        parts = [p.strip() for p in keys.split("+") if p.strip()]
+        if len(parts) > 1:
+            mod = " ".join(parts[:-1])
+            k = parts[-1]
+        else:
+            mod = ""
+            k = parts[0]
+
+        new_line = f"bind = {mod}, {k}, exec, {action}\n"
+        lines.append(new_line)
+
+    content = "".join(lines)
+    res = _write_and_validate(cfg_path, content)
+    if res.get("ok"):
+        reload_compositor()
+    return res
+
+def update_keybind(line_num, keys, action, desc=""):
+    cfg_path, cfg_type = get_primary_config()
+    if not cfg_path or not os.path.exists(cfg_path):
+        return {"ok": False, "error": "No compositor config found"}
+
+    try:
+        line_idx = int(line_num) - 1
+    except Exception:
+        return {"ok": False, "error": "Invalid line number"}
+
+    try:
+        with open(cfg_path, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+    if line_idx < 0 or line_idx >= len(lines):
+        return {"ok": False, "error": f"Line {line_num} out of range"}
+
+    keys = keys.strip()
+    action = action.strip()
+
+    if cfg_type == "lua":
+        if action.startswith("hl.dsp."):
+            lines[line_idx] = f'hl.bind("{keys}", {action})\n'
+        else:
+            escaped_action = action.replace('\\', '\\\\').replace('"', '\\"')
+            lines[line_idx] = f'hl.bind("{keys}", hl.dsp.exec_cmd("{escaped_action}"))\n'
+    elif cfg_type == "hyprconf":
+        parts = [p.strip() for p in keys.split("+") if p.strip()]
+        if len(parts) > 1:
+            mod = " ".join(parts[:-1])
+            k = parts[-1]
+        else:
+            mod = ""
+            k = parts[0]
+        lines[line_idx] = f"bind = {mod}, {k}, exec, {action}\n"
+
+    content = "".join(lines)
+    res = _write_and_validate(cfg_path, content)
+    if res.get("ok"):
+        reload_compositor()
+    return res
+
+def delete_keybind(line_num):
+    cfg_path, cfg_type = get_primary_config()
+    if not cfg_path or not os.path.exists(cfg_path):
+        return {"ok": False, "error": "No compositor config found"}
+
+    try:
+        line_idx = int(line_num) - 1
+    except Exception:
+        return {"ok": False, "error": "Invalid line number"}
+
+    try:
+        with open(cfg_path, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+    if line_idx < 0 or line_idx >= len(lines):
+        return {"ok": False, "error": f"Line {line_num} out of range"}
+
+    del lines[line_idx]
+
+    content = "".join(lines)
+    res = _write_and_validate(cfg_path, content)
+    if res.get("ok"):
+        reload_compositor()
+    return res
+
 def reload_compositor():
     comp = "hyprland"
     if is_niri():
@@ -390,6 +771,35 @@ def main():
     if cmd == "query":
         data = query_all()
         print(json.dumps(data))
+    elif cmd == "binds-list":
+        data = list_keybinds()
+        print(json.dumps(data))
+    elif cmd == "binds-add":
+        import argparse
+        parser = argparse.ArgumentParser()
+        parser.add_argument("--keys", required=True)
+        parser.add_argument("--action", required=True)
+        parser.add_argument("--desc", default="")
+        args = parser.parse_args(sys.argv[2:])
+        res = add_keybind(args.keys, args.action, args.desc)
+        print(json.dumps(res))
+    elif cmd == "binds-update":
+        import argparse
+        parser = argparse.ArgumentParser()
+        parser.add_argument("--line", required=True)
+        parser.add_argument("--keys", required=True)
+        parser.add_argument("--action", required=True)
+        parser.add_argument("--desc", default="")
+        args = parser.parse_args(sys.argv[2:])
+        res = update_keybind(args.line, args.keys, args.action, args.desc)
+        print(json.dumps(res))
+    elif cmd == "binds-delete":
+        import argparse
+        parser = argparse.ArgumentParser()
+        parser.add_argument("--line", required=True)
+        args = parser.parse_args(sys.argv[2:])
+        res = delete_keybind(args.line)
+        print(json.dumps(res))
     elif cmd == "set":
         if len(sys.argv) < 4:
             print(json.dumps({"ok": False, "error": "Usage: set <option> <value>"}))

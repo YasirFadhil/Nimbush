@@ -18,13 +18,30 @@ FloatingWindow {
 
     property string overlayId: "settings"
     property int currentTab: 0
+    property int compSubTab: 0
+    property string keySearchQuery: ""
+    property string keyCategory: "all"
+    property bool isAddingKeybind: false
+    property int editingBindLine: -1
+    property string formKeys: ""
+    property string formAction: ""
+    property string formDesc: ""
 
-    Component.onCompleted: Services.OverlayManager.register(rootWindow)
+    Component.onCompleted: {
+        Services.OverlayManager.register(rootWindow)
+        if (Services.Compositor) {
+            Services.Compositor.refreshState()
+            Services.Compositor.loadKeybinds()
+        }
+    }
 
     function show() {
         visible = true
         keyFocus.forceActiveFocus()
-        if (Services.Compositor) Services.Compositor.refreshState()
+        if (Services.Compositor) {
+            Services.Compositor.refreshState()
+            Services.Compositor.loadKeybinds()
+        }
     }
 
     function hide() {
@@ -559,7 +576,7 @@ FloatingWindow {
 
                     Text {
                         text: {
-                            const tabs = ["Appearance", "Bar & Island", "Notifications", "Sound & Audio", "Lock & Power", "Compositor", "Backup & Reset", "About & Keys"]
+                            const tabs = ["Appearance", "Bar & Island", "Notifications", "Sound & Audio", "Lock & Power", "Compositor", "Keybindings", "Backup & Reset", "About"]
                             return tabs[rootWindow.currentTab] || "Preferences"
                         }
                         font.pixelSize: 13
@@ -644,14 +661,15 @@ FloatingWindow {
                         interactive: false
 
                         model: [
-                            { id: 0, title: "Appearance",   icon: Services.Icons.palette },
-                            { id: 1, title: "Bar & Island",  icon: Services.Icons.controlcenter },
-                            { id: 2, title: "Notifications", icon: Services.Icons.bell },
-                            { id: 3, title: "Sound & Audio", icon: Services.Icons.speaker },
-                            { id: 4, title: "Lock & Power",  icon: Services.Icons.power },
-                            { id: 5, title: "Compositor",    icon: Services.Icons.display },
-                            { id: 6, title: "Backup & Reset",icon: Services.Icons.undo },
-                            { id: 7, title: "About & Keys",  icon: Services.Icons.info }
+                            { id: 0, title: "Appearance",    icon: Services.Icons.palette },
+                            { id: 1, title: "Bar & Island",   icon: Services.Icons.controlcenter },
+                            { id: 2, title: "Notifications",  icon: Services.Icons.bell },
+                            { id: 3, title: "Sound & Audio",  icon: Services.Icons.speaker },
+                            { id: 4, title: "Lock & Power",   icon: Services.Icons.power },
+                            { id: 5, title: "Compositor",     icon: Services.Icons.display },
+                            { id: 6, title: "Keybindings",    icon: Services.Icons.keyboard },
+                            { id: 7, title: "Backup & Reset", icon: Services.Icons.undo },
+                            { id: 8, title: "About",          icon: Services.Icons.info }
                         ]
 
                         delegate: Rectangle {
@@ -708,6 +726,7 @@ FloatingWindow {
                                 onClicked: {
                                     rootWindow.currentTab = modelData.id
                                     if (modelData.id === 5 && Services.Compositor) Services.Compositor.refreshState()
+                                    if (modelData.id === 6 && Services.Compositor) Services.Compositor.loadKeybinds()
                                 }
                             }
                         }
@@ -916,7 +935,7 @@ FloatingWindow {
                             // Theme Mode Section
                             SettingsSection {
                                 title: "Theme & Palette Strategy"
-                                icon: Services.Icons.palette || "🎨"
+                                icon: Services.Icons.palette || "*"
 
                                 SettingsRow {
                                     title: "Theme Mode"
@@ -1741,158 +1760,1072 @@ FloatingWindow {
                         }
 
                         // ═════════════════════════════════════════════
-                        // TAB 5: COMPOSITOR (HYPRLAND)
+                        // TAB 5: COMPOSITOR & DISPLAYS (REDESIGNED: MINIMAL & RICH)
                         // ═════════════════════════════════════════════
                         ColumnLayout {
                             visible: rootWindow.currentTab === 5
                             Layout.fillWidth: true
-                            spacing: 14
+                            spacing: 12
 
-                            SettingsSection {
-                                title: "Visual & Window Effects"
-                                icon: Services.Icons.sparkle || Services.Icons.wand
+                            // ── Hero / Status Header Card ────────────────────────
+                            Rectangle {
+                                Layout.fillWidth: true
+                                implicitHeight: 54
+                                radius: Services.Theme.radiusMd
+                                color: Services.Theme.surfaceVariant
+                                border.color: Services.Theme.border
+                                border.width: 1
 
-                                SettingsSwitch {
-                                    title: "Window Animations"
-                                    subtitle: "Smooth window open/close and resize transitions"
-                                    checked: Services.Compositor ? Services.Compositor.hyprAnim : true
-                                    onToggled: () => { if (Services.Compositor) Services.Compositor.toggleHyprAnim() }
-                                }
+                                RowLayout {
+                                    anchors.fill: parent
+                                    anchors.leftMargin: 14
+                                    anchors.rightMargin: 14
+                                    spacing: 12
 
-                                SettingsDivider {}
+                                    // Compositor Icon + Name + Version
+                                    RowLayout {
+                                        spacing: 8
+                                        Text {
+                                            text: Services.Icons.display
+                                            font.family: Services.Theme.fontSymbols
+                                            font.pixelSize: 15
+                                            color: Services.Theme.accent
+                                        }
 
-                                SettingsSwitch {
-                                    title: "Dual Kawase Background Blur"
-                                    subtitle: "Glass blur behind translucent windows and overlays"
-                                    checked: Services.Compositor ? Services.Compositor.hyprBlur : true
-                                    onToggled: () => { if (Services.Compositor) Services.Compositor.toggleHyprBlur() }
-                                }
+                                        ColumnLayout {
+                                            spacing: 1
+                                            Text {
+                                                text: Services.Compositor ? Services.Compositor.activeDisplayName : "Compositor"
+                                                font.pixelSize: 12
+                                                font.weight: Font.DemiBold
+                                                color: Services.Theme.textPrimary
+                                            }
+                                            Text {
+                                                text: Services.Compositor ? (Services.Compositor.activeVersion.split(" built")[0] || "Wayland Compositor") : "Wayland"
+                                                font.pixelSize: 9
+                                                color: Services.Theme.textDisabled
+                                                elide: Text.ElideRight
+                                                Layout.maximumWidth: 260
+                                            }
+                                        }
+                                    }
 
-                                SettingsDivider {}
+                                    Item { Layout.fillWidth: true }
 
-                                SettingsSlider {
-                                    title: "Blur Size"
-                                    from: 1; to: 16; stepSize: 1; valueSuffix: "px"
-                                    value: Services.Compositor ? Services.Compositor.hyprBlurSize : 4
-                                    onMoved: (v) => { if (Services.Compositor) Services.Compositor.setHyprBlurSize(Math.round(v)) }
-                                }
+                                    // Quick Stats Badges
+                                    RowLayout {
+                                        spacing: 6
 
-                                SettingsDivider {}
+                                        Rectangle {
+                                            height: 22
+                                            implicitWidth: mTxt.implicitWidth + 12
+                                            radius: 4
+                                            color: Services.Theme.bgElevated
+                                            border.color: Services.Theme.border
+                                            border.width: 1
+                                            RowLayout {
+                                                anchors.centerIn: parent; spacing: 4
+                                                Text { text: Services.Icons.display; font.family: Services.Theme.fontSymbols; font.pixelSize: 9; color: Services.Theme.accent }
+                                                Text { id: mTxt; text: (Services.Compositor ? Services.Compositor.monitorsCount : 1) + " Display"; font.pixelSize: 9; font.weight: Font.Medium; color: Services.Theme.textSecondary }
+                                            }
+                                        }
 
-                                SettingsSlider {
-                                    title: "Blur Passes"
-                                    from: 1; to: 5; stepSize: 1; valueSuffix: "x"
-                                    value: Services.Compositor ? Services.Compositor.hyprBlurPasses : 2
-                                    onMoved: (v) => { if (Services.Compositor) Services.Compositor.setHyprBlurPasses(Math.round(v)) }
-                                }
+                                        Rectangle {
+                                            height: 22
+                                            implicitWidth: wsTxt.implicitWidth + 12
+                                            radius: 4
+                                            color: Services.Theme.bgElevated
+                                            border.color: Services.Theme.border
+                                            border.width: 1
+                                            RowLayout {
+                                                anchors.centerIn: parent; spacing: 4
+                                                Text { text: Services.Icons.grid; font.family: Services.Theme.fontSymbols; font.pixelSize: 9; color: Services.Theme.accent }
+                                                Text { id: wsTxt; text: (Services.Compositor ? Services.Compositor.workspacesCount : 1) + " Workspaces"; font.pixelSize: 9; font.weight: Font.Medium; color: Services.Theme.textSecondary }
+                                            }
+                                        }
+                                    }
 
-                                SettingsDivider {}
+                                    // Action: Reload Compositor
+                                    Rectangle {
+                                        height: 26
+                                        implicitWidth: rlTxt.implicitWidth + 16
+                                        radius: 5
+                                        color: rlMouse.containsMouse ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.18) : Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.08)
+                                        border.color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.3)
+                                        border.width: 1
 
-                                SettingsSwitch {
-                                    title: "Window Drop Shadows"
-                                    checked: Services.Compositor ? Services.Compositor.hyprShadow : true
-                                    onToggled: () => { if (Services.Compositor) Services.Compositor.toggleHyprShadow() }
-                                }
+                                        RowLayout {
+                                            anchors.centerIn: parent; spacing: 6
+                                            Text {
+                                                text: Services.Icons.refresh
+                                                font.family: Services.Theme.fontSymbols
+                                                font.pixelSize: 10
+                                                color: Services.Theme.accent
+                                            }
+                                            Text {
+                                                id: rlTxt
+                                                text: "Reload"
+                                                font.pixelSize: 10
+                                                font.weight: Font.Medium
+                                                color: Services.Theme.accent
+                                            }
+                                        }
 
-                                SettingsDivider {}
-
-                                SettingsSlider {
-                                    title: "Shadow Range"
-                                    from: 0; to: 36; stepSize: 1; valueSuffix: "px"
-                                    value: Services.Compositor ? Services.Compositor.hyprShadowRange : 12
-                                    onMoved: (v) => { if (Services.Compositor) Services.Compositor.setHyprShadowRange(Math.round(v)) }
-                                }
-
-                                SettingsDivider {}
-
-                                SettingsSwitch {
-                                    title: "Dim Inactive Windows"
-                                    subtitle: "Darken unfocused background windows"
-                                    checked: Services.Compositor ? Services.Compositor.hyprDimInactive : false
-                                    onToggled: () => { if (Services.Compositor) Services.Compositor.toggleHyprDimInactive() }
-                                }
-
-                                SettingsDivider {}
-
-                                SettingsSlider {
-                                    title: "Active Window Opacity"
-                                    from: 0.50; to: 1.00; stepSize: 0.01; decimals: 2
-                                    value: Services.Compositor ? Services.Compositor.hyprActiveOpacity : 0.90
-                                    onMoved: (v) => { if (Services.Compositor) Services.Compositor.setHyprActiveOpacity(Number(v.toFixed(2))) }
-                                }
-
-                                SettingsDivider {}
-
-                                SettingsSlider {
-                                    title: "Inactive Window Opacity"
-                                    from: 0.50; to: 1.00; stepSize: 0.01; decimals: 2
-                                    value: Services.Compositor ? Services.Compositor.hyprInactiveOpacity : 0.95
-                                    onMoved: (v) => { if (Services.Compositor) Services.Compositor.setHyprInactiveOpacity(Number(v.toFixed(2))) }
+                                        MouseArea {
+                                            id: rlMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                                            onClicked: { if (Services.Compositor) Services.Compositor.reloadCompositor() }
+                                        }
+                                    }
                                 }
                             }
 
+                            // ── 1-Click Aesthetic Profiles ─────────────────────────
                             SettingsSection {
-                                title: "Window Geometry & Tiling"
-                                icon: Services.Icons.layout || Services.Icons.display
+                                title: "Quick Aesthetic Profiles (1-Click Presets)"
+                                icon: Services.Icons.wand
 
-                                SettingsRow {
-                                    title: "Tiling Layout Engine"
-                                    subtitle: "Window management layout strategy"
+                                Rectangle {
+                                    Layout.fillWidth: true
+                                    implicitHeight: profileGrid.implicitHeight + 8
+                                    color: "transparent"
 
-                                    SettingsDropdown {
-                                        currentValue: Services.Compositor ? Services.Compositor.hyprLayout : "dwindle"
+                                    GridLayout {
+                                        id: profileGrid
+                                        anchors.fill: parent
+                                        anchors.margins: 4
+                                        columns: 4
+                                        rowSpacing: 8
+                                        columnSpacing: 8
+
+                                        Repeater {
+                                            model: [
+                                                { id: "glass",    title: "Glass Elegance", icon: Services.Icons.sparkle, desc: "Dual Kawase blur, soft shadow, 88% opacity, 14px rounding" },
+                                                { id: "gaming",   title: "Gaming & Fast",  icon: Services.Icons.speed,   desc: "0 blur, 0 anim, tearing allowed, low latency, snappy" },
+                                                { id: "minimal",  title: "Clean Minimal",  icon: Services.Icons.layout,  desc: "0 gaps, 0 border, 100% solid, distraction-free" },
+                                                { id: "material", title: "Material You",   icon: Services.Icons.palette, desc: "Wallpaper dynamic palette, 12px rounding, 10px gaps" }
+                                            ]
+
+                                            delegate: Rectangle {
+                                                Layout.fillWidth: true
+                                                implicitHeight: 70
+                                                radius: Services.Theme.radiusSm
+                                                readonly property bool isAct: Services.Compositor && Services.Compositor.activePreset === modelData.id
+                                                color: isAct ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.12) : (pMouse.containsMouse ? Qt.rgba(1, 1, 1, 0.05) : Services.Theme.bgElevated)
+                                                border.color: isAct ? Services.Theme.accent : (pMouse.containsMouse ? Services.Theme.textDisabled : Services.Theme.border)
+                                                border.width: isAct ? 1.5 : 1
+
+                                                ColumnLayout {
+                                                    anchors.fill: parent
+                                                    anchors.margins: 8
+                                                    spacing: 4
+
+                                                    RowLayout {
+                                                        spacing: 6
+                                                        Text {
+                                                            text: modelData.icon
+                                                            font.family: Services.Theme.fontSymbols
+                                                            font.pixelSize: 11
+                                                            color: isAct ? Services.Theme.accent : Services.Theme.textPrimary
+                                                        }
+                                                        Text {
+                                                            text: modelData.title
+                                                            font.pixelSize: 11
+                                                            font.weight: Font.DemiBold
+                                                            color: isAct ? Services.Theme.accent : Services.Theme.textPrimary
+                                                        }
+                                                    }
+
+                                                    Text {
+                                                        Layout.fillWidth: true
+                                                        text: modelData.desc
+                                                        font.pixelSize: 9
+                                                        color: Services.Theme.textSecondary
+                                                        wrapMode: Text.WordWrap
+                                                        elide: Text.ElideRight
+                                                        maximumLineCount: 2
+                                                    }
+                                                }
+
+                                                MouseArea {
+                                                    id: pMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                                                    onClicked: { if (Services.Compositor) Services.Compositor.applyPreset(modelData.id) }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            // ── Segment Switcher Pill Bar ──────────────────────────
+                            Rectangle {
+                                Layout.fillWidth: true
+                                height: 34
+                                radius: Services.Theme.radiusSm
+                                color: Services.Theme.surfaceVariant
+                                border.color: Services.Theme.border
+                                border.width: 1
+
+                                RowLayout {
+                                    anchors.fill: parent
+                                    anchors.margins: 3
+                                    spacing: 3
+
+                                    Repeater {
                                         model: [
-                                            { id: "dwindle",   label: "Dwindle (BSP Split)" },
-                                            { id: "master",    label: "Master (Stack)" },
-                                            { id: "scrolling", label: "Scrolling Tape" }
+                                            { id: 0, label: "Window Styling", icon: Services.Icons.sparkles },
+                                            { id: 1, label: "Displays & Monitors", icon: Services.Icons.display },
+                                            { id: 2, label: "Input & Gestures", icon: Services.Icons.sliders },
+                                            { id: 3, label: "Power & Gaming", icon: Services.Icons.speed }
                                         ]
-                                        onSelected: (val) => { if (Services.Compositor) Services.Compositor.setHyprLayout(val) }
+
+                                        delegate: Rectangle {
+                                            Layout.fillWidth: true
+                                            Layout.fillHeight: true
+                                            radius: 4
+                                            readonly property bool isCur: rootWindow.compSubTab === modelData.id
+                                            color: isCur ? Services.Theme.accent : (subMouse.containsMouse ? Qt.rgba(1, 1, 1, 0.05) : "transparent")
+
+                                            RowLayout {
+                                                anchors.centerIn: parent; spacing: 5
+                                                Text {
+                                                    text: modelData.icon
+                                                    font.family: Services.Theme.fontSymbols
+                                                    font.pixelSize: 10
+                                                    color: isCur ? "#ffffff" : (subMouse.containsMouse ? Services.Theme.textPrimary : Services.Theme.textSecondary)
+                                                }
+                                                Text {
+                                                    text: modelData.label
+                                                    font.pixelSize: 10
+                                                    font.weight: isCur ? Font.DemiBold : Font.Normal
+                                                    color: isCur ? "#ffffff" : (subMouse.containsMouse ? Services.Theme.textPrimary : Services.Theme.textSecondary)
+                                                }
+                                            }
+
+                                            MouseArea {
+                                                id: subMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                                                onClicked: rootWindow.compSubTab = modelData.id
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            // ── SUB-TAB 0: WINDOW STYLING & GLASS ──────────────────
+                            ColumnLayout {
+                                visible: rootWindow.compSubTab === 0
+                                Layout.fillWidth: true
+                                spacing: 10
+
+                                SettingsSection {
+                                    title: "Glass Blur & Animations"
+                                    icon: Services.Icons.sparkle
+
+                                    SettingsSwitch {
+                                        title: "Window Animations"
+                                        subtitle: "Smooth window open/close and workspace transitions"
+                                        checked: Services.Compositor ? Services.Compositor.hyprAnim : true
+                                        onToggled: () => { if (Services.Compositor) Services.Compositor.toggleHyprAnim() }
+                                    }
+
+                                    SettingsDivider {}
+
+                                    SettingsSwitch {
+                                        title: "Dual Kawase Glass Blur"
+                                        subtitle: "Background blur for translucent windows and quickshell panels"
+                                        checked: Services.Compositor ? Services.Compositor.hyprBlur : true
+                                        onToggled: () => { if (Services.Compositor) Services.Compositor.toggleHyprBlur() }
+                                    }
+
+                                    SettingsDivider {}
+
+                                    SettingsSlider {
+                                        title: "Blur Radius (Size)"
+                                        from: 1; to: 16; stepSize: 1; valueSuffix: "px"
+                                        value: Services.Compositor ? Services.Compositor.hyprBlurSize : 4
+                                        onMoved: (v) => { if (Services.Compositor) Services.Compositor.setHyprBlurSize(Math.round(v)) }
+                                    }
+
+                                    SettingsDivider {}
+
+                                    SettingsSlider {
+                                        title: "Blur Iterations (Passes)"
+                                        from: 1; to: 5; stepSize: 1; valueSuffix: "x"
+                                        value: Services.Compositor ? Services.Compositor.hyprBlurPasses : 2
+                                        onMoved: (v) => { if (Services.Compositor) Services.Compositor.setHyprBlurPasses(Math.round(v)) }
                                     }
                                 }
 
-                                SettingsDivider {}
+                                SettingsSection {
+                                    title: "Window Opacity & Dimming"
+                                    icon: Services.Icons.contrast
 
-                                SettingsSlider {
-                                    title: "Window Corner Radius"
-                                    from: 0; to: 28; stepSize: 1; valueSuffix: "px"
-                                    value: Services.Compositor ? Services.Compositor.hyprRounding : 10
-                                    onMoved: (v) => { if (Services.Compositor) Services.Compositor.setHyprRounding(Math.round(v)) }
+                                    SettingsSlider {
+                                        title: "Active Window Opacity"
+                                        from: 0.50; to: 1.00; stepSize: 0.01; decimals: 2
+                                        value: Services.Compositor ? Services.Compositor.hyprActiveOpacity : 0.90
+                                        onMoved: (v) => { if (Services.Compositor) Services.Compositor.setHyprActiveOpacity(Number(v.toFixed(2))) }
+                                    }
+
+                                    SettingsDivider {}
+
+                                    SettingsSlider {
+                                        title: "Inactive Window Opacity"
+                                        from: 0.50; to: 1.00; stepSize: 0.01; decimals: 2
+                                        value: Services.Compositor ? Services.Compositor.hyprInactiveOpacity : 0.95
+                                        onMoved: (v) => { if (Services.Compositor) Services.Compositor.setHyprInactiveOpacity(Number(v.toFixed(2))) }
+                                    }
+
+                                    SettingsDivider {}
+
+                                    SettingsSwitch {
+                                        title: "Dim Inactive Windows"
+                                        subtitle: "Darken background windows to emphasize active focus"
+                                        checked: Services.Compositor ? Services.Compositor.hyprDimInactive : false
+                                        onToggled: () => { if (Services.Compositor) Services.Compositor.toggleHyprDimInactive() }
+                                    }
                                 }
 
-                                SettingsDivider {}
+                                SettingsSection {
+                                    title: "Window Geometry & Gaps"
+                                    icon: Services.Icons.layout
 
-                                SettingsSlider {
-                                    title: "Window Border Thickness"
-                                    from: 0; to: 6; stepSize: 1; valueSuffix: "px"
-                                    value: Services.Compositor ? Services.Compositor.hyprBorderSize : 0
-                                    onMoved: (v) => { if (Services.Compositor) Services.Compositor.setHyprBorderSize(Math.round(v)) }
+                                    SettingsSlider {
+                                        title: "Window Corner Radius"
+                                        from: 0; to: 28; stepSize: 1; valueSuffix: "px"
+                                        value: Services.Compositor ? Services.Compositor.hyprRounding : 10
+                                        onMoved: (v) => { if (Services.Compositor) Services.Compositor.setHyprRounding(Math.round(v)) }
+                                    }
+
+                                    SettingsDivider {}
+
+                                    SettingsSlider {
+                                        title: "Border Thickness"
+                                        from: 0; to: 6; stepSize: 1; valueSuffix: "px"
+                                        value: Services.Compositor ? Services.Compositor.hyprBorderSize : 0
+                                        onMoved: (v) => { if (Services.Compositor) Services.Compositor.setHyprBorderSize(Math.round(v)) }
+                                    }
+
+                                    SettingsDivider {}
+
+                                    SettingsSlider {
+                                        title: "Gaps In (Between Windows)"
+                                        from: 0; to: 24; stepSize: 1; valueSuffix: "px"
+                                        value: Services.Compositor ? Services.Compositor.hyprGapsIn : 5
+                                        onMoved: (v) => { if (Services.Compositor) Services.Compositor.setHyprGapsIn(Math.round(v)) }
+                                    }
+
+                                    SettingsDivider {}
+
+                                    SettingsSlider {
+                                        title: "Gaps Out (Screen Margins)"
+                                        from: 0; to: 36; stepSize: 1; valueSuffix: "px"
+                                        value: Services.Compositor ? Services.Compositor.hyprGapsOut : 10
+                                        onMoved: (v) => { if (Services.Compositor) Services.Compositor.setHyprGapsOut(Math.round(v)) }
+                                    }
+
+                                    SettingsDivider {}
+
+                                    SettingsSwitch {
+                                        title: "Smart Gaps (No Gaps When Only)"
+                                        subtitle: "Automatically remove gaps and borders if only one window is open"
+                                        checked: Services.Compositor ? Services.Compositor.hyprSmartGaps : false
+                                        onToggled: () => { if (Services.Compositor) Services.Compositor.toggleHyprSmartGaps() }
+                                    }
+                                }
+                            }
+
+                            // ── SUB-TAB 1: DISPLAYS & MONITORS ─────────────────────
+                            ColumnLayout {
+                                visible: rootWindow.compSubTab === 1
+                                Layout.fillWidth: true
+                                spacing: 10
+
+                                SettingsSection {
+                                    title: "Connected Displays (" + (Services.Compositor ? Services.Compositor.monitorsCount : 1) + ")"
+                                    icon: Services.Icons.display
+
+                                    Repeater {
+                                        model: Services.Compositor ? Services.Compositor.monitorsList : []
+
+                                        delegate: ColumnLayout {
+                                            required property var modelData
+                                            required property int index
+                                            Layout.fillWidth: true
+                                            spacing: 8
+
+                                            Rectangle {
+                                                Layout.fillWidth: true
+                                                implicitHeight: monCol.implicitHeight + 20
+                                                radius: Services.Theme.radiusSm
+                                                color: Services.Theme.bgElevated
+                                                border.color: modelData.focused ? Services.Theme.accent : Services.Theme.border
+                                                border.width: modelData.focused ? 1.5 : 1
+
+                                                ColumnLayout {
+                                                    id: monCol
+                                                    anchors.fill: parent
+                                                    anchors.margins: 12
+                                                    spacing: 10
+
+                                                    // Monitor Header
+                                                    RowLayout {
+                                                        Layout.fillWidth: true
+                                                        spacing: 8
+
+                                                        Text { text: Services.Icons.display; font.family: Services.Theme.fontSymbols; font.pixelSize: 14; color: Services.Theme.accent }
+
+                                                        ColumnLayout {
+                                                            spacing: 1
+                                                            RowLayout {
+                                                                spacing: 6
+                                                                Text { text: modelData.name || "Display"; font.pixelSize: 12; font.weight: Font.DemiBold; color: Services.Theme.textPrimary }
+                                                                Rectangle {
+                                                                    visible: modelData.focused
+                                                                    height: 16; implicitWidth: fTxt.implicitWidth + 8; radius: 3
+                                                                    color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.15)
+                                                                    Text { id: fTxt; anchors.centerIn: parent; text: "PRIMARY / FOCUSED"; font.pixelSize: 8; font.weight: Font.Bold; color: Services.Theme.accent }
+                                                                }
+                                                            }
+                                                            Text { text: (modelData.description || "Internal Screen") + " • " + modelData.width + "×" + modelData.height + " @" + modelData.refreshRate + "Hz"; font.pixelSize: 9; color: Services.Theme.textSecondary }
+                                                        }
+
+                                                        Item { Layout.fillWidth: true }
+
+                                                        // Resolution badge
+                                                        Rectangle {
+                                                            height: 22
+                                                            implicitWidth: resTxt.implicitWidth + 10
+                                                            radius: 4
+                                                            color: Services.Theme.surfaceVariant
+                                                            border.color: Services.Theme.border; border.width: 1
+                                                            Text { id: resTxt; anchors.centerIn: parent; text: modelData.width + "×" + modelData.height; font.pixelSize: 9; font.family: Services.Theme.fontMono; color: Services.Theme.textPrimary }
+                                                        }
+                                                    }
+
+                                                    // Live Scaling Slider & Preset Buttons
+                                                    ColumnLayout {
+                                                        Layout.fillWidth: true
+                                                        spacing: 4
+
+                                                        RowLayout {
+                                                            Layout.fillWidth: true
+                                                            Text { text: "Display Scale Factor"; font.pixelSize: 11; color: Services.Theme.textPrimary }
+                                                            Item { Layout.fillWidth: true }
+                                                            Text { text: (Number(modelData.scale || 1.0) * 100).toFixed(0) + "% (" + Number(modelData.scale || 1.0).toFixed(2) + "x)"; font.pixelSize: 11; font.weight: Font.Medium; color: Services.Theme.accent }
+                                                        }
+
+                                                        RowLayout {
+                                                            Layout.fillWidth: true
+                                                            spacing: 8
+
+                                                            Slider {
+                                                                Layout.fillWidth: true
+                                                                from: 0.75; to: 2.00; stepSize: 0.05
+                                                                value: Number(modelData.scale || 1.0)
+                                                                onMoved: () => { if (Services.Compositor) Services.Compositor.setMonitorScale(modelData.name, value) }
+                                                            }
+
+                                                            // Quick Scale presets
+                                                            Repeater {
+                                                                model: [1.0, 1.25, 1.5, 1.75, 2.0]
+                                                                delegate: Rectangle {
+                                                                    width: 36; height: 22; radius: 3
+                                                                    readonly property bool isSel: Math.abs(Number(modelData.scale || 1.0) - Number(modelData)) < 0.01
+                                                                    color: isSel ? Services.Theme.accent : (scMouse.containsMouse ? Qt.rgba(1, 1, 1, 0.08) : Services.Theme.surfaceVariant)
+                                                                    border.color: isSel ? Services.Theme.accent : Services.Theme.border; border.width: 1
+                                                                    Text { anchors.centerIn: parent; text: (Number(modelData) * 100).toFixed(0) + "%"; font.pixelSize: 8; font.weight: Font.Medium; color: isSel ? "#ffffff" : Services.Theme.textSecondary }
+                                                                    MouseArea {
+                                                                        id: scMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                                                                        onClicked: { if (Services.Compositor) Services.Compositor.setMonitorScale(modelData.name, modelData) }
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+
+                                                    // VRR Adaptive Sync Switch
+                                                    RowLayout {
+                                                        Layout.fillWidth: true
+                                                        Text { text: "Variable Refresh Rate (VRR / FreeSync / G-Sync)"; font.pixelSize: 11; color: Services.Theme.textPrimary }
+                                                        Item { Layout.fillWidth: true }
+                                                        Switch {
+                                                            checked: Boolean(modelData.vrr)
+                                                            onToggled: { if (Services.Compositor) Services.Compositor.setMonitorVRR(modelData.name, checked) }
+                                                        }
+                                                    }
+                                                }
+                                            }
+
+                                            SettingsDivider { visible: index < (Services.Compositor.monitorsList.length - 1) }
+                                        }
+                                    }
+                                }
+                            }
+
+                            // ── SUB-TAB 2: INPUT & TOUCHPAD GESTURES ───────────────
+                            ColumnLayout {
+                                visible: rootWindow.compSubTab === 2
+                                Layout.fillWidth: true
+                                spacing: 10
+
+                                SettingsSection {
+                                    title: "Window Focus Behavior"
+                                    icon: Services.Icons.sliders
+
+                                    SettingsRow {
+                                        title: "Focus Follows Mouse"
+                                        subtitle: "How window focus is shifted when moving the cursor"
+
+                                        SettingsDropdown {
+                                            currentValue: Services.Compositor ? String(Services.Compositor.hyprFollowMouse) : "1"
+                                            model: [
+                                                { id: "1", label: "Hover Focus (Continuous)" },
+                                                { id: "0", label: "Click to Focus (Strict)" },
+                                                { id: "2", label: "Click on Tiled, Hover on Floating" }
+                                            ]
+                                            onSelected: (val) => { if (Services.Compositor) Services.Compositor.setHyprFollowMouse(val) }
+                                        }
+                                    }
                                 }
 
-                                SettingsDivider {}
+                                SettingsSection {
+                                    title: "Touchpad & Gestures"
+                                    icon: Services.Icons.touchpad || Services.Icons.sliders
 
-                                SettingsSlider {
-                                    title: "Gaps In (Window Spacing)"
-                                    from: 0; to: 24; stepSize: 1; valueSuffix: "px"
-                                    value: Services.Compositor ? Services.Compositor.hyprGapsIn : 5
-                                    onMoved: (v) => { if (Services.Compositor) Services.Compositor.setHyprGapsIn(Math.round(v)) }
+                                    SettingsSwitch {
+                                        title: "Natural Scrolling"
+                                        subtitle: "Reverse scrolling direction (swipe up scrolls content up)"
+                                        checked: Services.Compositor ? Services.Compositor.hyprTouchpadNatural : true
+                                        onToggled: () => { if (Services.Compositor) Services.Compositor.toggleHyprTouchpadNatural() }
+                                    }
+
+                                    SettingsDivider {}
+
+                                    SettingsSwitch {
+                                        title: "Tap to Click"
+                                        subtitle: "Tap touchpad surface to trigger primary click"
+                                        checked: Services.Compositor ? Services.Compositor.hyprTouchpadTap : true
+                                        onToggled: () => { if (Services.Compositor) Services.Compositor.toggleHyprTouchpadTap() }
+                                    }
+
+                                    SettingsDivider {}
+
+                                    SettingsSwitch {
+                                        title: "Disable While Typing (DWT)"
+                                        subtitle: "Prevent accidental palm clicks when typing on the keyboard"
+                                        checked: Services.Compositor ? Services.Compositor.hyprTouchpadDwt : true
+                                        onToggled: () => { if (Services.Compositor) Services.Compositor.toggleHyprTouchpadDwt() }
+                                    }
+
+                                    SettingsDivider {}
+
+                                    SettingsSwitch {
+                                        title: "Touchpad 3-Finger Workspace Swipe"
+                                        subtitle: "Smooth 1:1 trackpad swipe gesture to switch active workspace"
+                                        checked: Services.Compositor ? Services.Compositor.hyprWorkspaceSwipe : true
+                                        onToggled: () => { if (Services.Compositor) Services.Compositor.toggleHyprWorkspaceSwipe() }
+                                    }
+
+                                    SettingsDivider {}
+
+                                    SettingsSlider {
+                                        title: "Touchpad Pointer Sensitivity"
+                                        from: -1.0; to: 1.0; stepSize: 0.05; decimals: 2
+                                        value: Services.Compositor ? Services.Compositor.hyprSensitivity : 0.0
+                                        onMoved: (v) => { if (Services.Compositor) Services.Compositor.setHyprSensitivity(Number(v.toFixed(2))) }
+                                    }
                                 }
+                            }
 
-                                SettingsDivider {}
+                            // ── SUB-TAB 3: POWER & GAMING ──────────────────────────
+                            ColumnLayout {
+                                visible: rootWindow.compSubTab === 3
+                                Layout.fillWidth: true
+                                spacing: 10
 
-                                SettingsSlider {
-                                    title: "Gaps Out (Screen Margin)"
-                                    from: 0; to: 36; stepSize: 1; valueSuffix: "px"
-                                    value: Services.Compositor ? Services.Compositor.hyprGapsOut : 10
-                                    onMoved: (v) => { if (Services.Compositor) Services.Compositor.setHyprGapsOut(Math.round(v)) }
+                                SettingsSection {
+                                    title: "Battery & Performance Optimizations"
+                                    icon: Services.Icons.speed
+
+                                    SettingsSwitch {
+                                        title: "Variable Frame Rate (VFR)"
+                                        subtitle: "Lower rendering refresh rate when the screen is static to conserve laptop battery"
+                                        checked: Services.Compositor ? Services.Compositor.hyprVFR : true
+                                        onToggled: () => { if (Services.Compositor) Services.Compositor.toggleHyprVFR() }
+                                    }
+
+                                    SettingsDivider {}
+
+                                    SettingsSwitch {
+                                        title: "Allow Screen Tearing (Gaming Low-Latency)"
+                                        subtitle: "Enable direct scanout tearing for competitive games to reduce input lag"
+                                        checked: Services.Compositor ? Services.Compositor.hyprAllowTearing : false
+                                        onToggled: () => { if (Services.Compositor) Services.Compositor.toggleHyprTearing() }
+                                    }
+
+                                    SettingsDivider {}
+
+                                    SettingsSwitch {
+                                        title: "Resize Windows on Border"
+                                        subtitle: "Allow dragging window borders directly to resize tiled windows"
+                                        checked: Services.Compositor ? Services.Compositor.hyprResizeOnBorder : false
+                                        onToggled: () => { if (Services.Compositor) Services.Compositor.toggleHyprResizeBorder() }
+                                    }
+
+                                    SettingsDivider {}
+
+                                    SettingsSwitch {
+                                        title: "Disable Hyprland Default Splash & Logo"
+                                        subtitle: "Suppress anime mascot splash screen on session start"
+                                        checked: Services.Compositor ? Services.Compositor.hyprDisableLogo : false
+                                        onToggled: () => { if (Services.Compositor) Services.Compositor.toggleHyprDisableLogo() }
+                                    }
                                 }
                             }
                         }
 
                         // ═════════════════════════════════════════════
-                        // TAB 6: BACKUP & RESET
+                        // TAB 6: KEYBINDINGS (LIVE FROM COMPOSITOR CONFIG)
                         // ═════════════════════════════════════════════
                         ColumnLayout {
                             visible: rootWindow.currentTab === 6
+                            Layout.fillWidth: true
+                            spacing: 12
+
+                            // ── Search & Filter & Add Bar ──────────────────────────
+                            Rectangle {
+                                Layout.fillWidth: true
+                                implicitHeight: 46
+                                radius: Services.Theme.radiusMd
+                                color: Services.Theme.surfaceVariant
+                                border.color: Services.Theme.border
+                                border.width: 1
+
+                                RowLayout {
+                                    anchors.fill: parent
+                                    anchors.leftMargin: 12
+                                    anchors.rightMargin: 12
+                                    spacing: 10
+
+                                    Text {
+                                        text: Services.Icons.search
+                                        font.family: Services.Theme.fontSymbols
+                                        font.pixelSize: 12
+                                        color: Services.Theme.textSecondary
+                                    }
+
+                                    TextField {
+                                        id: keySearchInput
+                                        Layout.fillWidth: true
+                                        placeholderText: "Search shortcuts by keys, command, or category..."
+                                        placeholderTextColor: Services.Theme.textDisabled
+                                        text: rootWindow.keySearchQuery
+                                        onTextChanged: rootWindow.keySearchQuery = text
+                                        font.pixelSize: 11
+                                        color: Services.Theme.textPrimary
+                                        background: null
+                                    }
+
+                                    // Category Filter Pills
+                                    RowLayout {
+                                        spacing: 4
+
+                                        Repeater {
+                                            model: [
+                                                { id: "all",        label: "All" },
+                                                { id: "quickshell", label: "Quickshell" },
+                                                { id: "nav",        label: "Window / Nav" },
+                                                { id: "apps",       label: "Apps" },
+                                                { id: "screenshot", label: "Screenshot" },
+                                                { id: "media",      label: "Media" }
+                                            ]
+
+                                            delegate: Rectangle {
+                                                height: 24
+                                                implicitWidth: cTxt.implicitWidth + 12
+                                                radius: 4
+                                                readonly property bool isCur: rootWindow.keyCategory === modelData.id
+                                                color: isCur ? Services.Theme.accent : (catMouse.containsMouse ? Qt.rgba(1, 1, 1, 0.08) : Services.Theme.bgElevated)
+                                                border.color: isCur ? Services.Theme.accent : Services.Theme.border
+                                                border.width: 1
+
+                                                Text {
+                                                    id: cTxt
+                                                    anchors.centerIn: parent
+                                                    text: modelData.label
+                                                    font.pixelSize: 9
+                                                    font.weight: isCur ? Font.Bold : Font.Medium
+                                                    color: isCur ? "#ffffff" : Services.Theme.textSecondary
+                                                }
+
+                                                MouseArea {
+                                                    id: catMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                                                    onClicked: rootWindow.keyCategory = modelData.id
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    // Add Keybind Button
+                                    Rectangle {
+                                        height: 26
+                                        implicitWidth: addTxt.implicitWidth + 16
+                                        radius: 4
+                                        color: Services.Theme.accent
+                                        RowLayout {
+                                            anchors.centerIn: parent; spacing: 4
+                                            Text { text: Services.Icons.plus || "+"; font.family: Services.Theme.fontSymbols; font.pixelSize: 9; color: "#ffffff" }
+                                            Text { id: addTxt; text: "Add Shortcut"; font.pixelSize: 9; font.weight: Font.DemiBold; color: "#ffffff" }
+                                        }
+                                        MouseArea {
+                                            anchors.fill: parent; cursorShape: Qt.PointingHandCursor
+                                            onClicked: {
+                                                rootWindow.isAddingKeybind = !rootWindow.isAddingKeybind
+                                                rootWindow.formKeys = ""
+                                                rootWindow.formAction = ""
+                                                rootWindow.formDesc = ""
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            // ── Add Keybinding Form Card (Collapsible) ──────────────
+                            Rectangle {
+                                visible: rootWindow.isAddingKeybind
+                                Layout.fillWidth: true
+                                implicitHeight: addFormCol.implicitHeight + 20
+                                radius: Services.Theme.radiusSm
+                                color: Services.Theme.bgElevated
+                                border.color: Services.Theme.accent
+                                border.width: 1.5
+
+                                ColumnLayout {
+                                    id: addFormCol
+                                    anchors.fill: parent
+                                    anchors.margins: 12
+                                    spacing: 10
+
+                                    RowLayout {
+                                        Text { text: "Add New Shortcut to Compositor Config"; font.pixelSize: 11; font.weight: Font.DemiBold; color: Services.Theme.accent }
+                                        Item { Layout.fillWidth: true }
+                                        Text {
+                                            text: Services.Icons.close || "✕"
+                                            font.family: Services.Theme.fontSymbols
+                                            font.pixelSize: 10
+                                            color: Services.Theme.textDisabled
+                                            MouseArea {
+                                                anchors.fill: parent; cursorShape: Qt.PointingHandCursor
+                                                onClicked: rootWindow.isAddingKeybind = false
+                                            }
+                                        }
+                                    }
+
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 8
+
+                                        ColumnLayout {
+                                            Layout.preferredWidth: 180
+                                            spacing: 2
+                                            Text { text: "Key Combination"; font.pixelSize: 9; color: Services.Theme.textSecondary }
+                                            Rectangle {
+                                                Layout.fillWidth: true; height: 28; radius: 4
+                                                color: Services.Theme.surfaceVariant; border.color: Services.Theme.border; border.width: 1
+                                                TextField {
+                                                    anchors.fill: parent; anchors.margins: 4
+                                                    placeholderText: "SUPER + K"
+                                                    placeholderTextColor: Services.Theme.textDisabled
+                                                    text: rootWindow.formKeys
+                                                    onTextChanged: rootWindow.formKeys = text
+                                                    font.family: Services.Theme.fontMono; font.pixelSize: 10; color: Services.Theme.textPrimary
+                                                    background: null
+                                                }
+                                            }
+                                        }
+
+                                        ColumnLayout {
+                                            Layout.fillWidth: true
+                                            spacing: 2
+                                            Text { text: "Command / Dispatcher Action"; font.pixelSize: 9; color: Services.Theme.textSecondary }
+                                            Rectangle {
+                                                Layout.fillWidth: true; height: 28; radius: 4
+                                                color: Services.Theme.surfaceVariant; border.color: Services.Theme.border; border.width: 1
+                                                TextField {
+                                                    anchors.fill: parent; anchors.margins: 4
+                                                    placeholderText: "kitty  or  qs ipc call powermenu toggle"
+                                                    placeholderTextColor: Services.Theme.textDisabled
+                                                    text: rootWindow.formAction
+                                                    onTextChanged: rootWindow.formAction = text
+                                                    font.family: Services.Theme.fontMono; font.pixelSize: 10; color: Services.Theme.textPrimary
+                                                    background: null
+                                                }
+                                            }
+                                        }
+
+                                        Rectangle {
+                                            Layout.alignment: Qt.AlignBottom
+                                            height: 28; implicitWidth: saveAddTxt.implicitWidth + 16; radius: 4
+                                            color: Services.Theme.accent
+                                            Text { id: saveAddTxt; anchors.centerIn: parent; text: "Save"; font.pixelSize: 10; font.weight: Font.DemiBold; color: "#ffffff" }
+                                            MouseArea {
+                                                anchors.fill: parent; cursorShape: Qt.PointingHandCursor
+                                                onClicked: {
+                                                    if (Services.Compositor && rootWindow.formKeys && rootWindow.formAction) {
+                                                        Services.Compositor.addKeybind(rootWindow.formKeys, rootWindow.formAction, rootWindow.formDesc)
+                                                        rootWindow.isAddingKeybind = false
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            // ── Live Keybindings List ──────────────────────────────
+                            SettingsSection {
+                                title: "Configured Shortcuts (" + (Services.Compositor ? Services.Compositor.keybindsList.length : 0) + ")"
+                                icon: Services.Icons.keyboard
+
+                                readonly property var filteredBinds: {
+                                    const q = (rootWindow.keySearchQuery || "").toLowerCase().trim()
+                                    const cat = rootWindow.keyCategory
+                                    const list = (Services.Compositor ? Services.Compositor.keybindsList : []) || []
+                                    return list.filter(k => {
+                                        if (cat !== "all" && k.category !== cat) return false
+                                        if (q.length === 0) return true
+                                        const ks = (k.keys || "").toLowerCase()
+                                        const act = (k.action || "").toLowerCase()
+                                        return ks.includes(q) || act.includes(q)
+                                    })
+                                }
+
+                                Repeater {
+                                    model: parent.filteredBinds
+
+                                    delegate: ColumnLayout {
+                                        required property var modelData
+                                        required property int index
+                                        Layout.fillWidth: true
+                                        spacing: 0
+
+                                        readonly property bool isEditingThis: rootWindow.editingBindLine === modelData.startLine
+
+                                        // Regular Display Row
+                                        RowLayout {
+                                            visible: !isEditingThis
+                                            Layout.fillWidth: true
+                                            Layout.topMargin: 8
+                                            Layout.bottomMargin: 8
+                                            spacing: 10
+
+                                            // Action command and category
+                                            ColumnLayout {
+                                                Layout.fillWidth: true
+                                                spacing: 2
+
+                                                RowLayout {
+                                                    spacing: 6
+                                                    Text {
+                                                        text: modelData.action || "No action"
+                                                        font.family: Services.Theme.fontMono
+                                                        font.pixelSize: 11
+                                                        font.weight: Font.Medium
+                                                        color: Services.Theme.textPrimary
+                                                        elide: Text.ElideMiddle
+                                                        Layout.maximumWidth: 380
+                                                    }
+
+                                                    Rectangle {
+                                                        height: 16; implicitWidth: catTxt.implicitWidth + 8; radius: 3
+                                                        color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.1)
+                                                        Text { id: catTxt; anchors.centerIn: parent; text: modelData.category || "custom"; font.pixelSize: 8; font.weight: Font.DemiBold; color: Services.Theme.accent }
+                                                    }
+                                                }
+
+                                                Text {
+                                                    text: "Line " + modelData.startLine + (modelData.opts ? " • " + modelData.opts : "")
+                                                    font.pixelSize: 8
+                                                    color: Services.Theme.textDisabled
+                                                }
+                                            }
+
+                                            // Shortcut Key Badges
+                                            RowLayout {
+                                                spacing: 4
+
+                                                Repeater {
+                                                    model: modelData.keyTokens || [modelData.keys]
+                                                    delegate: RowLayout {
+                                                        required property string modelData
+                                                        required property int index
+                                                        spacing: 4
+
+                                                        Rectangle {
+                                                            height: 22
+                                                            implicitWidth: kbTxt.implicitWidth + 12
+                                                            radius: 4
+                                                            color: Services.Theme.bgElevated
+                                                            border.color: Services.Theme.border
+                                                            border.width: 1
+
+                                                            Text {
+                                                                id: kbTxt
+                                                                anchors.centerIn: parent
+                                                                text: parent.parent.modelData
+                                                                font.family: Services.Theme.fontMono
+                                                                font.pixelSize: 9
+                                                                font.bold: true
+                                                                color: Services.Theme.accent
+                                                            }
+                                                        }
+
+                                                        Text {
+                                                            visible: parent.parent.index < (parent.parent.parent.count - 1)
+                                                            text: "+"
+                                                            font.pixelSize: 10
+                                                            font.weight: Font.Bold
+                                                            color: Services.Theme.textDisabled
+                                                        }
+                                                    }
+                                                }
+                                            }
+
+                                            // Actions: Copy, Edit, Delete
+                                            RowLayout {
+                                                spacing: 4
+
+                                                // Copy Button
+                                                Rectangle {
+                                                    width: 24; height: 24; radius: 4
+                                                    color: cpMouse.containsMouse ? Qt.rgba(1, 1, 1, 0.08) : "transparent"
+                                                    Text {
+                                                        anchors.centerIn: parent
+                                                        text: Services.Icons.clipboard
+                                                        font.family: Services.Theme.fontSymbols
+                                                        font.pixelSize: 10
+                                                        color: cpMouse.containsMouse ? Services.Theme.accent : Services.Theme.textDisabled
+                                                    }
+                                                    MouseArea {
+                                                        id: cpMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                                                        onClicked: {
+                                                            if (Services.Clipboard) Services.Clipboard.copyText(modelData.action)
+                                                        }
+                                                    }
+                                                }
+
+                                                // Edit Button
+                                                Rectangle {
+                                                    width: 24; height: 24; radius: 4
+                                                    color: edMouse.containsMouse ? Qt.rgba(1, 1, 1, 0.08) : "transparent"
+                                                    Text {
+                                                        anchors.centerIn: parent
+                                                        text: Services.Icons.sliders || "✎"
+                                                        font.family: Services.Theme.fontSymbols
+                                                        font.pixelSize: 10
+                                                        color: edMouse.containsMouse ? Services.Theme.accent : Services.Theme.textDisabled
+                                                    }
+                                                    MouseArea {
+                                                        id: edMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                                                        onClicked: {
+                                                            rootWindow.editingBindLine = modelData.startLine
+                                                            rootWindow.formKeys = modelData.keys
+                                                            rootWindow.formAction = modelData.action
+                                                        }
+                                                    }
+                                                }
+
+                                                // Delete Button
+                                                Rectangle {
+                                                    width: 24; height: 24; radius: 4
+                                                    color: delMouse.containsMouse ? Qt.rgba(0.9, 0.2, 0.2, 0.15) : "transparent"
+                                                    Text {
+                                                        anchors.centerIn: parent
+                                                        text: Services.Icons.trash
+                                                        font.family: Services.Theme.fontSymbols
+                                                        font.pixelSize: 10
+                                                        color: delMouse.containsMouse ? Services.Theme.danger : Services.Theme.textDisabled
+                                                    }
+                                                    MouseArea {
+                                                        id: delMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                                                        onClicked: {
+                                                            if (Services.Compositor) Services.Compositor.deleteKeybind(modelData.startLine)
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        // Inline Edit Row (when active)
+                                        Rectangle {
+                                            visible: isEditingThis
+                                            Layout.fillWidth: true
+                                            implicitHeight: editRow.implicitHeight + 14
+                                            radius: Services.Theme.radiusSm
+                                            color: Services.Theme.surfaceVariant
+                                            border.color: Services.Theme.accent
+                                            border.width: 1
+
+                                            RowLayout {
+                                                id: editRow
+                                                anchors.fill: parent
+                                                anchors.margins: 8
+                                                spacing: 8
+
+                                                TextField {
+                                                    Layout.preferredWidth: 160
+                                                    text: rootWindow.formKeys
+                                                    onTextChanged: rootWindow.formKeys = text
+                                                    font.family: Services.Theme.fontMono; font.pixelSize: 10; color: Services.Theme.textPrimary
+                                                    placeholderText: "Keys (e.g. SUPER + K)"
+                                                }
+
+                                                TextField {
+                                                    Layout.fillWidth: true
+                                                    text: rootWindow.formAction
+                                                    onTextChanged: rootWindow.formAction = text
+                                                    font.family: Services.Theme.fontMono; font.pixelSize: 10; color: Services.Theme.textPrimary
+                                                    placeholderText: "Action (e.g. kitty)"
+                                                }
+
+                                                Rectangle {
+                                                    height: 24; implicitWidth: svEdTxt.implicitWidth + 12; radius: 4
+                                                    color: Services.Theme.accent
+                                                    Text { id: svEdTxt; anchors.centerIn: parent; text: "Save"; font.pixelSize: 9; font.weight: Font.DemiBold; color: "#ffffff" }
+                                                    MouseArea {
+                                                        anchors.fill: parent; cursorShape: Qt.PointingHandCursor
+                                                        onClicked: {
+                                                            if (Services.Compositor && rootWindow.formKeys && rootWindow.formAction) {
+                                                                Services.Compositor.updateKeybind(modelData.startLine, rootWindow.formKeys, rootWindow.formAction, "")
+                                                                rootWindow.editingBindLine = -1
+                                                            }
+                                                        }
+                                                    }
+                                                }
+
+                                                Rectangle {
+                                                    height: 24; implicitWidth: cnEdTxt.implicitWidth + 12; radius: 4
+                                                    color: Services.Theme.bgElevated; border.color: Services.Theme.border; border.width: 1
+                                                    Text { id: cnEdTxt; anchors.centerIn: parent; text: "Cancel"; font.pixelSize: 9; color: Services.Theme.textSecondary }
+                                                    MouseArea {
+                                                        anchors.fill: parent; cursorShape: Qt.PointingHandCursor
+                                                        onClicked: rootWindow.editingBindLine = -1
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        SettingsDivider { visible: index < (parent.filteredBinds.length - 1) }
+                                    }
+                                }
+                            }
+                        }
+
+                        // ═════════════════════════════════════════════
+                        // TAB 7: BACKUP & RESET
+                        // ═════════════════════════════════════════════
+                        ColumnLayout {
+                            visible: rootWindow.currentTab === 7
                             Layout.fillWidth: true
                             spacing: 14
 
@@ -1961,10 +2894,10 @@ FloatingWindow {
                         }
 
                         // ═════════════════════════════════════════════
-                        // TAB 7: ABOUT & SHORTCUTS
+                        // TAB 8: ABOUT & SYSTEM INFORMATION
                         // ═════════════════════════════════════════════
                         ColumnLayout {
-                            visible: rootWindow.currentTab === 7
+                            visible: rootWindow.currentTab === 8
                             Layout.fillWidth: true
                             spacing: 14
 
@@ -1973,12 +2906,12 @@ FloatingWindow {
                                 icon: Services.Icons.info
 
                                 SettingsRow {
-                                    title: "OS Distro"
-                                    Text { text: Services.OsInfo.distroName || "Linux"; font.pixelSize: 11; color: Services.Theme.accent }
+                                    title: "OS Distribution"
+                                    Text { text: Services.OsInfo.distroName || "Linux"; font.pixelSize: 11; font.weight: Font.Medium; color: Services.Theme.accent }
                                 }
                                 SettingsDivider {}
                                 SettingsRow {
-                                    title: "Kernel"
+                                    title: "Kernel Version"
                                     Text { text: Services.OsInfo.kernel || "-"; font.pixelSize: 11; color: Services.Theme.textSecondary }
                                 }
                                 SettingsDivider {}
@@ -1991,50 +2924,10 @@ FloatingWindow {
                                     title: "User Shell"
                                     Text { text: Services.OsInfo.shellName || "sh"; font.pixelSize: 11; color: Services.Theme.textSecondary }
                                 }
-                            }
-
-                            SettingsSection {
-                                title: "Default Keyboard Shortcuts"
-                                icon: Services.Icons.keyboard
-
-                                Repeater {
-                                    model: [
-                                        { key: "Super + Space", desc: "Open Application Launcher" },
-                                        { key: "Super + S",     desc: "Toggle Settings Window" },
-                                        { key: "Super + D",     desc: "Toggle Dashboard" },
-                                        { key: "Super + Shift + L", desc: "Lock Screen" },
-                                        { key: "Esc",           desc: "Close Open Overlays & Windows" }
-                                    ]
-
-                                    delegate: ColumnLayout {
-                                        required property var modelData
-                                        required property int index
-                                        Layout.fillWidth: true
-                                        spacing: 0
-
-                                        SettingsRow {
-                                            title: modelData.desc
-                                            Rectangle {
-                                                height: 20
-                                                implicitWidth: kText.implicitWidth + 12
-                                                radius: 4
-                                                color: Services.Theme.bgElevated
-                                                border.color: Services.Theme.border
-                                                border.width: 1
-                                                Text {
-                                                    id: kText
-                                                    anchors.centerIn: parent
-                                                    text: modelData.key
-                                                    font.family: Services.Theme.fontMono
-                                                    font.pixelSize: 9
-                                                    font.bold: true
-                                                    color: Services.Theme.accent
-                                                }
-                                            }
-                                        }
-
-                                        SettingsDivider { visible: index < 4 }
-                                    }
+                                SettingsDivider {}
+                                SettingsRow {
+                                    title: "Compositor Protocol"
+                                    Text { text: (Services.Compositor ? Services.Compositor.activeDisplayName : "Wayland") + " (Wayland LayerShell v1)"; font.pixelSize: 11; color: Services.Theme.textSecondary }
                                 }
                             }
                         }

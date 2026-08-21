@@ -68,9 +68,22 @@ Singleton {
     property bool hyprTouchpadTap: true
     property bool hyprTouchpadDwt: true
     property real hyprSensitivity: 0.0
+    property int hyprFollowMouse: 1
+    property bool hyprWorkspaceSwipe: true
+    property bool hyprSwipeInvert: false
 
-    // Performance & Misc
+    // Performance, Gaming & Power
     property bool hyprDisableLogo: false
+    property bool hyprVFR: true
+    property bool hyprAllowTearing: false
+    property bool hyprSmartGaps: false
+    property string activePreset: "custom"
+
+    // ── Keybindings from Compositor Config ────────────────────────────────────
+    property var keybindsList: []
+    property bool isLoadingBinds: false
+    property string keybindStatus: ""
+    property string keybindError: ""
 
     // ── Discovered Compositors & Configs ──────────────────────────────────────
     property var installedCompositors: []
@@ -112,8 +125,14 @@ Singleton {
         "touchpad_tap": "input:touchpad:tap-to-click",
         "touchpad_dwt": "input:touchpad:disable_while_typing",
         "sensitivity": "input:sensitivity",
+        "follow_mouse": "input:follow_mouse",
+        "workspace_swipe": "gestures:workspace_swipe",
+        "workspace_swipe_invert": "gestures:workspace_swipe_invert",
         "resize_border": "general:resize_on_border",
-        "disable_hyprland_logo": "misc:disable_hyprland_logo"
+        "disable_hyprland_logo": "misc:disable_hyprland_logo",
+        "vfr": "misc:vfr",
+        "allow_tearing": "general:allow_tearing",
+        "smart_gaps": "dwindle:no_gaps_when_only"
     })
 
     // ── Lua Config Builder for Hyprland 0.56+ (hl.config) ──────────────────────
@@ -123,6 +142,7 @@ Singleton {
         let anim = {}
         let input = {}
         let misc = {}
+        let gestures = {}
 
         for (let k in changes) {
             let v = changes[k]
@@ -202,6 +222,24 @@ Singleton {
                 case "disable_hyprland_logo":
                     misc.disable_hyprland_logo = Boolean(v)
                     break
+                case "vfr":
+                    misc.vfr = Boolean(v)
+                    break
+                case "allow_tearing":
+                    general.allow_tearing = Boolean(v)
+                    break
+                case "smart_gaps":
+                    general.no_gaps_when_only = Boolean(v) ? 1 : 0
+                    break
+                case "follow_mouse":
+                    input.follow_mouse = Math.round(Number(v))
+                    break
+                case "workspace_swipe":
+                    gestures.workspace_swipe = Boolean(v)
+                    break
+                case "workspace_swipe_invert":
+                    gestures.workspace_swipe_invert = Boolean(v)
+                    break
                 case "border_color_preset":
                     if (!general.col) general.col = {}
                     general.col.active_border = v
@@ -229,6 +267,7 @@ Singleton {
         if (Object.keys(anim).length > 0) rootTable.animations = anim
         if (Object.keys(input).length > 0) rootTable.input = input
         if (Object.keys(misc).length > 0) rootTable.misc = misc
+        if (Object.keys(gestures).length > 0) rootTable.gestures = gestures
 
         if (Object.keys(rootTable).length === 0) return ""
         return "hl.config(" + toLua(rootTable) + ")"
@@ -454,6 +493,150 @@ Singleton {
         }
     }
 
+    function toggleHyprVFR() {
+        hyprVFR = !hyprVFR
+        setOption("vfr", hyprVFR)
+    }
+
+    function toggleHyprTearing() {
+        hyprAllowTearing = !hyprAllowTearing
+        setOption("allow_tearing", hyprAllowTearing)
+    }
+
+    function toggleHyprSmartGaps() {
+        hyprSmartGaps = !hyprSmartGaps
+        setOption("smart_gaps", hyprSmartGaps)
+    }
+
+    function setHyprFollowMouse(val) {
+        hyprFollowMouse = Math.round(Number(val))
+        setOption("follow_mouse", hyprFollowMouse)
+    }
+
+    function toggleHyprWorkspaceSwipe() {
+        hyprWorkspaceSwipe = !hyprWorkspaceSwipe
+        setOption("workspace_swipe", hyprWorkspaceSwipe)
+    }
+
+    function toggleHyprSwipeInvert() {
+        hyprSwipeInvert = !hyprSwipeInvert
+        setOption("workspace_swipe_invert", hyprSwipeInvert)
+    }
+
+    function setMonitorScale(monName, scaleVal) {
+        if (!monName) return
+        const s = Number(Number(scaleVal).toFixed(2))
+        // Apply live scale via hyprctl
+        fastHyprProc.command = ["hyprctl", "keyword", "monitor", `${monName},preferred,auto,${s}`]
+        fastHyprProc.running = true
+        // Refresh monitor state
+        refreshTimer.restart()
+    }
+
+    function setMonitorVRR(monName, vrrBool) {
+        if (!monName) return
+        const v = vrrBool ? "1" : "0"
+        fastHyprProc.command = ["hyprctl", "keyword", "monitor", `${monName},vrr,${v}`]
+        fastHyprProc.running = true
+        refreshTimer.restart()
+    }
+
+    Timer {
+        id: refreshTimer
+        interval: 300
+        repeat: false
+        onTriggered: root.refreshState()
+    }
+
+    function applyPreset(presetId) {
+        activePreset = presetId
+        switch (presetId) {
+            case "glass":
+                hyprAnim = true; setOption("anim", true)
+                hyprBlur = true; setOption("blur", true)
+                hyprBlurSize = 6; setOption("blur_size", 6)
+                hyprBlurPasses = 3; setOption("blur_passes", 3)
+                hyprShadow = true; setOption("shadow", true)
+                hyprShadowRange = 14; setOption("shadow_range", 14)
+                hyprActiveOpacity = 0.88; setOption("active_opacity", 0.88)
+                hyprInactiveOpacity = 0.92; setOption("inactive_opacity", 0.92)
+                hyprRounding = 14; setOption("rounding", 14)
+                hyprBorderSize = 1; setOption("border_size", 1)
+                hyprGapsIn = 6; setOption("gaps_in", 6)
+                hyprGapsOut = 12; setOption("gaps_out", 12)
+                break
+            case "gaming":
+                hyprAnim = false; setOption("anim", false)
+                hyprBlur = false; setOption("blur", false)
+                hyprShadow = false; setOption("shadow", false)
+                hyprAllowTearing = true; setOption("allow_tearing", true)
+                hyprVFR = true; setOption("vfr", true)
+                hyprActiveOpacity = 1.0; setOption("active_opacity", 1.0)
+                hyprInactiveOpacity = 1.0; setOption("inactive_opacity", 1.0)
+                hyprRounding = 4; setOption("rounding", 4)
+                hyprBorderSize = 1; setOption("border_size", 1)
+                hyprGapsIn = 0; setOption("gaps_in", 0)
+                hyprGapsOut = 0; setOption("gaps_out", 0)
+                break
+            case "minimal":
+                hyprAnim = true; setOption("anim", true)
+                hyprBlur = false; setOption("blur", false)
+                hyprShadow = false; setOption("shadow", false)
+                hyprActiveOpacity = 1.0; setOption("active_opacity", 1.0)
+                hyprInactiveOpacity = 1.0; setOption("inactive_opacity", 1.0)
+                hyprRounding = 0; setOption("rounding", 0)
+                hyprBorderSize = 0; setOption("border_size", 0)
+                hyprGapsIn = 0; setOption("gaps_in", 0)
+                hyprGapsOut = 0; setOption("gaps_out", 0)
+                break
+            case "material":
+                hyprAnim = true; setOption("anim", true)
+                hyprBlur = true; setOption("blur", true)
+                hyprBlurSize = 4; setOption("blur_size", 4)
+                hyprBlurPasses = 2; setOption("blur_passes", 2)
+                hyprShadow = true; setOption("shadow", true)
+                hyprActiveOpacity = 0.92; setOption("active_opacity", 0.92)
+                hyprInactiveOpacity = 0.96; setOption("inactive_opacity", 0.96)
+                hyprRounding = 12; setOption("rounding", 12)
+                hyprBorderSize = 1; setOption("border_size", 1)
+                hyprGapsIn = 5; setOption("gaps_in", 5)
+                hyprGapsOut = 10; setOption("gaps_out", 10)
+                break
+        }
+    }
+
+    // ── Keybindings Management (Direct from Compositor Config) ───────────────
+    function loadKeybinds() {
+        isLoadingBinds = true
+        bindsListProc.qOutput = ""
+        bindsListProc.command = [root.helperScript, "binds-list"]
+        bindsListProc.running = true
+    }
+
+    function addKeybind(keys, action, desc) {
+        if (!keys || !action) return
+        keybindStatus = "Adding keybind..."
+        bindsAddProc.qOutput = ""
+        bindsAddProc.command = [root.helperScript, "binds-add", "--keys", keys, "--action", action, "--desc", desc || ""]
+        bindsAddProc.running = true
+    }
+
+    function updateKeybind(lineNum, keys, action, desc) {
+        if (!lineNum || !keys || !action) return
+        keybindStatus = "Updating keybind..."
+        bindsUpdateProc.qOutput = ""
+        bindsUpdateProc.command = [root.helperScript, "binds-update", "--line", String(lineNum), "--keys", keys, "--action", action, "--desc", desc || ""]
+        bindsUpdateProc.running = true
+    }
+
+    function deleteKeybind(lineNum) {
+        if (!lineNum) return
+        keybindStatus = "Deleting keybind..."
+        bindsDeleteProc.qOutput = ""
+        bindsDeleteProc.command = [root.helperScript, "binds-delete", "--line", String(lineNum)]
+        bindsDeleteProc.running = true
+    }
+
     // ── Config File Management ────────────────────────────────────────────────
     function loadFile(filePath) {
         if (!filePath) return
@@ -640,6 +823,12 @@ Singleton {
                     if (data.touchpad_tap !== undefined) root.hyprTouchpadTap = data.touchpad_tap
                     if (data.touchpad_dwt !== undefined) root.hyprTouchpadDwt = data.touchpad_dwt
                     if (data.sensitivity !== undefined) root.hyprSensitivity = data.sensitivity
+                    if (data.follow_mouse !== undefined) root.hyprFollowMouse = data.follow_mouse
+                    if (data.workspace_swipe !== undefined) root.hyprWorkspaceSwipe = data.workspace_swipe
+                    if (data.workspace_swipe_invert !== undefined) root.hyprSwipeInvert = data.workspace_swipe_invert
+                    if (data.vfr !== undefined) root.hyprVFR = data.vfr
+                    if (data.allow_tearing !== undefined) root.hyprAllowTearing = data.allow_tearing
+                    if (data.smart_gaps !== undefined) root.hyprSmartGaps = data.smart_gaps
                     if (data.resize_border !== undefined) root.hyprResizeOnBorder = data.resize_border
                     if (data.disable_hyprland_logo !== undefined) root.hyprDisableLogo = data.disable_hyprland_logo
                     if (data.monitorsCount !== undefined) root.monitorsCount = data.monitorsCount
@@ -656,6 +845,99 @@ Singleton {
                 }
             } catch (e) {}
             queryProcess.qOutput = ""
+        }
+    }
+
+    Process {
+        id: bindsListProc
+        property string qOutput: ""
+        command: [root.helperScript, "binds-list"]
+        stdout: SplitParser {
+            onRead: chunk => {
+                bindsListProc.qOutput += chunk
+            }
+        }
+        onExited: {
+            root.isLoadingBinds = false
+            try {
+                const data = JSON.parse(bindsListProc.qOutput.trim())
+                if (data && data.ok && Array.isArray(data.binds)) {
+                    root.keybindsList = data.binds
+                }
+            } catch (e) {}
+            bindsListProc.qOutput = ""
+        }
+    }
+
+    Process {
+        id: bindsAddProc
+        property string qOutput: ""
+        stdout: SplitParser {
+            onRead: chunk => {
+                bindsAddProc.qOutput += chunk
+            }
+        }
+        onExited: (exitCode) => {
+            try {
+                const res = JSON.parse(bindsAddProc.qOutput.trim())
+                if (res && res.ok) {
+                    root.keybindStatus = "Keybind added successfully"
+                    root.loadKeybinds()
+                } else {
+                    root.keybindError = res.error || "Failed to add keybind"
+                }
+            } catch (e) {
+                root.loadKeybinds()
+            }
+            bindsAddProc.qOutput = ""
+        }
+    }
+
+    Process {
+        id: bindsUpdateProc
+        property string qOutput: ""
+        stdout: SplitParser {
+            onRead: chunk => {
+                bindsUpdateProc.qOutput += chunk
+            }
+        }
+        onExited: (exitCode) => {
+            try {
+                const res = JSON.parse(bindsUpdateProc.qOutput.trim())
+                if (res && res.ok) {
+                    root.keybindStatus = "Keybind updated successfully"
+                    root.loadKeybinds()
+                } else {
+                    root.keybindError = res.error || "Failed to update keybind"
+                }
+            } catch (e) {
+                root.loadKeybinds()
+            }
+            bindsUpdateProc.qOutput = ""
+        }
+    }
+
+    Process {
+        id: bindsDeleteProc
+        property string qOutput: ""
+        stdout: SplitParser {
+            onRead: chunk => {
+                bindsDeleteProc.qOutput += chunk
+            }
+        }
+        onExited: (exitCode) => {
+            try {
+                const res = JSON.parse(bindsDeleteProc.qOutput.trim())
+                if (res && res.ok) {
+                    root.keybindStatus = "Keybind deleted successfully"
+                    root.loadKeybinds()
+                } else {
+                    root.keybindError = res.error || "Failed to delete keybind"
+                }
+            } catch (e) {
+                root.loadKeybinds()
+            }
+            bindsDeleteProc.qOutput = ""
         }
     }
 }
