@@ -89,8 +89,8 @@ RowLayout {
         implicitHeight: root.pillHeight
         implicitWidth: volLayout.implicitWidth + (root.isMinimal ? 12 : 20)
         radius: root.pillRadius
-        color: root.getPillBg(volMouse.containsMouse)
-        border.color: root.getPillBorder(volMouse.containsMouse)
+        color: root.getPillBg(volMouse.containsMouse || Services.OverlayManager.volumePanelVisible)
+        border.color: root.getPillBorder(volMouse.containsMouse || Services.OverlayManager.volumePanelVisible)
         border.width: root.isMinimal ? 0 : 1
         opacity: Services.OverlayManager.isLocked ? 0.0 : 1.0
         visible: (Services.Config ? Services.Config.showVolumeTray : true) && opacity > 0
@@ -111,16 +111,16 @@ RowLayout {
 
             Text {
                 text: Services.Icons.volumeIcon(Services.Audio.volume, Services.Audio.muted, Services.Audio.isHeadphone, Services.Audio.isTws)
-                font.family: Services.Theme.fontMono
+                font.family: Services.Theme.fontSymbols
                 font.pixelSize: root.isMinimal ? Services.Theme.fontSizeMd : Services.Theme.fontSizeXl
-                color: volMouse.containsMouse ? Services.Theme.accent : Services.Theme.textPrimary
+                color: (volMouse.containsMouse || Services.OverlayManager.volumePanelVisible) ? Services.Theme.accent : Services.Theme.textPrimary
                 Behavior on color { ColorAnimation { duration: 150 } }
             }
             Text {
                 text: Math.round(Services.Audio.volume * 100) + "%"
                 font.family: Services.Theme.fontMono
                 font.pixelSize: root.isMinimal ? Services.Theme.fontSizeSm : Services.Theme.fontSizeMd
-                color: Services.Theme.textSecondary
+                color: (volMouse.containsMouse || Services.OverlayManager.volumePanelVisible) ? Services.Theme.accent : Services.Theme.textSecondary
             }
         }
 
@@ -130,9 +130,11 @@ RowLayout {
             hoverEnabled: true
             cursorShape: Qt.PointingHandCursor
             onClicked: {
-                const newState = !Services.OverlayManager.controlCenterVisible
-                if (newState) Services.OverlayManager.closeAllExcept("controlCenter")
-                Services.OverlayManager.controlCenterVisible = newState
+                const centerX = volPill.mapToItem(null, volPill.width / 2, 0).x
+                Services.OverlayManager.volumeTargetX = centerX
+                const newState = !Services.OverlayManager.volumePanelVisible
+                if (newState) Services.OverlayManager.closeAllExcept("volumePanel")
+                Services.OverlayManager.volumePanelVisible = newState
             }
         }
     }
@@ -143,8 +145,8 @@ RowLayout {
         implicitHeight: root.pillHeight
         implicitWidth: batLayout.implicitWidth + (root.isMinimal ? 12 : 20)
         radius: root.pillRadius
-        color: root.getPillBg(batMouse.containsMouse)
-        border.color: root.getPillBorder(batMouse.containsMouse)
+        color: root.getPillBg(batMouse.containsMouse || Services.OverlayManager.batteryPanelVisible)
+        border.color: root.getPillBorder(batMouse.containsMouse || Services.OverlayManager.batteryPanelVisible)
         border.width: root.isMinimal ? 0 : 1
         visible: Services.Config ? Services.Config.showBatteryTray : true
 
@@ -161,7 +163,7 @@ RowLayout {
                 text: Services.Icons.powerIcon(Services.Power.charging, Services.Power.percentage * 100)
                 font.family: Services.Theme.fontSymbols
                 font.pixelSize: root.isMinimal ? Services.Theme.fontSizeMd : Services.Theme.fontSizeXl
-                color: Services.Power.isLow ? "#ff4444" : (Services.Power.isWarning ? "#e06c75" : (Services.PowerProfile.saverEnabled ? "#ff9800" : (batMouse.containsMouse ? Services.Theme.accent : Services.Theme.textPrimary)))
+                color: Services.Power.isLow ? "#ff4444" : (Services.Power.isWarning ? "#e06c75" : (Services.PowerProfile.saverEnabled ? "#ff9800" : ((batMouse.containsMouse || Services.OverlayManager.batteryPanelVisible) ? Services.Theme.accent : Services.Theme.textPrimary)))
                 Behavior on color { ColorAnimation { duration: 250 } }
 
                 SequentialAnimation {
@@ -185,7 +187,7 @@ RowLayout {
                 text: Math.round(Services.Power.percentage * 100) + "%"
                 font.family: Services.Theme.fontMono
                 font.pixelSize: root.isMinimal ? Services.Theme.fontSizeSm : Services.Theme.fontSizeMd
-                color: Services.Power.isLow ? "#ff4444" : (Services.Power.isWarning ? "#e06c75" : (Services.PowerProfile.saverEnabled ? "#ff9800" : Services.Theme.textSecondary))
+                color: Services.Power.isLow ? "#ff4444" : (Services.Power.isWarning ? "#e06c75" : (Services.PowerProfile.saverEnabled ? "#ff9800" : ((batMouse.containsMouse || Services.OverlayManager.batteryPanelVisible) ? Services.Theme.accent : Services.Theme.textSecondary)))
                 Behavior on color { ColorAnimation { duration: 250 } }
             }
         }
@@ -196,9 +198,11 @@ RowLayout {
             hoverEnabled: true
             cursorShape: Qt.PointingHandCursor
             onClicked: {
-                const newState = !Services.OverlayManager.controlCenterVisible
-                if (newState) Services.OverlayManager.closeAllExcept("controlCenter")
-                Services.OverlayManager.controlCenterVisible = newState
+                const centerX = batPill.mapToItem(null, batPill.width / 2, 0).x
+                Services.OverlayManager.batteryTargetX = centerX
+                const newState = !Services.OverlayManager.batteryPanelVisible
+                if (newState) Services.OverlayManager.closeAllExcept("batteryPanel")
+                Services.OverlayManager.batteryPanelVisible = newState
             }
         }
     }
@@ -209,20 +213,13 @@ RowLayout {
         implicitHeight: root.pillHeight
         implicitWidth: ctrlLayout.implicitWidth + (root.isMinimal ? 12 : 20)
         radius: root.pillRadius
-        color: root.getPillBg(ctrlPillArea.containsMouse || Services.OverlayManager.controlCenterVisible || Services.Notifications.centerVisible)
-        border.color: root.getPillBorder(ctrlPillArea.containsMouse || Services.OverlayManager.controlCenterVisible || Services.Notifications.centerVisible)
+        color: root.getPillBg(Services.OverlayManager.controlCenterVisible || Services.Notifications.centerVisible)
+        border.color: root.getPillBorder(Services.OverlayManager.controlCenterVisible || Services.Notifications.centerVisible)
         border.width: root.isMinimal ? 0 : 1
         visible: Services.Config ? Services.Config.showControlCenterTray : true
 
         Behavior on color { ColorAnimation { duration: 150 } }
         Behavior on border.color { ColorAnimation { duration: 150 } }
-
-        MouseArea {
-            id: ctrlPillArea
-            anchors.fill: parent
-            hoverEnabled: true
-            acceptedButtons: Qt.NoButton
-        }
 
         RowLayout {
             id: ctrlLayout

@@ -165,20 +165,29 @@ Singleton {
         setWallpaper(filePath)
     }
 
-    function saveConfig() {
-        var data = {
-            currentWallpaper: currentWallpaper,
-            customWallpapers: customWallpapers
+    Timer {
+        id: saveDebounceTimer
+        interval: 350
+        repeat: false
+        onTriggered: {
+            var data = {
+                currentWallpaper: root.currentWallpaper,
+                customWallpapers: root.customWallpapers
+            }
+            var jsonStr = JSON.stringify(data, null, 2)
+            saveConfigProc.running = false
+            saveConfigProc.command = [
+                "sh", "-c",
+                "mkdir -p ~/.cache/quickshell && " +
+                "cat << 'EOF' > \"" + root.configPath + "\"\n" + jsonStr + "\nEOF\n" +
+                "(cat << 'EOF' > \"" + root.declConfigPath + "\"\n" + jsonStr + "\nEOF) 2>/dev/null || true"
+            ]
+            saveConfigProc.running = true
         }
-        var jsonStr = JSON.stringify(data, null, 2)
-        saveConfigProc.running = false
-        saveConfigProc.command = [
-            "sh", "-c",
-            "mkdir -p ~/.cache/quickshell && " +
-            "cat << 'EOF' > \"" + configPath + "\"\n" + jsonStr + "\nEOF\n" +
-            "(cat << 'EOF' > \"" + declConfigPath + "\"\n" + jsonStr + "\nEOF) 2>/dev/null || true"
-        ]
-        saveConfigProc.running = true
+    }
+
+    function saveConfig() {
+        saveDebounceTimer.restart()
     }
 
     Process {

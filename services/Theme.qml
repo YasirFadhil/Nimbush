@@ -9,14 +9,18 @@ QtObject {
     readonly property bool isDark: Services.Config ? (Services.Config.themeMode !== "light") : true
     readonly property string mode: Services.Config ? Services.Config.themeMode : "dark"
 
+    // ─── Transition Durations ──────────────────────────────────────────────
+    readonly property int themeAnimDuration: 150
+
     // ─── Accent Color ──────────────────────────────────────────────────────
-    readonly property color accent: {
+    property color accent: {
         var raw = (Services.Config && Services.Config.accentColor) ? Services.Config.accentColor : ""
         if (raw && typeof raw === "string" && raw.startsWith("#")) {
             return raw
         }
         return isDark ? "#d4d4d4" : "#0071e3"
     }
+    Behavior on accent { ColorAnimation { duration: themeRoot.themeAnimDuration; easing.type: Easing.OutCubic } }
 
     function getLuminance(col) {
         try {
@@ -28,56 +32,108 @@ QtObject {
     }
 
     // Dynamic contrast for text and icons placed on top of accent color
-    readonly property color bgOnAccent: getLuminance(accent) > 0.58 ? "#111114" : "#ffffff"
+    property color bgOnAccent: getLuminance(accent) > 0.58 ? "#111114" : "#ffffff"
+    Behavior on bgOnAccent { ColorAnimation { duration: themeRoot.themeAnimDuration; easing.type: Easing.OutCubic } }
 
     // ─── Background & Layout ───────────────────────────────────────────────
-    readonly property color bg:          isDark ? "#cc111113" : "#ebf0f4f8"   // deepest background (~85-90% opaque)
-    readonly property color bgElevated:  isDark ? "#d918181c" : "#f8ffffff"   // panel, bar (~85-95% opaque)
-    readonly property color bgHover:     isDark ? "#e026262c" : "#e2e6ed"   // hover state (~85-90% opaque)
-    readonly property color bgDeep:      isDark ? "#09090b"   : "#ffffff"   // container background
-    readonly property color bgPure:      isDark ? "#0c0c0e"   : "#ffffff"   // DynamicIsland primary background
-    readonly property color overlayDim:  isDark ? "#aa000000" : "#45000000" // semi-transparent backdrop overlay
+    property color bg:          isDark ? "#cc111113" : "#ebf0f4f8"   // deepest background (~85-90% opaque)
+    Behavior on bg { ColorAnimation { duration: themeRoot.themeAnimDuration; easing.type: Easing.OutCubic } }
+
+    property color bgElevated:  isDark ? "#d918181c" : "#f8ffffff"   // panel, bar (~85-95% opaque)
+    Behavior on bgElevated { ColorAnimation { duration: themeRoot.themeAnimDuration; easing.type: Easing.OutCubic } }
+
+    property color bgHover:     isDark ? "#e026262c" : "#e2e6ed"   // hover state (~85-90% opaque)
+    Behavior on bgHover { ColorAnimation { duration: themeRoot.themeAnimDuration; easing.type: Easing.OutCubic } }
+
+    property color bgDeep:      isDark ? "#09090b"   : "#ffffff"   // container background
+    Behavior on bgDeep { ColorAnimation { duration: themeRoot.themeAnimDuration; easing.type: Easing.OutCubic } }
+
+    property color bgPure:      isDark ? "#0c0c0e"   : "#ffffff"   // DynamicIsland primary background
+    Behavior on bgPure { ColorAnimation { duration: themeRoot.themeAnimDuration; easing.type: Easing.OutCubic } }
+
+    property color overlayDim:  isDark ? "#aa000000" : "#45000000" // semi-transparent backdrop overlay
+    Behavior on overlayDim { ColorAnimation { duration: themeRoot.themeAnimDuration; easing.type: Easing.OutCubic } }
 
     // ─── Surface ───────────────────────────────────────────────────────────
-    readonly property color surface:        isDark ? "#cc16161a" : "#f0ffffff" // card background (~80-92% opaque)
-    readonly property color surfaceSolid:   isDark ? "#1c1c20"   : "#f4f5f8" // solid card background (non-transparent)
-    readonly property color surfaced:       isDark ? "#202026"   : "#eaedf2"
-    readonly property color surfaceVariant: isDark ? "#cc24242c" : "#e8ecf2" // inner card / item container
+    property color surface:        isDark ? "#cc16161a" : "#f0ffffff" // card background (~80-92% opaque)
+    Behavior on surface { ColorAnimation { duration: themeRoot.themeAnimDuration; easing.type: Easing.OutCubic } }
+
+    property color surfaceSolid:   isDark ? "#1c1c20"   : "#f4f5f8" // solid card background (non-transparent)
+    Behavior on surfaceSolid { ColorAnimation { duration: themeRoot.themeAnimDuration; easing.type: Easing.OutCubic } }
+
+    property color surfaced:       isDark ? "#202026"   : "#eaedf2"
+    Behavior on surfaced { ColorAnimation { duration: themeRoot.themeAnimDuration; easing.type: Easing.OutCubic } }
+
+    property color surfaceVariant: isDark ? "#cc24242c" : "#e8ecf2" // inner card / item container
+    Behavior on surfaceVariant { ColorAnimation { duration: themeRoot.themeAnimDuration; easing.type: Easing.OutCubic } }
 
     // ─── Text & Typography ─────────────────────────────────────────────────
-    readonly property color textPrimary:   isDark ? "#f4f4f6" : "#09090b"    // ultra crisp primary text
-    readonly property color textSecondary: isDark ? "#a1a1aa" : "#475569"    // rich secondary text
-    readonly property color textDisabled:  isDark ? "#52525b" : "#94a3b8"    // subtle disabled text
+    property color textPrimary:   isDark ? "#f4f4f6" : "#09090b"    // ultra crisp primary text
+    Behavior on textPrimary { ColorAnimation { duration: themeRoot.themeAnimDuration; easing.type: Easing.OutCubic } }
+
+    property color textSecondary: isDark ? "#a1a1aa" : "#475569"    // rich secondary text
+    Behavior on textSecondary { ColorAnimation { duration: themeRoot.themeAnimDuration; easing.type: Easing.OutCubic } }
+
+    property color textDisabled:  isDark ? "#52525b" : "#94a3b8"    // subtle disabled text
+    Behavior on textDisabled { ColorAnimation { duration: themeRoot.themeAnimDuration; easing.type: Easing.OutCubic } }
+
     readonly property color white:         "#ffffff"                         // solid white
-    readonly property color textOnSafe:    isDark ? "#b0b0b8" : "#475569"    // gray text in non-danger state
+
+    property color textOnSafe:    isDark ? "#b0b0b8" : "#475569"    // gray text in non-danger state
+    Behavior on textOnSafe { ColorAnimation { duration: themeRoot.themeAnimDuration; easing.type: Easing.OutCubic } }
 
     // ─── Icon Colors ───────────────────────────────────────────────────────
-    readonly property color iconPrimary:   isDark ? "#f4f4f6" : "#09090b"
-    readonly property color iconSecondary: isDark ? "#a1a1aa" : "#475569"
-    readonly property color iconAccent:    accent
-    readonly property color iconDisabled:  isDark ? "#52525b" : "#94a3b8"
+    property color iconPrimary:   isDark ? "#f4f4f6" : "#09090b"
+    Behavior on iconPrimary { ColorAnimation { duration: themeRoot.themeAnimDuration; easing.type: Easing.OutCubic } }
+
+    property color iconSecondary: isDark ? "#a1a1aa" : "#475569"
+    Behavior on iconSecondary { ColorAnimation { duration: themeRoot.themeAnimDuration; easing.type: Easing.OutCubic } }
+
+    property color iconAccent:    accent
+    Behavior on iconAccent { ColorAnimation { duration: themeRoot.themeAnimDuration; easing.type: Easing.OutCubic } }
+
+    property color iconDisabled:  isDark ? "#52525b" : "#94a3b8"
+    Behavior on iconDisabled { ColorAnimation { duration: themeRoot.themeAnimDuration; easing.type: Easing.OutCubic } }
 
     // ─── Secondary Accents & Status ────────────────────────────────────────
-    readonly property color accentDim:  Qt.rgba(accent.r, accent.g, accent.b, isDark ? 0.55 : 0.65)
-    readonly property color accentBlue:  isDark ? "#cdd6f4" : "#0071e3"     // Catppuccin Lavender / macOS Blue
-    readonly property color alertYellow: isDark ? "#ffcc00" : "#d97706"     // caps lock / warning yellow
+    property color accentDim:  Qt.rgba(accent.r, accent.g, accent.b, isDark ? 0.55 : 0.65)
+    Behavior on accentDim { ColorAnimation { duration: themeRoot.themeAnimDuration; easing.type: Easing.OutCubic } }
+
+    property color accentBlue:  isDark ? "#cdd6f4" : "#0071e3"     // Catppuccin Lavender / macOS Blue
+    Behavior on accentBlue { ColorAnimation { duration: themeRoot.themeAnimDuration; easing.type: Easing.OutCubic } }
+
+    property color alertYellow: isDark ? "#ffcc00" : "#d97706"     // caps lock / warning yellow
+    Behavior on alertYellow { ColorAnimation { duration: themeRoot.themeAnimDuration; easing.type: Easing.OutCubic } }
 
     // ─── Border & Dividers ─────────────────────────────────────────────────
-    readonly property color border:          isDark ? "#2a2a34" : "#cbd5e1" // crisp high-contrast border
-    readonly property color borderHighlight: isDark ? "#464658" : "#94a3b8"
-    readonly property color borderSubtle:    isDark ? "#1f1f26" : "#e2e8f0" // subtle border
+    property color border:          isDark ? "#2a2a34" : "#cbd5e1" // crisp high-contrast border
+    Behavior on border { ColorAnimation { duration: themeRoot.themeAnimDuration; easing.type: Easing.OutCubic } }
+
+    property color borderHighlight: isDark ? "#464658" : "#94a3b8"
+    Behavior on borderHighlight { ColorAnimation { duration: themeRoot.themeAnimDuration; easing.type: Easing.OutCubic } }
+
+    property color borderSubtle:    isDark ? "#1f1f26" : "#e2e8f0" // subtle border
+    Behavior on borderSubtle { ColorAnimation { duration: themeRoot.themeAnimDuration; easing.type: Easing.OutCubic } }
 
     // ─── Status Colors ─────────────────────────────────────────────────────
-    readonly property color danger:     isDark ? "#ef4444" : "#dc2626"
-    readonly property color dangerDeep: isDark ? "#7f1d1d" : "#991b1b"      // darker danger
-    readonly property color warning:    isDark ? "#f59e0b" : "#d97706"
-    readonly property color success:    isDark ? "#10b981" : "#16a34a"
+    property color danger:     isDark ? "#ef4444" : "#dc2626"
+    Behavior on danger { ColorAnimation { duration: themeRoot.themeAnimDuration; easing.type: Easing.OutCubic } }
+
+    property color dangerDeep: isDark ? "#7f1d1d" : "#991b1b"      // darker danger
+    Behavior on dangerDeep { ColorAnimation { duration: themeRoot.themeAnimDuration; easing.type: Easing.OutCubic } }
+
+    property color warning:    isDark ? "#f59e0b" : "#d97706"
+    Behavior on warning { ColorAnimation { duration: themeRoot.themeAnimDuration; easing.type: Easing.OutCubic } }
+
+    property color success:    isDark ? "#10b981" : "#16a34a"
+    Behavior on success { ColorAnimation { duration: themeRoot.themeAnimDuration; easing.type: Easing.OutCubic } }
 
     // ─── Radius ────────────────────────────────────────────────────────────
     readonly property int baseRadius: Services.Config ? Services.Config.cornerRadius : 16
     readonly property int radiusSm:   Math.max(4, Math.round(baseRadius * 0.5))
     readonly property int radiusMd:   Math.max(6, Math.round(baseRadius * 0.75))
     readonly property int radiusLg:   baseRadius
+    readonly property int radiusXl:   Math.round(baseRadius * 1.5)
 
     // ─── Font Families ─────────────────────────────────────────────────────
     readonly property string fontFamily: (Services.Config && Services.Config.fontFamily) ? Services.Config.fontFamily : "Liga SFMono Nerd Font, monospace"

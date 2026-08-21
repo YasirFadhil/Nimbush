@@ -6,6 +6,7 @@ import Quickshell.Io
 import Quickshell.Widgets
 import Quickshell.Services.Mpris
 import "../../../services" as Services
+import "../../media" as MediaModule
 
 Item {
     id: root
@@ -525,7 +526,13 @@ Item {
 
     // Island Dimensions
     readonly property bool showCollapsedText: !lockBlocked && (notifActive || mediaPlaying)
-    readonly property int calculatedCollapsedWidth: (showCollapsedText || (mediaStopping && !mediaIconTransformed)) ? Math.min(210, Math.max(160, collapsedText.implicitWidth + 52)) : 140
+    readonly property int calculatedCollapsedWidth: {
+        if (showCollapsedText || (mediaStopping && !mediaIconTransformed)) {
+            const extraPadding = (mediaPlaying && !expanded) ? 72 : 52
+            return Math.min(220, Math.max(140, collapsedText.implicitWidth + extraPadding))
+        }
+        return 140
+    }
     property int collapsedWidth: 140
     property int collapsedHeight: 32
 
@@ -547,7 +554,7 @@ Item {
         }
         if (sysHudActive) return 54
         if (isMediaPeek) return 54
-        if (hasMedia) return 120
+        if (hasMedia) return 138
         return 52
     }
 
@@ -658,6 +665,7 @@ Item {
         id: outsideMouseArea
         anchors.fill: parent
         enabled: root.expanded
+        visible: root.expanded
         z: -1
         propagateComposedEvents: true
         onClicked: mouse => {
@@ -867,13 +875,53 @@ Item {
             }
         }
 
+        // ==================== Mini Audio Wave Visualizer (Right Edge) ====================
+        Row {
+            id: mediaVisualizer
+            anchors.right: island.right
+            anchors.rightMargin: 12
+            anchors.verticalCenter: island.verticalCenter
+            spacing: 2.5
+            z: 3
+            visible: !Services.OverlayManager.isLocked && root.mediaPlaying && !root.expanded && !root.notifActive
+            opacity: visible ? 1 : 0
+            Behavior on opacity { NumberAnimation { duration: 250 } }
+
+            Repeater {
+                model: 3
+                Rectangle {
+                    required property int index
+                    width: 2.5
+                    height: 10
+                    radius: 1.25
+                    color: Services.Theme.success
+                    anchors.verticalCenter: parent.verticalCenter
+
+                    SequentialAnimation on height {
+                        running: mediaVisualizer.visible
+                        loops: Animation.Infinite
+                        NumberAnimation {
+                            to: index === 0 ? 12 : (index === 1 ? 5 : 10)
+                            duration: index === 0 ? 280 : (index === 1 ? 400 : 340)
+                            easing.type: Easing.InOutSine
+                        }
+                        NumberAnimation {
+                            to: index === 0 ? 4 : (index === 1 ? 12 : 4)
+                            duration: index === 0 ? 320 : (index === 1 ? 300 : 380)
+                            easing.type: Easing.InOutSine
+                        }
+                    }
+                }
+            }
+        }
+
         // ==================== Dedicated Collapsed Track Title / Notif Text Zone ====================
         Item {
             id: collapsedTextContainer
             anchors.left: statusIconContainer.right
-            anchors.leftMargin: 8
-            anchors.right: island.right
-            anchors.rightMargin: 12
+            anchors.leftMargin: 6
+            anchors.right: mediaVisualizer.visible ? mediaVisualizer.left : (cameraIndicator.visible ? cameraIndicator.left : island.right)
+            anchors.rightMargin: (mediaVisualizer.visible || cameraIndicator.visible) ? 6 : 12
             anchors.verticalCenter: island.verticalCenter
             height: 16
             z: 3
@@ -894,7 +942,7 @@ Item {
                 font.bold: true
                 color: Services.Theme.textPrimary
                 width: collapsedTextContainer.width
-                horizontalAlignment: Text.AlignLeft
+                horizontalAlignment: (collapsedText.implicitWidth > collapsedTextContainer.width) ? Text.AlignLeft : Text.AlignHCenter
                 verticalAlignment: Text.AlignVCenter
                 elide: marqueeAnim.running ? Text.ElideNone : Text.ElideRight
 
@@ -1474,16 +1522,16 @@ Item {
             Behavior on opacity { NumberAnimation { duration: 350; easing.type: Easing.OutQuad } }
             Behavior on scale   { NumberAnimation { duration: 550; easing.type: Easing.OutExpo } }
 
-            // Row 1: Track Art + Info + Player Badge
+            // Row 1: Track Art + Info + App Badge
             RowLayout {
                 Layout.fillWidth: true
-                spacing: 10
+                spacing: 12
 
                 // Artwork
                 Rectangle {
-                    implicitWidth: 40
-                    implicitHeight: 40
-                    radius: Services.Theme.radiusMd
+                    implicitWidth: 46
+                    implicitHeight: 46
+                    radius: 10
                     color: Services.Theme.surfaceVariant
                     clip: true
                     Layout.alignment: Qt.AlignVCenter
@@ -1495,7 +1543,7 @@ Item {
                         fillMode: Image.PreserveAspectCrop
                         asynchronous: true
                         cache: true
-                        sourceSize: Qt.size(80, 80)
+                        sourceSize: Qt.size(92, 92)
                         visible: status === Image.Ready
                     }
 
@@ -1503,36 +1551,48 @@ Item {
                         anchors.centerIn: parent
                         text: "󰎈"
                         font.family: Services.Theme.fontMono
-                        font.pixelSize: 20
+                        font.pixelSize: 22
                         color: Services.Theme.accent
                         visible: !albumArtImg.visible
                     }
                 }
 
-                // Info (Title, Artist, Identity)
+                // Info (App Badge, Title, Artist)
                 ColumnLayout {
                     Layout.fillWidth: true
                     Layout.alignment: Qt.AlignVCenter
-                    spacing: 1
+                    spacing: 2
 
                     RowLayout {
-                        spacing: 6
+                        spacing: 4
                         visible: (root.activePlayer?.identity ?? "").length > 0
 
                         Rectangle {
-                            implicitHeight: 14
-                            implicitWidth: Math.min(identityTxt.implicitWidth + 8, 80)
+                            implicitHeight: 15
+                            implicitWidth: appBadgeRow.implicitWidth + 8
                             radius: 4
                             color: Services.Theme.surfaceVariant
 
-                            Text {
-                                id: identityTxt
+                            RowLayout {
+                                id: appBadgeRow
                                 anchors.centerIn: parent
-                                text: root.activePlayer ? (root.activePlayer.identity || "") : ""
-                                color: Services.Theme.textDisabled
-                                font.pixelSize: 8
-                                font.bold: true
-                                elide: Text.ElideRight
+                                spacing: 3
+
+                                Text {
+                                    text: Services.Icons.playerIcon(root.activePlayer?.identity)
+                                    color: Services.Theme.accent
+                                    font.family: Services.Theme.fontSymbols
+                                    font.pixelSize: 9
+                                }
+
+                                Text {
+                                    text: root.activePlayer ? (root.activePlayer.identity || "") : ""
+                                    color: Services.Theme.textDisabled
+                                    font.pixelSize: 8
+                                    font.bold: true
+                                    elide: Text.ElideRight
+                                    Layout.maximumWidth: 80
+                                }
                             }
                         }
                     }
@@ -1540,7 +1600,7 @@ Item {
                     Text {
                         text: root.activePlayer ? (root.activePlayer.trackTitle || "Unknown Track") : "—"
                         color: Services.Theme.textPrimary
-                        font.pixelSize: 12
+                        font.pixelSize: 13
                         font.bold: true
                         elide: Text.ElideRight
                         Layout.fillWidth: true
@@ -1549,7 +1609,7 @@ Item {
                     Text {
                         text: root.activePlayer ? (root.activePlayer.trackArtist || "") : ""
                         color: Services.Theme.textSecondary
-                        font.pixelSize: 10
+                        font.pixelSize: 11
                         elide: Text.ElideRight
                         Layout.fillWidth: true
                         visible: text.length > 0
@@ -1560,61 +1620,48 @@ Item {
             // Row 2: Progress Bar & Timers
             Item {
                 Layout.fillWidth: true
-                implicitHeight: 16
+                implicitHeight: 20
                 visible: root.activePlayer !== null
 
                 Text {
                     id: posLabel
-                    anchors { left: parent.left; top: parent.top }
-                    text: root.fmtTime(root.activePlayer?.position)
+                    anchors { left: parent.left; verticalCenter: parent.verticalCenter }
+                    text: root.fmtTime(wavyBar.livePosition)
                     color: Services.Theme.textDisabled
                     font.pixelSize: 9
+                    font.family: Services.Theme.fontMono
                 }
 
                 Text {
                     id: durLabel
-                    anchors { right: parent.right; top: parent.top }
+                    anchors { right: parent.right; verticalCenter: parent.verticalCenter }
                     text: {
                         const len = root.activePlayer?.length ?? 0
                         return len > 0 ? root.fmtTime(len) : "--:--"
                     }
                     color: Services.Theme.textDisabled
                     font.pixelSize: 9
+                    font.family: Services.Theme.fontMono
                 }
 
-                Rectangle {
-                    id: progressBg
+                MediaModule.WavyProgressBar {
+                    id: wavyBar
                     anchors {
                         left: posLabel.right; right: durLabel.left
                         leftMargin: 8; rightMargin: 8
                         verticalCenter: parent.verticalCenter
                     }
-                    height: 4
-                    radius: 2
-                    color: Services.Theme.surfaceVariant
-
-                    Rectangle {
-                        id: progressFill
-                        height: parent.height
-                        radius: 2
-                        color: Services.Theme.accent
-                        width: {
-                            const len = root.activePlayer?.length ?? 0
-                            const pos = root.activePlayer?.position ?? 0
-                            return len > 0 ? Math.max(0, Math.min(1, pos / len)) * parent.width : 0
-                        }
-                        Behavior on width { NumberAnimation { duration: 900; easing.type: Easing.Linear } }
-                    }
-                }
-
-                MouseArea {
-                    id: seekArea
-                    anchors.fill: progressBg
-                    hoverEnabled: true
-                    onClicked: (mouse) => {
-                        const ratio = mouse.x / width
+                    height: 16
+                    isPlaying: root.mediaPlaying
+                    waveColor: Services.Theme.accent
+                    trackColor: Services.Theme.surfaceVariant
+                    lineWidth: 3.0
+                    maxAmplitude: 2.8
+                    position: root.activePlayer?.position ?? 0
+                    duration: root.activePlayer?.length ?? 0
+                    onSeekRequested: (ratio) => {
                         const len = root.activePlayer?.length ?? 0
-                        if (len > 0 && (root.activePlayer?.positionSupported ?? false))
+                        if (len > 0 && (root.activePlayer?.canSeek ?? (root.activePlayer?.positionSupported ?? false)))
                             root.activePlayer.position = ratio * len
                     }
                 }
@@ -1627,10 +1674,10 @@ Item {
 
                 // Shuffle
                 Item {
-                    implicitWidth: 28; implicitHeight: 28
+                    implicitWidth: 30; implicitHeight: 30
                     opacity: (root.activePlayer?.shuffleSupported ?? false) ? 1 : 0.2
                     Rectangle {
-                        anchors.fill: parent; radius: 6
+                        anchors.fill: parent; radius: 8
                         color: shArea.containsMouse ? Services.Theme.surfaceVariant : "transparent"
                         Behavior on color { ColorAnimation { duration: 120 } }
                     }
@@ -1638,7 +1685,7 @@ Item {
                         anchors.centerIn: parent
                         text: Services.Icons.mediaShuffle
                         font.family: Services.Theme.fontSymbols
-                        font.pixelSize: 11
+                        font.pixelSize: 12
                         color: (root.activePlayer?.shuffle ?? false) ? Services.Theme.accent : Services.Theme.textSecondary
                         Behavior on color { ColorAnimation { duration: 120 } }
                     }
@@ -1654,10 +1701,10 @@ Item {
 
                 // Previous
                 Item {
-                    implicitWidth: 28; implicitHeight: 28
+                    implicitWidth: 32; implicitHeight: 32
                     opacity: (root.activePlayer?.canGoPrevious ?? false) ? 1 : 0.3
                     Rectangle {
-                        anchors.fill: parent; radius: 6
+                        anchors.fill: parent; radius: 16
                         color: prvArea.containsMouse ? Services.Theme.surfaceVariant : "transparent"
                         Behavior on color { ColorAnimation { duration: 120 } }
                     }
@@ -1665,7 +1712,7 @@ Item {
                         anchors.centerIn: parent
                         text: Services.Icons.mediaPrev
                         font.family: Services.Theme.fontSymbols
-                        font.pixelSize: 12
+                        font.pixelSize: 13
                         color: prvArea.containsMouse ? Services.Theme.accent : Services.Theme.textPrimary
                         Behavior on color { ColorAnimation { duration: 120 } }
                     }
@@ -1677,12 +1724,14 @@ Item {
                     }
                 }
 
-                // Play / Pause (Filled button)
+                Item { Layout.fillWidth: true }
+
+                // Play / Pause (Circular Filled Button)
                 Rectangle {
-                    implicitWidth: 30; implicitHeight: 30
-                    radius: 8
+                    implicitWidth: 36; implicitHeight: 36
+                    radius: 18
                     color: playArea.containsMouse ? Qt.lighter(Services.Theme.accent, 1.15) : Services.Theme.accent
-                    scale: playArea.containsMouse ? 1.05 : 1.0
+                    scale: playArea.containsMouse ? 1.06 : 1.0
 
                     Behavior on color { ColorAnimation { duration: 120 } }
                     Behavior on scale { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
@@ -1691,23 +1740,25 @@ Item {
                         anchors.centerIn: parent
                         text: Services.Icons.mediaPlayPause(root.mediaPlaying)
                         font.family: Services.Theme.fontSymbols
-                        font.pixelSize: 12
+                        font.pixelSize: 14
                         color: Services.Theme.bgDeep
                     }
                     MouseArea {
                         id: playArea; anchors.fill: parent; hoverEnabled: true
                         cursorShape: (root.activePlayer?.canTogglePlaying ?? true) ? Qt.PointingHandCursor : Qt.ArrowCursor
                         enabled: root.activePlayer?.canTogglePlaying ?? true
-                        onClicked: (mouse) => { root.activePlayer.playPause(); mouse.accepted = true }
+                        onClicked: (mouse) => { root.activePlayer?.togglePlaying(); mouse.accepted = true }
                     }
                 }
 
+                Item { Layout.fillWidth: true }
+
                 // Next
                 Item {
-                    implicitWidth: 28; implicitHeight: 28
+                    implicitWidth: 32; implicitHeight: 32
                     opacity: (root.activePlayer?.canGoNext ?? false) ? 1 : 0.3
                     Rectangle {
-                        anchors.fill: parent; radius: 6
+                        anchors.fill: parent; radius: 16
                         color: nxtArea.containsMouse ? Services.Theme.surfaceVariant : "transparent"
                         Behavior on color { ColorAnimation { duration: 120 } }
                     }
@@ -1715,7 +1766,7 @@ Item {
                         anchors.centerIn: parent
                         text: Services.Icons.mediaNext
                         font.family: Services.Theme.fontSymbols
-                        font.pixelSize: 12
+                        font.pixelSize: 13
                         color: nxtArea.containsMouse ? Services.Theme.accent : Services.Theme.textPrimary
                         Behavior on color { ColorAnimation { duration: 120 } }
                     }
@@ -1731,17 +1782,17 @@ Item {
 
                 // Repeat
                 Item {
-                    implicitWidth: 28; implicitHeight: 28
+                    implicitWidth: 30; implicitHeight: 30
                     opacity: (root.activePlayer?.loopSupported ?? false) ? 1 : 0.2
                     Rectangle {
-                        anchors.fill: parent; radius: 6
+                        anchors.fill: parent; radius: 8
                         color: rpArea.containsMouse ? Services.Theme.surfaceVariant : "transparent"
                         Behavior on color { ColorAnimation { duration: 120 } }
                     }
                     Text {
                         anchors.centerIn: parent
                         font.family: Services.Theme.fontSymbols
-                        font.pixelSize: 11
+                        font.pixelSize: 12
                         text: (root.activePlayer?.loop ?? MprisLoopState.None) === MprisLoopState.Track ? Services.Icons.mediaLoopOne : Services.Icons.mediaLoopAll
                         color: (root.activePlayer?.loop ?? MprisLoopState.None) !== MprisLoopState.None ? Services.Theme.accent : (rpArea.containsMouse ? Services.Theme.textPrimary : Services.Theme.textSecondary)
                         Behavior on color { ColorAnimation { duration: 120 } }

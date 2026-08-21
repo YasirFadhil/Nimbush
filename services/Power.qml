@@ -23,12 +23,98 @@ Singleton {
     readonly property bool isWarning: !charging && ready && hasBattery && !isNaN(percentage) && (percentage * 100 <= (Services.Config ? Services.Config.batteryLowThreshold : 20))
     readonly property bool isLow: !charging && ready && hasBattery && !isNaN(percentage) && (percentage * 100 <= 10)
 
+    // Detailed Hardware Battery Metrics
+    property string timeRemaining: ""
+    property string timeType: "" // "until full" | "remaining" | ""
+    property string energyRate: ""
+    property string voltage: ""
+    property string health: ""
+    property string energyCurrent: ""
+    property string energyFull: ""
+    property string energyDesign: ""
+    property string chargeCycles: ""
+    property string vendor: ""
+    property string model: ""
+    property string technology: ""
+
     property bool warn20Sent: false
     property bool warn10Sent: false
     property bool warn5Sent: false
 
     signal chargingStateChanged(bool charging, real percentage)
     signal batteryWarning(int level, string title, string message)
+
+    Process {
+        id: detailProc
+        command: [
+            "python3", "-c",
+            "import json, subprocess\n" +
+            "try:\n" +
+            "    dev = subprocess.check_output(['sh', '-c', 'upower -e | grep battery | head -n 1']).decode().strip()\n" +
+            "    if dev:\n" +
+            "        out = subprocess.check_output(['upower', '-i', dev]).decode()\n" +
+            "        d = {}\n" +
+            "        for l in out.splitlines():\n" +
+            "            if ':' in l:\n" +
+            "                k, v = l.split(':', 1)\n" +
+            "                d[k.strip()] = v.strip()\n" +
+            "        res = {\n" +
+            "            'state': d.get('state', ''),\n" +
+            "            'percentage': d.get('percentage', ''),\n" +
+            "            'timeToFull': d.get('time to full', ''),\n" +
+            "            'timeToEmpty': d.get('time to empty', ''),\n" +
+            "            'energyRate': d.get('energy-rate', ''),\n" +
+            "            'voltage': d.get('voltage', ''),\n" +
+            "            'capacity': d.get('capacity', ''),\n" +
+            "            'energy': d.get('energy', ''),\n" +
+            "            'energyFull': d.get('energy-full', ''),\n" +
+            "            'energyFullDesign': d.get('energy-full-design', ''),\n" +
+            "            'chargeCycles': d.get('charge-cycles', ''),\n" +
+            "            'vendor': d.get('vendor', ''),\n" +
+            "            'model': d.get('model', ''),\n" +
+            "            'technology': d.get('technology', ''),\n" +
+            "            'present': d.get('present', 'yes') == 'yes'\n" +
+            "        }\n" +
+            "        print(json.dumps(res))\n" +
+            "    else:\n" +
+            "        print('{}')\n" +
+            "except Exception as e:\n" +
+            "    print('{}')"
+        ]
+        stdout: SplitParser {
+            onRead: data => {
+                try {
+                    const parsed = JSON.parse(data.trim())
+                    if (parsed.percentage) {
+                        if (parsed.timeToFull) {
+                            root.timeRemaining = parsed.timeToFull
+                            root.timeType = "until full"
+                        } else if (parsed.timeToEmpty) {
+                            root.timeRemaining = parsed.timeToEmpty
+                            root.timeType = "remaining"
+                        } else {
+                            root.timeRemaining = ""
+                            root.timeType = ""
+                        }
+                        root.energyRate = parsed.energyRate || ""
+                        root.voltage = parsed.voltage || ""
+                        root.health = parsed.capacity || ""
+                        root.energyCurrent = parsed.energy || ""
+                        root.energyFull = parsed.energyFull || ""
+                        root.energyDesign = parsed.energyFullDesign || ""
+                        root.chargeCycles = parsed.chargeCycles || ""
+                        root.vendor = parsed.vendor || ""
+                        root.model = parsed.model || ""
+                        root.technology = parsed.technology || ""
+                    }
+                } catch(e) {}
+            }
+        }
+    }
+
+    function refreshDetails() {
+        if (!detailProc.running) detailProc.running = true
+    }
 
     function isChargingState(state) {
         return state === UPowerDeviceState.Charging || state === UPowerDeviceState.FullyCharged
@@ -85,11 +171,15 @@ Singleton {
         }
     }
 
-    onPercentageChanged: checkBatteryWarnings()
+    onPercentageChanged: {
+        checkBatteryWarnings()
+        refreshDetails()
+    }
 
     onChargingChanged: {
         if (!root.ready) return
         root.chargingStateChanged(root.charging, root.percentage)
+        refreshDetails()
         if (charging) {
             warn20Sent = false
             warn10Sent = false
@@ -100,12 +190,22 @@ Singleton {
     }
 
     Timer {
+        id: detailPeriodicTimer
+        interval: 15000
+        running: true
+        repeat: true
+        triggeredOnStart: true
+        onTriggered: root.refreshDetails()
+    }
+
+    Timer {
         id: readyTimer
         interval: 3500
         running: true
         repeat: false
         onTriggered: {
             root.ready = true
+            root.refreshDetails()
             if (root.hasBattery && !isNaN(root.percentage) && root.percentage > 0) {
                 const initialPct = Math.round(root.percentage * 100)
                 if (initialPct <= 20) root.warn20Sent = true

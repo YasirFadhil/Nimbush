@@ -13,15 +13,25 @@ PanelWindow {
     property string overlayId: "dashboard"
     property bool isOpen: false
     readonly property bool isBottom: Services.Config ? (Services.Config.barPosition === "bottom") : false
+    readonly property int barTotalHeight: Services.Config ? (Services.Config.barStyle === "minimal" ? 30 : (Services.Config.barStyle === "unified" ? 38 : (Services.Config.barStyle === "floating" ? 46 : 36))) : 36
 
     visible: false
 
     color: "transparent"
     WlrLayershell.layer: WlrLayer.Top
-    WlrLayershell.keyboardFocus: WlrKeyboardFocus.OnDemand
+    WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
     WlrLayershell.namespace: "quickshell:dashboard"
     exclusiveZone: 0
     anchors { top: true; bottom: true; left: true; right: true }
+
+    mask: Region {
+        Region {
+            x: 0
+            y: root.isBottom ? 0 : root.barTotalHeight
+            width: root.width
+            height: root.height - root.barTotalHeight
+        }
+    }
 
     Component.onCompleted: Services.OverlayManager.register(root)
 
@@ -64,7 +74,7 @@ PanelWindow {
             id: panel
             anchors.left: parent.left
             anchors.leftMargin: 16
-            y: root.isBottom ? (parent.height - height - 16) : 16
+            y: root.isBottom ? (parent.height - height - 12) : 12
             width: 350
             implicitHeight: mainCol.implicitHeight + 28
 

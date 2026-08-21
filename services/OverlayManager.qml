@@ -12,6 +12,10 @@ Singleton {
     property bool audioPanelVisible: false
     property bool updatePanelVisible: false
     property bool calendarVisible: false
+    property bool batteryPanelVisible: false
+    property bool volumePanelVisible: false
+    property real batteryTargetX: -1
+    property real volumeTargetX: -1
 
     signal launcherToggleRequested()
     signal dashboardToggleRequested()
@@ -44,7 +48,7 @@ Singleton {
     }
 
     // 'except' can be a window object (PowerMenu/Launcher/NotifCenter etc.)
-    // OR a string id ("controlCenter"/"calendar"/"notifCenter") — matched
+    // OR a string id ("controlCenter"/"calendar"/"batteryPanel"/"volumePanel"/"notifCenter") — matched
     // against the overlayId property if the window possesses it.
     function closeAllExcept(except) {
         for (let i = 0; i < _windows.length; i++) {
@@ -64,6 +68,12 @@ Singleton {
         }
         if (except !== "calendar") {
             calendarVisible = false
+        }
+        if (except !== "batteryPanel") {
+            batteryPanelVisible = false
+        }
+        if (except !== "volumePanel") {
+            volumePanelVisible = false
         }
     }
 }

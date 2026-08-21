@@ -1470,6 +1470,23 @@ FloatingWindow {
                                 icon: Services.Icons.lock
 
                                 SettingsRow {
+                                    title: "Lockscreen Layout Mode"
+                                    subtitle: "Overall layout style (Default, Compact Card, or Minimalist)"
+
+                                    SettingsDropdown {
+                                        currentValue: Services.Config ? Services.Config.lockscreenLayout : "default"
+                                        model: [
+                                            { id: "default", label: "Default (Spacious Spread)" },
+                                            { id: "compact", label: "Compact (Centered Glass Card)" },
+                                            { id: "minimal", label: "Minimal (Clean Typography)" }
+                                        ]
+                                        onSelected: (val) => { if (Services.Config) Services.Config.setLockscreenLayout(val) }
+                                    }
+                                }
+
+                                SettingsDivider {}
+
+                                SettingsRow {
                                     title: "Clock Presentation Style"
                                     subtitle: "Visual typography layout of lockscreen clock"
 

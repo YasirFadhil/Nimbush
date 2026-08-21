@@ -34,6 +34,7 @@
   "dndEnabled": false,
   "notificationPosition": "top_right",
   "lockscreenClockStyle": "hero",
+  "lockscreenLayout": "default",
   "lockscreenShowAvatar": false,
   "lockscreenShowGreeting": false,
   "lockscreenShowMedia": true,

@@ -8,17 +8,28 @@ import "../../services" as Services
 PanelWindow {
     id: centerWin
     property string overlayId: "notifCenter"
+    readonly property bool isBottom: Services.Config ? (Services.Config.barPosition === "bottom") : false
+    readonly property int barTotalHeight: Services.Config ? (Services.Config.barStyle === "minimal" ? 30 : (Services.Config.barStyle === "unified" ? 38 : (Services.Config.barStyle === "floating" ? 46 : 36))) : 36
+
     anchors { top: true; bottom: true; left: true; right: true }
     color: "transparent"
     exclusiveZone: 0
     visible: Services.Notifications.centerVisible
     WlrLayershell.layer: WlrLayer.Top
     WlrLayershell.namespace: "quickshell:notifcenter"
-    WlrLayershell.keyboardFocus: WlrKeyboardFocus.OnDemand
+    WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
+
+    mask: Region {
+        Region {
+            x: 0
+            y: centerWin.isBottom ? 0 : centerWin.barTotalHeight
+            width: centerWin.width
+            height: centerWin.height - centerWin.barTotalHeight
+        }
+    }
 
     function hide() { Services.Notifications.centerVisible = false }
     function close() { hide() }
-    readonly property bool isBottom: Services.Config ? (Services.Config.barPosition === "bottom") : false
 
     Component.onCompleted: Services.OverlayManager.register(centerWin)
 

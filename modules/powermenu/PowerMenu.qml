@@ -454,16 +454,22 @@ PanelWindow {
                     spacing: 6
 
                     Text {
-                        text: root.activeHoldIndex >= 0 ? "󰔛" : "󰌌"
+                        text: (root.activeHoldIndex >= 0 && root.actions[root.activeHoldIndex]) ? "󰔛" : "󰌌"
                         font.family: Services.Theme.fontSymbols
                         font.pixelSize: Services.Theme.fontSizeSm
-                        color: root.activeHoldIndex >= 0 ? (root.actions[root.activeHoldIndex].danger ? Services.Theme.danger : Services.Theme.accent) : Services.Theme.textDisabled
+                        color: (root.activeHoldIndex >= 0 && root.actions[root.activeHoldIndex]) 
+                            ? (root.actions[root.activeHoldIndex].danger ? Services.Theme.danger : Services.Theme.accent) 
+                            : Services.Theme.textDisabled
                     }
 
                     Text {
-                        text: root.activeHoldIndex >= 0 ? ("Holding key to confirm " + root.actions[root.activeHoldIndex].label + "...") : "Press hotkey (L, Q) or hold (S, X, R, P) to execute"
+                        text: (root.activeHoldIndex >= 0 && root.actions[root.activeHoldIndex]) 
+                            ? ("Hold to confirm " + root.actions[root.activeHoldIndex].label + "...") 
+                            : "Press hotkey (L, Q) or hold (S, X, R, P) to execute"
                         font.pixelSize: Services.Theme.fontSizeXs
-                        color: root.activeHoldIndex >= 0 ? (root.actions[root.activeHoldIndex].danger ? Services.Theme.danger : Services.Theme.textPrimary) : Services.Theme.textDisabled
+                        color: (root.activeHoldIndex >= 0 && root.actions[root.activeHoldIndex]) 
+                            ? (root.actions[root.activeHoldIndex].danger ? Services.Theme.danger : Services.Theme.accent) 
+                            : Services.Theme.textSecondary
                     }
                 }
             }
@@ -517,15 +523,32 @@ PanelWindow {
 
         height: 104
         radius: Services.Theme.radiusMd
-        color: isHolding ? (isDangerAction ? Qt.rgba(0.94, 0.27, 0.27, 0.15) : Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.15)) : (pMouse.containsMouse || isSelected ? Services.Theme.surfaceVariant : Services.Theme.bgHover)
-        border.color: isHolding ? (isDangerAction ? Services.Theme.danger : Services.Theme.accent) : (isSelected ? (isDangerAction ? Services.Theme.danger : Services.Theme.accent) : (pMouse.containsMouse ? Services.Theme.borderHighlight : Services.Theme.border))
-        border.width: isHolding ? 2 : (isSelected ? 2 : 1)
-        scale: isHolding ? 0.97 : (pMouse.containsMouse ? 1.03 : (isSelected ? 1.01 : 1.0))
+        color: isHolding 
+            ? (isDangerAction ? Qt.rgba(Services.Theme.danger.r, Services.Theme.danger.g, Services.Theme.danger.b, 0.15) : Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.15)) 
+            : (pMouse.containsMouse || isSelected ? Services.Theme.surfaceVariant : Services.Theme.bgHover)
+        border.color: isHolding 
+            ? (isDangerAction ? Services.Theme.danger : Services.Theme.accent) 
+            : (isSelected ? (isDangerAction ? Services.Theme.danger : Services.Theme.accent) : (pMouse.containsMouse ? Services.Theme.borderHighlight : Services.Theme.border))
+        border.width: (isHolding || isSelected) ? 1.5 : 1
+        scale: isHolding ? 0.98 : (pMouse.containsMouse ? 1.02 : 1.0)
         clip: true
 
         Behavior on color { ColorAnimation { duration: 120 } }
         Behavior on border.color { ColorAnimation { duration: 120 } }
-        Behavior on scale { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
+        Behavior on scale { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
+
+        // Clean Hold Fill Progress
+        Rectangle {
+            anchors.left: parent.left
+            anchors.top: parent.top
+            anchors.bottom: parent.bottom
+            width: parent.width * (pCard.isHolding ? root.holdProgress : 0)
+            radius: parent.radius
+            color: pCard.isDangerAction 
+                ? Qt.rgba(Services.Theme.danger.r, Services.Theme.danger.g, Services.Theme.danger.b, 0.15) 
+                : Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.15)
+            visible: pCard.isHolding && root.holdProgress > 0
+        }
 
         MouseArea {
             id: pMouse
@@ -542,7 +565,9 @@ PanelWindow {
         Rectangle {
             anchors { top: parent.top; right: parent.right; margins: 7 }
             width: 20; height: 20; radius: 6
-            color: isHolding ? (isDangerAction ? Services.Theme.danger : Services.Theme.accent) : (isSelected ? (isDangerAction ? Services.Theme.danger : Services.Theme.accent) : Services.Theme.border)
+            color: isHolding 
+                ? (isDangerAction ? Services.Theme.danger : Services.Theme.accent) 
+                : (isSelected ? (isDangerAction ? Services.Theme.danger : Services.Theme.accent) : Services.Theme.border)
             Behavior on color { ColorAnimation { duration: 120 } }
 
             Text {
@@ -563,7 +588,9 @@ PanelWindow {
             Rectangle {
                 Layout.alignment: Qt.AlignHCenter
                 width: 40; height: 40; radius: 20
-                color: isHolding ? (isDangerAction ? Qt.rgba(0.94, 0.27, 0.27, 0.3) : Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.3)) : (isSelected ? (isDangerAction ? Qt.rgba(0.94, 0.27, 0.27, 0.2) : Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.2)) : Services.Theme.bgElevated)
+                color: isHolding 
+                    ? (isDangerAction ? Qt.rgba(Services.Theme.danger.r, Services.Theme.danger.g, Services.Theme.danger.b, 0.25) : Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.25)) 
+                    : (isSelected ? (isDangerAction ? Qt.rgba(Services.Theme.danger.r, Services.Theme.danger.g, Services.Theme.danger.b, 0.15) : Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.15)) : Services.Theme.bgElevated)
                 border.color: (isHolding || isSelected) ? (isDangerAction ? Services.Theme.danger : Services.Theme.accent) : "transparent"
                 border.width: (isHolding || isSelected) ? 1 : 0
                 Behavior on color { ColorAnimation { duration: 120 } }
@@ -592,26 +619,14 @@ PanelWindow {
             // Sublabel / Hold Hint
             Text {
                 Layout.alignment: Qt.AlignHCenter
-                text: pCard.isHolding ? "HOLD TO EXECUTE..." : (pCard.needsHoldAction ? (pMouse.containsMouse || pCard.isSelected ? ("Hold [" + pCard.cardKey + "]") : pCard.cardSublabel) : pCard.cardSublabel)
+                text: pCard.isHolding 
+                    ? "Holding..." 
+                    : (pCard.needsHoldAction ? (pMouse.containsMouse || pCard.isSelected ? ("Hold [" + pCard.cardKey + "]") : pCard.cardSublabel) : pCard.cardSublabel)
                 font.pixelSize: Services.Theme.fontSizeXs - 1
                 font.bold: pCard.isHolding
                 color: pCard.isHolding ? (pCard.isDangerAction ? Services.Theme.danger : Services.Theme.accent) : Services.Theme.textDisabled
                 elide: Text.ElideRight
                 Layout.maximumWidth: parent.width - 8
-            }
-        }
-
-        // Live Hold Progress Bar (along bottom border)
-        Rectangle {
-            anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
-            height: 4
-            color: Qt.rgba(0, 0, 0, 0.25)
-            visible: pCard.isHolding
-
-            Rectangle {
-                anchors { left: parent.left; top: parent.top; bottom: parent.bottom }
-                width: parent.width * root.holdProgress
-                color: pCard.isDangerAction ? Services.Theme.danger : Services.Theme.accent
             }
         }
     }

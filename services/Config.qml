@@ -62,7 +62,7 @@ Singleton {
     // ── Lockscreen & System ──────────────────────────────────────────────────
     property string lockscreenClockStyle: "hero"  // "hero" | "modern" | "compact" | "minimal" | "vertical" | "typographic" | "radial" | "cyber"
     property string lockscreenAuthStyle: "pill"   // "pill" | "card"
-    property string lockscreenLayout: "center"    // "center" | "left" | "right"
+    property string lockscreenLayout: "default"   // "default" | "compact" | "minimal"
     property string lockscreenAvatarShape: "circle" // "circle" | "squircle" | "rounded"
     property bool lockscreenAvatarRing: true
     property string lockscreenInputStyle: "pill"  // "pill" | "underline" | "box" | "dots"
@@ -214,7 +214,13 @@ Singleton {
 
         if (data.lockscreenClockStyle !== undefined) lockscreenClockStyle = data.lockscreenClockStyle
         if (data.lockscreenAuthStyle !== undefined) lockscreenAuthStyle = data.lockscreenAuthStyle
-        if (data.lockscreenLayout !== undefined) lockscreenLayout = data.lockscreenLayout
+        if (data.lockscreenLayout !== undefined) {
+            if (data.lockscreenLayout === "compact" || data.lockscreenLayout === "minimal" || data.lockscreenLayout === "default") {
+                lockscreenLayout = data.lockscreenLayout
+            } else {
+                lockscreenLayout = "default"
+            }
+        }
         if (data.lockscreenAvatarShape !== undefined) lockscreenAvatarShape = data.lockscreenAvatarShape
         if (data.lockscreenAvatarRing !== undefined) lockscreenAvatarRing = Boolean(data.lockscreenAvatarRing)
         if (data.lockscreenInputStyle !== undefined) lockscreenInputStyle = data.lockscreenInputStyle
@@ -243,8 +249,20 @@ Singleton {
         root.configChanged()
     }
 
-    function saveConfig() {
-        var data = {
+    Timer {
+        id: saveDebounceTimer
+        interval: 350
+        repeat: false
+        onTriggered: {
+            var data = root.serializeData()
+            var jsonStr = JSON.stringify(data, null, 2)
+            saveConfigProc.payload = jsonStr
+            saveConfigProc.running = true
+        }
+    }
+
+    function serializeData() {
+        return {
             themeMode: themeMode,
             accentColor: accentColor,
             accentName: accentName,
@@ -313,9 +331,10 @@ Singleton {
             firstRunCompleted: firstRunCompleted,
             customSettingsVersion: customSettingsVersion
         }
-        var jsonStr = JSON.stringify(data, null, 2)
-        saveConfigProc.payload = jsonStr
-        saveConfigProc.running = true
+    }
+
+    function saveConfig() {
+        saveDebounceTimer.restart()
         root.configChanged()
     }
 
@@ -359,6 +378,7 @@ Singleton {
         notificationPosition = "top_right"
 
         lockscreenClockStyle = "hero"
+        lockscreenLayout = "default"
         lockscreenAvatarShape = "circle"
         lockscreenAvatarRing = true
         lockscreenInputStyle = "pill"

@@ -11,18 +11,29 @@ PanelWindow {
     id: root
     property string overlayId: "controlCenter"
 
+    readonly property bool isBottom: Services.Config ? (Services.Config.barPosition === "bottom") : false
+    readonly property int barTotalHeight: Services.Config ? (Services.Config.barStyle === "minimal" ? 30 : (Services.Config.barStyle === "unified" ? 38 : (Services.Config.barStyle === "floating" ? 46 : 36))) : 36
+
     anchors { top: true; bottom: true; left: true; right: true }
     color: "transparent"
     exclusiveZone: 0
     visible: Services.OverlayManager.controlCenterVisible
     WlrLayershell.layer: WlrLayer.Top
     WlrLayershell.namespace: "quickshell:controlcenter"
-    WlrLayershell.keyboardFocus: Services.OverlayManager.isLocked ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.OnDemand
+    WlrLayershell.keyboardFocus: Services.OverlayManager.isLocked ? WlrKeyboardFocus.Exclusive : (root.wifiPasswordTarget !== "" ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None)
+
+    mask: Region {
+        Region {
+            x: 0
+            y: root.isBottom ? 0 : root.barTotalHeight
+            width: root.width
+            height: root.height - root.barTotalHeight
+        }
+    }
 
     property string wifiPasswordTarget: ""
     property string wifiPasswordInput: ""
     property bool audioSinkSelectorOpen: false
-    readonly property bool isBottom: Services.Config ? (Services.Config.barPosition === "bottom") : false
 
     Process {
         id: pwrProc
@@ -178,7 +189,7 @@ PanelWindow {
             anchors.right: parent.right
             anchors.rightMargin: 12
             y: root.isBottom ? (parent.height - height - 12) : 12
-            width: 340
+            width: 356
             height: Math.min(530, parent.height - 24)
             radius: Services.Theme.radiusMd
             color: Services.Theme.surface
@@ -377,9 +388,9 @@ PanelWindow {
                     Rectangle {
                         id: wifiTile
                         Layout.fillWidth: !Services.OverlayManager.btPanelVisible
-                        Layout.preferredWidth: Services.OverlayManager.btPanelVisible ? 0 : (Services.OverlayManager.wifiPanelVisible ? 308 : 149)
+                        Layout.preferredWidth: Services.OverlayManager.btPanelVisible ? 0 : (Services.OverlayManager.wifiPanelVisible ? 324 : 157)
                         Layout.preferredHeight: Services.OverlayManager.wifiPanelVisible ? 248 : 72
-                        radius: Services.OverlayManager.wifiPanelVisible ? Services.Theme.radiusLg : Services.Theme.radiusLg
+                        radius: Services.Theme.radiusLg
                         color: Services.Wifi.enabled ? Services.Theme.accent : Services.Theme.surfaceVariant
                         clip: true
 
@@ -388,8 +399,8 @@ PanelWindow {
 
                         Behavior on Layout.preferredWidth { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
                         Behavior on Layout.preferredHeight { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
-                        Behavior on opacity { NumberAnimation { duration: 200 } }
-                        Behavior on color { ColorAnimation { duration: 150 } }
+                        Behavior on opacity { NumberAnimation { duration: 150 } }
+                        Behavior on color { ColorAnimation { duration: 180; easing.type: Easing.OutCubic } }
 
                         ColumnLayout {
                             anchors.fill: parent
@@ -403,18 +414,25 @@ PanelWindow {
 
                                 // Left Icon Circle (Click icon = Power Toggle On/Off)
                                 Rectangle {
+                                    id: wifiIconCircle
                                     width: 36; height: 36; radius: 18
                                     color: wifiIconMouse.containsMouse 
                                            ? (Services.Wifi.enabled ? "#35000000" : Services.Theme.bgHover) 
                                            : (Services.Wifi.enabled ? "#20000000" : "transparent")
-                                    Behavior on color { ColorAnimation { duration: 100 } }
+                                    scale: wifiIconMouse.pressed ? 0.88 : (wifiIconMouse.containsMouse ? 1.06 : 1.0)
+                                    Behavior on color { ColorAnimation { duration: 120 } }
+                                    Behavior on scale { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
 
                                     Text {
+                                        id: wifiIcon
                                         anchors.centerIn: parent
                                         text: Services.Icons.wifi
                                         font.family: Services.Theme.fontSymbols
                                         font.pixelSize: 18
+                                        scale: Services.Wifi.enabled ? 1.08 : 1.0
                                         color: Services.Wifi.enabled ? Services.Theme.bgOnAccent : Services.Theme.textPrimary
+                                        Behavior on scale { NumberAnimation { duration: 200; easing.type: Easing.OutBack } }
+                                        Behavior on color { ColorAnimation { duration: 150 } }
                                     }
 
                                     MouseArea {
@@ -470,6 +488,9 @@ PanelWindow {
                                             width: 26; height: 26; radius: 13
                                             visible: Services.OverlayManager.wifiPanelVisible
                                             color: refreshWifiMouse.containsMouse ? "#30000000" : "transparent"
+                                            scale: refreshWifiMouse.pressed ? 0.88 : (refreshWifiMouse.containsMouse ? 1.08 : 1.0)
+                                            Behavior on scale { NumberAnimation { duration: 120 } }
+
                                             Text {
                                                 anchors.centerIn: parent
                                                 text: Services.Icons.refreshOrSpinIcon(Services.Wifi.scanning)
@@ -493,7 +514,7 @@ PanelWindow {
                                             font.pixelSize: 10
                                             color: Services.Wifi.enabled ? Services.Theme.bgDeep : Services.Theme.textDisabled
                                             rotation: Services.OverlayManager.wifiPanelVisible ? 180 : 0
-                                            Behavior on rotation { NumberAnimation { duration: 220; easing.type: Easing.OutQuad } }
+                                            Behavior on rotation { NumberAnimation { duration: 220; easing.type: Easing.OutBack } }
                                         }
                                     }
                                 }
@@ -683,9 +704,9 @@ PanelWindow {
                     Rectangle {
                         id: btTile
                         Layout.fillWidth: !Services.OverlayManager.wifiPanelVisible
-                        Layout.preferredWidth: Services.OverlayManager.wifiPanelVisible ? 0 : (Services.OverlayManager.btPanelVisible ? 308 : 149)
+                        Layout.preferredWidth: Services.OverlayManager.wifiPanelVisible ? 0 : (Services.OverlayManager.btPanelVisible ? 324 : 157)
                         Layout.preferredHeight: Services.OverlayManager.btPanelVisible ? 248 : 72
-                        radius: Services.OverlayManager.btPanelVisible ? Services.Theme.radiusLg : Services.Theme.radiusLg
+                        radius: Services.Theme.radiusLg
                         color: Services.Bluetooth.enabled ? Services.Theme.accent : Services.Theme.surfaceVariant
                         clip: true
 
@@ -694,8 +715,8 @@ PanelWindow {
 
                         Behavior on Layout.preferredWidth { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
                         Behavior on Layout.preferredHeight { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
-                        Behavior on opacity { NumberAnimation { duration: 200 } }
-                        Behavior on color { ColorAnimation { duration: 150 } }
+                        Behavior on opacity { NumberAnimation { duration: 150 } }
+                        Behavior on color { ColorAnimation { duration: 180; easing.type: Easing.OutCubic } }
 
                         ColumnLayout {
                             anchors.fill: parent
@@ -709,18 +730,25 @@ PanelWindow {
 
                                 // Left Icon Circle (Click icon = Power Toggle On/Off)
                                 Rectangle {
+                                    id: btIconCircle
                                     width: 36; height: 36; radius: 18
                                     color: btIconMouse.containsMouse 
                                            ? (Services.Bluetooth.enabled ? "#35000000" : Services.Theme.bgHover) 
                                            : (Services.Bluetooth.enabled ? "#20000000" : "transparent")
-                                    Behavior on color { ColorAnimation { duration: 100 } }
+                                    scale: btIconMouse.pressed ? 0.88 : (btIconMouse.containsMouse ? 1.06 : 1.0)
+                                    Behavior on color { ColorAnimation { duration: 120 } }
+                                    Behavior on scale { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
 
                                     Text {
+                                        id: btIcon
                                         anchors.centerIn: parent
                                         text: Services.Icons.bluetooth
                                         font.family: Services.Theme.fontSymbols
                                         font.pixelSize: 18
+                                        scale: Services.Bluetooth.enabled ? 1.08 : 1.0
                                         color: Services.Bluetooth.enabled ? Services.Theme.bgOnAccent : Services.Theme.textPrimary
+                                        Behavior on scale { NumberAnimation { duration: 200; easing.type: Easing.OutBack } }
+                                        Behavior on color { ColorAnimation { duration: 150 } }
                                     }
 
                                     MouseArea {
@@ -774,6 +802,9 @@ PanelWindow {
                                             width: 26; height: 26; radius: 13
                                             visible: Services.OverlayManager.btPanelVisible
                                             color: refreshBtMouse.containsMouse ? "#30000000" : "transparent"
+                                            scale: refreshBtMouse.pressed ? 0.88 : (refreshBtMouse.containsMouse ? 1.08 : 1.0)
+                                            Behavior on scale { NumberAnimation { duration: 120 } }
+
                                             Text {
                                                 anchors.centerIn: parent
                                                 text: Services.Icons.refreshOrSpinIcon(Services.Bluetooth.refreshing)
@@ -797,7 +828,7 @@ PanelWindow {
                                             font.pixelSize: 10
                                             color: Services.Bluetooth.enabled ? Services.Theme.bgDeep : Services.Theme.textDisabled
                                             rotation: Services.OverlayManager.btPanelVisible ? 180 : 0
-                                            Behavior on rotation { NumberAnimation { duration: 220; easing.type: Easing.OutQuad } }
+                                            Behavior on rotation { NumberAnimation { duration: 220; easing.type: Easing.OutBack } }
                                         }
                                     }
                                 }
@@ -1024,10 +1055,10 @@ PanelWindow {
                 Item {
                     id: quickActionsAndMediaCol
                     Layout.fillWidth: true
-                    Layout.preferredHeight: (Services.OverlayManager.wifiPanelVisible || Services.OverlayManager.btPanelVisible) ? 0 : 176
+                    Layout.preferredHeight: (Services.OverlayManager.wifiPanelVisible || Services.OverlayManager.btPanelVisible) ? 0 : 160
                     visible: opacity > 0.01
                     opacity: (Services.OverlayManager.wifiPanelVisible || Services.OverlayManager.btPanelVisible) ? 0 : 1
-                    clip: true
+                    clip: false
 
                     Behavior on Layout.preferredHeight { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
                     Behavior on opacity { NumberAnimation { duration: 180 } }
@@ -1036,34 +1067,66 @@ PanelWindow {
                         anchors.fill: parent
                         spacing: 12
 
-                        // Quick Action Icon-Only Square Tiles (Focus, Saver, Screenshot, Mute)
+                        // Quick Action Icon-Only Square Tiles (Focus, Saver, Theme, Mute)
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 8
 
-                            // Focus (DND)
+                            // 1. Focus (DND)
                             Rectangle {
+                                id: dndTile
                                 Layout.fillWidth: true
                                 Layout.preferredHeight: 50
                                 radius: Services.Theme.radiusLg
-                                color: Services.Notifications.doNotDisturb 
+                                readonly property bool isActive: Services.Notifications.doNotDisturb
+                                color: isActive 
                                     ? Services.Theme.accent 
                                     : (dndMouse.containsMouse ? Services.Theme.bgHover : Services.Theme.surfaceVariant)
-                                border.color: (dndMouse.containsMouse && !Services.Notifications.doNotDisturb) ? Services.Theme.borderHighlight : "transparent"
+                                border.color: isActive ? Services.Theme.accent : (dndMouse.containsMouse ? Services.Theme.borderHighlight : "transparent")
                                 border.width: 1
+                                scale: dndMouse.pressed ? 0.93 : 1.0
+                                clip: true
 
-                                Behavior on color { ColorAnimation { duration: 120 } }
-                                Behavior on border.color { ColorAnimation { duration: 120 } }
+                                Behavior on color { ColorAnimation { duration: 220; easing.type: Easing.OutCubic } }
+                                Behavior on border.color { ColorAnimation { duration: 220 } }
+                                Behavior on scale { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
+
+                                // Active Pulse Wave
+                                Rectangle {
+                                    id: dndPulse
+                                    anchors.centerIn: parent
+                                    width: 44; height: 44; radius: 22
+                                    color: Services.Theme.accent
+                                    opacity: 0
+                                    scale: 0.4
+                                }
+
+                                ParallelAnimation {
+                                    id: dndAnim
+                                    NumberAnimation { target: dndPulse; property: "scale"; from: 0.4; to: 2.2; duration: 280; easing.type: Easing.OutCubic }
+                                    NumberAnimation { target: dndPulse; property: "opacity"; from: 0.5; to: 0.0; duration: 280 }
+                                }
+
+                                SequentialAnimation {
+                                    id: bellRingAnim
+                                    NumberAnimation { target: dndIcon; property: "rotation"; from: 0; to: -18; duration: 60; easing.type: Easing.OutQuad }
+                                    NumberAnimation { target: dndIcon; property: "rotation"; from: -18; to: 18; duration: 100; easing.type: Easing.InOutQuad }
+                                    NumberAnimation { target: dndIcon; property: "rotation"; from: 18; to: -12; duration: 80; easing.type: Easing.InOutQuad }
+                                    NumberAnimation { target: dndIcon; property: "rotation"; from: -12; to: 0; duration: 80; easing.type: Easing.OutQuad }
+                                }
 
                                 Text {
+                                    id: dndIcon
                                     anchors.centerIn: parent
-                                    text: Services.Notifications.doNotDisturb ? Services.Icons.bellSlash : Services.Icons.bell
+                                    text: dndTile.isActive ? Services.Icons.bellSlash : Services.Icons.bell
                                     font.family: Services.Theme.fontSymbols
                                     font.pixelSize: 18
-                                    color: Services.Notifications.doNotDisturb 
+                                    scale: dndTile.isActive ? 1.15 : (dndMouse.containsMouse ? 1.08 : 1.0)
+                                    color: dndTile.isActive 
                                         ? Services.Theme.bgOnAccent 
                                         : (dndMouse.containsMouse ? Services.Theme.accent : Services.Theme.textPrimary)
-                                    Behavior on color { ColorAnimation { duration: 120 } }
+                                    Behavior on color { ColorAnimation { duration: 200 } }
+                                    Behavior on scale { NumberAnimation { duration: 200; easing.type: Easing.OutBack } }
                                 }
 
                                 MouseArea {
@@ -1071,33 +1134,69 @@ PanelWindow {
                                     anchors.fill: parent
                                     hoverEnabled: true
                                     cursorShape: Qt.PointingHandCursor
-                                    onClicked: Services.Notifications.doNotDisturb = !Services.Notifications.doNotDisturb
+                                    onClicked: {
+                                        Services.Notifications.doNotDisturb = !Services.Notifications.doNotDisturb
+                                        if (Services.Notifications.doNotDisturb) {
+                                            dndAnim.restart()
+                                            bellRingAnim.restart()
+                                        }
+                                    }
                                 }
                             }
 
-                            // Saver (Battery Saver)
+                            // 2. Saver (Battery Saver)
                             Rectangle {
+                                id: saverTile
                                 Layout.fillWidth: true
                                 Layout.preferredHeight: 50
                                 radius: Services.Theme.radiusLg
-                                color: Services.PowerProfile.saverEnabled 
+                                readonly property bool isActive: Services.PowerProfile.saverEnabled
+                                color: isActive 
                                     ? Services.Theme.accent 
                                     : (saverMouse.containsMouse ? Services.Theme.bgHover : Services.Theme.surfaceVariant)
-                                border.color: (saverMouse.containsMouse && !Services.PowerProfile.saverEnabled) ? Services.Theme.borderHighlight : "transparent"
+                                border.color: isActive ? Services.Theme.accent : (saverMouse.containsMouse ? Services.Theme.borderHighlight : "transparent")
                                 border.width: 1
+                                scale: saverMouse.pressed ? 0.93 : 1.0
+                                clip: true
 
-                                Behavior on color { ColorAnimation { duration: 120 } }
-                                Behavior on border.color { ColorAnimation { duration: 120 } }
+                                Behavior on color { ColorAnimation { duration: 220; easing.type: Easing.OutCubic } }
+                                Behavior on border.color { ColorAnimation { duration: 220 } }
+                                Behavior on scale { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
+
+                                // Active Pulse Wave
+                                Rectangle {
+                                    id: saverPulse
+                                    anchors.centerIn: parent
+                                    width: 44; height: 44; radius: 22
+                                    color: Services.Theme.accent
+                                    opacity: 0
+                                    scale: 0.4
+                                }
+
+                                ParallelAnimation {
+                                    id: saverAnim
+                                    NumberAnimation { target: saverPulse; property: "scale"; from: 0.4; to: 2.2; duration: 280; easing.type: Easing.OutCubic }
+                                    NumberAnimation { target: saverPulse; property: "opacity"; from: 0.5; to: 0.0; duration: 280 }
+                                }
+
+                                SequentialAnimation {
+                                    id: saverPopAnim
+                                    NumberAnimation { target: saverIcon; property: "scale"; from: 1.0; to: 1.3; duration: 120; easing.type: Easing.OutBack }
+                                    NumberAnimation { target: saverIcon; property: "scale"; from: 1.3; to: 1.15; duration: 140; easing.type: Easing.OutQuad }
+                                }
 
                                 Text {
+                                    id: saverIcon
                                     anchors.centerIn: parent
                                     text: Services.Icons.tree
                                     font.family: Services.Theme.fontSymbols
                                     font.pixelSize: 18
-                                    color: Services.PowerProfile.saverEnabled 
+                                    scale: saverTile.isActive ? 1.15 : (saverMouse.containsMouse ? 1.08 : 1.0)
+                                    color: saverTile.isActive 
                                         ? Services.Theme.bgOnAccent 
                                         : (saverMouse.containsMouse ? Services.Theme.accent : Services.Theme.textPrimary)
-                                    Behavior on color { ColorAnimation { duration: 120 } }
+                                    Behavior on color { ColorAnimation { duration: 200 } }
+                                    Behavior on scale { NumberAnimation { duration: 200; easing.type: Easing.OutBack } }
                                 }
 
                                 MouseArea {
@@ -1105,35 +1204,63 @@ PanelWindow {
                                     anchors.fill: parent
                                     hoverEnabled: true
                                     cursorShape: Qt.PointingHandCursor
-                                    onClicked: Services.PowerProfile.toggleSaver()
+                                    onClicked: {
+                                        Services.PowerProfile.toggleSaver()
+                                        saverAnim.restart()
+                                        saverPopAnim.restart()
+                                    }
                                 }
                             }
 
-                            // Dark / Light Theme Toggle Tile
+                            // 3. Dark Theme Toggle Tile (Active/Nyala when Dark Mode)
                             Rectangle {
                                 id: themeTile
                                 Layout.fillWidth: true
                                 Layout.preferredHeight: 50
                                 radius: Services.Theme.radiusLg
-                                readonly property bool isLight: Services.Config && Services.Config.themeMode === "light"
-                                color: isLight 
+                                readonly property bool isDark: Services.Config ? (Services.Config.themeMode === "dark" || Services.Config.themeMode !== "light") : true
+                                color: isDark 
                                     ? Services.Theme.accent 
                                     : (themeMouse.containsMouse ? Services.Theme.bgHover : Services.Theme.surfaceVariant)
-                                border.color: (themeMouse.containsMouse && !isLight) ? Services.Theme.borderHighlight : "transparent"
+                                border.color: isDark ? Services.Theme.accent : (themeMouse.containsMouse ? Services.Theme.borderHighlight : "transparent")
                                 border.width: 1
+                                scale: themeMouse.pressed ? 0.93 : 1.0
+                                clip: true
 
-                                Behavior on color { ColorAnimation { duration: 150 } }
-                                Behavior on border.color { ColorAnimation { duration: 150 } }
+                                Behavior on color { ColorAnimation { duration: 220; easing.type: Easing.OutCubic } }
+                                Behavior on border.color { ColorAnimation { duration: 220 } }
+                                Behavior on scale { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
+
+                                // Active Pulse Wave
+                                Rectangle {
+                                    id: themePulse
+                                    anchors.centerIn: parent
+                                    width: 44; height: 44; radius: 22
+                                    color: Services.Theme.accent
+                                    opacity: 0
+                                    scale: 0.4
+                                }
+
+                                ParallelAnimation {
+                                    id: themeAnim
+                                    NumberAnimation { target: themePulse; property: "scale"; from: 0.4; to: 2.2; duration: 280; easing.type: Easing.OutCubic }
+                                    NumberAnimation { target: themePulse; property: "opacity"; from: 0.5; to: 0.0; duration: 280 }
+                                }
 
                                 Text {
+                                    id: themeIcon
                                     anchors.centerIn: parent
                                     text: Services.Icons.contrast
                                     font.family: Services.Theme.fontSymbols
                                     font.pixelSize: 18
-                                    color: themeTile.isLight 
+                                    scale: themeTile.isDark ? 1.15 : (themeMouse.containsMouse ? 1.08 : 1.0)
+                                    rotation: themeTile.isDark ? 0 : 180
+                                    color: themeTile.isDark 
                                         ? Services.Theme.bgOnAccent 
                                         : (themeMouse.containsMouse ? Services.Theme.accent : Services.Theme.textPrimary)
-                                    Behavior on color { ColorAnimation { duration: 150 } }
+                                    Behavior on color { ColorAnimation { duration: 200 } }
+                                    Behavior on scale { NumberAnimation { duration: 200; easing.type: Easing.OutBack } }
+                                    Behavior on rotation { NumberAnimation { duration: 350; easing.type: Easing.OutBack; easing.overshoot: 1.3 } }
                                 }
 
                                 MouseArea {
@@ -1143,36 +1270,67 @@ PanelWindow {
                                     cursorShape: Qt.PointingHandCursor
                                     onClicked: {
                                         if (Services.Config) {
-                                            var nextMode = (Services.Config.themeMode === "light") ? "dark" : "light"
+                                            var nextMode = themeTile.isDark ? "light" : "dark"
                                             Services.Config.setThemeMode(nextMode)
+                                            themeAnim.restart()
                                         }
                                     }
                                 }
                             }
 
-                            // Audio Mute Tile
+                            // 4. Audio Mute Tile
                             Rectangle {
+                                id: muteTile
                                 Layout.fillWidth: true
                                 Layout.preferredHeight: 50
                                 radius: Services.Theme.radiusLg
-                                color: Services.Audio.muted 
+                                readonly property bool isActive: Services.Audio.muted
+                                color: isActive 
                                     ? Services.Theme.accent 
                                     : (muteMouse.containsMouse ? Services.Theme.bgHover : Services.Theme.surfaceVariant)
-                                border.color: (muteMouse.containsMouse && !Services.Audio.muted) ? Services.Theme.borderHighlight : "transparent"
+                                border.color: isActive ? Services.Theme.accent : (muteMouse.containsMouse ? Services.Theme.borderHighlight : "transparent")
                                 border.width: 1
+                                scale: muteMouse.pressed ? 0.93 : 1.0
+                                clip: true
 
-                                Behavior on color { ColorAnimation { duration: 120 } }
-                                Behavior on border.color { ColorAnimation { duration: 120 } }
+                                Behavior on color { ColorAnimation { duration: 220; easing.type: Easing.OutCubic } }
+                                Behavior on border.color { ColorAnimation { duration: 220 } }
+                                Behavior on scale { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
+
+                                // Active Pulse Wave
+                                Rectangle {
+                                    id: mutePulse
+                                    anchors.centerIn: parent
+                                    width: 44; height: 44; radius: 22
+                                    color: Services.Theme.accent
+                                    opacity: 0
+                                    scale: 0.4
+                                }
+
+                                ParallelAnimation {
+                                    id: muteAnim
+                                    NumberAnimation { target: mutePulse; property: "scale"; from: 0.4; to: 2.2; duration: 280; easing.type: Easing.OutCubic }
+                                    NumberAnimation { target: mutePulse; property: "opacity"; from: 0.5; to: 0.0; duration: 280 }
+                                }
+
+                                SequentialAnimation {
+                                    id: mutePopAnim
+                                    NumberAnimation { target: muteIcon; property: "scale"; from: 1.0; to: 1.3; duration: 120; easing.type: Easing.OutBack }
+                                    NumberAnimation { target: muteIcon; property: "scale"; from: 1.3; to: 1.15; duration: 140; easing.type: Easing.OutQuad }
+                                }
 
                                 Text {
+                                    id: muteIcon
                                     anchors.centerIn: parent
-                                    text: Services.Audio.muted ? Services.Icons.volMute : Services.Icons.speaker
+                                    text: muteTile.isActive ? Services.Icons.volMute : Services.Icons.speaker
                                     font.family: Services.Theme.fontSymbols
                                     font.pixelSize: 18
-                                    color: Services.Audio.muted 
+                                    scale: muteTile.isActive ? 1.15 : (muteMouse.containsMouse ? 1.08 : 1.0)
+                                    color: muteTile.isActive 
                                         ? Services.Theme.bgOnAccent 
                                         : (muteMouse.containsMouse ? Services.Theme.accent : Services.Theme.textPrimary)
-                                    Behavior on color { ColorAnimation { duration: 120 } }
+                                    Behavior on color { ColorAnimation { duration: 200 } }
+                                    Behavior on scale { NumberAnimation { duration: 200; easing.type: Easing.OutBack } }
                                 }
 
                                 MouseArea {
@@ -1180,7 +1338,13 @@ PanelWindow {
                                     anchors.fill: parent
                                     hoverEnabled: true
                                     cursorShape: Qt.PointingHandCursor
-                                    onClicked: Services.Audio.toggleMute()
+                                    onClicked: {
+                                        Services.Audio.toggleMute()
+                                        if (Services.Audio.muted) {
+                                            muteAnim.restart()
+                                            mutePopAnim.restart()
+                                        }
+                                    }
                                 }
                             }
                         }
