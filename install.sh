@@ -294,7 +294,7 @@ DEPENDENCIES_DB=(
     "bluetoothctl|Bluetooth|bluez-utils|bluez|bluez-tools|bluez|BlueZ Bluetooth management CLI|req"
 
     # Theming, Thematic Colors & Wallpaper
-    "swww|Theming|swww|swww|swww|swww|Wayland animated wallpaper daemon with smooth transitions|req"
+    "swww|Theming|swww|swww|swww|swww|Wayland animated wallpaper daemon with smooth transitions|opt"
     "matugen|Theming|matugen-bin|matugen|matugen|matugen|Material You dynamic color palette generator from wallpaper|opt"
     "swaybg|Theming|swaybg|swaybg|swaybg|swaybg|Wayland wallpaper daemon (fallback)|opt"
 

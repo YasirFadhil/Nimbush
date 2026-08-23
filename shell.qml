@@ -21,8 +21,8 @@ import "modules/battery" as BatteryModule
 import "modules/volume" as VolumeModule
 
 ShellRoot {
-    // Wallpaper is now rendered natively via swww backend (services/Wallpaper.qml)
-    // WallpaperModule.Wallpaper {}
+    // Native QML wallpaper layer (serves as wallpaper renderer and fallback for swww)
+    WallpaperModule.Wallpaper {}
 
     Osd.Osd {}
     Notif.Center {}

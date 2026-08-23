@@ -19,20 +19,25 @@ Variants {
 
         property bool showingA: true
 
+        function toUrl(pathStr) {
+            if (!pathStr) return ""
+            return pathStr.startsWith("file://") ? pathStr : ("file://" + pathStr)
+        }
+
         Component.onCompleted: {
             if (Services.Wallpaper && Services.Wallpaper.currentWallpaper) {
                 var cur = Services.Wallpaper.currentWallpaper
-                imgA.source = "file://" + cur
+                imgA.source = wallWin.toUrl(cur)
                 imgA.opacity = 1.0
                 imgA.scale = 1.0
                 wallWin.showingA = true
 
                 // Pre-cache alternate Wallbler wallpaper in GPU memory for zero-lag instant transitions
                 if (cur === Services.Wallpaper.darkWallbler) {
-                    imgB.source = "file://" + Services.Wallpaper.lightWallbler
+                    imgB.source = wallWin.toUrl(Services.Wallpaper.lightWallbler)
                     imgB.opacity = 0.0
                 } else if (cur === Services.Wallpaper.lightWallbler) {
-                    imgB.source = "file://" + Services.Wallpaper.darkWallbler
+                    imgB.source = wallWin.toUrl(Services.Wallpaper.darkWallbler)
                     imgB.opacity = 0.0
                 }
             }
@@ -43,7 +48,7 @@ Variants {
             function onCurrentWallpaperChanged() {
                 var p = Services.Wallpaper.currentWallpaper
                 if (p && p.length > 0) {
-                    wallWin.switchWallpaper("file://" + p)
+                    wallWin.switchWallpaper(wallWin.toUrl(p))
                 }
             }
         }

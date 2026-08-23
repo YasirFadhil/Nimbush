@@ -110,6 +110,7 @@ in
           brightnessctl
           cliphist
           wl-clipboard
+          wtype
           power-profiles-daemon
           upower
           socat

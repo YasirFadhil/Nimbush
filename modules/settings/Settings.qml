@@ -2140,9 +2140,9 @@ FloatingWindow {
                                         id: noHyprStyling
                                         anchors.centerIn: parent
                                         spacing: 8
-                                        Text { anchors.horizontalCenter: parent.horizontalCenter; text: Services.Icons.display; font.family: Services.Theme.fontSymbols; font.pixelSize: 24; color: Services.Theme.textDisabled }
-                                        Text { anchors.horizontalCenter: parent.horizontalCenter; text: "Window styling controls require Hyprland"; font.pixelSize: 12; font.weight: Font.Medium; color: Services.Theme.textSecondary }
-                                        Text { anchors.horizontalCenter: parent.horizontalCenter; text: "Detected compositor: " + (Services.Compositor ? Services.Compositor.activeDisplayName : "Unknown"); font.pixelSize: 10; color: Services.Theme.textDisabled }
+                                        Text { Layout.alignment: Qt.AlignHCenter; text: Services.Icons.display; font.family: Services.Theme.fontSymbols; font.pixelSize: 24; color: Services.Theme.textDisabled }
+                                        Text { Layout.alignment: Qt.AlignHCenter; text: "Window styling controls require Hyprland"; font.pixelSize: 12; font.weight: Font.Medium; color: Services.Theme.textSecondary }
+                                        Text { Layout.alignment: Qt.AlignHCenter; text: "Detected compositor: " + (Services.Compositor ? Services.Compositor.activeDisplayName : "Unknown"); font.pixelSize: 10; color: Services.Theme.textDisabled }
                                     }
                                 }
                             }
@@ -2356,9 +2356,9 @@ FloatingWindow {
                                         id: noHyprInput
                                         anchors.centerIn: parent
                                         spacing: 8
-                                        Text { anchors.horizontalCenter: parent.horizontalCenter; text: Services.Icons.sliders; font.family: Services.Theme.fontSymbols; font.pixelSize: 24; color: Services.Theme.textDisabled }
-                                        Text { anchors.horizontalCenter: parent.horizontalCenter; text: "Input & gesture controls require Hyprland"; font.pixelSize: 12; font.weight: Font.Medium; color: Services.Theme.textSecondary }
-                                        Text { anchors.horizontalCenter: parent.horizontalCenter; text: "Detected compositor: " + (Services.Compositor ? Services.Compositor.activeDisplayName : "Unknown"); font.pixelSize: 10; color: Services.Theme.textDisabled }
+                                        Text { Layout.alignment: Qt.AlignHCenter; text: Services.Icons.sliders; font.family: Services.Theme.fontSymbols; font.pixelSize: 24; color: Services.Theme.textDisabled }
+                                        Text { Layout.alignment: Qt.AlignHCenter; text: "Input & gesture controls require Hyprland"; font.pixelSize: 12; font.weight: Font.Medium; color: Services.Theme.textSecondary }
+                                        Text { Layout.alignment: Qt.AlignHCenter; text: "Detected compositor: " + (Services.Compositor ? Services.Compositor.activeDisplayName : "Unknown"); font.pixelSize: 10; color: Services.Theme.textDisabled }
                                     }
                                 }
                             }
@@ -2428,9 +2428,9 @@ FloatingWindow {
                                         id: noHyprPower
                                         anchors.centerIn: parent
                                         spacing: 8
-                                        Text { anchors.horizontalCenter: parent.horizontalCenter; text: Services.Icons.speed; font.family: Services.Theme.fontSymbols; font.pixelSize: 24; color: Services.Theme.textDisabled }
-                                        Text { anchors.horizontalCenter: parent.horizontalCenter; text: "Power & gaming controls require Hyprland"; font.pixelSize: 12; font.weight: Font.Medium; color: Services.Theme.textSecondary }
-                                        Text { anchors.horizontalCenter: parent.horizontalCenter; text: "Detected compositor: " + (Services.Compositor ? Services.Compositor.activeDisplayName : "Unknown"); font.pixelSize: 10; color: Services.Theme.textDisabled }
+                                        Text { Layout.alignment: Qt.AlignHCenter; text: Services.Icons.speed; font.family: Services.Theme.fontSymbols; font.pixelSize: 24; color: Services.Theme.textDisabled }
+                                        Text { Layout.alignment: Qt.AlignHCenter; text: "Power & gaming controls require Hyprland"; font.pixelSize: 12; font.weight: Font.Medium; color: Services.Theme.textSecondary }
+                                        Text { Layout.alignment: Qt.AlignHCenter; text: "Detected compositor: " + (Services.Compositor ? Services.Compositor.activeDisplayName : "Unknown"); font.pixelSize: 10; color: Services.Theme.textDisabled }
                                     }
                                 }
                             }
@@ -2718,17 +2718,17 @@ FloatingWindow {
                                         anchors.centerIn: parent
                                         spacing: 8
                                         Text {
-                                            anchors.horizontalCenter: parent.horizontalCenter
+                                            Layout.alignment: Qt.AlignHCenter
                                             text: Services.Icons.search
                                             font.family: Services.Theme.fontSymbols; font.pixelSize: 22; color: Services.Theme.textDisabled
                                         }
                                         Text {
-                                            anchors.horizontalCenter: parent.horizontalCenter
+                                            Layout.alignment: Qt.AlignHCenter
                                             text: "No shortcuts match your filter"
                                             font.pixelSize: 11; font.weight: Font.Medium; color: Services.Theme.textSecondary
                                         }
                                         Text {
-                                            anchors.horizontalCenter: parent.horizontalCenter
+                                            Layout.alignment: Qt.AlignHCenter
                                             text: "Try changing your search keywords or switching category"
                                             font.pixelSize: 9; color: Services.Theme.textDisabled
                                         }

@@ -20,6 +20,7 @@
           brightnessctl
           cliphist
           wl-clipboard
+          wtype
           power-profiles-daemon
           upower
           socat
@@ -37,6 +38,7 @@
           sound-theme-freedesktop
           matugen
           wireplumber
+          swww
           swaybg
           (python3.withPackages (ps: with ps; [
             pygobject3
