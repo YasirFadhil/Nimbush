@@ -20,16 +20,18 @@ Singleton {
     signal launcherToggleRequested()
     signal dashboardToggleRequested()
     signal settingsToggleRequested()
-    signal settingsShowRequested()
+    signal settingsShowRequested(var tabIndex)
     signal welcomeToggleRequested()
     signal welcomeShowRequested()
 
-    function openSettings() {
-        settingsShowRequested()
+    function openSettings(tabIndex) {
+        closeAllExcept("settings")
+        settingsShowRequested(tabIndex !== undefined ? tabIndex : 0)
     }
 
     function toggleSettings() {
         if (isLocked) return
+        closeAllExcept("settings")
         settingsToggleRequested()
     }
 

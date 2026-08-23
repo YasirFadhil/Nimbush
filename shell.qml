@@ -47,7 +47,7 @@ ShellRoot {
         function onLauncherToggleRequested() { launcherWindow.toggle() }
         function onDashboardToggleRequested() { dashboardWindow.toggle() }
         function onSettingsToggleRequested() { settingsWindow.toggle() }
-        function onSettingsShowRequested() { settingsWindow.show() }
+        function onSettingsShowRequested(tabIndex) { settingsWindow.show(tabIndex) }
         function onWelcomeToggleRequested() { welcomeWindow.toggle() }
         function onWelcomeShowRequested() { welcomeWindow.show() }
     }
@@ -148,8 +148,8 @@ ShellRoot {
     IpcHandler {
         target: "settings"
         function toggle(): void { if (!Services.OverlayManager.isLocked) settingsWindow.toggle() }
-        function show():   void { if (!Services.OverlayManager.isLocked) settingsWindow.show() }
-        function hide():   void { settingsWindow.hide() }
+        function show(): void { if (!Services.OverlayManager.isLocked) settingsWindow.show() }
+        function hide(): void { settingsWindow.hide() }
     }
 
     // ── Welcome Setup Wizard ─────────────────────────────────────────────────

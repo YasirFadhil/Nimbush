@@ -10,11 +10,11 @@ import "../../services" as Services
 FloatingWindow {
     id: rootWindow
 
-    title: "Settings"
+    title: "Quickshell Settings"
     visible: false
-    implicitWidth: 960
-    implicitHeight: 660
-    color: Services.Theme.bgElevated
+    implicitWidth: 980
+    implicitHeight: 680
+    color: Services.Theme.isDark ? "#16161a" : "#f4f5f8"
 
     property string overlayId: "settings"
     property int currentTab: 0
@@ -45,8 +45,11 @@ FloatingWindow {
         }
     }
 
-    function show() {
+    function show(tabIndex) {
         resetState()
+        if (typeof tabIndex === "number" && tabIndex >= 0) {
+            currentTab = tabIndex
+        }
         visible = true
         keyFocus.forceActiveFocus()
         if (Services.Compositor) {
@@ -64,7 +67,7 @@ FloatingWindow {
         visible ? hide() : show()
     }
 
-    function open() { show() }
+    function open(tabIndex) { show(tabIndex) }
     function close() { hide() }
 
     onVisibleChanged: {
@@ -125,10 +128,10 @@ FloatingWindow {
 
         Rectangle {
             Layout.fillWidth: true
-            implicitHeight: cardContent.implicitHeight + 4
-            radius: Services.Theme.radiusMd
-            color: Services.Theme.surfaceVariant
-            border.color: Services.Theme.border
+            implicitHeight: cardContent.implicitHeight + 8
+            radius: 12
+            color: Services.Theme.isDark ? "#1c1c22" : "#ffffff"
+            border.color: Services.Theme.isDark ? "#282832" : "#e2e8f0"
             border.width: 1
 
             ColumnLayout {
@@ -148,14 +151,14 @@ FloatingWindow {
         default property alias control: controlSlot.data
 
         Layout.fillWidth: true
-        implicitHeight: Math.max(42, textCol.implicitHeight + 16)
-        radius: Services.Theme.radiusSm
+        implicitHeight: Math.max(46, textCol.implicitHeight + 18)
+        radius: 8
         color: "transparent"
 
         RowLayout {
             anchors.fill: parent
-            anchors.leftMargin: 10
-            anchors.rightMargin: 10
+            anchors.leftMargin: 12
+            anchors.rightMargin: 12
             spacing: 12
 
             ColumnLayout {
@@ -380,22 +383,23 @@ FloatingWindow {
             }
 
             Rectangle {
-                Layout.preferredWidth: 38
-                Layout.preferredHeight: 20
+                Layout.preferredWidth: 42
+                Layout.preferredHeight: 24
                 Layout.alignment: Qt.AlignVCenter
-                radius: 10
-                color: switchRoot.checked ? Services.Theme.accent : (switchMouse.containsMouse ? Qt.rgba(1, 1, 1, 0.12) : Services.Theme.bgElevated)
+                radius: 12
+                color: switchRoot.checked ? Services.Theme.accent : (switchMouse.containsMouse ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(1, 1, 1, 0.08))
                 border.color: switchRoot.checked ? Services.Theme.accent : Services.Theme.border
                 border.width: 1
+                Behavior on color { ColorAnimation { duration: 180 } }
 
                 Rectangle {
-                    width: 14
-                    height: 14
-                    radius: 7
+                    width: 18
+                    height: 18
+                    radius: 9
                     y: 2
-                    x: switchRoot.checked ? 20 : 2
-                    color: switchRoot.checked ? Services.Theme.bgOnAccent : Services.Theme.textSecondary
-                    Behavior on x { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
+                    x: switchRoot.checked ? 21 : 3
+                    color: switchRoot.checked ? Services.Theme.bgOnAccent : "#ffffff"
+                    Behavior on x { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
                 }
             }
         }
@@ -647,9 +651,9 @@ FloatingWindow {
             Layout.fillHeight: true
             spacing: 0
 
-            // ── LEFT SIDEBAR (210px) ─────────────────────────────────────────
+            // ── LEFT SIDEBAR (220px) ─────────────────────────────────────────
             Rectangle {
-                Layout.preferredWidth: 210
+                Layout.preferredWidth: 220
                 Layout.fillHeight: true
                 color: Services.Theme.surfaceVariant
 
@@ -663,61 +667,71 @@ FloatingWindow {
 
                 ColumnLayout {
                     anchors.fill: parent
-                    anchors.margins: 8
-                    spacing: 4
+                    anchors.margins: 10
+                    spacing: 6
 
                     ListView {
                         id: navList
                         Layout.fillWidth: true
                         Layout.fillHeight: true
-                        spacing: 2
+                        spacing: 4
                         clip: true
                         interactive: false
 
                         model: [
-                            { id: 0, title: "Appearance",    icon: Services.Icons.palette },
-                            { id: 1, title: "Bar & Island",   icon: Services.Icons.controlcenter },
-                            { id: 2, title: "Notifications",  icon: Services.Icons.bell },
-                            { id: 3, title: "Sound & Audio",  icon: Services.Icons.speaker },
-                            { id: 4, title: "Lock & Power",   icon: Services.Icons.power },
-                            { id: 5, title: "Compositor",     icon: Services.Icons.display },
-                            { id: 6, title: "Keybindings",    icon: Services.Icons.keyboard },
-                            { id: 7, title: "Backup & Reset", icon: Services.Icons.undo },
-                            { id: 8, title: "About",          icon: Services.Icons.info }
+                            { id: 0, title: "Appearance",    icon: Services.Icons.palette,       color: "#3b82f6" },
+                            { id: 1, title: "Bar & Island",   icon: Services.Icons.controlcenter, color: "#8b5cf6" },
+                            { id: 2, title: "Notifications",  icon: Services.Icons.bell,          color: "#f97316" },
+                            { id: 3, title: "Sound & Audio",  icon: Services.Icons.speaker,       color: "#ec4899" },
+                            { id: 4, title: "Lock & Power",   icon: Services.Icons.power,         color: "#ef4444" },
+                            { id: 5, title: "Compositor",     icon: Services.Icons.display,       color: "#06b6d4" },
+                            { id: 6, title: "Keybindings",    icon: Services.Icons.keyboard,      color: "#eab308" },
+                            { id: 7, title: "Backup & Reset", icon: Services.Icons.undo,          color: "#10b981" },
+                            { id: 8, title: "About",          icon: Services.Icons.info,          color: "#64748b" }
                         ]
 
                         delegate: Rectangle {
                             width: navList.width
-                            height: 36
-                            radius: 6
+                            height: 40
+                            radius: 8
                             readonly property bool isCur: rootWindow.currentTab === modelData.id
 
                             color: isCur 
-                                ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.12)
-                                : (tabMouse.containsMouse ? Qt.rgba(1, 1, 1, 0.04) : "transparent")
-                            border.color: isCur ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.25) : "transparent"
+                                ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.16)
+                                : (tabMouse.containsMouse ? Qt.rgba(1, 1, 1, 0.05) : "transparent")
+                            border.color: isCur ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.28) : "transparent"
                             border.width: 1
+                            Behavior on color { ColorAnimation { duration: 150 } }
 
                             RowLayout {
                                 anchors.fill: parent
-                                anchors.leftMargin: 10
+                                anchors.leftMargin: 8
                                 anchors.rightMargin: 10
                                 spacing: 10
 
-                                Text {
-                                    text: modelData.icon
-                                    font.family: Services.Theme.fontSymbols
-                                    font.pixelSize: 12
-                                    color: isCur ? Services.Theme.accent : (tabMouse.containsMouse ? Services.Theme.textPrimary : Services.Theme.textSecondary)
+                                // macOS Squircle Icon Container
+                                Rectangle {
+                                    Layout.preferredWidth: 26
+                                    Layout.preferredHeight: 26
                                     Layout.alignment: Qt.AlignVCenter
+                                    radius: 7
+                                    color: modelData.color
+
+                                    Text {
+                                        anchors.centerIn: parent
+                                        text: modelData.icon
+                                        font.family: Services.Theme.fontSymbols
+                                        font.pixelSize: 13
+                                        color: "#ffffff"
+                                    }
                                 }
 
                                 Text {
                                     Layout.fillWidth: true
                                     Layout.alignment: Qt.AlignVCenter
                                     text: modelData.title
-                                    font.pixelSize: Services.Theme.fontSizeSm
-                                    font.weight: isCur ? Font.Medium : Font.Normal
+                                    font.pixelSize: 13
+                                    font.weight: isCur ? Font.DemiBold : Font.Normal
                                     color: isCur ? Services.Theme.textPrimary : (tabMouse.containsMouse ? Services.Theme.textPrimary : Services.Theme.textSecondary)
                                     elide: Text.ElideRight
                                 }
@@ -984,71 +998,66 @@ FloatingWindow {
                                 title: "Accent Color Swatches"
                                 icon: Services.Icons.brush
 
-                                Item {
+                                GridLayout {
+                                    id: palGrid
                                     Layout.fillWidth: true
-                                    implicitHeight: palGrid.implicitHeight + 12
-                                    Layout.margins: 6
+                                    Layout.margins: 8
+                                    columns: 3
+                                    columnSpacing: 6
+                                    rowSpacing: 6
 
-                                    GridLayout {
-                                        id: palGrid
-                                        anchors.fill: parent
-                                        columns: 3
-                                        columnSpacing: 6
-                                        rowSpacing: 6
+                                    Repeater {
+                                        model: Services.Config ? Services.Config.accentPresets : []
+                                        delegate: Rectangle {
+                                            required property var modelData
+                                            Layout.fillWidth: true
+                                            Layout.preferredHeight: 32
+                                            radius: 6
+                                            readonly property bool isCur: Services.Config && Services.Config.accentName === modelData.name
 
-                                        Repeater {
-                                            model: Services.Config ? Services.Config.accentPresets : []
-                                            delegate: Rectangle {
-                                                required property var modelData
-                                                Layout.fillWidth: true
-                                                height: 32
-                                                radius: 6
-                                                readonly property bool isCur: Services.Config && Services.Config.accentName === modelData.name
+                                            color: isCur ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.12) : (palItemMouse.containsMouse ? Qt.rgba(1, 1, 1, 0.05) : Services.Theme.bgElevated)
+                                            border.color: isCur ? Services.Theme.accent : Services.Theme.border
+                                            border.width: isCur ? 1.5 : 1
 
-                                                color: isCur ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.12) : (palItemMouse.containsMouse ? Qt.rgba(1, 1, 1, 0.05) : Services.Theme.bgElevated)
-                                                border.color: isCur ? Services.Theme.accent : Services.Theme.border
-                                                border.width: isCur ? 1.5 : 1
+                                            RowLayout {
+                                                anchors.fill: parent
+                                                anchors.leftMargin: 8
+                                                anchors.rightMargin: 8
+                                                spacing: 6
 
-                                                RowLayout {
-                                                    anchors.fill: parent
-                                                    anchors.leftMargin: 8
-                                                    anchors.rightMargin: 8
-                                                    spacing: 6
-
-                                                    Rectangle {
-                                                        width: 12; height: 12; radius: 6
-                                                        color: modelData.preview || Services.Theme.accent
-                                                    }
-
-                                                    Text {
-                                                        Layout.fillWidth: true
-                                                        text: modelData.name
-                                                        font.pixelSize: 11
-                                                        font.weight: isCur ? Font.DemiBold : Font.Normal
-                                                        color: isCur ? Services.Theme.textPrimary : Services.Theme.textSecondary
-                                                        elide: Text.ElideRight
-                                                    }
-
-                                                    Text {
-                                                        visible: isCur
-                                                        text: Services.Icons.check
-                                                        font.family: Services.Theme.fontSymbols
-                                                        font.pixelSize: 9
-                                                        color: Services.Theme.accent
-                                                    }
+                                                Rectangle {
+                                                    width: 12; height: 12; radius: 6
+                                                    color: modelData.preview || Services.Theme.accent
                                                 }
 
-                                                MouseArea {
-                                                    id: palItemMouse
-                                                    anchors.fill: parent
-                                                    hoverEnabled: true
-                                                    cursorShape: Qt.PointingHandCursor
-                                                    onClicked: {
-                                                        if (Services.Config) {
-                                                            const hex = (Services.Config.themeMode === "light") ? modelData.lightHex : modelData.darkHex
-                                                            Services.Config.setAccent(hex, modelData.name, modelData.isMatugen)
-                                                            if (modelData.isMatugen && Services.Wallpaper) Services.Config.generateMatugen(Services.Wallpaper.currentWallpaper)
-                                                        }
+                                                Text {
+                                                    Layout.fillWidth: true
+                                                    text: modelData.name
+                                                    font.pixelSize: 11
+                                                    font.weight: isCur ? Font.DemiBold : Font.Normal
+                                                    color: isCur ? Services.Theme.textPrimary : Services.Theme.textSecondary
+                                                    elide: Text.ElideRight
+                                                }
+
+                                                Text {
+                                                    visible: isCur
+                                                    text: Services.Icons.check
+                                                    font.family: Services.Theme.fontSymbols
+                                                    font.pixelSize: 9
+                                                    color: Services.Theme.accent
+                                                }
+                                            }
+
+                                            MouseArea {
+                                                id: palItemMouse
+                                                anchors.fill: parent
+                                                hoverEnabled: true
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: {
+                                                    if (Services.Config) {
+                                                        const hex = (Services.Config.themeMode === "light") ? modelData.lightHex : modelData.darkHex
+                                                        Services.Config.setAccent(hex, modelData.name, modelData.isMatugen)
+                                                        if (modelData.isMatugen && Services.Wallpaper) Services.Config.generateMatugen(Services.Wallpaper.currentWallpaper)
                                                     }
                                                 }
                                             }
