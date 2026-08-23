@@ -379,6 +379,14 @@ FloatingWindow {
         property bool checked: false
         signal toggled(bool newState)
 
+        onCheckedChanged: {
+            if (!swTrack.isDragging) {
+                slideAndJiggle.stop()
+                slideAndJiggle.destX = switchRoot.checked ? swTrack.maxX : swTrack.minX
+                slideAndJiggle.restart()
+            }
+        }
+
         Layout.fillWidth: true
         implicitHeight: Math.max(44, switchTextCol.implicitHeight + 16)
         radius: Services.Theme.radiusSm
@@ -437,33 +445,60 @@ FloatingWindow {
 
                 readonly property real minX: 2
                 readonly property real maxX: swTrack.width - 20 - 2
-                property real targetX: switchRoot.checked ? maxX : minX
+                property real currentX: switchRoot.checked ? maxX : minX
                 property real dragX: 0
                 property bool isDragging: false
                 property real pressStartX: 0
 
-                Behavior on targetX {
-                    enabled: !swTrack.isDragging
-                    NumberAnimation {
-                        id: xAnim
-                        duration: 220
-                        easing.type: Easing.OutBack
-                        easing.overshoot: 1.15
+                SequentialAnimation {
+                    id: slideAndJiggle
+                    property real destX: switchRoot.checked ? maxX : minX
+
+                    NumberAnimation { 
+                        target: swTrack
+                        property: "currentX"
+                        to: slideAndJiggle.destX
+                        duration: 150
+                        easing.type: Easing.OutCubic 
+                    }
+                    // Instant Impact Squash (0ms delay!)
+                    ParallelAnimation {
+                        NumberAnimation { target: swThumb; property: "squashX"; to: 1.28; duration: 65; easing.type: Easing.OutQuad }
+                        NumberAnimation { target: swThumb; property: "squashY"; to: 0.80; duration: 65; easing.type: Easing.OutQuad }
+                    }
+                    // Rebound Stretch
+                    ParallelAnimation {
+                        NumberAnimation { target: swThumb; property: "squashX"; to: 0.86; duration: 75; easing.type: Easing.InOutQuad }
+                        NumberAnimation { target: swThumb; property: "squashY"; to: 1.14; duration: 75; easing.type: Easing.InOutQuad }
+                    }
+                    // Settle
+                    ParallelAnimation {
+                        NumberAnimation { target: swThumb; property: "squashX"; to: 1.0; duration: 80; easing.type: Easing.OutBack; easing.overshoot: 1.25 }
+                        NumberAnimation { target: swThumb; property: "squashY"; to: 1.0; duration: 80; easing.type: Easing.OutBack; easing.overshoot: 1.25 }
                     }
                 }
 
                 // macOS Large Overflowing Liquid Glass Knob (Solid White Pill -> Large Overflowing Glass Lens)
                 Rectangle {
                     id: swThumb
-                    readonly property bool isActive: swDragArea.pressed || xAnim.running
+                    readonly property bool isActive: swDragArea.pressed || slideAndJiggle.running
                     width: isActive ? (swTrack.isDragging ? 38 : 36) : 20
                     height: isActive ? 28 : 20
                     radius: height / 2
                     anchors.verticalCenter: parent.verticalCenter
                     
                     x: swTrack.isDragging
-                        ? Math.max(-2, Math.min(swTrack.width - width + 2, swTrack.dragX))
-                        : (swTrack.targetX - (width - 20) / 2)
+                        ? Math.max(-3, Math.min(swTrack.width - width + 3, swTrack.dragX))
+                        : (swTrack.currentX - (width - 20) / 2)
+
+                    property real squashX: 1.0
+                    property real squashY: 1.0
+                    transform: Scale {
+                        origin.x: swThumb.width / 2
+                        origin.y: swThumb.height / 2
+                        xScale: swThumb.squashX
+                        yScale: swThumb.squashY
+                    }
 
                     // Normal: Solid White Porcelain Pill (#ffffff)
                     // Active/Press: Large Translucent Frosted Liquid Glass Lens
@@ -477,14 +512,16 @@ FloatingWindow {
 
                     Behavior on width { 
                         NumberAnimation { 
-                            duration: 140
-                            easing.type: Easing.OutCubic
+                            duration: swThumb.isActive ? 130 : 180
+                            easing.type: swThumb.isActive ? Easing.OutCubic : Easing.OutBack
+                            easing.overshoot: 1.25
                         } 
                     }
                     Behavior on height { 
                         NumberAnimation { 
-                            duration: 140
-                            easing.type: Easing.OutCubic
+                            duration: swThumb.isActive ? 130 : 180
+                            easing.type: swThumb.isActive ? Easing.OutCubic : Easing.OutBack
+                            easing.overshoot: 1.20
                         } 
                     }
                     Behavior on color { ColorAnimation { duration: 160 } }
@@ -521,39 +558,16 @@ FloatingWindow {
                         }
                     }
 
-                    // Bottom Caustic Glass Lip Reflection
-                    Rectangle {
-                        anchors.left: parent.left
-                        anchors.right: parent.right
-                        anchors.bottom: parent.bottom
-                        anchors.margins: 1.5
-                        height: 2
-                        radius: 1
-                        color: swThumb.isActive ? (Services.Theme.isDark ? Qt.rgba(255, 255, 255, 0.16) : Qt.rgba(255, 255, 255, 0.45)) : "transparent"
-                        Behavior on color { ColorAnimation { duration: 160 } }
-                    }
-
-                    // Dual-Layer Neutral Physical Drop Shadows
+                    // Soft Natural Drop Shadow (Only visible when solid resting white disc)
                     Rectangle {
                         anchors.centerIn: parent
-                        anchors.verticalCenterOffset: swThumb.isActive ? 3.5 : 1
-                        width: parent.width + (swThumb.isActive ? 4 : 0)
-                        height: parent.height + (swThumb.isActive ? 2 : 0)
-                        radius: height / 2
-                        color: swThumb.isActive ? Qt.rgba(0, 0, 0, 0.42) : Qt.rgba(0, 0, 0, 0.28)
-                        Behavior on color { ColorAnimation { duration: 160 } }
-                        Behavior on anchors.verticalCenterOffset { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
-                        z: -2
-                    }
-
-                    Rectangle {
-                        anchors.centerIn: parent
-                        anchors.verticalCenterOffset: 1
+                        anchors.verticalCenterOffset: 1.5
                         width: parent.width
                         height: parent.height
                         radius: parent.radius
-                        color: swThumb.isActive ? Qt.rgba(0, 0, 0, 0.25) : Qt.rgba(0, 0, 0, 0.10)
-                        Behavior on color { ColorAnimation { duration: 160 } }
+                        color: Qt.rgba(0, 0, 0, 0.18)
+                        opacity: swThumb.isActive ? 0.0 : 1.0
+                        Behavior on opacity { NumberAnimation { duration: 120 } }
                         z: -1
                     }
                 }
@@ -578,7 +592,14 @@ FloatingWindow {
                         }
                         if (swTrack.isDragging) {
                             const trackMouseX = mouse.x - 10
-                            swTrack.dragX = trackMouseX - (swThumb.width / 2)
+                            const idealX = trackMouseX - (swThumb.width / 2)
+                            if (idealX < swTrack.minX) {
+                                swTrack.dragX = swTrack.minX + (idealX - swTrack.minX) * 0.20
+                            } else if (idealX > swTrack.maxX) {
+                                swTrack.dragX = swTrack.maxX + (idealX - swTrack.maxX) * 0.20
+                            } else {
+                                swTrack.dragX = idealX
+                            }
                         }
                     }
 
@@ -588,6 +609,10 @@ FloatingWindow {
                             const targetState = swThumb.x > midX
                             if (targetState !== switchRoot.checked) {
                                 switchRoot.toggled(targetState)
+                            } else {
+                                slideAndJiggle.stop()
+                                slideAndJiggle.destX = switchRoot.checked ? swTrack.maxX : swTrack.minX
+                                slideAndJiggle.restart()
                             }
                         } else {
                             switchRoot.toggled(!switchRoot.checked)
@@ -671,6 +696,31 @@ FloatingWindow {
                 readonly property real valRatio: Math.max(0, Math.min(1, (sliderRoot.value - sliderRoot.from) / Math.max(0.0001, sliderRoot.to - sliderRoot.from)))
                 readonly property real normalWidth: 20
                 readonly property real centerPos: normalWidth / 2 + valRatio * (trackContainer.width - normalWidth)
+                
+                property real rubberBandOffset: 0
+                Behavior on rubberBandOffset {
+                    NumberAnimation {
+                        duration: 240
+                        easing.type: Easing.OutBack
+                        easing.overshoot: 1.40
+                    }
+                }
+
+                SequentialAnimation {
+                    id: sliderJiggleAnim
+                    ParallelAnimation {
+                        NumberAnimation { target: knob; property: "squashX"; to: 1.30; duration: 75; easing.type: Easing.OutQuad }
+                        NumberAnimation { target: knob; property: "squashY"; to: 0.76; duration: 75; easing.type: Easing.OutQuad }
+                    }
+                    ParallelAnimation {
+                        NumberAnimation { target: knob; property: "squashX"; to: 0.85; duration: 85; easing.type: Easing.InOutQuad }
+                        NumberAnimation { target: knob; property: "squashY"; to: 1.15; duration: 85; easing.type: Easing.InOutQuad }
+                    }
+                    ParallelAnimation {
+                        NumberAnimation { target: knob; property: "squashX"; to: 1.0; duration: 90; easing.type: Easing.OutBack; easing.overshoot: 1.25 }
+                        NumberAnimation { target: knob; property: "squashY"; to: 1.0; duration: 90; easing.type: Easing.OutBack; easing.overshoot: 1.25 }
+                    }
+                }
 
                 // Track Groove (Thin 4px Capsule)
                 Rectangle {
@@ -689,54 +739,97 @@ FloatingWindow {
                         height: parent.height
                         radius: parent.radius
                         color: Services.Theme.accent
-                        width: Math.max(0, Math.min(parent.width, trackContainer.centerPos))
+                        width: Math.max(0, Math.min(parent.width, trackContainer.centerPos + trackContainer.rubberBandOffset))
                     }
                 }
 
-                // Tahoe Knob (Normal: Solid White Pill, Press: Liquid Glass Expansion)
+                // macOS Tahoe Large Overflowing Liquid Glass Knob
                 Rectangle {
                     id: knob
-                    readonly property bool isActive: sDrag.pressed
-                    width: isActive ? 28 : 20
-                    height: isActive ? 14 : 12
+                    readonly property bool isActive: sDrag.pressed || sliderJiggleAnim.running
+                    width: isActive ? (sDrag.pressed ? 38 : 36) : 20
+                    height: isActive ? 28 : 20
                     radius: height / 2
                     anchors.verticalCenter: trackGroove.verticalCenter
-                    x: Math.max(0, Math.min(trackContainer.width - width, trackContainer.centerPos - width / 2))
+                    x: Math.max(-4, Math.min(trackContainer.width - width + 4, trackContainer.centerPos - width / 2 + trackContainer.rubberBandOffset))
                     
+                    property real squashX: 1.0
+                    property real squashY: 1.0
+                    transform: Scale {
+                        origin.x: knob.width / 2
+                        origin.y: knob.height / 2
+                        xScale: knob.squashX
+                        yScale: knob.squashY
+                    }
+
+                    // Normal: Solid White Porcelain Pill (#ffffff)
+                    // Active/Press: Large Translucent Frosted Liquid Glass Lens
                     color: isActive 
-                        ? (Services.Theme.isDark ? Qt.rgba(255, 255, 255, 0.14) : Qt.rgba(255, 255, 255, 0.65))
+                        ? (Services.Theme.isDark ? Qt.rgba(255, 255, 255, 0.16) : Qt.rgba(255, 255, 255, 0.70))
                         : "#ffffff"
                     border.color: isActive 
-                        ? (Services.Theme.isDark ? Qt.rgba(255, 255, 255, 0.45) : Qt.rgba(255, 255, 255, 0.85))
-                        : Qt.rgba(0, 0, 0, 0.12)
+                        ? (Services.Theme.isDark ? Qt.rgba(255, 255, 255, 0.50) : Qt.rgba(255, 255, 255, 0.90))
+                        : Qt.rgba(0, 0, 0, 0.08)
                     border.width: 1
 
                     Behavior on width { 
                         NumberAnimation { 
-                            duration: 200
-                            easing.type: Easing.OutBack
-                            easing.overshoot: knob.isActive ? 1.12 : 1.20 
+                            duration: knob.isActive ? 130 : 180
+                            easing.type: knob.isActive ? Easing.OutCubic : Easing.OutBack
+                            easing.overshoot: 1.25
                         } 
                     }
                     Behavior on height { 
                         NumberAnimation { 
-                            duration: 200
-                            easing.type: Easing.OutBack
-                            easing.overshoot: knob.isActive ? 1.10 : 1.15 
+                            duration: knob.isActive ? 130 : 180
+                            easing.type: knob.isActive ? Easing.OutCubic : Easing.OutBack
+                            easing.overshoot: 1.20
                         } 
                     }
                     Behavior on color { ColorAnimation { duration: 160 } }
                     Behavior on border.color { ColorAnimation { duration: 160 } }
 
-                    // Natural Drop Shadow
+                    // Inner Glass Inset Wall Refraction Bevel
+                    Rectangle {
+                        anchors.fill: parent
+                        anchors.margins: 1
+                        radius: parent.radius - 1
+                        color: "transparent"
+                        border.color: knob.isActive ? (Services.Theme.isDark ? Qt.rgba(255, 255, 255, 0.18) : Qt.rgba(255, 255, 255, 0.40)) : "transparent"
+                        border.width: 1
+                        Behavior on border.color { ColorAnimation { duration: 160 } }
+                    }
+
+                    // Top Specular Glass Reflection
+                    Rectangle {
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.top: parent.top
+                        anchors.margins: 1.5
+                        height: Math.max(2, parent.height / 2 - 1.5)
+                        radius: height
+                        gradient: Gradient {
+                            GradientStop { 
+                                position: 0.0
+                                color: knob.isActive ? (Services.Theme.isDark ? Qt.rgba(255, 255, 255, 0.40) : Qt.rgba(255, 255, 255, 0.65)) : "transparent"
+                            }
+                            GradientStop { 
+                                position: 1.0
+                                color: knob.isActive ? (Services.Theme.isDark ? Qt.rgba(255, 255, 255, 0.05) : Qt.rgba(255, 255, 255, 0.15)) : "transparent"
+                            }
+                        }
+                    }
+
+                    // Soft Natural Drop Shadow (Only visible when solid resting white disc)
                     Rectangle {
                         anchors.centerIn: parent
-                        anchors.verticalCenterOffset: knob.isActive ? 2 : 1
-                        width: parent.width + (knob.isActive ? 2 : 0)
+                        anchors.verticalCenterOffset: 1.5
+                        width: parent.width
                         height: parent.height
                         radius: parent.radius
-                        color: knob.isActive ? Qt.rgba(0, 0, 0, 0.35) : Qt.rgba(0, 0, 0, 0.20)
-                        Behavior on color { ColorAnimation { duration: 160 } }
+                        color: Qt.rgba(0, 0, 0, 0.18)
+                        opacity: knob.isActive ? 0.0 : 1.0
+                        Behavior on opacity { NumberAnimation { duration: 120 } }
                         z: -1
                     }
                 }
@@ -753,10 +846,30 @@ FloatingWindow {
                     hoverEnabled: false
                     cursorShape: Qt.PointingHandCursor
 
+                    property bool wasAtLimit: false
+
                     function updateVal(mouseX) {
                         const pad = trackContainer.normalWidth / 2
                         const available = trackContainer.width - trackContainer.normalWidth
                         if (available <= 0) return
+
+                        // Calm Liquid Rubber-Band Edge Resistance
+                        let atLimit = false
+                        if (mouseX < pad) {
+                            trackContainer.rubberBandOffset = (mouseX - pad) * 0.20
+                            atLimit = true
+                        } else if (mouseX > pad + available) {
+                            trackContainer.rubberBandOffset = (mouseX - (pad + available)) * 0.20
+                            atLimit = true
+                        } else {
+                            trackContainer.rubberBandOffset = 0
+                        }
+
+                        if (atLimit && !wasAtLimit) {
+                            sliderJiggleAnim.restart()
+                        }
+                        wasAtLimit = atLimit
+
                         const ratio = Math.max(0, Math.min(1, (mouseX - pad) / available))
                         let raw = sliderRoot.from + ratio * (sliderRoot.to - sliderRoot.from)
                         if (sliderRoot.stepSize > 0) {
@@ -766,11 +879,28 @@ FloatingWindow {
                         sliderRoot.moved(raw)
                     }
 
-                    onPressed: (mouse) => updateVal(mouse.x)
+                    onPressed: (mouse) => {
+                        wasAtLimit = false
+                        updateVal(mouse.x)
+                    }
                     onPositionChanged: (mouse) => { if (pressed) updateVal(mouse.x) }
+                    onReleased: {
+                        if (trackContainer.rubberBandOffset !== 0) {
+                            sliderJiggleAnim.restart()
+                        }
+                        trackContainer.rubberBandOffset = 0
+                        wasAtLimit = false
+                    }
+                    onCanceled: {
+                        trackContainer.rubberBandOffset = 0
+                        wasAtLimit = false
+                    }
                     onWheel: (wheel) => {
                         let delta = (wheel.angleDelta.y > 0 ? 1 : -1) * (sliderRoot.stepSize || 1)
                         let raw = Math.max(sliderRoot.from, Math.min(sliderRoot.to, sliderRoot.value + delta))
+                        if (raw === sliderRoot.from || raw === sliderRoot.to) {
+                            sliderJiggleAnim.restart()
+                        }
                         sliderRoot.moved(raw)
                     }
                 }
