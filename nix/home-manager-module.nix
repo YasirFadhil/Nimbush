@@ -127,6 +127,7 @@ in
           sound-theme-freedesktop
           matugen
           wireplumber
+          swww
           swaybg
           (python3.withPackages (ps: with ps; [
             pygobject3
@@ -181,7 +182,7 @@ in
           "SUPER, SPACE, exec, qs ipc call launcher toggle"
           "SUPER, V, exec, qs ipc call clipboard toggle"
           "SUPER, P, exec, qs ipc call powermenu toggle"
-          "SUPER, L, exec, qs ipc call lockscreen toggle"
+          "SUPER ALT, L, exec, qs ipc call lockscreen toggle"
           "SUPER, D, exec, qs ipc call dashboard toggle"
           "SUPER, N, exec, qs ipc call notifCenter toggle"
           "SUPER, C, exec, qs ipc call controlCenter toggle"
@@ -221,6 +222,9 @@ in
           "ignorezero, quickshell:welcome"
           "blur, quickshell:powermenu"
           "ignorezero, quickshell:powermenu"
+          "blur, quickshell:lockscreen"
+          "blur, quickshell:osd"
+          "ignorezero, quickshell:osd"
         ];
       };
     })
@@ -236,7 +240,7 @@ in
           "Mod+Space".action.spawn = [ "qs" "ipc" "call" "launcher" "toggle" ];
           "Mod+V".action.spawn = [ "qs" "ipc" "call" "clipboard" "toggle" ];
           "Mod+P".action.spawn = [ "qs" "ipc" "call" "powermenu" "toggle" ];
-          "Mod+L".action.spawn = [ "qs" "ipc" "call" "lockscreen" "toggle" ];
+          "Mod+Alt+L".action.spawn = [ "qs" "ipc" "call" "lockscreen" "toggle" ];
           "Mod+D".action.spawn = [ "qs" "ipc" "call" "dashboard" "toggle" ];
           "Mod+N".action.spawn = [ "qs" "ipc" "call" "notifCenter" "toggle" ];
           "Mod+C".action.spawn = [ "qs" "ipc" "call" "controlCenter" "toggle" ];

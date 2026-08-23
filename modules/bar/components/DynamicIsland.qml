@@ -691,7 +691,7 @@ Item {
         Behavior on width  { NumberAnimation { duration: 380; easing.type: Easing.OutExpo } }
         Behavior on height { NumberAnimation { duration: 380; easing.type: Easing.OutExpo } }
         Behavior on radius { NumberAnimation { duration: 380; easing.type: Easing.OutExpo } }
-        Behavior on border.color { ColorAnimation { duration: 200 } }
+        Behavior on border.color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
         MouseArea {
             id: islandMouseArea
@@ -859,7 +859,7 @@ Item {
                     NumberAnimation { from: 0.25; to: 1.0; duration: 700; easing.type: Easing.InOutSine }
                 }
 
-                Behavior on color { ColorAnimation { duration: 350 } }
+                Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                 RotationAnimation on rotation {
                     from: 0; to: 360
@@ -1072,7 +1072,7 @@ Item {
                         implicitWidth: 20; implicitHeight: 20
                         radius: 10
                         color: prevMouse.containsMouse ? Services.Theme.borderHighlight : "transparent"
-                        Behavior on color { ColorAnimation { duration: 120 } }
+                        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                         Text { anchors.centerIn: parent; text: "‹"; color: Services.Theme.textPrimary; font.pixelSize: 14; font.bold: true }
                         MouseArea {
                             id: prevMouse
@@ -1088,7 +1088,7 @@ Item {
                         implicitWidth: 20; implicitHeight: 20
                         radius: 10
                         color: nextMouse.containsMouse ? Services.Theme.borderHighlight : "transparent"
-                        Behavior on color { ColorAnimation { duration: 120 } }
+                        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                         Text { anchors.centerIn: parent; text: "›"; color: Services.Theme.textPrimary; font.pixelSize: 14; font.bold: true }
                         MouseArea {
                             id: nextMouse
@@ -1105,7 +1105,7 @@ Item {
                     implicitWidth: 20; implicitHeight: 20
                     radius: 10
                     color: dismissBtnMouse.containsMouse ? Services.Theme.danger : Services.Theme.surfaceVariant
-                    Behavior on color { ColorAnimation { duration: 120 } }
+                    Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                     Layout.alignment: Qt.AlignVCenter
 
                     Text {
@@ -1114,7 +1114,7 @@ Item {
                         color: dismissBtnMouse.containsMouse ? "#ffffff" : Services.Theme.textPrimary
                         font.pixelSize: 10
                         font.bold: true
-                        Behavior on color { ColorAnimation { duration: 120 } }
+                        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                     }
 
                     MouseArea {
@@ -1679,7 +1679,7 @@ Item {
                     Rectangle {
                         anchors.fill: parent; radius: 8
                         color: shArea.containsMouse ? Services.Theme.surfaceVariant : "transparent"
-                        Behavior on color { ColorAnimation { duration: 120 } }
+                        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                     }
                     Text {
                         anchors.centerIn: parent
@@ -1687,7 +1687,7 @@ Item {
                         font.family: Services.Theme.fontSymbols
                         font.pixelSize: 12
                         color: (root.activePlayer?.shuffle ?? false) ? Services.Theme.accent : Services.Theme.textSecondary
-                        Behavior on color { ColorAnimation { duration: 120 } }
+                        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                     }
                     MouseArea {
                         id: shArea; anchors.fill: parent; hoverEnabled: true
@@ -1706,7 +1706,7 @@ Item {
                     Rectangle {
                         anchors.fill: parent; radius: 16
                         color: prvArea.containsMouse ? Services.Theme.surfaceVariant : "transparent"
-                        Behavior on color { ColorAnimation { duration: 120 } }
+                        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                     }
                     Text {
                         anchors.centerIn: parent
@@ -1714,7 +1714,7 @@ Item {
                         font.family: Services.Theme.fontSymbols
                         font.pixelSize: 13
                         color: prvArea.containsMouse ? Services.Theme.accent : Services.Theme.textPrimary
-                        Behavior on color { ColorAnimation { duration: 120 } }
+                        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                     }
                     MouseArea {
                         id: prvArea; anchors.fill: parent; hoverEnabled: true
@@ -1733,7 +1733,7 @@ Item {
                     color: playArea.containsMouse ? Qt.lighter(Services.Theme.accent, 1.15) : Services.Theme.accent
                     scale: playArea.containsMouse ? 1.06 : 1.0
 
-                    Behavior on color { ColorAnimation { duration: 120 } }
+                    Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                     Behavior on scale { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
 
                     Text {
@@ -1760,7 +1760,7 @@ Item {
                     Rectangle {
                         anchors.fill: parent; radius: 16
                         color: nxtArea.containsMouse ? Services.Theme.surfaceVariant : "transparent"
-                        Behavior on color { ColorAnimation { duration: 120 } }
+                        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                     }
                     Text {
                         anchors.centerIn: parent
@@ -1768,7 +1768,7 @@ Item {
                         font.family: Services.Theme.fontSymbols
                         font.pixelSize: 13
                         color: nxtArea.containsMouse ? Services.Theme.accent : Services.Theme.textPrimary
-                        Behavior on color { ColorAnimation { duration: 120 } }
+                        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                     }
                     MouseArea {
                         id: nxtArea; anchors.fill: parent; hoverEnabled: true
@@ -1787,7 +1787,7 @@ Item {
                     Rectangle {
                         anchors.fill: parent; radius: 8
                         color: rpArea.containsMouse ? Services.Theme.surfaceVariant : "transparent"
-                        Behavior on color { ColorAnimation { duration: 120 } }
+                        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                     }
                     Text {
                         anchors.centerIn: parent
@@ -1795,7 +1795,7 @@ Item {
                         font.pixelSize: 12
                         text: (root.activePlayer?.loop ?? MprisLoopState.None) === MprisLoopState.Track ? Services.Icons.mediaLoopOne : Services.Icons.mediaLoopAll
                         color: (root.activePlayer?.loop ?? MprisLoopState.None) !== MprisLoopState.None ? Services.Theme.accent : (rpArea.containsMouse ? Services.Theme.textPrimary : Services.Theme.textSecondary)
-                        Behavior on color { ColorAnimation { duration: 120 } }
+                        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                     }
                     MouseArea {
                         id: rpArea; anchors.fill: parent; hoverEnabled: true

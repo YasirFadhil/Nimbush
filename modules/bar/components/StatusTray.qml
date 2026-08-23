@@ -95,8 +95,8 @@ RowLayout {
         opacity: Services.OverlayManager.isLocked ? 0.0 : 1.0
         visible: (Services.Config ? Services.Config.showVolumeTray : true) && opacity > 0
 
-        Behavior on color { ColorAnimation { duration: 150 } }
-        Behavior on border.color { ColorAnimation { duration: 150 } }
+        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+        Behavior on border.color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
         transform: Translate {
             x: Services.OverlayManager.isLocked ? 35 : 0
@@ -114,7 +114,7 @@ RowLayout {
                 font.family: Services.Theme.fontSymbols
                 font.pixelSize: root.isMinimal ? Services.Theme.fontSizeMd : Services.Theme.fontSizeXl
                 color: (volMouse.containsMouse || Services.OverlayManager.volumePanelVisible) ? Services.Theme.accent : Services.Theme.textPrimary
-                Behavior on color { ColorAnimation { duration: 150 } }
+                Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
             }
             Text {
                 text: Math.round(Services.Audio.volume * 100) + "%"
@@ -150,8 +150,8 @@ RowLayout {
         border.width: root.isMinimal ? 0 : 1
         visible: Services.Config ? Services.Config.showBatteryTray : true
 
-        Behavior on color { ColorAnimation { duration: 150 } }
-        Behavior on border.color { ColorAnimation { duration: 150 } }
+        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+        Behavior on border.color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
         RowLayout {
             id: batLayout
@@ -164,7 +164,7 @@ RowLayout {
                 font.family: Services.Theme.fontSymbols
                 font.pixelSize: root.isMinimal ? Services.Theme.fontSizeMd : Services.Theme.fontSizeXl
                 color: Services.Power.isLow ? "#ff4444" : (Services.Power.isWarning ? "#e06c75" : (Services.PowerProfile.saverEnabled ? "#ff9800" : ((batMouse.containsMouse || Services.OverlayManager.batteryPanelVisible) ? Services.Theme.accent : Services.Theme.textPrimary)))
-                Behavior on color { ColorAnimation { duration: 250 } }
+                Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                 SequentialAnimation {
                     id: blinkAnim
@@ -188,7 +188,7 @@ RowLayout {
                 font.family: Services.Theme.fontMono
                 font.pixelSize: root.isMinimal ? Services.Theme.fontSizeSm : Services.Theme.fontSizeMd
                 color: Services.Power.isLow ? "#ff4444" : (Services.Power.isWarning ? "#e06c75" : (Services.PowerProfile.saverEnabled ? "#ff9800" : ((batMouse.containsMouse || Services.OverlayManager.batteryPanelVisible) ? Services.Theme.accent : Services.Theme.textSecondary)))
-                Behavior on color { ColorAnimation { duration: 250 } }
+                Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
             }
         }
 
@@ -218,8 +218,8 @@ RowLayout {
         border.width: root.isMinimal ? 0 : 1
         visible: Services.Config ? Services.Config.showControlCenterTray : true
 
-        Behavior on color { ColorAnimation { duration: 150 } }
-        Behavior on border.color { ColorAnimation { duration: 150 } }
+        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+        Behavior on border.color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
         RowLayout {
             id: ctrlLayout

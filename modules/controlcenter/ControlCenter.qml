@@ -88,8 +88,8 @@ PanelWindow {
         border.width: 1
         clip: true
 
-        Behavior on color { ColorAnimation { duration: 120 } }
-        Behavior on border.color { ColorAnimation { duration: 120 } }
+        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+        Behavior on border.color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
         // Active track fill
         Rectangle {
@@ -99,7 +99,7 @@ PanelWindow {
             color: sliderMouse.containsMouse ? Qt.lighter(Services.Theme.accent, 1.1) : Services.Theme.accent
             width: Math.max(38, Math.min(parent.width, sliderRoot.value * parent.width))
             Behavior on width { NumberAnimation { duration: 80 } }
-            Behavior on color { ColorAnimation { duration: 120 } }
+            Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
         }
 
         RowLayout {
@@ -115,7 +115,7 @@ PanelWindow {
                 font.family: Services.Theme.fontSymbols
                 font.pixelSize: 14
                 color: (fillBar.width > (iconText.x + sliderContentRow.x + iconText.width / 2)) ? Services.Theme.bgOnAccent : Services.Theme.textPrimary
-                Behavior on color { ColorAnimation { duration: 80 } }
+                Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
             }
 
             Item { Layout.fillWidth: true }
@@ -126,7 +126,7 @@ PanelWindow {
                 font.pixelSize: 11
                 font.bold: true
                 color: (fillBar.width > (percentText.x + sliderContentRow.x + percentText.width / 2)) ? Services.Theme.bgOnAccent : Services.Theme.textPrimary
-                Behavior on color { ColorAnimation { duration: 80 } }
+                Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
             }
         }
 
@@ -255,7 +255,7 @@ PanelWindow {
                                 font.family: Services.Theme.fontSymbols
                                 font.pixelSize: 12
                                 color: Services.Power.charging ? Services.Theme.success : (Services.Power.isLow ? "#ff4444" : (Services.Power.isWarning ? "#e06c75" : (Services.PowerProfile.saverEnabled ? "#ff9800" : Services.Theme.textPrimary)))
-                                Behavior on color { ColorAnimation { duration: 250 } }
+                                Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                                 SequentialAnimation {
                                     running: Services.Power.isLow
@@ -270,7 +270,7 @@ PanelWindow {
                                 font.pixelSize: 10
                                 font.bold: true
                                 color: Services.Power.isLow ? "#ff4444" : (Services.Power.isWarning ? "#e06c75" : (Services.PowerProfile.saverEnabled ? "#ff9800" : Services.Theme.textSecondary))
-                                Behavior on color { ColorAnimation { duration: 250 } }
+                                Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                             }
                         }
                     }
@@ -285,7 +285,7 @@ PanelWindow {
                                       ? Services.Theme.accent 
                                       : (Services.OverlayManager.updatePanelVisible ? Services.Theme.border : "transparent")
                         border.width: (Services.ShellUpdate.hasUpdate || Services.OverlayManager.updatePanelVisible) ? 1 : 0
-                        Behavior on color { ColorAnimation { duration: 100 } }
+                        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                         Text {
                             anchors.centerIn: parent
@@ -328,7 +328,7 @@ PanelWindow {
                     Rectangle {
                         width: 26; height: 26; radius: 13
                         color: settingsHover.containsMouse ? Services.Theme.surfaceVariant : "transparent"
-                        Behavior on color { ColorAnimation { duration: 100 } }
+                        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                         Text {
                             anchors.centerIn: parent
@@ -354,7 +354,7 @@ PanelWindow {
                     Rectangle {
                         width: 26; height: 26; radius: 13
                         color: pwrHover.containsMouse ? Services.Theme.surfaceVariant : "transparent"
-                        Behavior on color { ColorAnimation { duration: 100 } }
+                        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                         Text {
                             anchors.centerIn: parent
@@ -400,7 +400,7 @@ PanelWindow {
                         Behavior on Layout.preferredWidth { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
                         Behavior on Layout.preferredHeight { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
                         Behavior on opacity { NumberAnimation { duration: 150 } }
-                        Behavior on color { ColorAnimation { duration: 180; easing.type: Easing.OutCubic } }
+                        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                         ColumnLayout {
                             anchors.fill: parent
@@ -420,7 +420,7 @@ PanelWindow {
                                            ? (Services.Wifi.enabled ? "#35000000" : Services.Theme.bgHover) 
                                            : (Services.Wifi.enabled ? "#20000000" : "transparent")
                                     scale: wifiIconMouse.pressed ? 0.88 : (wifiIconMouse.containsMouse ? 1.06 : 1.0)
-                                    Behavior on color { ColorAnimation { duration: 120 } }
+                                    Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                                     Behavior on scale { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
 
                                     Text {
@@ -432,7 +432,7 @@ PanelWindow {
                                         scale: Services.Wifi.enabled ? 1.08 : 1.0
                                         color: Services.Wifi.enabled ? Services.Theme.bgOnAccent : Services.Theme.textPrimary
                                         Behavior on scale { NumberAnimation { duration: 200; easing.type: Easing.OutBack } }
-                                        Behavior on color { ColorAnimation { duration: 150 } }
+                                        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                                     }
 
                                     MouseArea {
@@ -716,7 +716,7 @@ PanelWindow {
                         Behavior on Layout.preferredWidth { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
                         Behavior on Layout.preferredHeight { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
                         Behavior on opacity { NumberAnimation { duration: 150 } }
-                        Behavior on color { ColorAnimation { duration: 180; easing.type: Easing.OutCubic } }
+                        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                         ColumnLayout {
                             anchors.fill: parent
@@ -736,7 +736,7 @@ PanelWindow {
                                            ? (Services.Bluetooth.enabled ? "#35000000" : Services.Theme.bgHover) 
                                            : (Services.Bluetooth.enabled ? "#20000000" : "transparent")
                                     scale: btIconMouse.pressed ? 0.88 : (btIconMouse.containsMouse ? 1.06 : 1.0)
-                                    Behavior on color { ColorAnimation { duration: 120 } }
+                                    Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                                     Behavior on scale { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
 
                                     Text {
@@ -748,7 +748,7 @@ PanelWindow {
                                         scale: Services.Bluetooth.enabled ? 1.08 : 1.0
                                         color: Services.Bluetooth.enabled ? Services.Theme.bgOnAccent : Services.Theme.textPrimary
                                         Behavior on scale { NumberAnimation { duration: 200; easing.type: Easing.OutBack } }
-                                        Behavior on color { ColorAnimation { duration: 150 } }
+                                        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                                     }
 
                                     MouseArea {
@@ -1087,8 +1087,8 @@ PanelWindow {
                                 scale: dndMouse.pressed ? 0.93 : 1.0
                                 clip: true
 
-                                Behavior on color { ColorAnimation { duration: 220; easing.type: Easing.OutCubic } }
-                                Behavior on border.color { ColorAnimation { duration: 220 } }
+                                Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                                Behavior on border.color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                                 Behavior on scale { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
 
                                 // Active Pulse Wave
@@ -1125,7 +1125,7 @@ PanelWindow {
                                     color: dndTile.isActive 
                                         ? Services.Theme.bgOnAccent 
                                         : (dndMouse.containsMouse ? Services.Theme.accent : Services.Theme.textPrimary)
-                                    Behavior on color { ColorAnimation { duration: 200 } }
+                                    Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                                     Behavior on scale { NumberAnimation { duration: 200; easing.type: Easing.OutBack } }
                                 }
 
@@ -1159,8 +1159,8 @@ PanelWindow {
                                 scale: saverMouse.pressed ? 0.93 : 1.0
                                 clip: true
 
-                                Behavior on color { ColorAnimation { duration: 220; easing.type: Easing.OutCubic } }
-                                Behavior on border.color { ColorAnimation { duration: 220 } }
+                                Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                                Behavior on border.color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                                 Behavior on scale { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
 
                                 // Active Pulse Wave
@@ -1195,7 +1195,7 @@ PanelWindow {
                                     color: saverTile.isActive 
                                         ? Services.Theme.bgOnAccent 
                                         : (saverMouse.containsMouse ? Services.Theme.accent : Services.Theme.textPrimary)
-                                    Behavior on color { ColorAnimation { duration: 200 } }
+                                    Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                                     Behavior on scale { NumberAnimation { duration: 200; easing.type: Easing.OutBack } }
                                 }
 
@@ -1227,8 +1227,8 @@ PanelWindow {
                                 scale: themeMouse.pressed ? 0.93 : 1.0
                                 clip: true
 
-                                Behavior on color { ColorAnimation { duration: 220; easing.type: Easing.OutCubic } }
-                                Behavior on border.color { ColorAnimation { duration: 220 } }
+                                Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                                Behavior on border.color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                                 Behavior on scale { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
 
                                 // Active Pulse Wave
@@ -1258,7 +1258,7 @@ PanelWindow {
                                     color: themeTile.isDark 
                                         ? Services.Theme.bgOnAccent 
                                         : (themeMouse.containsMouse ? Services.Theme.accent : Services.Theme.textPrimary)
-                                    Behavior on color { ColorAnimation { duration: 200 } }
+                                    Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                                     Behavior on scale { NumberAnimation { duration: 200; easing.type: Easing.OutBack } }
                                     Behavior on rotation { NumberAnimation { duration: 350; easing.type: Easing.OutBack; easing.overshoot: 1.3 } }
                                 }
@@ -1293,8 +1293,8 @@ PanelWindow {
                                 scale: muteMouse.pressed ? 0.93 : 1.0
                                 clip: true
 
-                                Behavior on color { ColorAnimation { duration: 220; easing.type: Easing.OutCubic } }
-                                Behavior on border.color { ColorAnimation { duration: 220 } }
+                                Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                                Behavior on border.color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                                 Behavior on scale { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
 
                                 // Active Pulse Wave
@@ -1329,7 +1329,7 @@ PanelWindow {
                                     color: muteTile.isActive 
                                         ? Services.Theme.bgOnAccent 
                                         : (muteMouse.containsMouse ? Services.Theme.accent : Services.Theme.textPrimary)
-                                    Behavior on color { ColorAnimation { duration: 200 } }
+                                    Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                                     Behavior on scale { NumberAnimation { duration: 200; easing.type: Easing.OutBack } }
                                 }
 
@@ -1396,7 +1396,7 @@ PanelWindow {
                             height: 20; radius: 10
                             color: audioSinkMouse.containsMouse ? Services.Theme.bgHover : "transparent"
                             implicitWidth: sinkRow.implicitWidth + 12
-                            Behavior on color { ColorAnimation { duration: 100 } }
+                            Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                             RowLayout {
                                 id: sinkRow
@@ -1537,7 +1537,7 @@ PanelWindow {
                         Rectangle {
                             width: 28; height: 28; radius: 14
                             color: backBtnMouse.containsMouse ? Services.Theme.surfaceVariant : "transparent"
-                            Behavior on color { ColorAnimation { duration: 100 } }
+                            Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                             Text {
                                 anchors.centerIn: parent
@@ -1581,7 +1581,7 @@ PanelWindow {
                             width: 28; height: 28; radius: 14
                             visible: !Services.OverlayManager.updatePanelVisible
                             color: refreshBtnMouse.containsMouse ? Services.Theme.surfaceVariant : "transparent"
-                            Behavior on color { ColorAnimation { duration: 100 } }
+                            Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                             Text {
                                 anchors.centerIn: parent
@@ -1609,7 +1609,7 @@ PanelWindow {
                             visible: Services.OverlayManager.wifiPanelVisible || Services.OverlayManager.btPanelVisible
                             color: (Services.OverlayManager.wifiPanelVisible ? Services.Wifi.enabled : Services.Bluetooth.enabled)
                                    ? Services.Theme.accent : Services.Theme.surfaceVariant
-                            Behavior on color { ColorAnimation { duration: 120 } }
+                            Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                             Rectangle {
                                 width: 16; height: 16; radius: 8
@@ -1676,7 +1676,7 @@ PanelWindow {
                                         implicitHeight: netCol.implicitHeight + 14
                                         radius: Services.Theme.radiusSm
                                         color: netArea.containsMouse ? Services.Theme.bgHover : (netRow.modelData.inUse ? Services.Theme.surfaceVariant : "transparent")
-                                        Behavior on color { ColorAnimation { duration: 100 } }
+                                        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                                         readonly property bool isSaved: Services.Wifi.isSaved(netRow.modelData.ssid)
                                         readonly property bool isPwOpen: root.wifiPasswordTarget === netRow.modelData.ssid
@@ -1835,7 +1835,7 @@ PanelWindow {
                                         implicitHeight: 44
                                         radius: Services.Theme.radiusMd
                                         color: btArea.containsMouse ? Services.Theme.bgHover : Services.Theme.surfaceVariant
-                                        Behavior on color { ColorAnimation { duration: 100 } }
+                                        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                                         MouseArea {
                                             id: btArea
@@ -1987,7 +1987,7 @@ PanelWindow {
                                                    : (stableBtnMouse.containsMouse ? Services.Theme.surfaceVariant : Services.Theme.bgHover)
                                             border.color: Services.ShellUpdate.currentBranch === "main" ? Services.Theme.accent : Services.Theme.border
                                             border.width: 1
-                                            Behavior on color { ColorAnimation { duration: 120 } }
+                                            Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                                             RowLayout {
                                                 anchors.centerIn: parent
@@ -2028,7 +2028,7 @@ PanelWindow {
                                                    : (unstableBtnMouse.containsMouse ? Services.Theme.surfaceVariant : Services.Theme.bgHover)
                                             border.color: Services.ShellUpdate.currentBranch === "master" ? Services.Theme.accent : Services.Theme.border
                                             border.width: 1
-                                            Behavior on color { ColorAnimation { duration: 120 } }
+                                            Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                                             RowLayout {
                                                 anchors.centerIn: parent
@@ -2172,7 +2172,7 @@ PanelWindow {
                                         color: checkBtnMouse.containsMouse ? Services.Theme.surfaceVariant : Services.Theme.bgHover
                                         border.color: Services.Theme.border
                                         border.width: 1
-                                        Behavior on color { ColorAnimation { duration: 100 } }
+                                        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                                         Text {
                                             anchors.centerIn: parent
@@ -2199,7 +2199,7 @@ PanelWindow {
                                         color: updateBtnClickMouse.containsMouse ? Services.Theme.accent : Services.Theme.bgHover
                                         border.color: Services.Theme.accent
                                         border.width: 1
-                                        Behavior on color { ColorAnimation { duration: 100 } }
+                                        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                                         Text {
                                             anchors.centerIn: parent

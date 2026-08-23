@@ -281,6 +281,7 @@ DEPENDENCIES_DB=(
     # Wayland & Clipboard
     "wl-copy|Wayland|wl-clipboard|wl-clipboard|wl-clipboard|wl-clipboard|Wayland clipboard CLI (wl-copy/wl-paste)|req"
     "cliphist|Wayland|cliphist|cliphist|cliphist|cliphist|Clipboard history daemon & manager|req"
+    "wtype|Wayland|wtype|wtype|wtype|wtype|Wayland virtual keyboard typing tool for instant emoji insertion|opt"
 
     # Hardware, Audio & Power
     "brightnessctl|Hardware|brightnessctl|brightnessctl|brightnessctl|brightnessctl|Display backlight brightness control|req"
@@ -293,6 +294,7 @@ DEPENDENCIES_DB=(
     "bluetoothctl|Bluetooth|bluez-utils|bluez|bluez-tools|bluez|BlueZ Bluetooth management CLI|req"
 
     # Theming, Thematic Colors & Wallpaper
+    "swww|Theming|swww|swww|swww|swww|Wayland animated wallpaper daemon with smooth transitions|req"
     "matugen|Theming|matugen-bin|matugen|matugen|matugen|Material You dynamic color palette generator from wallpaper|opt"
     "swaybg|Theming|swaybg|swaybg|swaybg|swaybg|Wayland wallpaper daemon (fallback)|opt"
 
@@ -647,20 +649,20 @@ exec-once = wl-paste --type text --watch cliphist store
 exec-once = wl-paste --type image --watch cliphist store
 
 # ── Quickshell IPC Keybindings ───────────────────────────────────────────────
-bind = SUPER, SPACE, exec, qs ipc call launcher toggle
-bind = SUPER, V,     exec, qs ipc call clipboard toggle
-bind = SUPER, P,     exec, qs ipc call powermenu toggle
-bind = SUPER, L,     exec, qs ipc call lockscreen toggle
-bind = SUPER, D,     exec, qs ipc call dashboard toggle
-bind = SUPER, N,     exec, qs ipc call notifCenter toggle
-bind = SUPER, C,     exec, qs ipc call controlCenter toggle
-bind = SUPER, B,     exec, qs ipc call battery toggle
-bind = SUPER, COMMA, exec, qs ipc call settings toggle
+bind = SUPER, SPACE,     exec, qs ipc call launcher toggle
+bind = SUPER, V,         exec, qs ipc call clipboard toggle
+bind = SUPER, P,         exec, qs ipc call powermenu toggle
+bind = SUPER ALT, L,     exec, qs ipc call lockscreen toggle
+bind = SUPER, D,         exec, qs ipc call dashboard toggle
+bind = SUPER, N,         exec, qs ipc call notifCenter toggle
+bind = SUPER, C,         exec, qs ipc call controlCenter toggle
+bind = SUPER, B,         exec, qs ipc call battery toggle
+bind = SUPER, COMMA,     exec, qs ipc call settings toggle
 
 # ── Screenshot Keybindings (Grim + Slurp + Swappy + Quickshell Notification) ─
-bind = , PRINT,       exec, ~/.config/quickshell/scripts/screenshot.sh full
-bind = SHIFT, PRINT,  exec, ~/.config/quickshell/scripts/screenshot.sh region
-bind = SUPER, PRINT,  exec, ~/.config/quickshell/scripts/screenshot.sh window
+bind = , PRINT,          exec, ~/.config/quickshell/scripts/screenshot.sh full
+bind = SHIFT, PRINT,     exec, ~/.config/quickshell/scripts/screenshot.sh region
+bind = SUPER, PRINT,     exec, ~/.config/quickshell/scripts/screenshot.sh window
 
 # ── Layer Rules (Blur & Transparency for Quickshell Panels) ─────────────────
 layerrule = blur, quickshell:bar
@@ -693,6 +695,14 @@ layerrule = ignorezero, quickshell:welcome
 layerrule = blur, quickshell:powermenu
 layerrule = ignorezero, quickshell:powermenu
 layerrule = blur, quickshell:lockscreen
+layerrule = blur, quickshell:osd
+layerrule = ignorezero, quickshell:osd
+layerrule = blur, quickshell:volumeosd
+layerrule = ignorezero, quickshell:volumeosd
+layerrule = blur, quickshell:brightnessosd
+layerrule = ignorezero, quickshell:brightnessosd
+layerrule = blur, ^quickshell:.*$
+layerrule = ignorezero, ^quickshell:.*$
 EOF
         success "Wrote $HYPR_QS_CONF"
 
@@ -756,14 +766,15 @@ EOF
                 cat << 'EOF' >> "$HYPR_LUA"
 
 -- ── Quickshell IPC Keybindings ──
-hl.bind(mainMod .. " + SPACE", hl.dsp.exec_cmd("qs ipc call launcher toggle"))
-hl.bind(mainMod .. " + V",     hl.dsp.exec_cmd("qs ipc call clipboard toggle"))
-hl.bind(mainMod .. " + P",     hl.dsp.exec_cmd("qs ipc call powermenu toggle"))
-hl.bind(mainMod .. " + L",     hl.dsp.exec_cmd("qs ipc call lockscreen toggle"))
-hl.bind(mainMod .. " + D",     hl.dsp.exec_cmd("qs ipc call dashboard toggle"))
-hl.bind(mainMod .. " + N",     hl.dsp.exec_cmd("qs ipc call notifCenter toggle"))
-hl.bind(mainMod .. " + C",     hl.dsp.exec_cmd("qs ipc call controlCenter toggle"))
-hl.bind(mainMod .. " + B",     hl.dsp.exec_cmd("qs ipc call battery toggle"))
+hl.bind(mainMod .. " + SPACE",     hl.dsp.exec_cmd("qs ipc call launcher toggle"))
+hl.bind(mainMod .. " + V",         hl.dsp.exec_cmd("qs ipc call clipboard toggle"))
+hl.bind(mainMod .. " + P",         hl.dsp.exec_cmd("qs ipc call powermenu toggle"))
+hl.bind(mainMod .. " + ALT + L",   hl.dsp.exec_cmd("qs ipc call lockscreen toggle"))
+hl.bind(mainMod .. " + D",         hl.dsp.exec_cmd("qs ipc call dashboard toggle"))
+hl.bind(mainMod .. " + N",         hl.dsp.exec_cmd("qs ipc call notifCenter toggle"))
+hl.bind(mainMod .. " + C",         hl.dsp.exec_cmd("qs ipc call controlCenter toggle"))
+hl.bind(mainMod .. " + B",         hl.dsp.exec_cmd("qs ipc call battery toggle"))
+hl.bind(mainMod .. " + COMMA",     hl.dsp.exec_cmd("qs ipc call settings toggle"))
 EOF
             fi
 
@@ -785,14 +796,15 @@ hl.on("hyprland.start", function ()
 end)
 
 -- ── Quickshell IPC Keybindings ───────────────────────────────────────────────
-hl.bind(mainMod .. " + SPACE", hl.dsp.exec_cmd("qs ipc call launcher toggle"))
-hl.bind(mainMod .. " + V",     hl.dsp.exec_cmd("qs ipc call clipboard toggle"))
-hl.bind(mainMod .. " + P",     hl.dsp.exec_cmd("qs ipc call powermenu toggle"))
-hl.bind(mainMod .. " + L",     hl.dsp.exec_cmd("qs ipc call lockscreen toggle"))
-hl.bind(mainMod .. " + D",     hl.dsp.exec_cmd("qs ipc call dashboard toggle"))
-hl.bind(mainMod .. " + N",     hl.dsp.exec_cmd("qs ipc call notifCenter toggle"))
-hl.bind(mainMod .. " + C",     hl.dsp.exec_cmd("qs ipc call controlCenter toggle"))
-hl.bind(mainMod .. " + B",     hl.dsp.exec_cmd("qs ipc call battery toggle"))
+hl.bind(mainMod .. " + SPACE",     hl.dsp.exec_cmd("qs ipc call launcher toggle"))
+hl.bind(mainMod .. " + V",         hl.dsp.exec_cmd("qs ipc call clipboard toggle"))
+hl.bind(mainMod .. " + P",         hl.dsp.exec_cmd("qs ipc call powermenu toggle"))
+hl.bind(mainMod .. " + ALT + L",   hl.dsp.exec_cmd("qs ipc call lockscreen toggle"))
+hl.bind(mainMod .. " + D",         hl.dsp.exec_cmd("qs ipc call dashboard toggle"))
+hl.bind(mainMod .. " + N",         hl.dsp.exec_cmd("qs ipc call notifCenter toggle"))
+hl.bind(mainMod .. " + C",         hl.dsp.exec_cmd("qs ipc call controlCenter toggle"))
+hl.bind(mainMod .. " + B",         hl.dsp.exec_cmd("qs ipc call battery toggle"))
+hl.bind(mainMod .. " + COMMA",     hl.dsp.exec_cmd("qs ipc call settings toggle"))
 
 -- ── Screenshot Keybindings ───────────────────────────────────────────────────
 hl.bind("print",               hl.dsp.exec_cmd("~/.config/quickshell/scripts/screenshot.sh full"),   { locked = true })
@@ -853,15 +865,15 @@ EOF
 
 // ── Quickshell IPC Keybindings ──
 binds {
-    Mod+Space { spawn "qs" "ipc" "call" "launcher" "toggle"; }
-    Mod+V     { spawn "qs" "ipc" "call" "clipboard" "toggle"; }
-    Mod+P     { spawn "qs" "ipc" "call" "powermenu" "toggle"; }
-    Mod+L     { spawn "qs" "ipc" "call" "lockscreen" "toggle"; }
-    Mod+D     { spawn "qs" "ipc" "call" "dashboard" "toggle"; }
-    Mod+N     { spawn "qs" "ipc" "call" "notifCenter" "toggle"; }
-    Mod+C     { spawn "qs" "ipc" "call" "controlCenter" "toggle"; }
-    Mod+B     { spawn "qs" "ipc" "call" "battery" "toggle"; }
-    Mod+Comma { spawn "qs" "ipc" "call" "settings" "toggle"; }
+    Mod+Space     { spawn "qs" "ipc" "call" "launcher" "toggle"; }
+    Mod+V         { spawn "qs" "ipc" "call" "clipboard" "toggle"; }
+    Mod+P         { spawn "qs" "ipc" "call" "powermenu" "toggle"; }
+    Mod+Alt+L     { spawn "qs" "ipc" "call" "lockscreen" "toggle"; }
+    Mod+D         { spawn "qs" "ipc" "call" "dashboard" "toggle"; }
+    Mod+N         { spawn "qs" "ipc" "call" "notifCenter" "toggle"; }
+    Mod+C         { spawn "qs" "ipc" "call" "controlCenter" "toggle"; }
+    Mod+B         { spawn "qs" "ipc" "call" "battery" "toggle"; }
+    Mod+Comma     { spawn "qs" "ipc" "call" "settings" "toggle"; }
 
     // Screenshot Keybindings (Grim + Slurp + Swappy + Quickshell Notification)
     Print       { spawn "sh" "-c" "~/.config/quickshell/scripts/screenshot.sh full"; }
@@ -885,15 +897,15 @@ spawn-at-startup "wl-paste" "--type" "image" "--watch" "cliphist" "store"
 
 // ── Quickshell IPC Keybindings ───────────────────────────────────────────────
 binds {
-    Mod+Space { spawn "qs" "ipc" "call" "launcher" "toggle"; }
-    Mod+V     { spawn "qs" "ipc" "call" "clipboard" "toggle"; }
-    Mod+P     { spawn "qs" "ipc" "call" "powermenu" "toggle"; }
-    Mod+L     { spawn "qs" "ipc" "call" "lockscreen" "toggle"; }
-    Mod+D     { spawn "qs" "ipc" "call" "dashboard" "toggle"; }
-    Mod+N     { spawn "qs" "ipc" "call" "notifCenter" "toggle"; }
-    Mod+C     { spawn "qs" "ipc" "call" "controlCenter" "toggle"; }
-    Mod+B     { spawn "qs" "ipc" "call" "battery" "toggle"; }
-    Mod+Comma { spawn "qs" "ipc" "call" "settings" "toggle"; }
+    Mod+Space     { spawn "qs" "ipc" "call" "launcher" "toggle"; }
+    Mod+V         { spawn "qs" "ipc" "call" "clipboard" "toggle"; }
+    Mod+P         { spawn "qs" "ipc" "call" "powermenu" "toggle"; }
+    Mod+Alt+L     { spawn "qs" "ipc" "call" "lockscreen" "toggle"; }
+    Mod+D         { spawn "qs" "ipc" "call" "dashboard" "toggle"; }
+    Mod+N         { spawn "qs" "ipc" "call" "notifCenter" "toggle"; }
+    Mod+C         { spawn "qs" "ipc" "call" "controlCenter" "toggle"; }
+    Mod+B         { spawn "qs" "ipc" "call" "battery" "toggle"; }
+    Mod+Comma     { spawn "qs" "ipc" "call" "settings" "toggle"; }
 
     // Screenshot Keybindings (Grim + Slurp + Swappy + Quickshell Notification)
     Print       { spawn "sh" "-c" "~/.config/quickshell/scripts/screenshot.sh full"; }
@@ -1014,18 +1026,18 @@ post_installation_summary() {
     echo -e "${GREEN}${BOLD}==============================================================================${NC}\n"
 
     echo -e "${BOLD}1. Keybinding Cheat Sheet:${NC}"
-    echo -e "   ${CYAN}${BOLD}SUPER + SPACE${NC}  →  App Launcher (Fuzzy search, Calculator, App grid)"
-    echo -e "   ${CYAN}${BOLD}SUPER + V${NC}      →  Clipboard History (Search, Pin items, Delete)"
-    echo -e "   ${CYAN}${BOLD}SUPER + P${NC}      →  Power Menu (Lock, Suspend, Reboot, Shutdown)"
-    echo -e "   ${CYAN}${BOLD}SUPER + L${NC}      →  Lockscreen (PAM auth, Live Media, Custom wallpaper)"
-    echo -e "   ${CYAN}${BOLD}SUPER + D${NC}      →  Dashboard (System stats, Hardware monitor, Notes)"
-    echo -e "   ${CYAN}${BOLD}SUPER + N${NC}      →  Notification Center (History, DND mode, Actions)"
-    echo -e "   ${CYAN}${BOLD}SUPER + C${NC}      →  Control Center (WiFi, Bluetooth, Audio, Power profiles)"
-    echo -e "   ${CYAN}${BOLD}SUPER + B${NC}      →  Battery & Power Panel"
-    echo -e "   ${CYAN}${BOLD}SUPER + ,${NC}      →  Quickshell Settings GUI"
-    echo -e "   ${CYAN}${BOLD}PRINT${NC}          →  Fullscreen Screenshot (Grim + Slurp + Swappy)"
-    echo -e "   ${CYAN}${BOLD}SHIFT + PRINT${NC}  →  Area Selection Screenshot"
-    echo -e "   ${CYAN}${BOLD}SUPER + PRINT${NC}  →  Active Window Screenshot"
+    echo -e "   ${CYAN}${BOLD}SUPER + SPACE${NC}    →  App Launcher (Fuzzy search, Calculator, App grid)"
+    echo -e "   ${CYAN}${BOLD}SUPER + V${NC}        →  Clipboard History (Search, Pin items, Delete)"
+    echo -e "   ${CYAN}${BOLD}SUPER + P${NC}        →  Power Menu (Lock, Suspend, Reboot, Shutdown)"
+    echo -e "   ${CYAN}${BOLD}SUPER + ALT + L${NC}  →  Lockscreen (PAM auth, Live Media, Custom wallpaper)"
+    echo -e "   ${CYAN}${BOLD}SUPER + D${NC}        →  Dashboard (System stats, Hardware monitor, Notes)"
+    echo -e "   ${CYAN}${BOLD}SUPER + N${NC}        →  Notification Center (History, DND mode, Actions)"
+    echo -e "   ${CYAN}${BOLD}SUPER + C${NC}        →  Control Center (WiFi, Bluetooth, Audio, Power profiles)"
+    echo -e "   ${CYAN}${BOLD}SUPER + B${NC}        →  Battery & Power Panel"
+    echo -e "   ${CYAN}${BOLD}SUPER + ,${NC}        →  Quickshell Settings GUI"
+    echo -e "   ${CYAN}${BOLD}PRINT${NC}            →  Fullscreen Screenshot (Grim + Slurp + Swappy)"
+    echo -e "   ${CYAN}${BOLD}SHIFT + PRINT${NC}    →  Area Selection Screenshot"
+    echo -e "   ${CYAN}${BOLD}SUPER + PRINT${NC}    →  Active Window Screenshot"
     echo ""
 
     echo -e "${BOLD}2. IPC Command Reference (for terminal or custom binds):${NC}"

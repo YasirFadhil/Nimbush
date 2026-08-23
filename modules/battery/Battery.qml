@@ -149,7 +149,7 @@ PanelWindow {
                     Rectangle {
                         width: 24; height: 24; radius: 12
                         color: closeBtnArea.containsMouse ? Services.Theme.bgHover : "transparent"
-                        Behavior on color { ColorAnimation { duration: 120 } }
+                        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                         Text {
                             anchors.centerIn: parent
@@ -262,7 +262,7 @@ PanelWindow {
                                     ? Services.Theme.success 
                                     : (Services.Power.isLow ? Services.Theme.danger : (Services.Power.isWarning ? Services.Theme.warning : (Services.PowerProfile.saverEnabled ? "#f59e0b" : Services.Theme.accent)))
                                 Behavior on width { NumberAnimation { duration: 300; easing.type: Easing.OutCubic } }
-                                Behavior on color { ColorAnimation { duration: 250 } }
+                                Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                             }
                         }
                     }
@@ -309,8 +309,8 @@ PanelWindow {
                             border.color: isCurrent ? "#f59e0b" : (saverMouse.containsMouse ? Services.Theme.borderHighlight : Services.Theme.borderSubtle)
                             border.width: isCurrent ? 1.5 : 1
 
-                            Behavior on color { ColorAnimation { duration: 120 } }
-                            Behavior on border.color { ColorAnimation { duration: 120 } }
+                            Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                            Behavior on border.color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                             MouseArea {
                                 id: saverMouse
@@ -355,8 +355,8 @@ PanelWindow {
                             border.color: isCurrent ? Services.Theme.accent : (balancedMouse.containsMouse ? Services.Theme.borderHighlight : Services.Theme.borderSubtle)
                             border.width: isCurrent ? 1.5 : 1
 
-                            Behavior on color { ColorAnimation { duration: 120 } }
-                            Behavior on border.color { ColorAnimation { duration: 120 } }
+                            Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                            Behavior on border.color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                             MouseArea {
                                 id: balancedMouse
@@ -401,8 +401,8 @@ PanelWindow {
                             border.color: isCurrent ? Services.Theme.danger : (perfMouse.containsMouse ? Services.Theme.borderHighlight : Services.Theme.borderSubtle)
                             border.width: isCurrent ? 1.5 : 1
 
-                            Behavior on color { ColorAnimation { duration: 120 } }
-                            Behavior on border.color { ColorAnimation { duration: 120 } }
+                            Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                            Behavior on border.color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                             MouseArea {
                                 id: perfMouse

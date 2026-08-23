@@ -526,17 +526,23 @@ Singleton {
     function setMonitorScale(monName, scaleVal) {
         if (!monName) return
         const s = Number(Number(scaleVal).toFixed(2))
-        // Apply live scale via hyprctl
-        fastHyprProc.command = ["hyprctl", "keyword", "monitor", `${monName},preferred,auto,${s}`]
+        if (configType === "lua") {
+            fastHyprProc.command = ["hyprctl", "eval", `hl.monitor({ output = "${monName}", scale = ${s} })`]
+        } else {
+            fastHyprProc.command = ["hyprctl", "keyword", "monitor", `${monName},preferred,auto,${s}`]
+        }
         fastHyprProc.running = true
-        // Refresh monitor state
         refreshTimer.restart()
     }
 
     function setMonitorVRR(monName, vrrBool) {
         if (!monName) return
-        const v = vrrBool ? "1" : "0"
-        fastHyprProc.command = ["hyprctl", "keyword", "monitor", `${monName},vrr,${v}`]
+        const v = vrrBool ? 1 : 0
+        if (configType === "lua") {
+            fastHyprProc.command = ["hyprctl", "eval", `hl.monitor({ output = "${monName}", vrr = ${v} }) ; hl.config({ misc = { vrr = ${v} } })`]
+        } else {
+            fastHyprProc.command = ["hyprctl", "keyword", "misc:vrr", `${v}`]
+        }
         fastHyprProc.running = true
         refreshTimer.restart()
     }

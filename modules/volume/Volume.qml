@@ -130,7 +130,7 @@ PanelWindow {
                     Rectangle {
                         width: 24; height: 24; radius: 12
                         color: refreshBtnArea.containsMouse ? Services.Theme.bgHover : "transparent"
-                        Behavior on color { ColorAnimation { duration: 120 } }
+                        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                         Text {
                             anchors.centerIn: parent
@@ -152,7 +152,7 @@ PanelWindow {
                     Rectangle {
                         width: 24; height: 24; radius: 12
                         color: closeBtnArea.containsMouse ? Services.Theme.bgHover : "transparent"
-                        Behavior on color { ColorAnimation { duration: 120 } }
+                        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                         Text {
                             anchors.centerIn: parent
@@ -199,7 +199,7 @@ PanelWindow {
                                 : Services.Theme.surfaceVariant
                             border.color: root.sinksExpanded ? Services.Theme.accent : Services.Theme.borderSubtle
                             border.width: 1
-                            Behavior on color { ColorAnimation { duration: 120 } }
+                            Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                             RowLayout {
                                 id: sinkMenuBtnRow
@@ -263,8 +263,8 @@ PanelWindow {
                             border.width: 1
                             clip: true
 
-                            Behavior on color { ColorAnimation { duration: 120 } }
-                            Behavior on border.color { ColorAnimation { duration: 120 } }
+                            Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                            Behavior on border.color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                             Rectangle {
                                 id: sinkFillBar
@@ -273,7 +273,7 @@ PanelWindow {
                                 color: Services.Audio.muted ? Services.Theme.textDisabled : (sinkSliderMouse.containsMouse ? Qt.lighter(Services.Theme.accent, 1.1) : Services.Theme.accent)
                                 width: Math.max(38, Math.min(parent.width, (Services.Audio.muted ? 0 : Services.Audio.volume) * parent.width))
                                 Behavior on width { NumberAnimation { duration: 80 } }
-                                Behavior on color { ColorAnimation { duration: 120 } }
+                                Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                             }
 
                             RowLayout {
@@ -288,7 +288,7 @@ PanelWindow {
                                     font.family: Services.Theme.fontSymbols
                                     font.pixelSize: 14
                                     color: (sinkFillBar.width > (sinkIconText.x + 20)) ? Services.Theme.bgOnAccent : Services.Theme.textPrimary
-                                    Behavior on color { ColorAnimation { duration: 80 } }
+                                    Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                                 }
 
                                 Item { Layout.fillWidth: true }
@@ -300,7 +300,7 @@ PanelWindow {
                                     font.pixelSize: 11
                                     font.bold: true
                                     color: (sinkFillBar.width > (parent.width - 40)) ? Services.Theme.bgOnAccent : Services.Theme.textPrimary
-                                    Behavior on color { ColorAnimation { duration: 80 } }
+                                    Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                                 }
                             }
 
@@ -460,7 +460,7 @@ PanelWindow {
                                 : Services.Theme.surfaceVariant
                             border.color: root.sourcesExpanded ? Services.Theme.accent : Services.Theme.borderSubtle
                             border.width: 1
-                            Behavior on color { ColorAnimation { duration: 120 } }
+                            Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                             RowLayout {
                                 id: srcMenuBtnRow
@@ -524,8 +524,8 @@ PanelWindow {
                             border.width: 1
                             clip: true
 
-                            Behavior on color { ColorAnimation { duration: 120 } }
-                            Behavior on border.color { ColorAnimation { duration: 120 } }
+                            Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                            Behavior on border.color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                             Rectangle {
                                 id: srcFillBar
@@ -534,7 +534,7 @@ PanelWindow {
                                 color: Services.Audio.sourceMuted ? Services.Theme.textDisabled : (srcSliderMouse.containsMouse ? Qt.lighter(Services.Theme.accent, 1.1) : Services.Theme.accent)
                                 width: Math.max(38, Math.min(parent.width, (Services.Audio.sourceMuted ? 0 : Services.Audio.sourceVolume) * parent.width))
                                 Behavior on width { NumberAnimation { duration: 80 } }
-                                Behavior on color { ColorAnimation { duration: 120 } }
+                                Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                             }
 
                             RowLayout {
@@ -549,7 +549,7 @@ PanelWindow {
                                     font.family: Services.Theme.fontSymbols
                                     font.pixelSize: 14
                                     color: (srcFillBar.width > (srcIconText.x + 20)) ? Services.Theme.bgOnAccent : Services.Theme.textPrimary
-                                    Behavior on color { ColorAnimation { duration: 80 } }
+                                    Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                                 }
 
                                 Item { Layout.fillWidth: true }
@@ -561,7 +561,7 @@ PanelWindow {
                                     font.pixelSize: 11
                                     font.bold: true
                                     color: (srcFillBar.width > (parent.width - 40)) ? Services.Theme.bgOnAccent : Services.Theme.textPrimary
-                                    Behavior on color { ColorAnimation { duration: 80 } }
+                                    Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                                 }
                             }
 
@@ -720,7 +720,7 @@ PanelWindow {
                                 : Services.Theme.surfaceVariant
                             border.color: root.streamsExpanded ? Services.Theme.accent : Services.Theme.borderSubtle
                             border.width: 1
-                            Behavior on color { ColorAnimation { duration: 120 } }
+                            Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                             RowLayout {
                                 id: streamMenuBtnRow

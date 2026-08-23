@@ -108,7 +108,7 @@ PanelWindow {
                     Rectangle {
                         width: 24; height: 24; radius: 6
                         color: prevMonthMouse.containsMouse ? Services.Theme.bgHover : "transparent"
-                        Behavior on color { ColorAnimation { duration: 120 } }
+                        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                         Text {
                             anchors.centerIn: parent
@@ -116,7 +116,7 @@ PanelWindow {
                             font.family: Services.Theme.fontSymbols
                             font.pixelSize: 11
                             color: prevMonthMouse.containsMouse ? Services.Theme.accent : Services.Theme.textSecondary
-                            Behavior on color { ColorAnimation { duration: 120 } }
+                            Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                         }
                         MouseArea {
                             id: prevMonthMouse
@@ -130,7 +130,7 @@ PanelWindow {
                     Rectangle {
                         width: 24; height: 24; radius: 6
                         color: nextMonthMouse.containsMouse ? Services.Theme.bgHover : "transparent"
-                        Behavior on color { ColorAnimation { duration: 120 } }
+                        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                         Text {
                             anchors.centerIn: parent
@@ -138,7 +138,7 @@ PanelWindow {
                             font.family: Services.Theme.fontSymbols
                             font.pixelSize: 11
                             color: nextMonthMouse.containsMouse ? Services.Theme.accent : Services.Theme.textSecondary
-                            Behavior on color { ColorAnimation { duration: 120 } }
+                            Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                         }
                         MouseArea {
                             id: nextMonthMouse
@@ -186,8 +186,8 @@ PanelWindow {
                             border.color: (!isToday && modelData > 0 && dayMouse.containsMouse) ? Services.Theme.border : "transparent"
                             border.width: 1
 
-                            Behavior on color { ColorAnimation { duration: 120 } }
-                            Behavior on border.color { ColorAnimation { duration: 120 } }
+                            Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                            Behavior on border.color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                             Text {
                                 anchors.centerIn: parent
@@ -195,7 +195,7 @@ PanelWindow {
                                 font.pixelSize: 11
                                 font.bold: isToday
                                 color: isToday ? Services.Theme.bgOnAccent : (dayMouse.containsMouse ? Services.Theme.accent : Services.Theme.textPrimary)
-                                Behavior on color { ColorAnimation { duration: 120 } }
+                                Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                             }
 
                             MouseArea {

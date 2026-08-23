@@ -206,7 +206,7 @@ PanelWindow {
                             height: 28
                             radius: 6
                             color: setBtnArea.containsMouse ? Services.Theme.bgHover : "transparent"
-                            Behavior on color { ColorAnimation { duration: 120 } }
+                            Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                             Text {
                                 anchors.centerIn: parent
@@ -233,7 +233,7 @@ PanelWindow {
                             height: 28
                             radius: 6
                             color: closeBtnArea.containsMouse ? Qt.rgba(0.9, 0.2, 0.2, 0.12) : "transparent"
-                            Behavior on color { ColorAnimation { duration: 120 } }
+                            Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                             Text {
                                 anchors.centerIn: parent
@@ -608,7 +608,7 @@ PanelWindow {
                         color: lockActionMouse.containsMouse ? Services.Theme.bgHover : Services.Theme.surfaceVariant
                         border.color: lockActionMouse.containsMouse ? Services.Theme.borderHighlight : Services.Theme.border
                         border.width: 1
-                        Behavior on color { ColorAnimation { duration: 120 } }
+                        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                         RowLayout {
                             anchors.centerIn: parent
@@ -647,7 +647,7 @@ PanelWindow {
                         color: reloadActionMouse.containsMouse ? Services.Theme.bgHover : Services.Theme.surfaceVariant
                         border.color: reloadActionMouse.containsMouse ? Services.Theme.borderHighlight : Services.Theme.border
                         border.width: 1
-                        Behavior on color { ColorAnimation { duration: 120 } }
+                        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                         RowLayout {
                             anchors.centerIn: parent
@@ -686,7 +686,7 @@ PanelWindow {
                         color: pwrActionMouse.containsMouse ? Qt.rgba(0.9, 0.2, 0.2, 0.12) : Services.Theme.surfaceVariant
                         border.color: pwrActionMouse.containsMouse ? Services.Theme.danger : Services.Theme.border
                         border.width: 1
-                        Behavior on color { ColorAnimation { duration: 120 } }
+                        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                         RowLayout {
                             anchors.centerIn: parent

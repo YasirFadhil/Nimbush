@@ -497,8 +497,8 @@ Scope {
                         border.color: root.lockscreenCcOpen ? Services.Theme.accent : Services.Theme.border
                         border.width: 1
                         visible: root.isDefault && (Services.Config ? Services.Config.lockscreenShowStatusPill : true)
-                        Behavior on color { ColorAnimation { duration: 120 } }
-                        Behavior on border.color { ColorAnimation { duration: 120 } }
+                        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                        Behavior on border.color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                         RowLayout {
                             id: combinedCcRow
@@ -1015,8 +1015,8 @@ Scope {
                             opacity: root.isRevealed ? 1.0 : 0.0
                             Behavior on opacity { NumberAnimation { duration: 300; easing.type: Easing.OutCubic } }
                             Behavior on width { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
-                            Behavior on color { ColorAnimation { duration: 200 } }
-                            Behavior on border.color { ColorAnimation { duration: 200 } }
+                            Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                            Behavior on border.color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                             // Specular Top Rim Reflection (Frosted Glass Effect for Compact Hub)
                             Rectangle {
@@ -1310,7 +1310,7 @@ Scope {
                                         border.width: pwTextInput.activeFocus ? 2 : 1.5
                                         scale: pwTextInput.activeFocus ? 1.0 : 0.98
 
-                                        Behavior on border.color { ColorAnimation { duration: 200 } }
+                                        Behavior on border.color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                                         Behavior on scale { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                                         // Subtle focus breath animation
@@ -1335,7 +1335,7 @@ Scope {
                                         antialiasing: true
                                         smooth: true
                                         clip: true
-                                        Behavior on border.color { ColorAnimation { duration: 150 } }
+                                        Behavior on border.color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                                         // Monogram Fallback (Bold Initial Letter with Tinted Backdrop)
                                         Rectangle {
@@ -1454,8 +1454,8 @@ Scope {
                                         : (root.isError ? Services.Theme.danger : (pwTextInput.activeFocus ? Services.Theme.accent : Services.Theme.border))
                                     border.width: (!root.isCompact && (centerAuthColumn.inputStyle === "underline" || centerAuthColumn.inputStyle === "dots")) ? 0 : 1.5
 
-                                    Behavior on color { ColorAnimation { duration: 120 } }
-                                    Behavior on border.color { ColorAnimation { duration: 120 } }
+                                    Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                                    Behavior on border.color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                                     // Underline bar for "underline" style
                                     Rectangle {
@@ -1465,7 +1465,7 @@ Scope {
                                         anchors.right: parent.right
                                         height: pwTextInput.activeFocus ? 2 : 1
                                         color: root.isError ? Services.Theme.danger : (pwTextInput.activeFocus ? Services.Theme.accent : Services.Theme.border)
-                                        Behavior on color { ColorAnimation { duration: 150 } }
+                                        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                                         Behavior on height { NumberAnimation { duration: 120 } }
                                     }
 
@@ -1568,7 +1568,7 @@ Scope {
                                                 ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.15) 
                                                 : "transparent"
                                             visible: pwTextInput.text.length > 0 && !root.isAuthenticating
-                                            Behavior on color { ColorAnimation { duration: 120 } }
+                                            Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                                             Text {
                                                 anchors.centerIn: parent
@@ -1576,7 +1576,7 @@ Scope {
                                                 font.family: Services.Theme.fontSymbols
                                                 font.pixelSize: 12
                                                 color: root.showPassword ? Services.Theme.accent : (peekMouse.containsMouse ? Services.Theme.textPrimary : Services.Theme.textSecondary)
-                                                Behavior on color { ColorAnimation { duration: 120 } }
+                                                Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                                             }
 
                                             MouseArea {
@@ -1597,7 +1597,7 @@ Scope {
                                             Layout.alignment: Qt.AlignVCenter
                                             color: unlockMouse.containsMouse ? Services.Theme.accent : Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.2)
                                             visible: pwTextInput.text.length > 0 && !root.isAuthenticating
-                                            Behavior on color { ColorAnimation { duration: 120 } }
+                                            Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                                             Text {
                                                 anchors.centerIn: parent
@@ -1641,7 +1641,7 @@ Scope {
                                             border.width: 1.5
                                             scale: (pwTextInput.text.length > index) ? 1.15 : 1.0
 
-                                            Behavior on color { ColorAnimation { duration: 120 } }
+                                            Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                                             Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutBack } }
                                         }
                                     }
@@ -1789,7 +1789,7 @@ Scope {
                                                 Rectangle {
                                                     width: 30; height: 30; radius: 15
                                                     color: compactPlayMouse.containsMouse ? Services.Theme.white : Services.Theme.accent
-                                                    Behavior on color { ColorAnimation { duration: 120 } }
+                                                    Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                                                     Text {
                                                         anchors.centerIn: parent
                                                         text: Services.Icons.mediaPlayPause(root.isPlaying)
@@ -1866,7 +1866,7 @@ Scope {
                                             Layout.fillHeight: true
                                             radius: 9
                                             color: cardSleepMouse.containsMouse ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.2) : "transparent"
-                                            Behavior on color { ColorAnimation { duration: 120 } }
+                                            Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                                             RowLayout {
                                                 anchors.centerIn: parent
@@ -1889,7 +1889,7 @@ Scope {
                                             Layout.fillHeight: true
                                             radius: 9
                                             color: cardRebootMouse.containsMouse ? Qt.rgba(Services.Theme.warning.r, Services.Theme.warning.g, Services.Theme.warning.b, 0.2) : "transparent"
-                                            Behavior on color { ColorAnimation { duration: 120 } }
+                                            Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                                             RowLayout {
                                                 anchors.centerIn: parent
@@ -1912,7 +1912,7 @@ Scope {
                                             Layout.fillHeight: true
                                             radius: 9
                                             color: cardPowerMouse.containsMouse ? Qt.rgba(Services.Theme.danger.r, Services.Theme.danger.g, Services.Theme.danger.b, 0.25) : "transparent"
-                                            Behavior on color { ColorAnimation { duration: 120 } }
+                                            Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                                             RowLayout {
                                                 anchors.centerIn: parent
@@ -2186,7 +2186,7 @@ Scope {
                                         Rectangle {
                                             width: 32; height: 32; radius: 16
                                             color: lsPlayMouse.containsMouse ? Services.Theme.white : Services.Theme.accent
-                                            Behavior on color { ColorAnimation { duration: 120 } }
+                                            Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                                             Text {
                                                 anchors.centerIn: parent
                                                 text: Services.Icons.mediaPlayPause(root.isPlaying)
@@ -2380,7 +2380,7 @@ Scope {
                                         implicitHeight: 36
                                         radius: Services.Theme.radiusSm
                                         color: sleepMouse.containsMouse ? Services.Theme.bgHover : "transparent"
-                                        Behavior on color { ColorAnimation { duration: 120 } }
+                                        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                                         RowLayout {
                                             anchors.fill: parent
@@ -2419,7 +2419,7 @@ Scope {
                                         implicitHeight: 36
                                         radius: Services.Theme.radiusSm
                                         color: rebootMouse.containsMouse ? Qt.rgba(Services.Theme.warning.r, Services.Theme.warning.g, Services.Theme.warning.b, 0.15) : "transparent"
-                                        Behavior on color { ColorAnimation { duration: 120 } }
+                                        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                                         RowLayout {
                                             anchors.fill: parent
@@ -2458,7 +2458,7 @@ Scope {
                                         implicitHeight: 36
                                         radius: Services.Theme.radiusSm
                                         color: shutdownMouse.containsMouse ? Qt.rgba(Services.Theme.danger.r, Services.Theme.danger.g, Services.Theme.danger.b, 0.2) : "transparent"
-                                        Behavior on color { ColorAnimation { duration: 120 } }
+                                        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                                         RowLayout {
                                             anchors.fill: parent
@@ -2509,8 +2509,8 @@ Scope {
                                 border.width: root.isMinimal ? (pwrBtnMouse.containsMouse ? 1 : 0) : 1
                                 opacity: root.isMinimal ? (pwrBtnMouse.containsMouse || root.lockscreenPwrOpen ? 1.0 : 0.6) : 1.0
                                 scale: pwrBtnMouse.pressed ? 0.92 : 1.0
-                                Behavior on color { ColorAnimation { duration: 150 } }
-                                Behavior on border.color { ColorAnimation { duration: 150 } }
+                                Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                                Behavior on border.color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                                 Behavior on opacity { NumberAnimation { duration: 150 } }
                                 Behavior on scale { NumberAnimation { duration: 100 } }
 
@@ -2520,7 +2520,7 @@ Scope {
                                     font.family: Services.Theme.fontSymbols
                                     font.pixelSize: root.isMinimal ? 13 : 15
                                     color: (root.lockscreenPwrOpen || pwrBtnMouse.containsMouse) ? Services.Theme.danger : Services.Theme.textSecondary
-                                    Behavior on color { ColorAnimation { duration: 150 } }
+                                    Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                                 }
 
                                 MouseArea {

@@ -14,7 +14,7 @@ Item {
         font.pixelSize: Services.Theme.fontSize4xl
         font.weight: Font.Bold
         color: (ccMouse.containsMouse || Services.OverlayManager.controlCenterVisible) ? Services.Theme.accent : Services.Theme.textPrimary
-        Behavior on color { ColorAnimation { duration: 150 } }
+        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
     }
 
     MouseArea {

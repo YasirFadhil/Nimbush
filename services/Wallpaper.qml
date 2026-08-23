@@ -43,17 +43,21 @@ Singleton {
         return p.length > 0 ? p : (homeDir + "/.config/quickshell/scripts/xdg-file-picker.py")
     }
 
+    onCurrentWallpaperChanged: {
+        applyToSwww(currentWallpaper)
+    }
+
     Component.onCompleted: {
+        swwwDaemonProc.running = true
         updateAllList()
         loadConfigProc.running = true
-        killSwaybgProc.running = true
+        applyToSwww(currentWallpaper)
     }
 
     Connections {
         target: Services.Config
-        function onConfigChanged() {
-            root.handleThemeChange()
-        }
+        function onConfigChanged() { root.handleThemeChange() }
+        function onThemeModeChanged() { root.handleThemeChange() }
     }
 
     function handleThemeChange() {
@@ -69,6 +73,13 @@ Singleton {
             }
         }
         updateAllList()
+    }
+
+    function applyToSwww(filePath) {
+        if (!filePath) return
+        swwwProc.targetFile = filePath
+        swwwProc.running = false
+        swwwProc.running = true
     }
 
     function updateAllList() {
@@ -107,6 +118,24 @@ Singleton {
     }
 
     property bool isPickingLockscreen: false
+
+    Process {
+        id: swwwDaemonProc
+        command: ["sh", "-c", "pgrep -x swww-daemon >/dev/null || (nohup swww-daemon >/dev/null 2>&1 &)"]
+    }
+
+    Process {
+        id: swwwProc
+        property string targetFile: ""
+        command: [
+            "swww", "img", targetFile,
+            "--transition-type", "grow",
+            "--transition-pos", "center",
+            "--transition-duration", "0.5",
+            "--transition-fps", "60",
+            "--transition-bezier", ".25,1,.5,1"
+        ]
+    }
 
     function pickCustomWallpaper() {
         if (isPicking) return

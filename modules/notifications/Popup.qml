@@ -176,7 +176,7 @@ PanelWindow {
                         height: 18
                         radius: 5
                         color: closeMouse.containsMouse ? Services.Theme.danger : "transparent"
-                        Behavior on color { ColorAnimation { duration: 80 } }
+                        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                         Text {
                             anchors.centerIn: parent
@@ -270,7 +270,7 @@ PanelWindow {
                             border.width: 1
                             implicitHeight: 24
                             implicitWidth: actLabel.implicitWidth + 16
-                            Behavior on color { ColorAnimation { duration: 80 } }
+                            Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                             Text {
                                 id: actLabel

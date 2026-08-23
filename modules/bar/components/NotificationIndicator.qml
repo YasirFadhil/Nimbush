@@ -17,7 +17,7 @@ Item {
             font.family: Services.Theme.fontSymbols
             font.pixelSize: Services.Theme.fontSize2xl
             color: (notifMouse.containsMouse || Services.Notifications.centerVisible) ? Services.Theme.accent : Services.Theme.textPrimary
-            Behavior on color { ColorAnimation { duration: 150 } }
+            Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
         }
 
         Text {

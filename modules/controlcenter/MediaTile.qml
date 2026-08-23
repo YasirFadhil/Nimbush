@@ -20,7 +20,7 @@ Rectangle {
     clip: true
 
     Behavior on implicitHeight { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
-    Behavior on border.color { ColorAnimation { duration: 150 } }
+    Behavior on border.color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
     function fmtTime(sec) {
         const s = Math.max(0, Math.floor(sec ?? 0))
@@ -247,7 +247,7 @@ Rectangle {
                         width: 22; height: 22; radius: 11
                         color: prevHover.containsMouse ? Services.Theme.bgHover : "transparent"
                         opacity: (card.player?.canGoPrevious ?? false) ? 1 : 0.3
-                        Behavior on color { ColorAnimation { duration: 100 } }
+                        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                         Text {
                             anchors.centerIn: parent
@@ -271,7 +271,7 @@ Rectangle {
                         width: 26; height: 26; radius: 13
                         color: playHover.containsMouse ? Qt.lighter(Services.Theme.accent, 1.15) : Services.Theme.accent
                         scale: playHover.containsMouse ? 1.06 : 1.0
-                        Behavior on color { ColorAnimation { duration: 100 } }
+                        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                         Behavior on scale { NumberAnimation { duration: 100; easing.type: Easing.OutCubic } }
 
                         Text {
@@ -296,7 +296,7 @@ Rectangle {
                         width: 22; height: 22; radius: 11
                         color: nextHover.containsMouse ? Services.Theme.bgHover : "transparent"
                         opacity: (card.player?.canGoNext ?? false) ? 1 : 0.3
-                        Behavior on color { ColorAnimation { duration: 100 } }
+                        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                         Text {
                             anchors.centerIn: parent

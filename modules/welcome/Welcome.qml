@@ -158,7 +158,7 @@ PanelWindow {
                                     ? Services.Theme.accent 
                                     : ((index < rootWindow.currentStep) ? Services.Theme.borderHighlight : Services.Theme.border)
                                 Behavior on width { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
-                                Behavior on color { ColorAnimation { duration: 150 } }
+                                Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                             }
                         }
                     }
@@ -167,7 +167,7 @@ PanelWindow {
                     Rectangle {
                         width: 24; height: 24; radius: 12
                         color: closeMouse.containsMouse ? Services.Theme.danger : Services.Theme.surfaceVariant
-                        Behavior on color { ColorAnimation { duration: 100 } }
+                        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                         Text {
                             anchors.centerIn: parent

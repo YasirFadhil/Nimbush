@@ -89,6 +89,10 @@ Singleton {
     property bool firstRunCompleted: false
     property int customSettingsVersion: 2
 
+    // ── Settings State Persistence ───────────────────────────────────────────
+    property int lastSettingsTab: 0
+    property int lastSettingsCompSubTab: 0
+
     // ── Status & Feedback ────────────────────────────────────────────────────
     property string lastBackupTime: ""
     property bool isLoaded: false
@@ -246,6 +250,8 @@ Singleton {
         if (data.launcherMaxResults !== undefined) launcherMaxResults = Number(data.launcherMaxResults)
 
         if (data.firstRunCompleted !== undefined) firstRunCompleted = Boolean(data.firstRunCompleted)
+        if (data.lastSettingsTab !== undefined) lastSettingsTab = Number(data.lastSettingsTab)
+        if (data.lastSettingsCompSubTab !== undefined) lastSettingsCompSubTab = Number(data.lastSettingsCompSubTab)
         root.configChanged()
     }
 
@@ -271,6 +277,9 @@ Singleton {
             uiScale: uiScale,
             fontFamily: fontFamily,
             glassOpacity: glassOpacity,
+
+            lastSettingsTab: lastSettingsTab,
+            lastSettingsCompSubTab: lastSettingsCompSubTab,
 
             barPosition: barPosition,
             barStyle: barStyle,
@@ -450,6 +459,17 @@ Singleton {
                 }
             }
         }
+        root.configChanged()
+        saveConfig()
+    }
+
+    function setLastSettingsTab(tab) {
+        lastSettingsTab = tab
+        saveConfig()
+    }
+
+    function setLastSettingsCompSubTab(subTab) {
+        lastSettingsCompSubTab = subTab
         saveConfig()
     }
 

@@ -25,8 +25,8 @@ Rectangle {
          : (isUnified ? Qt.rgba(Services.Theme.border.r, Services.Theme.border.g, Services.Theme.border.b, 0.3) : "transparent")))
     border.width: isMinimal ? 0 : 1
 
-    Behavior on color { ColorAnimation { duration: 150 } }
-    Behavior on border.color { ColorAnimation { duration: 150 } }
+    Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+    Behavior on border.color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
     Text {
         id: clockText

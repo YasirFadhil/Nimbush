@@ -174,7 +174,7 @@ Item {
                 Rectangle {
                     width: 28; height: 28; radius: 7
                     color: compactPlay.containsMouse ? Qt.lighter(card.t.accent, 1.1) : card.t.accent
-                    Behavior on color { ColorAnimation { duration: 80 } }
+                    Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                     opacity: card.isPlaying ? 0 : 1
                     Behavior on opacity { NumberAnimation { duration: 160 } }
                     Layout.alignment: Qt.AlignVCenter
@@ -254,7 +254,7 @@ Item {
                 Item {
                     width: 32; height: 32
                     opacity: (card.player?.shuffleSupported ?? false) ? 1 : 0.2
-                    Rectangle { anchors.fill: parent; radius: 8; color: shArea.containsMouse ? card.t.surfaceVariant : "transparent"; Behavior on color { ColorAnimation { duration: 80 } } }
+                    Rectangle { anchors.fill: parent; radius: 8; color: shArea.containsMouse ? card.t.surfaceVariant : "transparent"; Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } } }
                     Text { anchors.centerIn: parent; text: Services.Icons.mediaShuffle; font.family: Services.Theme.fontSymbols; font.pixelSize: Services.Theme.fontSizeLg; color: (card.player?.shuffle ?? false) ? card.t.accent : card.t.textSecondary }
                     MouseArea { id: shArea; anchors.fill: parent; hoverEnabled: true; enabled: card.player?.shuffleSupported ?? false; onClicked: card.player.shuffle = !card.player.shuffle }
                 }
@@ -265,7 +265,7 @@ Item {
                 Item {
                     width: 32; height: 32
                     opacity: (card.player?.canGoPrevious ?? false) ? 1 : 0.3
-                    Rectangle { anchors.fill: parent; radius: 8; color: prvArea.containsMouse ? card.t.surfaceVariant : "transparent"; Behavior on color { ColorAnimation { duration: 80 } } }
+                    Rectangle { anchors.fill: parent; radius: 8; color: prvArea.containsMouse ? card.t.surfaceVariant : "transparent"; Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } } }
                     Text { anchors.centerIn: parent; text: Services.Icons.mediaPrev; font.family: Services.Theme.fontSymbols; font.pixelSize: Services.Theme.fontSizeXl; color: card.t.textSecondary }
                     MouseArea { id: prvArea; anchors.fill: parent; hoverEnabled: true; enabled: card.player?.canGoPrevious ?? false; onClicked: card.player.previous() }
                 }
@@ -274,7 +274,7 @@ Item {
                 Rectangle {
                     width: 36; height: 36; radius: 10
                     color: playArea.containsMouse ? Qt.lighter(card.t.accent, 1.12) : card.t.accent
-                    Behavior on color { ColorAnimation { duration: 80 } }
+                    Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                     Layout.alignment: Qt.AlignVCenter
 
                     Text {
@@ -290,7 +290,7 @@ Item {
                 Item {
                     width: 32; height: 32
                     opacity: (card.player?.canGoNext ?? false) ? 1 : 0.3
-                    Rectangle { anchors.fill: parent; radius: 8; color: nxtArea.containsMouse ? card.t.surfaceVariant : "transparent"; Behavior on color { ColorAnimation { duration: 80 } } }
+                    Rectangle { anchors.fill: parent; radius: 8; color: nxtArea.containsMouse ? card.t.surfaceVariant : "transparent"; Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } } }
                     Text { anchors.centerIn: parent; text: Services.Icons.mediaNext; font.family: Services.Theme.fontSymbols; font.pixelSize: Services.Theme.fontSizeXl; color: card.t.textSecondary }
                     MouseArea { id: nxtArea; anchors.fill: parent; hoverEnabled: true; enabled: card.player?.canGoNext ?? false; onClicked: card.player.next() }
                 }
@@ -301,7 +301,7 @@ Item {
                 Item {
                     width: 32; height: 32
                     opacity: (card.player?.loopSupported ?? false) ? 1 : 0.2
-                    Rectangle { anchors.fill: parent; radius: 8; color: rpArea.containsMouse ? card.t.surfaceVariant : "transparent"; Behavior on color { ColorAnimation { duration: 80 } } }
+                    Rectangle { anchors.fill: parent; radius: 8; color: rpArea.containsMouse ? card.t.surfaceVariant : "transparent"; Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } } }
                     Text {
                         anchors.centerIn: parent
                         font.family: Services.Theme.fontSymbols; font.pixelSize: Services.Theme.fontSizeLg

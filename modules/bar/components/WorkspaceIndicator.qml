@@ -44,8 +44,8 @@ RowLayout {
         border.color: wsRoot.getPillBorder(wsPillMouse.containsMouse)
         border.width: wsRoot.isMinimal ? 0 : 1
 
-        Behavior on color { ColorAnimation { duration: 150 } }
-        Behavior on border.color { ColorAnimation { duration: 150 } }
+        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+        Behavior on border.color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
         MouseArea {
             id: wsPillMouse
@@ -74,7 +74,7 @@ RowLayout {
                     color: logoMouse.containsMouse ? Qt.lighter(Services.Theme.accent, 1.2) : Services.Theme.accent
                     scale: logoMouse.containsMouse ? 1.1 : 1.0
 
-                    Behavior on color { ColorAnimation { duration: 150 } }
+                    Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                     Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
                 }
 
@@ -170,7 +170,7 @@ RowLayout {
                                  : (wsItem.isOccupied ? Services.Theme.accentDim : Services.Theme.textDisabled))
                             opacity: wsItem.isActive ? 1.0 : (wsMouse.containsMouse ? 1.0 : (wsItem.isOccupied ? 0.75 : 0.35))
 
-                            Behavior on color { ColorAnimation { duration: 150 } }
+                            Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                             Behavior on opacity { NumberAnimation { duration: 150 } }
                         }
 
@@ -184,7 +184,7 @@ RowLayout {
                                  : (wsItem.isOccupied ? Services.Theme.accentDim : Services.Theme.textDisabled))
                             opacity: wsItem.isActive ? 1.0 : (wsMouse.containsMouse ? 1.0 : (wsItem.isOccupied ? 0.8 : 0.3))
 
-                            Behavior on color { ColorAnimation { duration: 150 } }
+                            Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                             Behavior on opacity { NumberAnimation { duration: 150 } }
                         }
 
@@ -200,8 +200,8 @@ RowLayout {
                                 : (wsItem.isOccupied ? Services.Theme.accentDim : "transparent")
                             border.width: wsItem.isOccupied && !wsItem.isActive ? 1 : 0
 
-                            Behavior on color { ColorAnimation { duration: 150 } }
-                            Behavior on border.color { ColorAnimation { duration: 150 } }
+                            Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                            Behavior on border.color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                             Text {
                                 anchors.centerIn: parent
@@ -212,7 +212,7 @@ RowLayout {
                                 color: wsItem.isActive ? Services.Theme.bgOnAccent 
                                     : (wsMouse.containsMouse ? Services.Theme.textPrimary 
                                     : (wsItem.isOccupied ? Services.Theme.accent : Services.Theme.textDisabled))
-                                Behavior on color { ColorAnimation { duration: 150 } }
+                                Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                             }
                         }
 
@@ -226,7 +226,7 @@ RowLayout {
                             border.color: (wsItem.isOccupied && !wsItem.isActive) ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.3) : "transparent"
                             border.width: 1
 
-                            Behavior on color { ColorAnimation { duration: 150 } }
+                            Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                             function getWsIcon(id) {
                                 switch (id) {
@@ -247,7 +247,7 @@ RowLayout {
                                 color: wsItem.isActive ? Services.Theme.bgOnAccent 
                                     : (wsMouse.containsMouse ? Services.Theme.textPrimary 
                                     : (wsItem.isOccupied ? Services.Theme.accent : Services.Theme.textDisabled))
-                                Behavior on color { ColorAnimation { duration: 150 } }
+                                Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                             }
                         }
 
@@ -277,8 +277,8 @@ RowLayout {
         visible: Services.Workspaces.activeWindowTitle.length > 0
         Layout.maximumWidth: wsRoot.isMinimal ? 220 : 280
 
-        Behavior on color { ColorAnimation { duration: 150 } }
-        Behavior on border.color { ColorAnimation { duration: 150 } }
+        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+        Behavior on border.color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
         Text {
             id: titleText

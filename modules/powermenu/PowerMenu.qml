@@ -248,7 +248,7 @@ PanelWindow {
             Behavior on scale   { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
             Behavior on anchors.verticalCenterOffset { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
             Behavior on implicitHeight { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
-            Behavior on border.color { ColorAnimation { duration: 200 } }
+            Behavior on border.color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
             // Block backdrop clicks
             MouseArea {
@@ -533,8 +533,8 @@ PanelWindow {
         scale: isHolding ? 0.98 : (pMouse.containsMouse ? 1.02 : 1.0)
         clip: true
 
-        Behavior on color { ColorAnimation { duration: 120 } }
-        Behavior on border.color { ColorAnimation { duration: 120 } }
+        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+        Behavior on border.color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
         Behavior on scale { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
 
         // Clean Hold Fill Progress
@@ -568,7 +568,7 @@ PanelWindow {
             color: isHolding 
                 ? (isDangerAction ? Services.Theme.danger : Services.Theme.accent) 
                 : (isSelected ? (isDangerAction ? Services.Theme.danger : Services.Theme.accent) : Services.Theme.border)
-            Behavior on color { ColorAnimation { duration: 120 } }
+            Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
             Text {
                 anchors.centerIn: parent
@@ -593,7 +593,7 @@ PanelWindow {
                     : (isSelected ? (isDangerAction ? Qt.rgba(Services.Theme.danger.r, Services.Theme.danger.g, Services.Theme.danger.b, 0.15) : Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.15)) : Services.Theme.bgElevated)
                 border.color: (isHolding || isSelected) ? (isDangerAction ? Services.Theme.danger : Services.Theme.accent) : "transparent"
                 border.width: (isHolding || isSelected) ? 1 : 0
-                Behavior on color { ColorAnimation { duration: 120 } }
+                Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                 Text {
                     anchors.centerIn: parent
@@ -601,7 +601,7 @@ PanelWindow {
                     font.family: Services.Theme.fontSymbols
                     font.pixelSize: Services.Theme.fontSize5xl
                     color: (isHolding || isSelected) ? (isDangerAction ? Services.Theme.danger : Services.Theme.accent) : (isDangerAction ? Qt.lighter(Services.Theme.danger, 1.1) : Services.Theme.textPrimary)
-                    Behavior on color { ColorAnimation { duration: 120 } }
+                    Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                 }
             }
 
@@ -613,7 +613,7 @@ PanelWindow {
                 font.weight: Font.DemiBold
                 color: (isHolding || isSelected) ? Services.Theme.textPrimary : Services.Theme.textSecondary
                 elide: Text.ElideRight
-                Behavior on color { ColorAnimation { duration: 120 } }
+                Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
             }
 
             // Sublabel / Hold Hint

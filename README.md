@@ -9,6 +9,7 @@ This is a Wayland UI shell built with **Quickshell**, providing status bars, das
 ## Features & Highlights
 
 - **Universal Linux OS Support**: Distro detection for Arch Linux, Debian, Ubuntu, Fedora, NixOS, openSUSE, Gentoo, Void Linux, Alpine Linux, Solus, Manjaro, Pop!_OS, Linux Mint, EndeavourOS, Artix, Kali, SteamOS, and more.
+- **Interactive Emoji Picker**: Integrated directly into the app launcher — type `>E` (or `>E query`) to search, browse, and copy emojis to clipboard with full keyboard navigation and recent usage caching.
 - **Default Wallpaper System**: Ships with **1 clean default wallpaper** (`Wallbler`), plus interactive **Custom Wallpaper** selection via XDG file picker with persistent JSON configuration.
 - **Dual Compositor Compatibility**: First-class support for **Hyprland** (Lua & Classic `.conf` format) and **Niri** compositors.
 
@@ -166,13 +167,15 @@ hl.on("hyprland.start", function ()
 end)
 
 -- Keybindings
-hl.bind(mainMod .. " + SPACE", hl.dsp.exec_cmd("qs ipc call launcher toggle"))
-hl.bind(mainMod .. " + V",     hl.dsp.exec_cmd("qs ipc call clipboard toggle"))
-hl.bind(mainMod .. " + P",     hl.dsp.exec_cmd("qs ipc call powermenu toggle"))
-hl.bind(mainMod .. " + L",     hl.dsp.exec_cmd("qs ipc call lockscreen toggle"))
-hl.bind(mainMod .. " + D",     hl.dsp.exec_cmd("qs ipc call dashboard toggle"))
-hl.bind(mainMod .. " + N",     hl.dsp.exec_cmd("qs ipc call notifCenter toggle"))
-hl.bind(mainMod .. " + C",     hl.dsp.exec_cmd("qs ipc call controlCenter toggle"))
+hl.bind(mainMod .. " + SPACE",     hl.dsp.exec_cmd("qs ipc call launcher toggle"))
+hl.bind(mainMod .. " + V",         hl.dsp.exec_cmd("qs ipc call clipboard toggle"))
+hl.bind(mainMod .. " + P",         hl.dsp.exec_cmd("qs ipc call powermenu toggle"))
+hl.bind(mainMod .. " + ALT + L",   hl.dsp.exec_cmd("qs ipc call lockscreen toggle"))
+hl.bind(mainMod .. " + D",         hl.dsp.exec_cmd("qs ipc call dashboard toggle"))
+hl.bind(mainMod .. " + N",         hl.dsp.exec_cmd("qs ipc call notifCenter toggle"))
+hl.bind(mainMod .. " + C",         hl.dsp.exec_cmd("qs ipc call controlCenter toggle"))
+hl.bind(mainMod .. " + B",         hl.dsp.exec_cmd("qs ipc call battery toggle"))
+hl.bind(mainMod .. " + COMMA",     hl.dsp.exec_cmd("qs ipc call settings toggle"))
 
 -- Layer Rules (Blur & Transparency)
 hl.layer_rule({ match = { namespace = "quickshell:bar" },           blur = true })
@@ -197,13 +200,15 @@ exec-once = wl-paste --type text --watch cliphist store
 exec-once = wl-paste --type image --watch cliphist store
 
 # Keybindings
-bind = $mainMod, SPACE, exec, qs ipc call launcher toggle
-bind = $mainMod, V,     exec, qs ipc call clipboard toggle
-bind = $mainMod, P,     exec, qs ipc call powermenu toggle
-bind = $mainMod, L,     exec, qs ipc call lockscreen toggle
-bind = $mainMod, D,     exec, qs ipc call dashboard toggle
-bind = $mainMod, N,     exec, qs ipc call notifCenter toggle
-bind = $mainMod, C,     exec, qs ipc call controlCenter toggle
+bind = $mainMod, SPACE,     exec, qs ipc call launcher toggle
+bind = $mainMod, V,         exec, qs ipc call clipboard toggle
+bind = $mainMod, P,         exec, qs ipc call powermenu toggle
+bind = $mainMod ALT, L,     exec, qs ipc call lockscreen toggle
+bind = $mainMod, D,         exec, qs ipc call dashboard toggle
+bind = $mainMod, N,         exec, qs ipc call notifCenter toggle
+bind = $mainMod, C,         exec, qs ipc call controlCenter toggle
+bind = $mainMod, B,         exec, qs ipc call battery toggle
+bind = $mainMod, COMMA,     exec, qs ipc call settings toggle
 
 # Layer Rules
 layerrule = blur, quickshell:bar
@@ -228,20 +233,16 @@ layerrule = ignorezero, quickshell:hud
 ### 2. Niri Configuration (`~/.config/niri/config.kdl`)
 
 ```kdl
-// Autostart Quickshell & Services
-spawn-at-startup "qs" "-c" "~/.config/quickshell"
-spawn-at-startup "wl-paste" "--type" "text" "--watch" "cliphist" "store"
-spawn-at-startup "wl-paste" "--type" "image" "--watch" "cliphist" "store"
-
-// Keybindings
 binds {
-    Mod+Space { spawn "qs" "ipc" "call" "launcher" "toggle"; }
-    Mod+V     { spawn "qs" "ipc" "call" "clipboard" "toggle"; }
-    Mod+P     { spawn "qs" "ipc" "call" "powermenu" "toggle"; }
-    Mod+L     { spawn "qs" "ipc" "call" "lockscreen" "toggle"; }
-    Mod+D     { spawn "qs" "ipc" "call" "dashboard" "toggle"; }
-    Mod+N     { spawn "qs" "ipc" "call" "notifCenter" "toggle"; }
-    Mod+C     { spawn "qs" "ipc" "call" "controlCenter" "toggle"; }
+    Mod+Space     { spawn "qs" "ipc" "call" "launcher" "toggle"; }
+    Mod+V         { spawn "qs" "ipc" "call" "clipboard" "toggle"; }
+    Mod+P         { spawn "qs" "ipc" "call" "powermenu" "toggle"; }
+    Mod+Alt+L     { spawn "qs" "ipc" "call" "lockscreen" "toggle"; }
+    Mod+D         { spawn "qs" "ipc" "call" "dashboard" "toggle"; }
+    Mod+N         { spawn "qs" "ipc" "call" "notifCenter" "toggle"; }
+    Mod+C         { spawn "qs" "ipc" "call" "controlCenter" "toggle"; }
+    Mod+B         { spawn "qs" "ipc" "call" "battery" "toggle"; }
+    Mod+Comma     { spawn "qs" "ipc" "call" "settings" "toggle"; }
 }
 ```
 
