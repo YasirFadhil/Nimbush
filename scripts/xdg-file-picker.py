@@ -8,12 +8,23 @@ import re
 import urllib.parse
 
 def pick_via_zenity():
-    if not shutil.which("zenity"):
+    zenity_bin = shutil.which("zenity")
+    if not zenity_bin:
+        if shutil.which("nix-shell"):
+            try:
+                cmd = ["nix-shell", "-p", "zenity", "--run", "zenity --file-selection --title='Select Wallpaper Image'"]
+                proc = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+                if proc.returncode == 0:
+                    selected = proc.stdout.strip()
+                    if selected and os.path.isfile(selected):
+                        return selected
+            except Exception:
+                pass
         return None
     try:
         pictures_dir = os.path.expanduser("~/Pictures")
         cmd = [
-            "zenity",
+            zenity_bin,
             "--file-selection",
             "--title=Select Wallpaper Image",
             "--file-filter=Image files (*.jpg, *.png, *.webp, *.jpeg, *.gif, *.bmp, *.avif, *.svg) | *.jpg *.jpeg *.png *.webp *.gif *.bmp *.avif *.svg *.JPG *.JPEG *.PNG *.WEBP",
@@ -107,8 +118,8 @@ def pick_via_gdbus():
         if call_res.returncode != 0:
             return None
 
-        handle_match = re.search(r"'/org/freedesktop/portal/desktop/request/[^']+'", call_res.stdout)
-        target_handle = handle_match.group(0).strip("'") if handle_match else token
+        handle_match = re.search(r"/org/freedesktop/portal/desktop/request/[^\s',]+", call_res.stdout)
+        target_handle = handle_match.group(0) if handle_match else token
 
         selected_file = None
         start_time = time.time()
@@ -121,18 +132,17 @@ def pick_via_gdbus():
                 continue
             buf += line
             if target_handle in buf and "Response" in buf:
-                if "uint32 0" in buf:
-                    m = re.search(r"'file://([^']+)'", buf)
-                    if m:
-                        path = urllib.parse.unquote(m.group(1))
-                        if not path.startswith("/"):
-                            path = "/" + path
-                        if os.path.exists(path):
-                            selected_file = path
-                            break
-                elif "uint32 1" in buf or "uint32 2" in buf:
+                m = re.search(r"file://([^\s'\">\]]+)", buf)
+                if m:
+                    path = urllib.parse.unquote(m.group(1))
+                    if not path.startswith("/"):
+                        path = "/" + path
+                    if os.path.exists(path):
+                        selected_file = path
+                        break
+                if "uint32 1" in buf or "uint32 2" in buf or "Response (1" in buf or "Response (2" in buf:
                     break
-                if "}" in buf and (line.strip().endswith("}") or line.strip().endswith(")")):
+                if "}" in line or ")" in line:
                     break
 
         return selected_file

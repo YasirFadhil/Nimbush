@@ -1,5 +1,6 @@
 pragma Singleton
 import QtQuick
+import QtQuick.Dialogs
 import Quickshell
 import Quickshell.Io
 import "." as Services
@@ -134,18 +135,53 @@ Singleton {
         ]
     }
 
+    FileDialog {
+        id: nativeWallpaperDialog
+        title: "Select Wallpaper Image"
+        currentFolder: "file://" + root.homeDir + "/Pictures"
+        nameFilters: ["Image files (*.jpg *.jpeg *.png *.webp *.gif *.bmp *.svg *.avif)", "All files (*)"]
+        onAccepted: {
+            var urlStr = nativeWallpaperDialog.selectedFile.toString()
+            var pathStr = urlStr.startsWith("file://") ? urlStr.substring(7) : urlStr
+            if (pathStr.length > 0) {
+                if (root.isPickingLockscreen) {
+                    if (Services.Config) {
+                        Services.Config.setLockscreenCustomWallpaper(pathStr)
+                        Services.Config.setLockscreenWallpaperMode("custom")
+                    }
+                } else {
+                    root.addCustomWallpaper(pathStr)
+                }
+            }
+            root.isPicking = false
+            root.isPickingLockscreen = false
+        }
+        onRejected: {
+            root.isPicking = false
+            root.isPickingLockscreen = false
+        }
+    }
+
     function pickCustomWallpaper() {
-        if (isPicking) return
-        isPicking = true
-        pickerProc.running = false
-        pickerProc.running = true
+        root.isPicking = true
+        root.isPickingLockscreen = false
+        try {
+            nativeWallpaperDialog.open()
+        } catch (e) {
+            pickerProc.running = false
+            pickerProc.running = true
+        }
     }
 
     function pickLockscreenWallpaper() {
-        if (isPickingLockscreen) return
-        isPickingLockscreen = true
-        lockscreenPickerProc.running = false
-        lockscreenPickerProc.running = true
+        root.isPickingLockscreen = true
+        root.isPicking = false
+        try {
+            nativeWallpaperDialog.open()
+        } catch (e) {
+            lockscreenPickerProc.running = false
+            lockscreenPickerProc.running = true
+        }
     }
 
     function removeCustomWallpaper(filePath) {
