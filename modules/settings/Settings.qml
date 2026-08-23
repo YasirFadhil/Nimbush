@@ -197,7 +197,7 @@ FloatingWindow {
         }
     }
 
-    // ── 3. Settings Dropdown / ComboBox (Clean Modern Popover) ────────────────
+    // ── 3. Settings Dropdown / ComboBox (macOS Tahoe Native Popover) ──────────
     component SettingsDropdown: Item {
         id: dropRoot
         property var model: [] // [{ id, label }]
@@ -211,20 +211,30 @@ FloatingWindow {
             return model.length > 0 ? model[0] : { label: "Select..." }
         }
 
-        implicitHeight: 28
-        implicitWidth: Math.max(140, dropBtnText.implicitWidth + 36)
+        implicitWidth: dropBtn.implicitWidth
+        implicitHeight: dropBtn.height
 
         Rectangle {
             id: dropBtn
-            anchors.fill: parent
+            implicitWidth: Math.max(130, dropBtnText.implicitWidth + 34)
+            height: 26
             radius: 6
-            color: dropArea.containsMouse ? Qt.rgba(1, 1, 1, 0.06) : Services.Theme.bgElevated
-            border.color: dropMenu.visible ? Services.Theme.accent : Services.Theme.border
+            color: dropMenu.visible 
+                ? (Services.Theme.isDark ? "#32323e" : "#e8e8ed")
+                : (dropArea.containsMouse 
+                    ? (Services.Theme.isDark ? "#2e2e3a" : "#eaebee") 
+                    : (Services.Theme.isDark ? "#262630" : "#f2f2f7"))
+            border.color: dropMenu.visible 
+                ? Services.Theme.accent 
+                : (Services.Theme.isDark ? "#3c3c4a" : "#d0d0d8")
             border.width: 1
+
+            Behavior on color { ColorAnimation { duration: 150 } }
+            Behavior on border.color { ColorAnimation { duration: 150 } }
 
             RowLayout {
                 anchors.fill: parent
-                anchors.leftMargin: 10
+                anchors.leftMargin: 8
                 anchors.rightMargin: 8
                 spacing: 6
 
@@ -233,7 +243,7 @@ FloatingWindow {
                     Layout.fillWidth: true
                     text: dropRoot.currentItem ? dropRoot.currentItem.label : ""
                     font.pixelSize: Services.Theme.fontSizeSm
-                    font.weight: Font.Medium
+                    font.weight: Font.Normal
                     color: Services.Theme.textPrimary
                     elide: Text.ElideRight
                 }
@@ -269,9 +279,19 @@ FloatingWindow {
 
                 background: Rectangle {
                     radius: 8
-                    color: Services.Theme.bgElevated
-                    border.color: Services.Theme.borderHighlight
+                    color: Services.Theme.isDark ? "#1e1e26" : "#ffffff"
+                    border.color: Services.Theme.isDark ? "#383846" : "#d0d0dc"
                     border.width: 1
+
+                    Rectangle {
+                        anchors.centerIn: parent
+                        anchors.verticalCenterOffset: 4
+                        width: parent.width + 4
+                        height: parent.height + 2
+                        radius: parent.radius
+                        color: Qt.rgba(0, 0, 0, 0.35)
+                        z: -1
+                    }
                 }
 
                 contentItem: Flickable {
@@ -295,8 +315,15 @@ FloatingWindow {
                                 readonly property bool isSelected: dropRoot.currentValue === modelData.id
 
                                 color: isSelected 
-                                    ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.12)
-                                    : (itemArea.containsMouse ? Qt.rgba(1, 1, 1, 0.05) : "transparent")
+                                    ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.15)
+                                    : (itemArea.containsMouse 
+                                        ? (Services.Theme.isDark ? "#282834" : "#f0f0f6") 
+                                        : "transparent")
+                                border.color: isSelected 
+                                    ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.30) 
+                                    : "transparent"
+                                border.width: 1
+                                Behavior on color { ColorAnimation { duration: 120 } }
 
                                 RowLayout {
                                     anchors.fill: parent
@@ -309,15 +336,16 @@ FloatingWindow {
                                         text: modelData.label
                                         font.pixelSize: Services.Theme.fontSizeSm
                                         font.weight: isSelected ? Font.DemiBold : Font.Normal
-                                        color: isSelected ? Services.Theme.accent : (itemArea.containsMouse ? Services.Theme.textPrimary : Services.Theme.textSecondary)
+                                        color: isSelected ? Services.Theme.accent : (Services.Theme.isDark ? "#e4e4ec" : "#1c1c24")
                                         elide: Text.ElideRight
                                     }
 
                                     Text {
                                         visible: isSelected
-                                        text: Services.Icons.check
+                                        text: Services.Icons.check || "✓"
                                         font.family: Services.Theme.fontSymbols
                                         font.pixelSize: 9
+                                        font.bold: true
                                         color: Services.Theme.accent
                                     }
                                 }
@@ -340,7 +368,7 @@ FloatingWindow {
         }
     }
 
-    // ── 4. Settings Switch (Modern Minimal Capsule Toggle) ────────────────────
+    // ── 4. Settings Switch (macOS Tahoe Draggable & Liquid Glass Overflow Toggle) ──
     component SettingsSwitch: Rectangle {
         id: switchRoot
         property string title: ""
@@ -348,15 +376,21 @@ FloatingWindow {
         property bool checked: false
         signal toggled(bool newState)
 
+        onCheckedChanged: {
+            if (!swTrack.isDragging) {
+                swTrack.knobX = switchRoot.checked ? swTrack.maxX : swTrack.minX
+            }
+        }
+
         Layout.fillWidth: true
-        implicitHeight: Math.max(42, switchTextCol.implicitHeight + 16)
+        implicitHeight: Math.max(44, switchTextCol.implicitHeight + 16)
         radius: Services.Theme.radiusSm
         color: "transparent"
 
         RowLayout {
             anchors.fill: parent
-            anchors.leftMargin: 10
-            anchors.rightMargin: 10
+            anchors.leftMargin: 12
+            anchors.rightMargin: 12
             spacing: 12
 
             ColumnLayout {
@@ -384,59 +418,208 @@ FloatingWindow {
                 }
             }
 
+            // macOS Tahoe Capsule Track
             Rectangle {
-                Layout.preferredWidth: 42
+                id: swTrack
+                Layout.preferredWidth: 46
                 Layout.preferredHeight: 24
                 Layout.alignment: Qt.AlignVCenter
                 radius: 12
-                color: switchRoot.checked 
+
+                readonly property real minX: 2
+                readonly property real maxX: swTrack.width - 20 - 2
+                property real knobX: switchRoot.checked ? maxX : minX
+                property real dragX: 0
+                property bool isDragging: false
+                property real pressStartX: 0
+                property bool hasMoved: false
+
+                readonly property bool isOn: knobX > ((minX + maxX) / 2)
+
+                color: swTrack.isOn 
                     ? Services.Theme.accent 
-                    : (switchMouse.containsMouse 
-                        ? (Services.Theme.isDark ? "#3c3c46" : "#d8dbe2") 
-                        : (Services.Theme.isDark ? "#303038" : "#e4e7ee"))
-                border.color: switchRoot.checked 
+                    : (swDragArea.containsMouse 
+                        ? (Services.Theme.isDark ? "#40404c" : "#dadade") 
+                        : (Services.Theme.isDark ? "#35353f" : "#e2e2e7"))
+                border.color: swTrack.isOn 
                     ? Services.Theme.accent 
-                    : (Services.Theme.isDark ? "#444452" : "#cbd1dc")
+                    : (Services.Theme.isDark ? "#4c4c5a" : "#ceced6")
                 border.width: 1
                 Behavior on color { ColorAnimation { duration: 180 } }
+                Behavior on border.color { ColorAnimation { duration: 180 } }
 
-                // Tactile Thumb
+                Behavior on knobX {
+                    enabled: !swTrack.isDragging
+                    NumberAnimation {
+                        duration: 220
+                        easing.type: Easing.OutBack
+                        easing.overshoot: 1.15
+                    }
+                }
+
+                // macOS Large Overflowing Liquid Glass Knob (Solid White Pill -> Large Overflowing Glass Lens)
                 Rectangle {
-                    width: 18
-                    height: 18
-                    radius: 9
+                    id: swThumb
+                    readonly property bool isActive: swDragArea.pressed
+                    width: isActive ? (swTrack.isDragging ? 38 : 36) : 20
+                    height: isActive ? 28 : 20
+                    radius: height / 2
                     anchors.verticalCenter: parent.verticalCenter
-                    x: switchRoot.checked ? 21 : 3
-                    color: "#ffffff"
-                    border.color: Qt.rgba(0, 0, 0, 0.12)
+                    
+                    x: swTrack.isDragging
+                        ? Math.max(-2, Math.min(swTrack.width - width + 2, swTrack.dragX))
+                        : (swTrack.knobX - (width - 20) / 2)
+                    
+                    // Normal: Solid White Porcelain Pill (#ffffff)
+                    // Active/Press: Large Translucent Frosted Liquid Glass Lens
+                    color: isActive 
+                        ? (Services.Theme.isDark ? Qt.rgba(255, 255, 255, 0.16) : Qt.rgba(255, 255, 255, 0.70))
+                        : "#ffffff"
+                    border.color: isActive 
+                        ? (Services.Theme.isDark ? Qt.rgba(255, 255, 255, 0.50) : Qt.rgba(255, 255, 255, 0.90))
+                        : Qt.rgba(0, 0, 0, 0.08)
                     border.width: 1
-                    Behavior on x { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
 
-                    // Drop Shadow Layer
+                    Behavior on width { 
+                        NumberAnimation { 
+                            duration: 200
+                            easing.type: Easing.OutBack
+                            easing.overshoot: swThumb.isActive ? 1.12 : 1.25 
+                        } 
+                    }
+                    Behavior on height { 
+                        NumberAnimation { 
+                            duration: 200
+                            easing.type: Easing.OutBack
+                            easing.overshoot: swThumb.isActive ? 1.10 : 1.20 
+                        } 
+                    }
+                    Behavior on color { ColorAnimation { duration: 160 } }
+                    Behavior on border.color { ColorAnimation { duration: 160 } }
+
+                    // Inner Glass Inset Wall Refraction Bevel
+                    Rectangle {
+                        anchors.fill: parent
+                        anchors.margins: 1
+                        radius: parent.radius - 1
+                        color: "transparent"
+                        border.color: swThumb.isActive ? (Services.Theme.isDark ? Qt.rgba(255, 255, 255, 0.18) : Qt.rgba(255, 255, 255, 0.40)) : "transparent"
+                        border.width: 1
+                        Behavior on border.color { ColorAnimation { duration: 160 } }
+                    }
+
+                    // Top Specular Glass Reflection
+                    Rectangle {
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.top: parent.top
+                        anchors.margins: 1.5
+                        height: Math.max(2, parent.height / 2 - 1.5)
+                        radius: height
+                        gradient: Gradient {
+                            GradientStop { 
+                                position: 0.0
+                                color: swThumb.isActive ? (Services.Theme.isDark ? Qt.rgba(255, 255, 255, 0.40) : Qt.rgba(255, 255, 255, 0.65)) : "transparent"
+                            }
+                            GradientStop { 
+                                position: 1.0
+                                color: swThumb.isActive ? (Services.Theme.isDark ? Qt.rgba(255, 255, 255, 0.05) : Qt.rgba(255, 255, 255, 0.15)) : "transparent"
+                            }
+                        }
+                    }
+
+                    // Bottom Caustic Glass Lip Reflection
+                    Rectangle {
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.bottom: parent.bottom
+                        anchors.margins: 1.5
+                        height: 2
+                        radius: 1
+                        color: swThumb.isActive ? (Services.Theme.isDark ? Qt.rgba(255, 255, 255, 0.16) : Qt.rgba(255, 255, 255, 0.45)) : "transparent"
+                        Behavior on color { ColorAnimation { duration: 160 } }
+                    }
+
+                    // Dual-Layer Neutral Physical Drop Shadows
+                    Rectangle {
+                        anchors.centerIn: parent
+                        anchors.verticalCenterOffset: swThumb.isActive ? 3.5 : 1
+                        width: parent.width + (swThumb.isActive ? 4 : 0)
+                        height: parent.height + (swThumb.isActive ? 2 : 0)
+                        radius: height / 2
+                        color: swThumb.isActive ? Qt.rgba(0, 0, 0, 0.42) : Qt.rgba(0, 0, 0, 0.28)
+                        Behavior on color { ColorAnimation { duration: 160 } }
+                        Behavior on anchors.verticalCenterOffset { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
+                        z: -2
+                    }
+
                     Rectangle {
                         anchors.centerIn: parent
                         anchors.verticalCenterOffset: 1
                         width: parent.width
                         height: parent.height
                         radius: parent.radius
-                        color: Qt.rgba(0, 0, 0, 0.22)
+                        color: swThumb.isActive ? Qt.rgba(0, 0, 0, 0.25) : Qt.rgba(0, 0, 0, 0.10)
+                        Behavior on color { ColorAnimation { duration: 160 } }
                         z: -1
+                    }
+                }
+
+                MouseArea {
+                    id: swDragArea
+                    anchors.fill: parent
+                    anchors.margins: -10
+                    preventStealing: true
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+
+                    onPressed: (mouse) => {
+                        swTrack.pressStartX = mouse.x
+                        swTrack.hasMoved = false
+                        swTrack.isDragging = false
+                    }
+
+                    onPositionChanged: (mouse) => {
+                        if (!pressed) return
+                        if (Math.abs(mouse.x - swTrack.pressStartX) > 4) {
+                            swTrack.hasMoved = true
+                            swTrack.isDragging = true
+                        }
+                        if (swTrack.isDragging) {
+                            const trackMouseX = mouse.x - 10
+                            swTrack.dragX = trackMouseX - (swThumb.width / 2)
+                        }
+                    }
+
+                    onReleased: (mouse) => {
+                        if (swTrack.hasMoved) {
+                            const midX = (swTrack.minX + swTrack.maxX) / 2
+                            const targetState = swThumb.x > midX
+                            swTrack.knobX = targetState ? swTrack.maxX : swTrack.minX
+                            if (targetState !== switchRoot.checked) {
+                                switchRoot.toggled(targetState)
+                            }
+                        } else {
+                            const nextState = !switchRoot.checked
+                            swTrack.knobX = nextState ? swTrack.maxX : swTrack.minX
+                            switchRoot.toggled(nextState)
+                        }
+                        swTrack.isDragging = false
+                        swTrack.hasMoved = false
+                    }
+
+                    onCanceled: {
+                        swTrack.knobX = switchRoot.checked ? swTrack.maxX : swTrack.minX
+                        swTrack.isDragging = false
+                        swTrack.hasMoved = false
                     }
                 }
             }
         }
-
-        MouseArea {
-            id: switchMouse
-            anchors.fill: parent
-            hoverEnabled: true
-            cursorShape: Qt.PointingHandCursor
-            onClicked: switchRoot.toggled(!switchRoot.checked)
-        }
     }
 
-    // ── 5. Settings Slider (macOS Tahoe Inset Track & Tactile Knob) ───────────
-    component SettingsSlider: ColumnLayout {
+    // ── 5. Settings Slider (macOS Tahoe Inset Grouped Slider Row) ─────────────
+    component SettingsSlider: RowLayout {
         id: sliderRoot
         property string title: ""
         property string subtitle: ""
@@ -450,132 +633,161 @@ FloatingWindow {
         signal moved(real newValue)
 
         Layout.fillWidth: true
-        spacing: 6
+        spacing: 12
         Layout.leftMargin: 12
         Layout.rightMargin: 12
-        Layout.topMargin: 8
-        Layout.bottomMargin: 8
+        Layout.topMargin: 4
+        Layout.bottomMargin: 4
 
-        RowLayout {
+        // Left: Title & Subtitle
+        ColumnLayout {
             Layout.fillWidth: true
+            Layout.alignment: Qt.AlignVCenter
+            spacing: 1
 
-            ColumnLayout {
-                Layout.fillWidth: true
-                spacing: 1
-
-                Text {
-                    text: sliderRoot.title
-                    font.pixelSize: Services.Theme.fontSizeMd
-                    font.weight: Font.Medium
-                    color: Services.Theme.textPrimary
-                    elide: Text.ElideRight
-                }
-                Text {
-                    visible: sliderRoot.subtitle.length > 0
-                    text: sliderRoot.subtitle
-                    font.pixelSize: Services.Theme.fontSizeXs
-                    color: Services.Theme.textSecondary
-                    elide: Text.ElideRight
-                }
+            Text {
+                text: sliderRoot.title
+                font.pixelSize: Services.Theme.fontSizeMd
+                font.weight: Font.Medium
+                color: Services.Theme.textPrimary
+                elide: Text.ElideRight
             }
-
-            // macOS Tahoe Pill Value Badge
-            Rectangle {
-                Layout.preferredHeight: 22
-                Layout.alignment: Qt.AlignVCenter
-                implicitWidth: Math.max(36, valBadgeText.implicitWidth + 14)
-                radius: 11
-                color: Services.Theme.isDark ? Qt.rgba(255, 255, 255, 0.08) : Qt.rgba(0, 0, 0, 0.05)
-                border.color: Services.Theme.isDark ? Qt.rgba(255, 255, 255, 0.12) : Qt.rgba(0, 0, 0, 0.08)
-                border.width: 1
-
-                Text {
-                    id: valBadgeText
-                    anchors.centerIn: parent
-                    text: sliderRoot.valuePrefix + (sliderRoot.decimals > 0 ? Number(sliderRoot.value).toFixed(sliderRoot.decimals) : Math.round(sliderRoot.value)) + sliderRoot.valueSuffix
-                    font.family: Services.Theme.fontMono
-                    font.pixelSize: 11
-                    font.weight: Font.DemiBold
-                    color: Services.Theme.accent
-                }
+            Text {
+                visible: sliderRoot.subtitle.length > 0
+                text: sliderRoot.subtitle
+                font.pixelSize: Services.Theme.fontSizeXs
+                color: Services.Theme.textSecondary
+                elide: Text.ElideRight
             }
         }
 
-        // macOS Tahoe Groove Track & Knob
-        Item {
-            id: trackContainer
-            Layout.fillWidth: true
-            height: 22
+        // Right: Value Badge + Compact Tahoe Slider
+        RowLayout {
+            Layout.alignment: Qt.AlignVCenter
+            spacing: 8
 
-            // Background Groove
-            Rectangle {
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.verticalCenter: parent.verticalCenter
-                height: 6
-                radius: 3
-                color: Services.Theme.isDark ? Qt.rgba(255, 255, 255, 0.12) : Qt.rgba(0, 0, 0, 0.08)
-                border.color: Services.Theme.isDark ? Qt.rgba(255, 255, 255, 0.04) : Qt.rgba(0, 0, 0, 0.04)
-                border.width: 1
-
-                // Active Filled Progress
-                Rectangle {
-                    height: parent.height
-                    radius: parent.radius
-                    color: Services.Theme.accent
-                    width: Math.max(0, Math.min(parent.width, ((sliderRoot.value - sliderRoot.from) / Math.max(0.0001, sliderRoot.to - sliderRoot.from)) * parent.width))
-                }
+            // Value Badge
+            Text {
+                Layout.preferredWidth: 38
+                horizontalAlignment: Text.AlignRight
+                text: sliderRoot.valuePrefix + (sliderRoot.decimals > 0 ? Number(sliderRoot.value).toFixed(sliderRoot.decimals) : Math.round(sliderRoot.value)) + sliderRoot.valueSuffix
+                font.family: Services.Theme.fontMono
+                font.pixelSize: 11
+                font.weight: Font.Medium
+                color: sDrag.pressed ? Services.Theme.accent : Services.Theme.textSecondary
             }
 
-            // Tactile Floating Knob
-            Rectangle {
-                id: knob
-                width: sDrag.pressed ? 20 : (sDrag.containsMouse ? 18 : 16)
-                height: width
-                radius: width / 2
-                anchors.verticalCenter: parent.verticalCenter
-                x: Math.max(0, Math.min(trackContainer.width - width, ((sliderRoot.value - sliderRoot.from) / Math.max(0.0001, sliderRoot.to - sliderRoot.from)) * (trackContainer.width - width)))
-                color: "#ffffff"
-                border.color: Qt.rgba(0, 0, 0, 0.14)
-                border.width: 1
+            // Compact Tahoe Track Container
+            Item {
+                id: trackContainer
+                Layout.preferredWidth: 150
+                height: 24
 
-                Behavior on width { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
-                Behavior on height { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
+                readonly property real valRatio: Math.max(0, Math.min(1, (sliderRoot.value - sliderRoot.from) / Math.max(0.0001, sliderRoot.to - sliderRoot.from)))
+                readonly property real normalWidth: 20
+                readonly property real centerPos: normalWidth / 2 + valRatio * (trackContainer.width - normalWidth)
 
-                // Underlying Drop Shadow for Tactile Feel
+                // Track Groove (Thin 4px Capsule)
                 Rectangle {
-                    anchors.centerIn: parent
-                    anchors.verticalCenterOffset: 1.5
-                    width: parent.width + 2
-                    height: parent.height + 2
-                    radius: width / 2
-                    color: Qt.rgba(0, 0, 0, 0.28)
-                    z: -1
-                }
-            }
+                    id: trackGroove
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    height: 4
+                    radius: 2
+                    color: Services.Theme.isDark ? "#2a2a34" : "#e0e2e8"
+                    border.color: Services.Theme.isDark ? Qt.rgba(255, 255, 255, 0.04) : Qt.rgba(0, 0, 0, 0.04)
+                    border.width: 1
 
-            MouseArea {
-                id: sDrag
-                anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-
-                function updateVal(mouseX) {
-                    const ratio = Math.max(0, Math.min(1, mouseX / width))
-                    let raw = sliderRoot.from + ratio * (sliderRoot.to - sliderRoot.from)
-                    if (sliderRoot.stepSize > 0) {
-                        raw = Math.round((raw - sliderRoot.from) / sliderRoot.stepSize) * sliderRoot.stepSize + sliderRoot.from
+                    // Active Filled Progress Bar
+                    Rectangle {
+                        height: parent.height
+                        radius: parent.radius
+                        color: Services.Theme.accent
+                        width: Math.max(0, Math.min(parent.width, trackContainer.centerPos))
                     }
-                    raw = Math.max(sliderRoot.from, Math.min(sliderRoot.to, raw))
-                    sliderRoot.moved(raw)
                 }
 
-                onPressed: (mouse) => updateVal(mouse.x)
-                onPositionChanged: (mouse) => { if (pressed) updateVal(mouse.x) }
-                onWheel: (wheel) => {
-                    let delta = (wheel.angleDelta.y > 0 ? 1 : -1) * (sliderRoot.stepSize || 1)
-                    let raw = Math.max(sliderRoot.from, Math.min(sliderRoot.to, sliderRoot.value + delta))
-                    sliderRoot.moved(raw)
+                // Tahoe Knob (Normal: Solid White Pill, Press: Liquid Glass Expansion)
+                Rectangle {
+                    id: knob
+                    readonly property bool isActive: sDrag.pressed
+                    width: isActive ? 28 : 20
+                    height: isActive ? 14 : 12
+                    radius: height / 2
+                    anchors.verticalCenter: trackGroove.verticalCenter
+                    x: Math.max(0, Math.min(trackContainer.width - width, trackContainer.centerPos - width / 2))
+                    
+                    color: isActive 
+                        ? (Services.Theme.isDark ? Qt.rgba(255, 255, 255, 0.14) : Qt.rgba(255, 255, 255, 0.65))
+                        : "#ffffff"
+                    border.color: isActive 
+                        ? (Services.Theme.isDark ? Qt.rgba(255, 255, 255, 0.45) : Qt.rgba(255, 255, 255, 0.85))
+                        : Qt.rgba(0, 0, 0, 0.12)
+                    border.width: 1
+
+                    Behavior on width { 
+                        NumberAnimation { 
+                            duration: 200
+                            easing.type: Easing.OutBack
+                            easing.overshoot: knob.isActive ? 1.12 : 1.20 
+                        } 
+                    }
+                    Behavior on height { 
+                        NumberAnimation { 
+                            duration: 200
+                            easing.type: Easing.OutBack
+                            easing.overshoot: knob.isActive ? 1.10 : 1.15 
+                        } 
+                    }
+                    Behavior on color { ColorAnimation { duration: 160 } }
+                    Behavior on border.color { ColorAnimation { duration: 160 } }
+
+                    // Natural Drop Shadow
+                    Rectangle {
+                        anchors.centerIn: parent
+                        anchors.verticalCenterOffset: knob.isActive ? 2 : 1
+                        width: parent.width + (knob.isActive ? 2 : 0)
+                        height: parent.height
+                        radius: parent.radius
+                        color: knob.isActive ? Qt.rgba(0, 0, 0, 0.35) : Qt.rgba(0, 0, 0, 0.20)
+                        Behavior on color { ColorAnimation { duration: 160 } }
+                        z: -1
+                    }
+                }
+
+                MouseArea {
+                    id: sDrag
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: parent.top
+                    anchors.bottom: parent.bottom
+                    anchors.topMargin: -8
+                    anchors.bottomMargin: -8
+                    preventStealing: true
+                    hoverEnabled: false
+                    cursorShape: Qt.PointingHandCursor
+
+                    function updateVal(mouseX) {
+                        const pad = trackContainer.normalWidth / 2
+                        const available = trackContainer.width - trackContainer.normalWidth
+                        if (available <= 0) return
+                        const ratio = Math.max(0, Math.min(1, (mouseX - pad) / available))
+                        let raw = sliderRoot.from + ratio * (sliderRoot.to - sliderRoot.from)
+                        if (sliderRoot.stepSize > 0) {
+                            raw = Math.round((raw - sliderRoot.from) / sliderRoot.stepSize) * sliderRoot.stepSize + sliderRoot.from
+                        }
+                        raw = Math.max(sliderRoot.from, Math.min(sliderRoot.to, raw))
+                        sliderRoot.moved(raw)
+                    }
+
+                    onPressed: (mouse) => updateVal(mouse.x)
+                    onPositionChanged: (mouse) => { if (pressed) updateVal(mouse.x) }
+                    onWheel: (wheel) => {
+                        let delta = (wheel.angleDelta.y > 0 ? 1 : -1) * (sliderRoot.stepSize || 1)
+                        let raw = Math.max(sliderRoot.from, Math.min(sliderRoot.to, sliderRoot.value + delta))
+                        sliderRoot.moved(raw)
+                    }
                 }
             }
         }
@@ -899,13 +1111,15 @@ FloatingWindow {
                             height: 38
                             radius: 8
                             readonly property bool isCur: rootWindow.currentTab === modelData.id
+                            scale: tabMouse.pressed ? 0.96 : (tabMouse.containsMouse ? 1.01 : 1.0)
+                            Behavior on scale { NumberAnimation { duration: 180; easing.type: Easing.OutBack; easing.overshoot: 1.35 } }
 
                             color: isCur 
                                 ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.16)
                                 : (tabMouse.containsMouse ? Qt.rgba(255, 255, 255, 0.05) : "transparent")
                             border.color: isCur ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.28) : "transparent"
                             border.width: 1
-                            Behavior on color { ColorAnimation { duration: 150 } }
+                            Behavior on color { ColorAnimation { duration: 180 } }
 
                             RowLayout {
                                 anchors.fill: parent
@@ -920,6 +1134,8 @@ FloatingWindow {
                                     Layout.alignment: Qt.AlignVCenter
                                     radius: 7
                                     color: modelData.color
+                                    scale: isCur ? 1.06 : 1.0
+                                    Behavior on scale { NumberAnimation { duration: 200; easing.type: Easing.OutBack; easing.overshoot: 1.3 } }
 
                                     Text {
                                         anchors.centerIn: parent
@@ -946,6 +1162,8 @@ FloatingWindow {
                                     font.pixelSize: 13
                                     color: isCur ? Services.Theme.accent : Services.Theme.textDisabled
                                     Layout.alignment: Qt.AlignVCenter
+                                    scale: isCur ? 1.1 : 1.0
+                                    Behavior on scale { NumberAnimation { duration: 180; easing.type: Easing.OutBack; easing.overshoot: 1.3 } }
                                 }
                             }
 
@@ -1064,6 +1282,8 @@ FloatingWindow {
                                                 border.color: (Services.Config && Services.Config.themeMode === "light") ? Services.Theme.accent : (lightMouse.containsMouse ? Services.Theme.borderHighlight : Services.Theme.border)
                                                 border.width: (Services.Config && Services.Config.themeMode === "light") ? 2 : 1
                                                 clip: true
+                                                scale: (Services.Config && Services.Config.themeMode === "light") ? 1.03 : (lightMouse.pressed ? 0.95 : (lightMouse.containsMouse ? 1.02 : 1.0))
+                                                Behavior on scale { NumberAnimation { duration: 220; easing.type: Easing.OutBack; easing.overshoot: 1.35 } }
 
                                                 // Mini Window Mockup
                                                 ColumnLayout {
@@ -1076,13 +1296,12 @@ FloatingWindow {
                                                         height: 18
                                                         color: "#e8eaef"
 
-                                                        RowLayout {
-                                                            anchors.fill: parent
-                                                            anchors.leftMargin: 6
-                                                            spacing: 3
-                                                            Rectangle { width: 5; height: 5; radius: 2.5; color: "#ff5f56" }
-                                                            Rectangle { width: 5; height: 5; radius: 2.5; color: "#ffbd2e" }
-                                                            Rectangle { width: 5; height: 5; radius: 2.5; color: "#27c93f" }
+                                                        Rectangle {
+                                                            anchors.left: parent.left
+                                                            anchors.leftMargin: 8
+                                                            anchors.verticalCenter: parent.verticalCenter
+                                                            width: 24; height: 4; radius: 2
+                                                            color: "#c8ccd6"
                                                         }
                                                     }
 
@@ -1148,10 +1367,13 @@ FloatingWindow {
                                                     border.width: 1.5
 
                                                     Rectangle {
-                                                        visible: Services.Config && Services.Config.themeMode === "light"
                                                         anchors.centerIn: parent
                                                         width: 6; height: 6; radius: 3
                                                         color: Services.Theme.accent
+                                                        scale: (Services.Config && Services.Config.themeMode === "light") ? 1.0 : 0.0
+                                                        opacity: (Services.Config && Services.Config.themeMode === "light") ? 1.0 : 0.0
+                                                        Behavior on scale { NumberAnimation { duration: 240; easing.type: Easing.OutBack; easing.overshoot: 1.5 } }
+                                                        Behavior on opacity { NumberAnimation { duration: 180 } }
                                                     }
                                                 }
 
@@ -1177,6 +1399,8 @@ FloatingWindow {
                                                 border.color: (Services.Config && Services.Config.themeMode === "dark") ? Services.Theme.accent : (darkMouse.containsMouse ? Services.Theme.borderHighlight : Services.Theme.border)
                                                 border.width: (Services.Config && Services.Config.themeMode === "dark") ? 2 : 1
                                                 clip: true
+                                                scale: (Services.Config && Services.Config.themeMode === "dark") ? 1.03 : (darkMouse.pressed ? 0.95 : (darkMouse.containsMouse ? 1.02 : 1.0))
+                                                Behavior on scale { NumberAnimation { duration: 220; easing.type: Easing.OutBack; easing.overshoot: 1.35 } }
 
                                                 // Mini Window Mockup
                                                 ColumnLayout {
@@ -1189,13 +1413,12 @@ FloatingWindow {
                                                         height: 18
                                                         color: "#222228"
 
-                                                        RowLayout {
-                                                            anchors.fill: parent
-                                                            anchors.leftMargin: 6
-                                                            spacing: 3
-                                                            Rectangle { width: 5; height: 5; radius: 2.5; color: "#ff5f56" }
-                                                            Rectangle { width: 5; height: 5; radius: 2.5; color: "#ffbd2e" }
-                                                            Rectangle { width: 5; height: 5; radius: 2.5; color: "#27c93f" }
+                                                        Rectangle {
+                                                            anchors.left: parent.left
+                                                            anchors.leftMargin: 8
+                                                            anchors.verticalCenter: parent.verticalCenter
+                                                            width: 24; height: 4; radius: 2
+                                                            color: "#383844"
                                                         }
                                                     }
 
@@ -1261,10 +1484,13 @@ FloatingWindow {
                                                     border.width: 1.5
 
                                                     Rectangle {
-                                                        visible: Services.Config && Services.Config.themeMode === "dark"
                                                         anchors.centerIn: parent
                                                         width: 6; height: 6; radius: 3
                                                         color: Services.Theme.accent
+                                                        scale: (Services.Config && Services.Config.themeMode === "dark") ? 1.0 : 0.0
+                                                        opacity: (Services.Config && Services.Config.themeMode === "dark") ? 1.0 : 0.0
+                                                        Behavior on scale { NumberAnimation { duration: 240; easing.type: Easing.OutBack; easing.overshoot: 1.5 } }
+                                                        Behavior on opacity { NumberAnimation { duration: 180 } }
                                                     }
                                                 }
 
@@ -1315,6 +1541,8 @@ FloatingWindow {
                                                 required property var modelData
                                                 width: 32; height: 32
                                                 readonly property bool isCur: Services.Config && Services.Config.accentName === modelData.name
+                                                scale: isCur ? 1.14 : (dotMouse.pressed ? 0.92 : (dotMouse.containsMouse ? 1.08 : 1.0))
+                                                Behavior on scale { NumberAnimation { duration: 220; easing.type: Easing.OutBack; easing.overshoot: 1.55 } }
 
                                                 // Concentric Selection Ring
                                                 Rectangle {
@@ -1424,6 +1652,8 @@ FloatingWindow {
                                                     border.color: isCur ? Services.Theme.accent : (wCardMouse.containsMouse ? Services.Theme.borderHighlight : Services.Theme.border)
                                                     border.width: isCur ? 2 : 1
                                                     color: Services.Theme.bgDeep
+                                                    scale: isCur ? 1.03 : (wCardMouse.pressed ? 0.96 : (wCardMouse.containsMouse ? 1.02 : 1.0))
+                                                    Behavior on scale { NumberAnimation { duration: 200; easing.type: Easing.OutBack; easing.overshoot: 1.35 } }
 
                                                     Image {
                                                         anchors.fill: parent
@@ -1505,6 +1735,8 @@ FloatingWindow {
                                         color: addWpMouse.containsMouse ? Qt.rgba(1, 1, 1, 0.08) : Services.Theme.bgElevated
                                         border.color: Services.Theme.border
                                         border.width: 1
+                                        scale: addWpMouse.pressed ? 0.95 : (addWpMouse.containsMouse ? 1.03 : 1.0)
+                                        Behavior on scale { NumberAnimation { duration: 180; easing.type: Easing.OutBack; easing.overshoot: 1.3 } }
 
                                         Text {
                                             id: addBtnText
