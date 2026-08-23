@@ -49,11 +49,31 @@ Singleton {
         selectPlayer(list[prevIdx])
     }
 
+    function fmtTime(sec) {
+        const s = Math.max(0, Math.floor(sec ?? 0))
+        return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0")
+    }
+
+    Timer {
+        id: posHeartbeatTimer
+        interval: 250
+        repeat: true
+        running: (root.activePlayer !== null) && (root.activePlayer.isPlaying ?? false)
+        onTriggered: {
+            if (root.activePlayer && (root.activePlayer.isPlaying ?? false)) {
+                root.activePlayer.positionChanged()
+            }
+        }
+    }
+
     Component.onCompleted: pickActive()
 
     Connections {
         target: Mpris.players
-        function onValuesChanged() { root.pickActive() }
+        function onValuesChanged() { 
+            root.pickActive()
+            if (root.activePlayer) root.activePlayer.positionChanged()
+        }
     }
 
     Instantiator {
@@ -61,8 +81,18 @@ Singleton {
         delegate: Connections {
             required property var modelData
             target: modelData
-            function onIsPlayingChanged() { root.pickActive() }
-            function onTrackTitleChanged() { root.pickActive() }
+            function onIsPlayingChanged() { 
+                root.pickActive()
+                if (modelData) modelData.positionChanged()
+            }
+            function onTrackTitleChanged() { 
+                root.pickActive()
+                if (modelData) modelData.positionChanged()
+            }
+            function onPlaybackStateChanged() {
+                root.pickActive()
+                if (modelData) modelData.positionChanged()
+            }
         }
     }
 }

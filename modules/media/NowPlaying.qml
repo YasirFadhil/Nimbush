@@ -25,10 +25,10 @@ Item {
     }
 
     Timer {
-        interval: 1000
+        interval: 500
         running: card.isPlaying
         repeat: true
-        onTriggered: card.player?.refreshPosition?.()
+        onTriggered: card.player?.positionChanged?.()
     }
 
     // ── Card ─────────────────────────────────────────────────────────
@@ -236,8 +236,10 @@ Item {
                     duration: card.player?.length ?? 0
                     onSeekRequested: (ratio) => {
                         const len = card.player?.length ?? 0
-                        if (len > 0 && (card.player?.canSeek ?? (card.player?.positionSupported ?? false)))
+                        if (len > 0 && card.player) {
                             card.player.position = ratio * len
+                            card.player.positionChanged()
+                        }
                     }
                 }
             }

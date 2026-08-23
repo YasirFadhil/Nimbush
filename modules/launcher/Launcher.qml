@@ -23,9 +23,31 @@ PanelWindow {
     // ── Mode detection ───────────────────────────────────────────────────
     readonly property bool isEmojiMode: searchField.text.startsWith(">E") || searchField.text.startsWith(">e")
     readonly property string emojiQuery: isEmojiMode ? searchField.text.substring(2).trim() : ""
+
+    readonly property bool isWallpaperMode: searchField.text.startsWith(">W") || searchField.text.startsWith(">w")
+    readonly property string wallpaperQuery: isWallpaperMode ? searchField.text.substring(2).trim().toLowerCase() : ""
+
+    readonly property bool isSettingsMode: {
+        const t = searchField.text.trim().toLowerCase()
+        return t === ">s" || t === ">setting" || t === ">settings" || t === ">config" || t === ">set"
+    }
+
+    readonly property bool hasQuery: searchField.text.trim().length > 0
+    readonly property bool isExpanded: isEmojiMode || isWallpaperMode || isSettingsMode || hasQuery
     property var emojiResults: []
     property int emojiCurrentIndex: 0
     readonly property int emojiColumns: 10
+
+    property int wallpaperCurrentIndex: 0
+    readonly property var wallpaperList: {
+        const all = (Services.Wallpaper && Services.Wallpaper.allWallpapers) ? Services.Wallpaper.allWallpapers : []
+        if (!isWallpaperMode || wallpaperQuery.length === 0) return all
+        return all.filter(w => {
+            const name = (w.name || "").toLowerCase()
+            const path = (w.path || "").toLowerCase()
+            return name.indexOf(wallpaperQuery) !== -1 || path.indexOf(wallpaperQuery) !== -1
+        })
+    }
 
     function show() {
         Services.OverlayManager.closeAllExcept(launcherWindow)
@@ -36,6 +58,7 @@ PanelWindow {
         searchField.text = ""
         emojiResults = []
         emojiCurrentIndex = 0
+        wallpaperCurrentIndex = 0
         searchField.forceActiveFocus()
         resultList.currentIndex = 0
         if (resultList.count > 0) {
@@ -73,59 +96,58 @@ PanelWindow {
         anchors.verticalCenterOffset: launcherWindow.isOpen ? -40 : -20
 
         Behavior on anchors.verticalCenterOffset {
-            NumberAnimation { duration: 240; easing.type: Easing.OutCubic }
+            NumberAnimation { duration: 200; easing.type: Easing.OutCubic }
         }
 
-        width: launcherWindow.isEmojiMode ? 560 : 520
-        height: launcherWindow.isEmojiMode 
-            ? (launcherWindow.isOpen ? 460 : 64) 
-            : (searchField.text.length > 0 ? Math.min(listCol.implicitHeight, 460) : 64)
+        width: launcherWindow.isWallpaperMode ? 620 : (launcherWindow.isEmojiMode ? 560 : 540)
+        height: launcherWindow.isExpanded ? 460 : 58
+        clip: true
 
         Behavior on width {
-            NumberAnimation { duration: 220; easing.type: Easing.OutCubic }
+            NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
         }
         Behavior on height {
-            NumberAnimation { duration: 220; easing.type: Easing.OutCubic }
+            NumberAnimation { duration: 200; easing.type: Easing.OutCubic }
         }
 
         radius: 16
         color: Services.Theme.surface
-        border.color: launcherWindow.isEmojiMode ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.4) : Services.Theme.border
+        border.color: (launcherWindow.isEmojiMode || launcherWindow.isWallpaperMode) ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.4) : Services.Theme.border
         border.width: 1
 
         opacity: launcherWindow.isOpen ? 1 : 0
-        scale: launcherWindow.isOpen ? 1 : 0.96
+        scale: launcherWindow.isOpen ? 1 : 0.97
 
         Behavior on opacity {
-            NumberAnimation { duration: 200; easing.type: Easing.OutCubic }
+            NumberAnimation { duration: 160; easing.type: Easing.OutCubic }
         }
         Behavior on scale {
-            NumberAnimation { duration: 240; easing.type: Easing.OutCubic }
+            NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
         }
         Behavior on border.color {
-            ColorAnimation { duration: 250; easing.type: Easing.OutCubic }
+            ColorAnimation { duration: 200; easing.type: Easing.OutCubic }
         }
 
         MouseArea { anchors.fill: parent }
 
         ColumnLayout {
             id: listCol
-            anchors { left: parent.left; right: parent.right; top: parent.top }
+            anchors.fill: parent
             spacing: 0
 
             // ── Search Bar ────────────────────────────────────────────
             RowLayout {
                 Layout.fillWidth: true
+                Layout.preferredHeight: 58
                 Layout.leftMargin: 16; Layout.rightMargin: 16
-                Layout.topMargin: 14; Layout.bottomMargin: 12
                 spacing: 10
 
                 Text {
                     text: Services.Icons.search
                     font.family: Services.Theme.fontSymbols
                     font.pixelSize: Services.Theme.fontSize2xl
-                    color: launcherWindow.isEmojiMode ? Services.Theme.accent : (searchField.activeFocus ? Services.Theme.accent : Services.Theme.textDisabled)
-                    Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                    color: (launcherWindow.isEmojiMode || launcherWindow.isWallpaperMode) ? Services.Theme.accent : (searchField.activeFocus ? Services.Theme.accent : Services.Theme.textDisabled)
+                    Behavior on color { ColorAnimation { duration: 200; easing.type: Easing.OutCubic } }
                 }
 
                 TextField {
@@ -135,7 +157,9 @@ PanelWindow {
                     color: Services.Theme.textPrimary
                     placeholderText: launcherWindow.isEmojiMode 
                         ? (launcherWindow.emojiQuery.length === 0 ? "Search 1,800+ emojis... (e.g. fire, cat, laugh, heart)" : "") 
-                        : "Search applications... (Type >E for emoji)"
+                        : (launcherWindow.isWallpaperMode
+                            ? (launcherWindow.wallpaperQuery.length === 0 ? "Select wallpaper... (↵ Apply, Esc Close)" : "")
+                            : "Search applications... (Type >E for emoji, >W for wallpaper)")
                     placeholderTextColor: Services.Theme.textDisabled
                     font.pixelSize: Services.Theme.fontSize3xl
                     leftPadding: 0
@@ -150,14 +174,69 @@ PanelWindow {
                             if (emojiGridView.count > 0) {
                                 emojiGridView.positionViewAtIndex(0, GridView.Beginning)
                             }
+                        } else if (launcherWindow.isWallpaperMode) {
+                            launcherWindow.wallpaperCurrentIndex = 0
+                            if (wallpaperGridView && wallpaperGridView.count > 0) {
+                                wallpaperGridView.positionViewAtIndex(0, GridView.Beginning)
+                            }
                         } else {
                             Services.Applications.query = text
                             resultList.currentIndex = 0
+                            if (resultList.count > 0) {
+                                resultList.positionViewAtIndex(0, ListView.Beginning)
+                            }
                         }
                     }
 
                     Keys.onPressed: (event) => {
-                        if (launcherWindow.isEmojiMode) {
+                        // Global Settings Shortcut: Ctrl+, or Ctrl+S or Alt+S
+                        if ((event.modifiers & Qt.ControlModifier && (event.key === Qt.Key_Comma || event.key === Qt.Key_S)) ||
+                            (event.modifiers & Qt.AltModifier && event.key === Qt.Key_S)) {
+                            launcherWindow.hide()
+                            Services.OverlayManager.openSettings(0)
+                            event.accepted = true
+                            return
+                        }
+
+                        if (launcherWindow.isSettingsMode && (event.key === Qt.Key_Return || event.key === Qt.Key_Enter)) {
+                            launcherWindow.hide()
+                            Services.OverlayManager.openSettings(0)
+                            event.accepted = true
+                            return
+                        }
+
+                        if (launcherWindow.isWallpaperMode) {
+                            const wList = launcherWindow.wallpaperList
+                            const count = wList ? wList.length : 0
+                            if (event.key === Qt.Key_Right) {
+                                launcherWindow.wallpaperCurrentIndex = Math.min(launcherWindow.wallpaperCurrentIndex + 1, count - 1)
+                                if (wallpaperGridView) wallpaperGridView.positionViewAtIndex(launcherWindow.wallpaperCurrentIndex, GridView.Contain)
+                                event.accepted = true
+                            } else if (event.key === Qt.Key_Left) {
+                                launcherWindow.wallpaperCurrentIndex = Math.max(launcherWindow.wallpaperCurrentIndex - 1, 0)
+                                if (wallpaperGridView) wallpaperGridView.positionViewAtIndex(launcherWindow.wallpaperCurrentIndex, GridView.Contain)
+                                event.accepted = true
+                            } else if (event.key === Qt.Key_Down) {
+                                launcherWindow.wallpaperCurrentIndex = Math.min(launcherWindow.wallpaperCurrentIndex + 3, count - 1)
+                                if (wallpaperGridView) wallpaperGridView.positionViewAtIndex(launcherWindow.wallpaperCurrentIndex, GridView.Contain)
+                                event.accepted = true
+                            } else if (event.key === Qt.Key_Up) {
+                                launcherWindow.wallpaperCurrentIndex = Math.max(launcherWindow.wallpaperCurrentIndex - 3, 0)
+                                if (wallpaperGridView) wallpaperGridView.positionViewAtIndex(launcherWindow.wallpaperCurrentIndex, GridView.Contain)
+                                event.accepted = true
+                            } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+                                if (wList && wList.length > launcherWindow.wallpaperCurrentIndex) {
+                                    const item = wList[launcherWindow.wallpaperCurrentIndex]
+                                    if (item && item.path && Services.Wallpaper) {
+                                        Services.Wallpaper.setWallpaper(item.path)
+                                        launcherWindow.hide()
+                                    }
+                                }
+                                event.accepted = true
+                            } else if (event.key === Qt.Key_Escape) {
+                                launcherWindow.hide(); event.accepted = true
+                            }
+                        } else if (launcherWindow.isEmojiMode) {
                             const count = launcherWindow.emojiResults ? launcherWindow.emojiResults.length : 0
                             if (event.key === Qt.Key_Right) {
                                 launcherWindow.emojiCurrentIndex = Math.min(launcherWindow.emojiCurrentIndex + 1, count - 1)
@@ -190,21 +269,78 @@ PanelWindow {
                         } else {
                             if (event.key === Qt.Key_Down) {
                                 resultList.currentIndex = Math.min(resultList.currentIndex + 1, resultList.count - 1)
+                                resultList.positionViewAtIndex(resultList.currentIndex, ListView.Contain)
                                 event.accepted = true
                             } else if (event.key === Qt.Key_Up) {
                                 resultList.currentIndex = Math.max(resultList.currentIndex - 1, 0)
+                                resultList.positionViewAtIndex(resultList.currentIndex, ListView.Contain)
+                                event.accepted = true
+                            } else if (event.key === Qt.Key_PageDown) {
+                                resultList.currentIndex = Math.min(resultList.currentIndex + 5, resultList.count - 1)
+                                resultList.positionViewAtIndex(resultList.currentIndex, ListView.Contain)
+                                event.accepted = true
+                            } else if (event.key === Qt.Key_PageUp) {
+                                resultList.currentIndex = Math.max(resultList.currentIndex - 5, 0)
+                                resultList.positionViewAtIndex(resultList.currentIndex, ListView.Contain)
                                 event.accepted = true
                             } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
                                 const apps = resultList.model
                                 if (apps && apps.length > resultList.currentIndex) {
                                     const app = apps[resultList.currentIndex]
-                                    if (app) { app.execute(); launcherWindow.hide() }
+                                    if (app) {
+                                        launcherWindow.hide()
+                                        if (typeof app.execute === "function") {
+                                            app.execute()
+                                        }
+                                    }
                                 }
                                 event.accepted = true
                             } else if (event.key === Qt.Key_Escape) {
                                 launcherWindow.hide(); event.accepted = true
                             }
                         }
+                    }
+                }
+
+                // Settings Mode Badge
+                Rectangle {
+                    radius: 6
+                    color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.15)
+                    border.color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.4)
+                    border.width: 1
+                    implicitWidth: settingsBadgeText.implicitWidth + 12
+                    implicitHeight: 22
+                    visible: launcherWindow.isSettingsMode
+                    Layout.alignment: Qt.AlignVCenter
+
+                    Text {
+                        id: settingsBadgeText
+                        anchors.centerIn: parent
+                        text: "SETTINGS"
+                        color: Services.Theme.accent
+                        font.pixelSize: Services.Theme.fontSizeXs
+                        font.weight: Font.Bold
+                    }
+                }
+
+                // Wallpaper Mode Badge
+                Rectangle {
+                    radius: 6
+                    color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.15)
+                    border.color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.4)
+                    border.width: 1
+                    implicitWidth: wallpaperBadgeText.implicitWidth + 12
+                    implicitHeight: 22
+                    visible: launcherWindow.isWallpaperMode
+                    Layout.alignment: Qt.AlignVCenter
+
+                    Text {
+                        id: wallpaperBadgeText
+                        anchors.centerIn: parent
+                        text: "WALLPAPER"
+                        color: Services.Theme.accent
+                        font.pixelSize: Services.Theme.fontSizeXs
+                        font.weight: Font.Bold
                     }
                 }
 
@@ -229,23 +365,91 @@ PanelWindow {
                     }
                 }
 
-                // Helper Hint when search field is empty
-                Rectangle {
-                    radius: 6
-                    color: Qt.rgba(255, 255, 255, 0.04)
-                    border.color: Services.Theme.borderSubtle
-                    border.width: 1
-                    implicitWidth: hintBadgeText.implicitWidth + 10
-                    implicitHeight: 20
-                    visible: !launcherWindow.isEmojiMode && searchField.text.length === 0
+                // Helper Hints when search field is empty
+                RowLayout {
+                    spacing: 6
+                    visible: !launcherWindow.isEmojiMode && !launcherWindow.isWallpaperMode && !launcherWindow.isSettingsMode && searchField.text.length === 0
                     Layout.alignment: Qt.AlignVCenter
 
-                    Text {
-                        id: hintBadgeText
-                        anchors.centerIn: parent
-                        text: ">E for Emoji"
-                        color: Services.Theme.textDisabled
-                        font.pixelSize: Services.Theme.fontSizeXs
+                    Rectangle {
+                        radius: 6
+                        color: Qt.rgba(255, 255, 255, 0.04)
+                        border.color: Services.Theme.borderSubtle
+                        border.width: 1
+                        implicitWidth: emojiHintText.implicitWidth + 10
+                        implicitHeight: 20
+
+                        Text {
+                            id: emojiHintText
+                            anchors.centerIn: parent
+                            text: ">E Emoji"
+                            color: Services.Theme.textDisabled
+                            font.pixelSize: Services.Theme.fontSizeXs
+                        }
+
+                        MouseArea {
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: {
+                                searchField.text = ">E "
+                                searchField.forceActiveFocus()
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        radius: 6
+                        color: Qt.rgba(255, 255, 255, 0.04)
+                        border.color: Services.Theme.borderSubtle
+                        border.width: 1
+                        implicitWidth: wallHintText.implicitWidth + 10
+                        implicitHeight: 20
+
+                        Text {
+                            id: wallHintText
+                            anchors.centerIn: parent
+                            text: ">W Wallpaper"
+                            color: Services.Theme.textDisabled
+                            font.pixelSize: Services.Theme.fontSizeXs
+                        }
+
+                        MouseArea {
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: {
+                                searchField.text = ">W "
+                                searchField.forceActiveFocus()
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        radius: 6
+                        color: Qt.rgba(255, 255, 255, 0.04)
+                        border.color: Services.Theme.borderSubtle
+                        border.width: 1
+                        implicitWidth: settingsHintText.implicitWidth + 10
+                        implicitHeight: 20
+
+                        Text {
+                            id: settingsHintText
+                            anchors.centerIn: parent
+                            text: ">S Settings"
+                            color: Services.Theme.textDisabled
+                            font.pixelSize: Services.Theme.fontSizeXs
+                        }
+
+                        MouseArea {
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: {
+                                launcherWindow.hide()
+                                Services.OverlayManager.openSettings(0)
+                            }
+                        }
                     }
                 }
 
@@ -268,6 +472,34 @@ PanelWindow {
                         }
                     }
                 }
+
+                // Dedicated Quick Settings Button
+                Rectangle {
+                    width: 26; height: 26; radius: 6
+                    color: settingsBtnMouse.containsMouse ? Services.Theme.surfaceVariant : "transparent"
+                    Layout.alignment: Qt.AlignVCenter
+                    Behavior on color { ColorAnimation { duration: 150; easing.type: Easing.OutCubic } }
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: Services.Icons.settings
+                        font.family: Services.Theme.fontSymbols
+                        font.pixelSize: Services.Theme.fontSizeMd
+                        color: settingsBtnMouse.containsMouse ? Services.Theme.accent : Services.Theme.textDisabled
+                        Behavior on color { ColorAnimation { duration: 150; easing.type: Easing.OutCubic } }
+                    }
+
+                    MouseArea {
+                        id: settingsBtnMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            launcherWindow.hide()
+                            Services.OverlayManager.openSettings(0)
+                        }
+                    }
+                }
             }
 
             // Hairline divider
@@ -275,10 +507,9 @@ PanelWindow {
                 Layout.fillWidth: true
                 height: 1
                 color: Services.Theme.border
-                opacity: (searchField.text.length > 0 || launcherWindow.isEmojiMode) ? 0.6 : 0
-
+                opacity: launcherWindow.isExpanded ? 0.6 : 0
                 Behavior on opacity {
-                    NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
+                    NumberAnimation { duration: 150; easing.type: Easing.OutCubic }
                 }
             }
 
@@ -288,23 +519,18 @@ PanelWindow {
             ListView {
                 id: resultList
                 Layout.fillWidth: true
-                Layout.preferredHeight: (!launcherWindow.isEmojiMode && searchField.text.length > 0) ? (count > 0 ? Math.min(contentHeight, 380) : 100) : 0
-                opacity: (!launcherWindow.isEmojiMode && searchField.text.length > 0) ? 1 : 0
-                visible: opacity > 0
+                Layout.fillHeight: true
+                visible: !launcherWindow.isEmojiMode && !launcherWindow.isWallpaperMode && launcherWindow.isExpanded
                 clip: true
-                spacing: 4
+                spacing: 3
                 model: Services.Applications.filteredApps
                 currentIndex: 0
                 keyNavigationEnabled: false
-                topMargin: 4; bottomMargin: 4
+                reuseItems: true
+                cacheBuffer: 600
+                topMargin: 6; bottomMargin: 6
                 leftMargin: 8; rightMargin: 8
-
-                Behavior on Layout.preferredHeight {
-                    NumberAnimation { duration: 220; easing.type: Easing.OutCubic }
-                }
-                Behavior on opacity {
-                    NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
-                }
+                boundsBehavior: Flickable.StopAtBounds
 
                 delegate: Rectangle {
                     id: appItem
@@ -321,8 +547,8 @@ PanelWindow {
                         : (hoverArea.containsMouse ? Services.Theme.bgHover : "transparent")
                     border.color: isCurrent ? Services.Theme.accent : "transparent"
                     border.width: isCurrent ? 1 : 0
-                    Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
-                    Behavior on border.color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                    Behavior on color { ColorAnimation { duration: 120; easing.type: Easing.OutCubic } }
+                    Behavior on border.color { ColorAnimation { duration: 120; easing.type: Easing.OutCubic } }
 
                     RowLayout {
                         anchors.fill: parent
@@ -381,7 +607,7 @@ PanelWindow {
                                 font.weight: appItem.index === resultList.currentIndex ? Font.Medium : Font.Normal
                                 elide: Text.ElideRight
                                 Layout.fillWidth: true
-                                Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                                Behavior on color { ColorAnimation { duration: 120; easing.type: Easing.OutCubic } }
                             }
 
                             Text {
@@ -399,14 +625,17 @@ PanelWindow {
                         id: hoverArea
                         anchors.fill: parent
                         hoverEnabled: true
-                        onEntered: {
+                        cursorShape: Qt.PointingHandCursor
+                        onPositionChanged: {
                             if (resultList.currentIndex !== appItem.index) {
                                 resultList.currentIndex = appItem.index
                             }
                         }
                         onClicked: {
-                            appItem.modelData.execute()
                             launcherWindow.hide()
+                            if (typeof appItem.modelData.execute === "function") {
+                                appItem.modelData.execute()
+                            }
                         }
                     }
                 }
@@ -438,23 +667,297 @@ PanelWindow {
                 }
             }
 
+            // Bottom Action Strip for App Mode
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 34
+                color: Services.Theme.bgDeep
+                radius: 12
+                border.width: 0
+                visible: !launcherWindow.isEmojiMode && !launcherWindow.isWallpaperMode && launcherWindow.isExpanded
+
+                RowLayout {
+                    anchors.fill: parent
+                    anchors.leftMargin: 14; anchors.rightMargin: 14
+                    spacing: 12
+
+                    // App count info
+                    Text {
+                        text: {
+                            const count = Services.Applications.filteredApps ? Services.Applications.filteredApps.length : 0
+                            return count + " application" + (count === 1 ? "" : "s")
+                        }
+                        color: Services.Theme.textDisabled
+                        font.pixelSize: Services.Theme.fontSizeSm
+                    }
+
+                    Item { Layout.fillWidth: true }
+
+                    // Navigation Hints
+                    RowLayout {
+                        spacing: 10
+
+                        RowLayout {
+                            spacing: 4
+                            Text {
+                                text: "↑↓"
+                                color: Services.Theme.textSecondary
+                                font.pixelSize: Services.Theme.fontSizeXs
+                                font.family: Services.Theme.fontMono
+                            }
+                            Text {
+                                text: "Navigate"
+                                color: Services.Theme.textDisabled
+                                font.pixelSize: Services.Theme.fontSizeXs
+                            }
+                        }
+
+                        RowLayout {
+                            spacing: 4
+                            Text {
+                                text: "↵"
+                                color: Services.Theme.accent
+                                font.pixelSize: Services.Theme.fontSizeSm
+                                font.bold: true
+                            }
+                            Text {
+                                text: "Launch"
+                                color: Services.Theme.textDisabled
+                                font.pixelSize: Services.Theme.fontSizeXs
+                            }
+                        }
+
+                        RowLayout {
+                            spacing: 4
+                            Text {
+                                text: "Ctrl+,"
+                                color: Services.Theme.textSecondary
+                                font.pixelSize: Services.Theme.fontSizeXs
+                                font.family: Services.Theme.fontMono
+                            }
+                            Text {
+                                text: "Settings"
+                                color: Services.Theme.textDisabled
+                                font.pixelSize: Services.Theme.fontSizeXs
+                            }
+                        }
+
+                        RowLayout {
+                            spacing: 4
+                            Text {
+                                text: "Esc"
+                                color: Services.Theme.textSecondary
+                                font.pixelSize: Services.Theme.fontSizeXs
+                                font.family: Services.Theme.fontMono
+                            }
+                            Text {
+                                text: "Close"
+                                color: Services.Theme.textDisabled
+                                font.pixelSize: Services.Theme.fontSizeXs
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ═════════════════════════════════════════════════════════════════
+            // ── WALLPAPER SELECTOR GRID VIEW (>W Mode) ────────────────────────
+            // ═════════════════════════════════════════════════════════════════
+            ColumnLayout {
+                id: wallpaperContainer
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                visible: launcherWindow.isWallpaperMode
+                spacing: 0
+
+                GridView {
+                    id: wallpaperGridView
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    clip: true
+                    boundsBehavior: Flickable.StopAtBounds
+                    cacheBuffer: 800
+                    cellWidth: (wallpaperGridView.width - 24) / 3
+                    cellHeight: 110
+                    topMargin: 8; bottomMargin: 8
+                    leftMargin: 12; rightMargin: 12
+
+                    model: launcherWindow.wallpaperList
+                    currentIndex: launcherWindow.wallpaperCurrentIndex
+
+                    delegate: Item {
+                        id: wallCell
+                        required property var modelData
+                        required property int index
+
+                        width: wallpaperGridView.cellWidth
+                        height: wallpaperGridView.cellHeight
+
+                        readonly property bool isSelected: wallCell.index === launcherWindow.wallpaperCurrentIndex
+                        readonly property bool isActiveWall: Services.Wallpaper && Services.Wallpaper.currentWallpaper === wallCell.modelData.path
+
+                        Rectangle {
+                            anchors.fill: parent
+                            anchors.margins: 4
+                            radius: 10
+                            color: Services.Theme.bgElevated
+                            border.color: wallCell.isSelected 
+                                ? Services.Theme.accent 
+                                : (isActiveWall ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.5) : (wallMouse.containsMouse ? Services.Theme.border : Services.Theme.borderSubtle))
+                            border.width: wallCell.isSelected ? 2 : (isActiveWall ? 1.5 : 1)
+                            clip: true
+
+                            Behavior on border.color { ColorAnimation { duration: 120; easing.type: Easing.OutCubic } }
+
+                            Image {
+                                anchors.fill: parent
+                                source: wallCell.modelData.path ? ("file://" + wallCell.modelData.path) : ""
+                                fillMode: Image.PreserveAspectCrop
+                                asynchronous: true
+                                cache: true
+                                sourceSize: Qt.size(180, 120)
+                                opacity: wallMouse.containsMouse || wallCell.isSelected ? 1.0 : 0.85
+                            }
+
+                            // Dark gradient bottom overlay for label
+                            Rectangle {
+                                anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom
+                                height: 26
+                                color: Qt.rgba(0, 0, 0, 0.65)
+
+                                RowLayout {
+                                    anchors.fill: parent
+                                    anchors.leftMargin: 8; anchors.rightMargin: 8
+                                    spacing: 4
+
+                                    Text {
+                                        Layout.fillWidth: true
+                                        text: wallCell.modelData.name || "Wallpaper"
+                                        color: Services.Theme.white
+                                        font.pixelSize: 10
+                                        font.bold: wallCell.isSelected || isActiveWall
+                                        elide: Text.ElideRight
+                                    }
+
+                                    Text {
+                                        visible: isActiveWall
+                                        text: "✓"
+                                        color: Services.Theme.accent
+                                        font.pixelSize: 11
+                                        font.bold: true
+                                    }
+                                }
+                            }
+                        }
+
+                        MouseArea {
+                            id: wallMouse
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onEntered: launcherWindow.wallpaperCurrentIndex = wallCell.index
+                            onClicked: {
+                                if (wallCell.modelData && wallCell.modelData.path && Services.Wallpaper) {
+                                    Services.Wallpaper.setWallpaper(wallCell.modelData.path)
+                                    launcherWindow.hide()
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Divider
+                Rectangle {
+                    Layout.fillWidth: true
+                    height: 1
+                    color: Services.Theme.borderSubtle
+                }
+
+                // Bottom strip for Wallpaper Mode
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 38
+                    color: Services.Theme.bgDeep
+                    radius: 12
+
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.leftMargin: 14; anchors.rightMargin: 14
+                        spacing: 10
+
+                        Text {
+                            text: "Wallpapers (" + (launcherWindow.wallpaperList ? launcherWindow.wallpaperList.length : 0) + ")"
+                            color: Services.Theme.textDisabled
+                            font.pixelSize: Services.Theme.fontSizeSm
+                        }
+
+                        Item { Layout.fillWidth: true }
+
+                        // Add custom wallpaper button
+                        Rectangle {
+                            radius: 6
+                            color: addWallMouse.containsMouse ? Services.Theme.surfaceVariant : Qt.rgba(255, 255, 255, 0.06)
+                            border.color: Services.Theme.borderSubtle
+                            border.width: 1
+                            implicitWidth: addWallText.implicitWidth + 14
+                            implicitHeight: 24
+
+                            RowLayout {
+                                anchors.centerIn: parent
+                                spacing: 4
+                                Text {
+                                    text: "+"
+                                    color: Services.Theme.accent
+                                    font.pixelSize: 12
+                                    font.bold: true
+                                }
+                                Text {
+                                    id: addWallText
+                                    text: "Add Wallpaper"
+                                    color: Services.Theme.textPrimary
+                                    font.pixelSize: Services.Theme.fontSizeXs
+                                }
+                            }
+
+                            MouseArea {
+                                id: addWallMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: {
+                                    launcherWindow.hide()
+                                    if (Services.Wallpaper) Services.Wallpaper.pickCustomWallpaper()
+                                }
+                            }
+                        }
+
+                        RowLayout {
+                            spacing: 4
+                            Text {
+                                text: "↵"
+                                color: Services.Theme.accent
+                                font.pixelSize: Services.Theme.fontSizeSm
+                                font.bold: true
+                            }
+                            Text {
+                                text: "Apply"
+                                color: Services.Theme.textDisabled
+                                font.pixelSize: Services.Theme.fontSizeXs
+                            }
+                        }
+                    }
+                }
+            }
+
             // ═════════════════════════════════════════════════════════════════
             // ── EMOJI PICKER GRID VIEW (>E Mode) ──────────────────────────────
             // ═════════════════════════════════════════════════════════════════
             ColumnLayout {
                 id: emojiContainer
                 Layout.fillWidth: true
-                Layout.preferredHeight: launcherWindow.isEmojiMode ? 388 : 0
-                opacity: launcherWindow.isEmojiMode ? 1 : 0
-                visible: opacity > 0
+                Layout.fillHeight: true
+                visible: launcherWindow.isEmojiMode
                 spacing: 0
-
-                Behavior on Layout.preferredHeight {
-                    NumberAnimation { duration: 220; easing.type: Easing.OutCubic }
-                }
-                Behavior on opacity {
-                    NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
-                }
 
                 // Emoji Grid
                 GridView {

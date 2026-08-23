@@ -56,6 +56,19 @@ Scope {
     readonly property bool isPlaying: player?.isPlaying ?? false
     readonly property int notifCount: Services.Notifications.historyList ? Services.Notifications.historyList.count : 0
 
+    function fmtTime(sec) {
+        const s = Math.max(0, Math.floor(sec ?? 0))
+        return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0")
+    }
+
+    Timer {
+        id: lockMprisTimer
+        interval: 500
+        running: root.isLocked && root.isPlaying
+        repeat: true
+        onTriggered: root.player?.positionChanged?.()
+    }
+
     Timer {
         id: revealTimer
         interval: 50
@@ -1840,6 +1853,21 @@ Scope {
                                                 radius: 1.5
                                                 color: Services.Theme.accent
                                                 width: Math.max(3, Math.min(parent.width, ((root.player?.position ?? 0) / Math.max(1, root.player?.length ?? 1)) * parent.width))
+                                                Behavior on width { NumberAnimation { duration: 250; easing.type: Easing.Linear } }
+                                            }
+
+                                            MouseArea {
+                                                anchors.fill: parent
+                                                anchors.margins: -4
+                                                hoverEnabled: true
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: (mouse) => {
+                                                    const len = root.player?.length ?? 0
+                                                    if (len > 0 && root.player) {
+                                                        root.player.position = Math.max(0, Math.min(1, mouse.x / width)) * len
+                                                        root.player.positionChanged()
+                                                    }
+                                                }
                                             }
                                         }
                                     }
@@ -2224,19 +2252,56 @@ Scope {
                                     }
                                 }
 
-                                // Playback Progress Bar (if length > 0)
-                                Rectangle {
+                                // Playback Progress Bar & Timers (if length > 0)
+                                ColumnLayout {
                                     visible: (root.player?.length ?? 0) > 0
                                     Layout.fillWidth: true
-                                    height: 4
-                                    radius: 2
-                                    color: Services.Theme.bgHover
+                                    spacing: 4
+
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        Text {
+                                            text: root.fmtTime(root.player?.position ?? 0)
+                                            color: Services.Theme.textDisabled
+                                            font.pixelSize: 9
+                                            font.family: Services.Theme.fontMono
+                                        }
+                                        Item { Layout.fillWidth: true }
+                                        Text {
+                                            text: root.fmtTime(root.player?.length ?? 0)
+                                            color: Services.Theme.textDisabled
+                                            font.pixelSize: 9
+                                            font.family: Services.Theme.fontMono
+                                        }
+                                    }
 
                                     Rectangle {
-                                        height: parent.height
+                                        Layout.fillWidth: true
+                                        height: 4
                                         radius: 2
-                                        color: Services.Theme.accent
-                                        width: Math.max(4, Math.min(parent.width, ((root.player?.position ?? 0) / Math.max(1, root.player?.length ?? 1)) * parent.width))
+                                        color: Services.Theme.bgHover
+
+                                        Rectangle {
+                                            height: parent.height
+                                            radius: 2
+                                            color: Services.Theme.accent
+                                            width: Math.max(4, Math.min(parent.width, ((root.player?.position ?? 0) / Math.max(1, root.player?.length ?? 1)) * parent.width))
+                                            Behavior on width { NumberAnimation { duration: 250; easing.type: Easing.Linear } }
+                                        }
+
+                                        MouseArea {
+                                            anchors.fill: parent
+                                            anchors.margins: -4
+                                            hoverEnabled: true
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: (mouse) => {
+                                                const len = root.player?.length ?? 0
+                                                if (len > 0 && root.player) {
+                                                    root.player.position = Math.max(0, Math.min(1, mouse.x / width)) * len
+                                                    root.player.positionChanged()
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             }

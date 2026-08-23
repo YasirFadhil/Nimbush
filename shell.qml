@@ -38,8 +38,46 @@ ShellRoot {
     VolumeModule.Volume { id: volumeWindow }
     CalendarModule.Calendar {}
     LockscreenModule.Lockscreen { id: lockscreenWindow }
-    SettingsModule.Settings { id: settingsWindow }
     WelcomeModule.Welcome { id: welcomeWindow }
+
+    Loader {
+        id: settingsLoader
+        active: false
+        sourceComponent: SettingsModule.Settings {
+            onVisibleChanged: {
+                if (!visible) settingsLoader.active = false
+            }
+        }
+    }
+
+    QtObject {
+        id: settingsWindow
+        readonly property bool visible: settingsLoader.active && settingsLoader.item && settingsLoader.item.visible
+
+        function show(tabIndex) {
+            if (!settingsLoader.active) {
+                settingsLoader.active = true
+            }
+            if (settingsLoader.item) {
+                settingsLoader.item.show(tabIndex)
+            }
+        }
+
+        function hide() {
+            if (settingsLoader.item) {
+                settingsLoader.item.hide()
+            }
+            settingsLoader.active = false
+        }
+
+        function toggle() {
+            if (settingsLoader.active && settingsLoader.item && settingsLoader.item.visible) {
+                hide()
+            } else {
+                show()
+            }
+        }
+    }
 
 
     Connections {
@@ -47,7 +85,7 @@ ShellRoot {
         function onLauncherToggleRequested() { launcherWindow.toggle() }
         function onDashboardToggleRequested() { dashboardWindow.toggle() }
         function onSettingsToggleRequested() { settingsWindow.toggle() }
-        function onSettingsShowRequested() { settingsWindow.show() }
+        function onSettingsShowRequested(tabIndex) { settingsWindow.show(tabIndex) }
         function onWelcomeToggleRequested() { welcomeWindow.toggle() }
         function onWelcomeShowRequested() { welcomeWindow.show() }
     }
@@ -148,8 +186,8 @@ ShellRoot {
     IpcHandler {
         target: "settings"
         function toggle(): void { if (!Services.OverlayManager.isLocked) settingsWindow.toggle() }
-        function show():   void { if (!Services.OverlayManager.isLocked) settingsWindow.show() }
-        function hide():   void { settingsWindow.hide() }
+        function show(): void { if (!Services.OverlayManager.isLocked) settingsWindow.show() }
+        function hide(): void { settingsWindow.hide() }
     }
 
     // ── Welcome Setup Wizard ─────────────────────────────────────────────────
