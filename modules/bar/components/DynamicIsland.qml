@@ -528,7 +528,7 @@ Item {
     readonly property bool showCollapsedText: !lockBlocked && (notifActive || mediaPlaying)
     readonly property int calculatedCollapsedWidth: {
         if (showCollapsedText || (mediaStopping && !mediaIconTransformed)) {
-            const extraPadding = (mediaPlaying && !expanded) ? 72 : 52
+            const extraPadding = mediaPlaying ? 72 : 52
             return Math.min(220, Math.max(140, collapsedText.implicitWidth + extraPadding))
         }
         return 140
@@ -565,6 +565,7 @@ Item {
     }
 
     function pulse() {
+        if (pinned) return
         autoExpanded = true
         autoCollapseTimer.restart()
     }
@@ -674,6 +675,7 @@ Item {
         }
     }
 
+    // ── Seamless Adaptive Morphing Capsule Island ──
     Rectangle {
         id: island
         z: 2
@@ -681,17 +683,42 @@ Item {
         y: root.isBottom ? (parent.height - height - 6) : 6
         clip: true
 
+        // Direct Reactive Dimensions adapting to content type
         width: root.expanded ? root.calculatedExpandedWidth : root.calculatedCollapsedWidth
         height: root.expanded ? root.calculatedExpandedHeight : root.collapsedHeight
-        radius: root.expanded ? Services.Theme.radiusLg : (height / 2)
+
+        radius: (root.sysHudActive || !root.expanded) ? (height / 2) : Services.Theme.radiusLg
+
         color: Services.Theme.bgPure
         border.color: root.isCritical ? Services.Theme.danger : (root.expanded ? Services.Theme.borderHighlight : Services.Theme.borderSubtle)
         border.width: root.isCritical ? 1.5 : 1
 
-        Behavior on width  { NumberAnimation { duration: 380; easing.type: Easing.OutExpo } }
-        Behavior on height { NumberAnimation { duration: 380; easing.type: Easing.OutExpo } }
-        Behavior on radius { NumberAnimation { duration: 380; easing.type: Easing.OutExpo } }
-        Behavior on border.color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+        // Seamless, Continuous Fluid Morphing (Zero delay, zero hitching, pure iOS ease)
+        Behavior on width {
+            NumberAnimation {
+                duration: 380
+                easing.type: Easing.OutExpo
+            }
+        }
+        Behavior on height {
+            NumberAnimation {
+                duration: 380
+                easing.type: Easing.OutExpo
+            }
+        }
+        Behavior on radius {
+            enabled: !root.sysHudActive && root.expanded
+            NumberAnimation {
+                duration: 280
+                easing.type: Easing.OutCubic
+            }
+        }
+        Behavior on border.color {
+            ColorAnimation {
+                duration: 250
+                easing.type: Easing.OutCubic
+            }
+        }
 
         MouseArea {
             id: islandMouseArea
