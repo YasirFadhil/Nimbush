@@ -480,12 +480,12 @@ FloatingWindow {
                     }
                 }
 
-                // macOS Tahoe Liquid Glass Knob
+                // macOS Tahoe Liquid Glass Knob (Enlarged 40x26px Liquid Drop)
                 Rectangle {
                     id: swThumb
                     readonly property bool isActive: swTrack.expansion > 0.01 || swDragArea.pressed || slideAndJiggle.running
-                    width: 20 + swTrack.expansion * 16
-                    height: 20 + swTrack.expansion * 4
+                    width: 20 + swTrack.expansion * 20
+                    height: 20 + swTrack.expansion * 6
                     radius: height / 2
                     anchors.verticalCenter: parent.verticalCenter
                     
@@ -502,12 +502,33 @@ FloatingWindow {
 
                     // Fluid Cross-Fade from White Porcelain (#ffffff) to Translucent Frosted Glass
                     color: Services.Theme.isDark 
-                        ? Qt.rgba(1.0, 1.0, 1.0, 1.0 - swTrack.expansion * 0.78)
-                        : Qt.rgba(1.0, 1.0, 1.0, 1.0 - swTrack.expansion * 0.35)
+                        ? Qt.rgba(1.0, 1.0, 1.0, 1.0 - swTrack.expansion * 0.70)
+                        : Qt.rgba(1.0, 1.0, 1.0, 1.0 - swTrack.expansion * 0.30)
                     border.color: swTrack.expansion > 0.01
-                        ? (Services.Theme.isDark ? Qt.rgba(255, 255, 255, 0.40) : Qt.rgba(255, 255, 255, 0.85))
+                        ? (Services.Theme.isDark ? Qt.rgba(255, 255, 255, 0.55) : Qt.rgba(255, 255, 255, 0.90))
                         : Qt.rgba(0, 0, 0, 0.08)
-                    border.width: 1
+                    border.width: swTrack.expansion > 0.01 ? 1.2 : 1
+
+                    // ── Optical Refraction Chamber (Pembiasan & Pembengkokan Pensil Dalam Air) ──
+                    Item {
+                        anchors.fill: parent
+                        anchors.margins: 1.5
+                        clip: true
+                        opacity: swTrack.expansion
+
+                        // Refracted Track Core (Bent upwards with convex lens curvature & optical shift)
+                        Rectangle {
+                            anchors.verticalCenter: parent.verticalCenter
+                            anchors.verticalCenterOffset: -2.2 // Optical Refraction Shift
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            anchors.margins: -1
+                            height: parent.height * 0.78
+                            radius: height / 2
+                            color: switchRoot.checked ? Services.Theme.accent : (Services.Theme.isDark ? "#3c3c4a" : "#d2d2da")
+                            opacity: 0.80
+                        }
+                    }
 
                     // Soft Inner Glass Refraction Bevel
                     Rectangle {
@@ -515,7 +536,7 @@ FloatingWindow {
                         anchors.margins: 1
                         radius: parent.radius - 1
                         color: "transparent"
-                        border.color: Services.Theme.isDark ? Qt.rgba(255, 255, 255, 0.16) : Qt.rgba(255, 255, 255, 0.35)
+                        border.color: Services.Theme.isDark ? Qt.rgba(255, 255, 255, 0.22) : Qt.rgba(255, 255, 255, 0.45)
                         border.width: 1
                         opacity: swTrack.expansion
                     }
@@ -532,13 +553,24 @@ FloatingWindow {
                         gradient: Gradient {
                             GradientStop { 
                                 position: 0.0
-                                color: Services.Theme.isDark ? Qt.rgba(255, 255, 255, 0.45) : Qt.rgba(255, 255, 255, 0.70)
+                                color: Services.Theme.isDark ? Qt.rgba(255, 255, 255, 0.55) : Qt.rgba(255, 255, 255, 0.80)
                             }
                             GradientStop { 
                                 position: 1.0
                                 color: "transparent"
                             }
                         }
+                    }
+
+                    // ── Background Optical Refraction Distortion Halo (Distorsi Latar Belakang) ──
+                    Rectangle {
+                        anchors.centerIn: parent
+                        width: parent.width + 4
+                        height: parent.height + 4
+                        radius: height / 2
+                        color: switchRoot.checked ? Services.Theme.accent : (Services.Theme.isDark ? "#4a4a5e" : "#c6c6d2")
+                        opacity: swTrack.expansion * 0.40
+                        z: -1
                     }
 
                     // Natural Soft Drop Shadow
@@ -548,9 +580,9 @@ FloatingWindow {
                         width: parent.width
                         height: parent.height
                         radius: parent.radius
-                        color: Qt.rgba(0, 0, 0, 0.18)
-                        opacity: 1.0 - swTrack.expansion
-                        z: -1
+                        color: Qt.rgba(0, 0, 0, 0.20)
+                        opacity: 1.0 - swTrack.expansion * 0.45
+                        z: -2
                     }
                 }
 
@@ -735,12 +767,12 @@ FloatingWindow {
                     }
                 }
 
-                // macOS Tahoe Liquid Glass Knob
+                // macOS Tahoe Liquid Glass Knob (Enlarged 40x26px Liquid Drop)
                 Rectangle {
                     id: knob
                     readonly property bool isActive: trackContainer.expansion > 0.01 || sDrag.pressed || sliderJiggleAnim.running
-                    width: 20 + trackContainer.expansion * 16
-                    height: 20 + trackContainer.expansion * 4
+                    width: 20 + trackContainer.expansion * 20
+                    height: 20 + trackContainer.expansion * 6
                     radius: height / 2
                     anchors.verticalCenter: trackGroove.verticalCenter
                     x: Math.max(-4, Math.min(trackContainer.width - width + 4, trackContainer.centerPos - width / 2 + trackContainer.rubberBandOffset))
@@ -756,12 +788,51 @@ FloatingWindow {
 
                     // Fluid Cross-Fade from White Porcelain (#ffffff) to Translucent Frosted Glass
                     color: Services.Theme.isDark 
-                        ? Qt.rgba(1.0, 1.0, 1.0, 1.0 - trackContainer.expansion * 0.78)
-                        : Qt.rgba(1.0, 1.0, 1.0, 1.0 - trackContainer.expansion * 0.35)
+                        ? Qt.rgba(1.0, 1.0, 1.0, 1.0 - trackContainer.expansion * 0.70)
+                        : Qt.rgba(1.0, 1.0, 1.0, 1.0 - trackContainer.expansion * 0.30)
                     border.color: trackContainer.expansion > 0.01
-                        ? (Services.Theme.isDark ? Qt.rgba(255, 255, 255, 0.40) : Qt.rgba(255, 255, 255, 0.85))
+                        ? (Services.Theme.isDark ? Qt.rgba(255, 255, 255, 0.55) : Qt.rgba(255, 255, 255, 0.90))
                         : Qt.rgba(0, 0, 0, 0.08)
-                    border.width: 1
+                    border.width: trackContainer.expansion > 0.01 ? 1.2 : 1
+
+                    // ── Optical Refraction Chamber (Pembiasan & Pembengkokan Pensil Dalam Air) ──
+                    Item {
+                        anchors.fill: parent
+                        anchors.margins: 1.5
+                        clip: true
+                        opacity: trackContainer.expansion
+
+                        // Refracted Active Accent Bar (Bent with upward curve & Magnified)
+                        Rectangle {
+                            anchors.verticalCenter: parent.verticalCenter
+                            anchors.verticalCenterOffset: -2.6
+                            anchors.left: parent.left
+                            anchors.leftMargin: -3
+                            width: parent.width / 2 + 3
+                            height: 8
+                            radius: 4
+                            rotation: -3.5 // Pronounced optical bending angle!
+                            transformOrigin: Item.Left
+                            color: Services.Theme.accent
+                            opacity: 0.90
+                        }
+
+                        // Refracted Inactive Groove (Bending symmetrically on the right side)
+                        Rectangle {
+                            anchors.verticalCenter: parent.verticalCenter
+                            anchors.verticalCenterOffset: -2.6
+                            anchors.left: parent.horizontalCenter
+                            anchors.leftMargin: -2
+                            anchors.right: parent.right
+                            anchors.rightMargin: -3
+                            height: 8
+                            radius: 4
+                            rotation: 3.5 // Symmetrical outward bending angle!
+                            transformOrigin: Item.Right
+                            color: Services.Theme.isDark ? "#3c3c4e" : "#c2c4ce"
+                            opacity: 0.72
+                        }
+                    }
 
                     // Soft Inner Glass Refraction Bevel
                     Rectangle {
@@ -769,7 +840,7 @@ FloatingWindow {
                         anchors.margins: 1
                         radius: parent.radius - 1
                         color: "transparent"
-                        border.color: Services.Theme.isDark ? Qt.rgba(255, 255, 255, 0.16) : Qt.rgba(255, 255, 255, 0.35)
+                        border.color: Services.Theme.isDark ? Qt.rgba(255, 255, 255, 0.22) : Qt.rgba(255, 255, 255, 0.45)
                         border.width: 1
                         opacity: trackContainer.expansion
                     }
@@ -786,13 +857,24 @@ FloatingWindow {
                         gradient: Gradient {
                             GradientStop { 
                                 position: 0.0
-                                color: Services.Theme.isDark ? Qt.rgba(255, 255, 255, 0.45) : Qt.rgba(255, 255, 255, 0.70)
+                                color: Services.Theme.isDark ? Qt.rgba(255, 255, 255, 0.55) : Qt.rgba(255, 255, 255, 0.80)
                             }
                             GradientStop { 
                                 position: 1.0
                                 color: "transparent"
                             }
                         }
+                    }
+
+                    // ── Background Optical Refraction Distortion Halo (Distorsi Groove Latar Belakang) ──
+                    Rectangle {
+                        anchors.centerIn: parent
+                        width: parent.width + 4
+                        height: parent.height + 4
+                        radius: height / 2
+                        color: Services.Theme.accent
+                        opacity: trackContainer.expansion * 0.35
+                        z: -1
                     }
 
                     // Natural Soft Drop Shadow
@@ -802,9 +884,9 @@ FloatingWindow {
                         width: parent.width
                         height: parent.height
                         radius: parent.radius
-                        color: Qt.rgba(0, 0, 0, 0.18)
-                        opacity: 1.0 - trackContainer.expansion
-                        z: -1
+                        color: Qt.rgba(0, 0, 0, 0.20)
+                        opacity: 1.0 - trackContainer.expansion * 0.45
+                        z: -2
                     }
                 }
 
