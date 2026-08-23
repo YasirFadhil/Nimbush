@@ -38,8 +38,46 @@ ShellRoot {
     VolumeModule.Volume { id: volumeWindow }
     CalendarModule.Calendar {}
     LockscreenModule.Lockscreen { id: lockscreenWindow }
-    SettingsModule.Settings { id: settingsWindow }
     WelcomeModule.Welcome { id: welcomeWindow }
+
+    Loader {
+        id: settingsLoader
+        active: false
+        sourceComponent: SettingsModule.Settings {
+            onVisibleChanged: {
+                if (!visible) settingsLoader.active = false
+            }
+        }
+    }
+
+    QtObject {
+        id: settingsWindow
+        readonly property bool visible: settingsLoader.active && settingsLoader.item && settingsLoader.item.visible
+
+        function show(tabIndex) {
+            if (!settingsLoader.active) {
+                settingsLoader.active = true
+            }
+            if (settingsLoader.item) {
+                settingsLoader.item.show(tabIndex)
+            }
+        }
+
+        function hide() {
+            if (settingsLoader.item) {
+                settingsLoader.item.hide()
+            }
+            settingsLoader.active = false
+        }
+
+        function toggle() {
+            if (settingsLoader.active && settingsLoader.item && settingsLoader.item.visible) {
+                hide()
+            } else {
+                show()
+            }
+        }
+    }
 
 
     Connections {
