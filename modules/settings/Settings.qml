@@ -18,6 +18,9 @@ FloatingWindow {
 
     property string overlayId: "settings"
     property int currentTab: 0
+    onCurrentTabChanged: {
+        if (contentFlick) contentFlick.contentY = 0
+    }
     property int compSubTab: 0
     property string keySearchQuery: ""
     property string keyCategory: "all"
@@ -376,12 +379,6 @@ FloatingWindow {
         property bool checked: false
         signal toggled(bool newState)
 
-        onCheckedChanged: {
-            if (!swTrack.isDragging) {
-                swTrack.knobX = switchRoot.checked ? swTrack.maxX : swTrack.minX
-            }
-        }
-
         Layout.fillWidth: true
         implicitHeight: Math.max(44, switchTextCol.implicitHeight + 16)
         radius: Services.Theme.radiusSm
@@ -426,31 +423,29 @@ FloatingWindow {
                 Layout.alignment: Qt.AlignVCenter
                 radius: 12
 
-                readonly property real minX: 2
-                readonly property real maxX: swTrack.width - 20 - 2
-                property real knobX: switchRoot.checked ? maxX : minX
-                property real dragX: 0
-                property bool isDragging: false
-                property real pressStartX: 0
-                property bool hasMoved: false
-
-                readonly property bool isOn: knobX > ((minX + maxX) / 2)
-
-                color: swTrack.isOn 
+                color: switchRoot.checked 
                     ? Services.Theme.accent 
                     : (swDragArea.containsMouse 
                         ? (Services.Theme.isDark ? "#40404c" : "#dadade") 
                         : (Services.Theme.isDark ? "#35353f" : "#e2e2e7"))
-                border.color: swTrack.isOn 
+                border.color: switchRoot.checked 
                     ? Services.Theme.accent 
                     : (Services.Theme.isDark ? "#4c4c5a" : "#ceced6")
                 border.width: 1
                 Behavior on color { ColorAnimation { duration: 180 } }
                 Behavior on border.color { ColorAnimation { duration: 180 } }
 
-                Behavior on knobX {
+                readonly property real minX: 2
+                readonly property real maxX: swTrack.width - 20 - 2
+                property real targetX: switchRoot.checked ? maxX : minX
+                property real dragX: 0
+                property bool isDragging: false
+                property real pressStartX: 0
+
+                Behavior on targetX {
                     enabled: !swTrack.isDragging
                     NumberAnimation {
+                        id: xAnim
                         duration: 220
                         easing.type: Easing.OutBack
                         easing.overshoot: 1.15
@@ -460,7 +455,7 @@ FloatingWindow {
                 // macOS Large Overflowing Liquid Glass Knob (Solid White Pill -> Large Overflowing Glass Lens)
                 Rectangle {
                     id: swThumb
-                    readonly property bool isActive: swDragArea.pressed
+                    readonly property bool isActive: swDragArea.pressed || xAnim.running
                     width: isActive ? (swTrack.isDragging ? 38 : 36) : 20
                     height: isActive ? 28 : 20
                     radius: height / 2
@@ -468,8 +463,8 @@ FloatingWindow {
                     
                     x: swTrack.isDragging
                         ? Math.max(-2, Math.min(swTrack.width - width + 2, swTrack.dragX))
-                        : (swTrack.knobX - (width - 20) / 2)
-                    
+                        : (swTrack.targetX - (width - 20) / 2)
+
                     // Normal: Solid White Porcelain Pill (#ffffff)
                     // Active/Press: Large Translucent Frosted Liquid Glass Lens
                     color: isActive 
@@ -482,16 +477,14 @@ FloatingWindow {
 
                     Behavior on width { 
                         NumberAnimation { 
-                            duration: 200
-                            easing.type: Easing.OutBack
-                            easing.overshoot: swThumb.isActive ? 1.12 : 1.25 
+                            duration: 140
+                            easing.type: Easing.OutCubic
                         } 
                     }
                     Behavior on height { 
                         NumberAnimation { 
-                            duration: 200
-                            easing.type: Easing.OutBack
-                            easing.overshoot: swThumb.isActive ? 1.10 : 1.20 
+                            duration: 140
+                            easing.type: Easing.OutCubic
                         } 
                     }
                     Behavior on color { ColorAnimation { duration: 160 } }
@@ -549,7 +542,7 @@ FloatingWindow {
                         radius: height / 2
                         color: swThumb.isActive ? Qt.rgba(0, 0, 0, 0.42) : Qt.rgba(0, 0, 0, 0.28)
                         Behavior on color { ColorAnimation { duration: 160 } }
-                        Behavior on anchors.verticalCenterOffset { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
+                        Behavior on anchors.verticalCenterOffset { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
                         z: -2
                     }
 
@@ -575,14 +568,12 @@ FloatingWindow {
 
                     onPressed: (mouse) => {
                         swTrack.pressStartX = mouse.x
-                        swTrack.hasMoved = false
                         swTrack.isDragging = false
                     }
 
                     onPositionChanged: (mouse) => {
                         if (!pressed) return
                         if (Math.abs(mouse.x - swTrack.pressStartX) > 4) {
-                            swTrack.hasMoved = true
                             swTrack.isDragging = true
                         }
                         if (swTrack.isDragging) {
@@ -592,26 +583,20 @@ FloatingWindow {
                     }
 
                     onReleased: (mouse) => {
-                        if (swTrack.hasMoved) {
-                            const midX = (swTrack.minX + swTrack.maxX) / 2
+                        if (swTrack.isDragging) {
+                            const midX = (swTrack.width - swThumb.width) / 2
                             const targetState = swThumb.x > midX
-                            swTrack.knobX = targetState ? swTrack.maxX : swTrack.minX
                             if (targetState !== switchRoot.checked) {
                                 switchRoot.toggled(targetState)
                             }
                         } else {
-                            const nextState = !switchRoot.checked
-                            swTrack.knobX = nextState ? swTrack.maxX : swTrack.minX
-                            switchRoot.toggled(nextState)
+                            switchRoot.toggled(!switchRoot.checked)
                         }
                         swTrack.isDragging = false
-                        swTrack.hasMoved = false
                     }
 
                     onCanceled: {
-                        swTrack.knobX = switchRoot.checked ? swTrack.maxX : swTrack.minX
                         swTrack.isDragging = false
-                        swTrack.hasMoved = false
                     }
                 }
             }
@@ -1234,23 +1219,22 @@ FloatingWindow {
                     id: contentFlick
                     anchors.fill: parent
                     anchors.margins: 18
-                    contentHeight: contentCol.implicitHeight + 28
+                    contentHeight: tabStack.implicitHeight + 28
                     contentWidth: width
                     clip: true
                     boundsBehavior: Flickable.StopAtBounds
 
                     ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
 
-                    ColumnLayout {
-                        id: contentCol
+                    StackLayout {
+                        id: tabStack
                         width: contentFlick.width - 10
-                        spacing: 16
+                        currentIndex: rootWindow.currentTab
 
                         // ═════════════════════════════════════════════
                         // TAB 0: APPEARANCE & THEMING (macOS STYLE)
                         // ═════════════════════════════════════════════
                         ColumnLayout {
-                            visible: rootWindow.currentTab === 0
                             Layout.fillWidth: true
                             spacing: 16
 
@@ -1658,8 +1642,10 @@ FloatingWindow {
                                                     Image {
                                                         anchors.fill: parent
                                                         source: modelData.path.startsWith("/") ? ("file://" + modelData.path) : modelData.path
+                                                        sourceSize: Qt.size(232, 152)
                                                         fillMode: Image.PreserveAspectCrop
                                                         asynchronous: true
+                                                        cache: true
                                                         smooth: true
                                                         opacity: isCur || wCardMouse.containsMouse ? 1.0 : 0.8
                                                     }
@@ -1828,7 +1814,6 @@ FloatingWindow {
                         // TAB 1: BAR & DYNAMIC ISLAND
                         // ═════════════════════════════════════════════
                         ColumnLayout {
-                            visible: rootWindow.currentTab === 1
                             Layout.fillWidth: true
                             spacing: 14
 
@@ -2017,7 +2002,6 @@ FloatingWindow {
                         // TAB 2: NOTIFICATIONS
                         // ═════════════════════════════════════════════
                         ColumnLayout {
-                            visible: rootWindow.currentTab === 2
                             Layout.fillWidth: true
                             spacing: 14
 
@@ -2120,7 +2104,6 @@ FloatingWindow {
                         // TAB 3: SOUND & AUDIO
                         // ═════════════════════════════════════════════
                         ColumnLayout {
-                            visible: rootWindow.currentTab === 3
                             Layout.fillWidth: true
                             spacing: 14
 
@@ -2195,7 +2178,6 @@ FloatingWindow {
                         // TAB 4: LOCKSCREEN & POWER
                         // ═════════════════════════════════════════════
                         ColumnLayout {
-                            visible: rootWindow.currentTab === 4
                             Layout.fillWidth: true
                             spacing: 14
 
@@ -2478,7 +2460,6 @@ FloatingWindow {
                         // TAB 5: COMPOSITOR & DISPLAYS
                         // ═════════════════════════════════════════════
                         ColumnLayout {
-                            visible: rootWindow.currentTab === 5
                             Layout.fillWidth: true
                             spacing: 12
 
@@ -3141,7 +3122,6 @@ FloatingWindow {
                         // TAB 6: KEYBINDINGS (LIVE FROM COMPOSITOR CONFIG)
                         // ═════════════════════════════════════════════
                         ColumnLayout {
-                            visible: rootWindow.currentTab === 6
                             Layout.fillWidth: true
                             spacing: 14
 
@@ -3744,7 +3724,6 @@ FloatingWindow {
                         // TAB 7: BACKUP & RESET
                         // ═════════════════════════════════════════════
                         ColumnLayout {
-                            visible: rootWindow.currentTab === 7
                             Layout.fillWidth: true
                             spacing: 14
 
@@ -3816,7 +3795,6 @@ FloatingWindow {
                         // TAB 8: ABOUT & SYSTEM INFORMATION
                         // ═════════════════════════════════════════════
                         ColumnLayout {
-                            visible: rootWindow.currentTab === 8
                             Layout.fillWidth: true
                             spacing: 14
 
