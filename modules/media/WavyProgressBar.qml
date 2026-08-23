@@ -22,18 +22,20 @@ Item {
     implicitWidth: 200
 
     onPositionChanged: {
-        livePosition = position
-        canvas.requestPaint()
+        if (!seekMouse.pressed) {
+            livePosition = position
+            canvas.requestPaint()
+        }
     }
 
     Timer {
         id: liveProgressTimer
-        interval: 200
+        interval: 100
         running: root.isPlaying && root.duration > 0 && root.visible
         repeat: true
         onTriggered: {
-            if (root.duration > 0 && root.livePosition < root.duration) {
-                root.livePosition = Math.min(root.duration, root.livePosition + 0.2)
+            if (!seekMouse.pressed && root.duration > 0 && root.livePosition < root.duration) {
+                root.livePosition = Math.min(root.duration, root.livePosition + 0.1)
                 canvas.requestPaint()
             }
         }

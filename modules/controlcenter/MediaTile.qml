@@ -27,6 +27,13 @@ Rectangle {
         return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0")
     }
 
+    Timer {
+        interval: 500
+        running: card.visible && card.isPlaying
+        repeat: true
+        onTriggered: card.player?.positionChanged?.()
+    }
+
     // ── Idle State (No Media Playing) ──
     RowLayout {
         anchors.fill: parent
@@ -233,8 +240,10 @@ Rectangle {
                     duration: card.player?.length ?? 0
                     onSeekRequested: (ratio) => {
                         const len = card.player?.length ?? 0
-                        if (len > 0 && (card.player?.canSeek ?? (card.player?.positionSupported ?? false)))
+                        if (len > 0 && card.player) {
                             card.player.position = ratio * len
+                            card.player.positionChanged()
+                        }
                     }
                 }
 

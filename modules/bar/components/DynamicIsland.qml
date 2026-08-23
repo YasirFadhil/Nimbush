@@ -603,10 +603,10 @@ Item {
 
     Timer {
         id: mprisRefreshTimer
-        interval: 1000
+        interval: 500
         running: root.mediaPlaying
         repeat: true
-        onTriggered: root.activePlayer?.refreshPosition?.()
+        onTriggered: root.activePlayer?.positionChanged?.()
     }
 
     Timer {
@@ -1661,8 +1661,10 @@ Item {
                     duration: root.activePlayer?.length ?? 0
                     onSeekRequested: (ratio) => {
                         const len = root.activePlayer?.length ?? 0
-                        if (len > 0 && (root.activePlayer?.canSeek ?? (root.activePlayer?.positionSupported ?? false)))
+                        if (len > 0 && root.activePlayer) {
                             root.activePlayer.position = ratio * len
+                            root.activePlayer.positionChanged()
+                        }
                     }
                 }
             }
