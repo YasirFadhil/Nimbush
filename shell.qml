@@ -17,8 +17,11 @@ import "modules/dashboard" as DashboardModule
 import "modules/wallpaper" as WallpaperModule
 import "modules/settings" as SettingsModule
 import "modules/welcome" as WelcomeModule
+import "modules/battery" as BatteryModule
+import "modules/volume" as VolumeModule
 
 ShellRoot {
+    // Native QML wallpaper layer (serves as wallpaper renderer and fallback for swww)
     WallpaperModule.Wallpaper {}
 
     Osd.Osd {}
@@ -31,6 +34,8 @@ ShellRoot {
     PowerMenu.PowerMenu { id: powerMenu }
     Bar.Bar {}
     ControlCenter.ControlCenter { id: controlCenter }
+    BatteryModule.Battery { id: batteryWindow }
+    VolumeModule.Volume { id: volumeWindow }
     CalendarModule.Calendar {}
     LockscreenModule.Lockscreen { id: lockscreenWindow }
     SettingsModule.Settings { id: settingsWindow }
@@ -61,6 +66,41 @@ ShellRoot {
         function toggle() { controlCenter.toggle() }
         function show()   { controlCenter.show() }
         function hide()   { controlCenter.hide() }
+    }
+
+    // ── Battery Panel ────────────────────────────────────────────────────────
+    IpcHandler {
+        target: "battery"
+        function toggle(): void { if (!Services.OverlayManager.isLocked) batteryWindow.toggle() }
+        function show():   void { if (!Services.OverlayManager.isLocked) batteryWindow.show() }
+        function hide():   void { batteryWindow.hide() }
+    }
+
+    // ── Volume Panel ─────────────────────────────────────────────────────────
+    IpcHandler {
+        target: "volume"
+        function toggle(): void { if (!Services.OverlayManager.isLocked) volumeWindow.toggle() }
+        function show():   void { if (!Services.OverlayManager.isLocked) volumeWindow.show() }
+        function hide():   void { volumeWindow.hide() }
+    }
+
+    // ── Calendar Panel ───────────────────────────────────────────────────────
+    IpcHandler {
+        target: "calendar"
+        function toggle(): void {
+            if (!Services.OverlayManager.isLocked) {
+                const newState = !Services.OverlayManager.calendarVisible
+                if (newState) Services.OverlayManager.closeAllExcept("calendar")
+                Services.OverlayManager.calendarVisible = newState
+            }
+        }
+        function show(): void {
+            if (!Services.OverlayManager.isLocked) {
+                Services.OverlayManager.closeAllExcept("calendar")
+                Services.OverlayManager.calendarVisible = true
+            }
+        }
+        function hide(): void { Services.OverlayManager.calendarVisible = false }
     }
 
     // ── Dashboard ────────────────────────────────────────────────────────────

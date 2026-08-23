@@ -131,6 +131,7 @@ PanelWindow {
             anchors.right: parent.right
             height: root.barHeight
             y: root.barYOffset
+            z: dynamicIsland.expanded ? 1 : 10
 
             RowLayout {
                 anchors.fill: parent
@@ -174,6 +175,7 @@ PanelWindow {
             visible: !root.showDynamicIsland && (Services.Config ? Services.Config.showClockTray : true)
             anchors.centerIn: barRow
             height: root.barHeight
+            z: 10
 
             Components.ClockCenter {
                 anchors.centerIn: parent
@@ -184,7 +186,7 @@ PanelWindow {
         Components.DynamicIsland {
             id: dynamicIsland
             anchors.fill: parent
-            z: 999
+            z: dynamicIsland.expanded ? 999 : 5
             visible: root.showDynamicIsland
         }
     }

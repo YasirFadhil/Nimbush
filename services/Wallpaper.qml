@@ -1,5 +1,6 @@
 pragma Singleton
 import QtQuick
+import QtQuick.Dialogs
 import Quickshell
 import Quickshell.Io
 import "." as Services
@@ -43,17 +44,21 @@ Singleton {
         return p.length > 0 ? p : (homeDir + "/.config/quickshell/scripts/xdg-file-picker.py")
     }
 
+    onCurrentWallpaperChanged: {
+        applyToSwww(currentWallpaper)
+    }
+
     Component.onCompleted: {
+        swwwDaemonProc.running = true
         updateAllList()
         loadConfigProc.running = true
-        killSwaybgProc.running = true
+        applyToSwww(currentWallpaper)
     }
 
     Connections {
         target: Services.Config
-        function onConfigChanged() {
-            root.handleThemeChange()
-        }
+        function onConfigChanged() { root.handleThemeChange() }
+        function onThemeModeChanged() { root.handleThemeChange() }
     }
 
     function handleThemeChange() {
@@ -69,6 +74,13 @@ Singleton {
             }
         }
         updateAllList()
+    }
+
+    function applyToSwww(filePath) {
+        if (!filePath) return
+        swwwProc.targetFile = filePath
+        swwwProc.running = false
+        swwwProc.running = true
     }
 
     function updateAllList() {
@@ -108,18 +120,68 @@ Singleton {
 
     property bool isPickingLockscreen: false
 
+    Process {
+        id: swwwDaemonProc
+        command: ["sh", "-c", "command -v swww-daemon >/dev/null 2>&1 && (pgrep -x swww-daemon >/dev/null || nohup swww-daemon >/dev/null 2>&1 &)"]
+    }
+
+    Process {
+        id: swwwProc
+        property string targetFile: ""
+        command: [
+            "sh", "-c",
+            "command -v swww >/dev/null 2>&1 && swww img \"$1\" --transition-type grow --transition-pos center --transition-duration 0.5 --transition-fps 60 --transition-bezier .25,1,.5,1",
+            "_", targetFile
+        ]
+    }
+
+    FileDialog {
+        id: nativeWallpaperDialog
+        title: "Select Wallpaper Image"
+        currentFolder: "file://" + root.homeDir + "/Pictures"
+        nameFilters: ["Image files (*.jpg *.jpeg *.png *.webp *.gif *.bmp *.svg *.avif)", "All files (*)"]
+        onAccepted: {
+            var urlStr = nativeWallpaperDialog.selectedFile.toString()
+            var pathStr = urlStr.startsWith("file://") ? urlStr.substring(7) : urlStr
+            if (pathStr.length > 0) {
+                if (root.isPickingLockscreen) {
+                    if (Services.Config) {
+                        Services.Config.setLockscreenCustomWallpaper(pathStr)
+                        Services.Config.setLockscreenWallpaperMode("custom")
+                    }
+                } else {
+                    root.addCustomWallpaper(pathStr)
+                }
+            }
+            root.isPicking = false
+            root.isPickingLockscreen = false
+        }
+        onRejected: {
+            root.isPicking = false
+            root.isPickingLockscreen = false
+        }
+    }
+
     function pickCustomWallpaper() {
-        if (isPicking) return
-        isPicking = true
-        pickerProc.running = false
-        pickerProc.running = true
+        root.isPicking = true
+        root.isPickingLockscreen = false
+        try {
+            nativeWallpaperDialog.open()
+        } catch (e) {
+            pickerProc.running = false
+            pickerProc.running = true
+        }
     }
 
     function pickLockscreenWallpaper() {
-        if (isPickingLockscreen) return
-        isPickingLockscreen = true
-        lockscreenPickerProc.running = false
-        lockscreenPickerProc.running = true
+        root.isPickingLockscreen = true
+        root.isPicking = false
+        try {
+            nativeWallpaperDialog.open()
+        } catch (e) {
+            lockscreenPickerProc.running = false
+            lockscreenPickerProc.running = true
+        }
     }
 
     function removeCustomWallpaper(filePath) {
@@ -165,20 +227,29 @@ Singleton {
         setWallpaper(filePath)
     }
 
-    function saveConfig() {
-        var data = {
-            currentWallpaper: currentWallpaper,
-            customWallpapers: customWallpapers
+    Timer {
+        id: saveDebounceTimer
+        interval: 350
+        repeat: false
+        onTriggered: {
+            var data = {
+                currentWallpaper: root.currentWallpaper,
+                customWallpapers: root.customWallpapers
+            }
+            var jsonStr = JSON.stringify(data, null, 2)
+            saveConfigProc.running = false
+            saveConfigProc.command = [
+                "sh", "-c",
+                "mkdir -p ~/.cache/quickshell && " +
+                "cat << 'EOF' > \"" + root.configPath + "\"\n" + jsonStr + "\nEOF\n" +
+                "(cat << 'EOF' > \"" + root.declConfigPath + "\"\n" + jsonStr + "\nEOF) 2>/dev/null || true"
+            ]
+            saveConfigProc.running = true
         }
-        var jsonStr = JSON.stringify(data, null, 2)
-        saveConfigProc.running = false
-        saveConfigProc.command = [
-            "sh", "-c",
-            "mkdir -p ~/.cache/quickshell && " +
-            "cat << 'EOF' > \"" + configPath + "\"\n" + jsonStr + "\nEOF\n" +
-            "(cat << 'EOF' > \"" + declConfigPath + "\"\n" + jsonStr + "\nEOF) 2>/dev/null || true"
-        ]
-        saveConfigProc.running = true
+    }
+
+    function saveConfig() {
+        saveDebounceTimer.restart()
     }
 
     Process {

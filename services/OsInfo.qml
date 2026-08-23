@@ -76,7 +76,7 @@ Singleton {
     }
 
     Process {
-        command: ["sh", "-c", "p=$(grep '^PRETTY_NAME=' /etc/os-release | cut -d= -f2 | tr -d '\"'); u=$(id -un); h=$(hostname); k=$(uname -r); s=$(basename \"$SHELL\"); echo \"$p|$u|$h|$k|$s\""]
+        command: ["sh", "-c", "p=$(grep '^PRETTY_NAME=' /etc/os-release | cut -d= -f2 | tr -d '\"'); u=$(id -un); h=$(uname -n); k=$(uname -r); s=$(basename \"$SHELL\"); echo \"$p|$u|$h|$k|$s\""]
         running: true
         stdout: SplitParser {
             onRead: data => {

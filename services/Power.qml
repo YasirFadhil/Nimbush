@@ -11,7 +11,7 @@ Singleton {
     property bool ready: false
     property bool charging: isChargingState(UPower.displayDevice.state)
     property real percentage: UPower.displayDevice.percentage
-    readonly property bool hasBattery: UPower.displayDevice.isPresent && !isNaN(percentage)
+    readonly property bool hasBattery: UPower.displayDevice.isPresent && !isNaN(percentage) && percentage > 0
     readonly property string stateString: {
         const st = UPower.displayDevice.state
         if (st === UPowerDeviceState.Charging) return "Charging"
@@ -20,8 +20,22 @@ Singleton {
         if (st === UPowerDeviceState.Empty) return "Empty"
         return "AC Power / Unknown"
     }
-    readonly property bool isWarning: !charging && ready && !isNaN(percentage) && (percentage * 100 <= (Services.Config ? Services.Config.batteryLowThreshold : 20))
-    readonly property bool isLow: !charging && ready && !isNaN(percentage) && (percentage * 100 <= 10)
+    readonly property bool isWarning: !charging && ready && hasBattery && !isNaN(percentage) && (percentage * 100 <= (Services.Config ? Services.Config.batteryLowThreshold : 20))
+    readonly property bool isLow: !charging && ready && hasBattery && !isNaN(percentage) && (percentage * 100 <= 10)
+
+    // Detailed Hardware Battery Metrics
+    property string timeRemaining: ""
+    property string timeType: "" // "until full" | "remaining" | ""
+    property string energyRate: ""
+    property string voltage: ""
+    property string health: ""
+    property string energyCurrent: ""
+    property string energyFull: ""
+    property string energyDesign: ""
+    property string chargeCycles: ""
+    property string vendor: ""
+    property string model: ""
+    property string technology: ""
 
     property bool warn20Sent: false
     property bool warn10Sent: false
@@ -29,6 +43,78 @@ Singleton {
 
     signal chargingStateChanged(bool charging, real percentage)
     signal batteryWarning(int level, string title, string message)
+
+    Process {
+        id: detailProc
+        command: [
+            "python3", "-c",
+            "import json, subprocess\n" +
+            "try:\n" +
+            "    dev = subprocess.check_output(['sh', '-c', 'upower -e | grep battery | head -n 1']).decode().strip()\n" +
+            "    if dev:\n" +
+            "        out = subprocess.check_output(['upower', '-i', dev]).decode()\n" +
+            "        d = {}\n" +
+            "        for l in out.splitlines():\n" +
+            "            if ':' in l:\n" +
+            "                k, v = l.split(':', 1)\n" +
+            "                d[k.strip()] = v.strip()\n" +
+            "        res = {\n" +
+            "            'state': d.get('state', ''),\n" +
+            "            'percentage': d.get('percentage', ''),\n" +
+            "            'timeToFull': d.get('time to full', ''),\n" +
+            "            'timeToEmpty': d.get('time to empty', ''),\n" +
+            "            'energyRate': d.get('energy-rate', ''),\n" +
+            "            'voltage': d.get('voltage', ''),\n" +
+            "            'capacity': d.get('capacity', ''),\n" +
+            "            'energy': d.get('energy', ''),\n" +
+            "            'energyFull': d.get('energy-full', ''),\n" +
+            "            'energyFullDesign': d.get('energy-full-design', ''),\n" +
+            "            'chargeCycles': d.get('charge-cycles', ''),\n" +
+            "            'vendor': d.get('vendor', ''),\n" +
+            "            'model': d.get('model', ''),\n" +
+            "            'technology': d.get('technology', ''),\n" +
+            "            'present': d.get('present', 'yes') == 'yes'\n" +
+            "        }\n" +
+            "        print(json.dumps(res))\n" +
+            "    else:\n" +
+            "        print('{}')\n" +
+            "except Exception as e:\n" +
+            "    print('{}')"
+        ]
+        stdout: SplitParser {
+            onRead: data => {
+                try {
+                    const parsed = JSON.parse(data.trim())
+                    if (parsed.percentage) {
+                        if (parsed.timeToFull) {
+                            root.timeRemaining = parsed.timeToFull
+                            root.timeType = "until full"
+                        } else if (parsed.timeToEmpty) {
+                            root.timeRemaining = parsed.timeToEmpty
+                            root.timeType = "remaining"
+                        } else {
+                            root.timeRemaining = ""
+                            root.timeType = ""
+                        }
+                        root.energyRate = parsed.energyRate || ""
+                        root.voltage = parsed.voltage || ""
+                        root.health = parsed.capacity || ""
+                        root.energyCurrent = parsed.energy || ""
+                        root.energyFull = parsed.energyFull || ""
+                        root.energyDesign = parsed.energyFullDesign || ""
+                        root.chargeCycles = parsed.chargeCycles || ""
+                        root.vendor = parsed.vendor || ""
+                        root.model = parsed.model || ""
+                        root.technology = parsed.technology || ""
+                    }
+                } catch(e) {}
+            }
+        }
+    }
+
+    function refreshDetails() {
+        if (!detailProc.running) detailProc.running = true
+    }
 
     function isChargingState(state) {
         return state === UPowerDeviceState.Charging || state === UPowerDeviceState.FullyCharged
@@ -50,15 +136,11 @@ Singleton {
 
     function checkBatteryWarnings() {
         if (Services.Config && !Services.Config.batteryShowWarnings) return
-        if (!ready || isNaN(percentage)) return
-        const pct = Math.round(percentage * 100)
+        if (!ready || !hasBattery || isNaN(percentage) || percentage <= 0) return
+        if (charging) return
 
-        if (charging) {
-            if (pct > 20) warn20Sent = false
-            if (pct > 10) warn10Sent = false
-            if (pct > 5) warn5Sent = false
-            return
-        }
+        const pct = Math.round(percentage * 100)
+        if (pct <= 0 || pct > 100) return
 
         if (pct > 20) {
             warn20Sent = false
@@ -71,29 +153,33 @@ Singleton {
             warn5Sent = false
         }
 
-        if (pct <= 5 && !warn5Sent) {
+        if (pct <= 5 && pct > 0 && !warn5Sent) {
             warn5Sent = true
             warn10Sent = true
             warn20Sent = true
-            sendNotification("Battery Critical (5%)", "Battery remaining: 5%! Device will shut down soon.", "critical", "battery-empty")
-            root.batteryWarning(5, "Battery Critical (5%)", "Battery remaining: 5%! Device will shut down soon.")
+            sendNotification("Battery Critical (5%)", "Battery remaining: " + pct + "%! Device will shut down soon.", "critical", "battery-empty")
+            root.batteryWarning(5, "Battery Critical (" + pct + "%)", "Battery remaining: " + pct + "%! Device will shut down soon.")
         } else if (pct <= 10 && pct > 5 && !warn10Sent) {
             warn10Sent = true
             warn20Sent = true
-            sendNotification("Battery Low (10%)", "Battery remaining: 10%! Please connect your charger.", "critical", "battery-caution")
-            root.batteryWarning(10, "Battery Low (10%)", "Battery remaining: 10%! Please connect your charger.")
-        } else if (pct <= 20 && pct > 10 && !warn20Sent) {
+            sendNotification("Battery Low (10%)", "Battery remaining: " + pct + "%! Please connect your charger.", "critical", "battery-caution")
+            root.batteryWarning(10, "Battery Low (" + pct + "%)", "Battery remaining: " + pct + "%! Please connect your charger.")
+        } else if (pct <= (Services.Config ? Services.Config.batteryLowThreshold : 20) && pct > 10 && !warn20Sent) {
             warn20Sent = true
-            sendNotification("Battery Warning (20%)", "Battery remaining: 20%. Consider connecting charger.", "critical", "battery-low")
-            root.batteryWarning(20, "Battery Warning (20%)", "Battery remaining: 20%. Consider connecting charger.")
+            sendNotification("Battery Warning (" + pct + "%)", "Battery remaining: " + pct + "%. Consider connecting charger.", "critical", "battery-low")
+            root.batteryWarning(20, "Battery Warning (" + pct + "%)", "Battery remaining: " + pct + "%. Consider connecting charger.")
         }
     }
 
-    onPercentageChanged: checkBatteryWarnings()
+    onPercentageChanged: {
+        checkBatteryWarnings()
+        refreshDetails()
+    }
 
     onChargingChanged: {
         if (!root.ready) return
         root.chargingStateChanged(root.charging, root.percentage)
+        refreshDetails()
         if (charging) {
             warn20Sent = false
             warn10Sent = false
@@ -103,15 +189,29 @@ Singleton {
         }
     }
 
-    Component.onCompleted: {
-        Qt.callLater(() => {
+    Timer {
+        id: detailPeriodicTimer
+        interval: 15000
+        running: true
+        repeat: true
+        triggeredOnStart: true
+        onTriggered: root.refreshDetails()
+    }
+
+    Timer {
+        id: readyTimer
+        interval: 3500
+        running: true
+        repeat: false
+        onTriggered: {
             root.ready = true
-            if (!isNaN(root.percentage)) {
+            root.refreshDetails()
+            if (root.hasBattery && !isNaN(root.percentage) && root.percentage > 0) {
                 const initialPct = Math.round(root.percentage * 100)
                 if (initialPct <= 20) root.warn20Sent = true
                 if (initialPct <= 10) root.warn10Sent = true
                 if (initialPct <= 5)  root.warn5Sent = true
             }
-        })
+        }
     }
 }

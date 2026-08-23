@@ -7,8 +7,8 @@ Singleton {
     id: root
 
     // ── Appearance Properties ────────────────────────────────────────────────
-    property string themeMode: "light"            // "dark" | "light" | "auto"
-    property string accentColor: "#2c2c2e"        // Hex string
+    property string themeMode: "dark"             // "dark" | "light" | "auto"
+    property string accentColor: "#d4d4d4"        // Hex string
     property string accentName: "Graphite"        // Human readable name
     property int cornerRadius: 16                 // 8 | 12 | 16 | 20 | 24
     property real uiScale: 1.0                    // 0.9 (compact) | 1.0 (normal) | 1.15 (large)
@@ -62,7 +62,12 @@ Singleton {
     // ── Lockscreen & System ──────────────────────────────────────────────────
     property string lockscreenClockStyle: "hero"  // "hero" | "modern" | "compact" | "minimal" | "vertical" | "typographic" | "radial" | "cyber"
     property string lockscreenAuthStyle: "pill"   // "pill" | "card"
-    property string lockscreenLayout: "center"    // "center" | "left" | "right"
+    property string lockscreenLayout: "default"   // "default" | "compact" | "minimal"
+    property string lockscreenAvatarShape: "circle" // "circle" | "squircle" | "rounded"
+    property bool lockscreenAvatarRing: true
+    property string lockscreenInputStyle: "pill"  // "pill" | "underline" | "box" | "dots"
+    property bool lockscreenShowAvatar: false
+    property bool lockscreenShowGreeting: false
     property bool lockscreenShowMedia: true
     property string lockscreenMediaStyle: "pill"  // "pill" | "card"
     property bool lockscreenShowWeather: true
@@ -83,6 +88,10 @@ Singleton {
     property int launcherMaxResults: 8
     property bool firstRunCompleted: false
     property int customSettingsVersion: 2
+
+    // ── Settings State Persistence ───────────────────────────────────────────
+    property int lastSettingsTab: 0
+    property int lastSettingsCompSubTab: 0
 
     // ── Status & Feedback ────────────────────────────────────────────────────
     property string lastBackupTime: ""
@@ -209,7 +218,18 @@ Singleton {
 
         if (data.lockscreenClockStyle !== undefined) lockscreenClockStyle = data.lockscreenClockStyle
         if (data.lockscreenAuthStyle !== undefined) lockscreenAuthStyle = data.lockscreenAuthStyle
-        if (data.lockscreenLayout !== undefined) lockscreenLayout = data.lockscreenLayout
+        if (data.lockscreenLayout !== undefined) {
+            if (data.lockscreenLayout === "compact" || data.lockscreenLayout === "minimal" || data.lockscreenLayout === "default") {
+                lockscreenLayout = data.lockscreenLayout
+            } else {
+                lockscreenLayout = "default"
+            }
+        }
+        if (data.lockscreenAvatarShape !== undefined) lockscreenAvatarShape = data.lockscreenAvatarShape
+        if (data.lockscreenAvatarRing !== undefined) lockscreenAvatarRing = Boolean(data.lockscreenAvatarRing)
+        if (data.lockscreenInputStyle !== undefined) lockscreenInputStyle = data.lockscreenInputStyle
+        if (data.lockscreenShowAvatar !== undefined) lockscreenShowAvatar = Boolean(data.lockscreenShowAvatar)
+        if (data.lockscreenShowGreeting !== undefined) lockscreenShowGreeting = Boolean(data.lockscreenShowGreeting)
         if (data.lockscreenShowMedia !== undefined) lockscreenShowMedia = Boolean(data.lockscreenShowMedia)
         if (data.lockscreenMediaStyle !== undefined) lockscreenMediaStyle = data.lockscreenMediaStyle
         if (data.lockscreenShowWeather !== undefined) lockscreenShowWeather = Boolean(data.lockscreenShowWeather)
@@ -230,11 +250,25 @@ Singleton {
         if (data.launcherMaxResults !== undefined) launcherMaxResults = Number(data.launcherMaxResults)
 
         if (data.firstRunCompleted !== undefined) firstRunCompleted = Boolean(data.firstRunCompleted)
+        if (data.lastSettingsTab !== undefined) lastSettingsTab = Number(data.lastSettingsTab)
+        if (data.lastSettingsCompSubTab !== undefined) lastSettingsCompSubTab = Number(data.lastSettingsCompSubTab)
         root.configChanged()
     }
 
-    function saveConfig() {
-        var data = {
+    Timer {
+        id: saveDebounceTimer
+        interval: 350
+        repeat: false
+        onTriggered: {
+            var data = root.serializeData()
+            var jsonStr = JSON.stringify(data, null, 2)
+            saveConfigProc.payload = jsonStr
+            saveConfigProc.running = true
+        }
+    }
+
+    function serializeData() {
+        return {
             themeMode: themeMode,
             accentColor: accentColor,
             accentName: accentName,
@@ -243,6 +277,9 @@ Singleton {
             uiScale: uiScale,
             fontFamily: fontFamily,
             glassOpacity: glassOpacity,
+
+            lastSettingsTab: lastSettingsTab,
+            lastSettingsCompSubTab: lastSettingsCompSubTab,
 
             barPosition: barPosition,
             barStyle: barStyle,
@@ -276,6 +313,11 @@ Singleton {
             lockscreenClockStyle: lockscreenClockStyle,
             lockscreenAuthStyle: lockscreenAuthStyle,
             lockscreenLayout: lockscreenLayout,
+            lockscreenAvatarShape: lockscreenAvatarShape,
+            lockscreenAvatarRing: lockscreenAvatarRing,
+            lockscreenInputStyle: lockscreenInputStyle,
+            lockscreenShowAvatar: lockscreenShowAvatar,
+            lockscreenShowGreeting: lockscreenShowGreeting,
             lockscreenShowMedia: lockscreenShowMedia,
             lockscreenMediaStyle: lockscreenMediaStyle,
             lockscreenShowWeather: lockscreenShowWeather,
@@ -298,9 +340,10 @@ Singleton {
             firstRunCompleted: firstRunCompleted,
             customSettingsVersion: customSettingsVersion
         }
-        var jsonStr = JSON.stringify(data, null, 2)
-        saveConfigProc.payload = jsonStr
-        saveConfigProc.running = true
+    }
+
+    function saveConfig() {
+        saveDebounceTimer.restart()
         root.configChanged()
     }
 
@@ -344,6 +387,12 @@ Singleton {
         notificationPosition = "top_right"
 
         lockscreenClockStyle = "hero"
+        lockscreenLayout = "default"
+        lockscreenAvatarShape = "circle"
+        lockscreenAvatarRing = true
+        lockscreenInputStyle = "pill"
+        lockscreenShowAvatar = true
+        lockscreenShowGreeting = true
         lockscreenShowMedia = true
         lockscreenMediaStyle = "pill"
         lockscreenShowWeather = true
@@ -410,6 +459,17 @@ Singleton {
                 }
             }
         }
+        root.configChanged()
+        saveConfig()
+    }
+
+    function setLastSettingsTab(tab) {
+        lastSettingsTab = tab
+        saveConfig()
+    }
+
+    function setLastSettingsCompSubTab(subTab) {
+        lastSettingsCompSubTab = subTab
         saveConfig()
     }
 
@@ -481,6 +541,11 @@ Singleton {
     function setLockscreenClockStyle(style) { lockscreenClockStyle = style; saveConfig() }
     function setLockscreenAuthStyle(style) { lockscreenAuthStyle = style; saveConfig() }
     function setLockscreenLayout(layout) { lockscreenLayout = layout; saveConfig() }
+    function setLockscreenAvatarShape(shape) { lockscreenAvatarShape = shape; saveConfig() }
+    function setLockscreenAvatarRing(val) { lockscreenAvatarRing = val; saveConfig() }
+    function setLockscreenInputStyle(style) { lockscreenInputStyle = style; saveConfig() }
+    function setLockscreenShowAvatar(val) { lockscreenShowAvatar = val; saveConfig() }
+    function setLockscreenShowGreeting(val) { lockscreenShowGreeting = val; saveConfig() }
     function setLockscreenShowMedia(val) { lockscreenShowMedia = val; saveConfig() }
     function setLockscreenMediaStyle(style) { lockscreenMediaStyle = style; saveConfig() }
     function setLockscreenShowWeather(val) { lockscreenShowWeather = val; saveConfig() }

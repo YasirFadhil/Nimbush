@@ -8,17 +8,28 @@ import "../../services" as Services
 PanelWindow {
     id: centerWin
     property string overlayId: "notifCenter"
+    readonly property bool isBottom: Services.Config ? (Services.Config.barPosition === "bottom") : false
+    readonly property int barTotalHeight: Services.Config ? (Services.Config.barStyle === "minimal" ? 30 : (Services.Config.barStyle === "unified" ? 38 : (Services.Config.barStyle === "floating" ? 46 : 36))) : 36
+
     anchors { top: true; bottom: true; left: true; right: true }
     color: "transparent"
     exclusiveZone: 0
     visible: Services.Notifications.centerVisible
     WlrLayershell.layer: WlrLayer.Top
     WlrLayershell.namespace: "quickshell:notifcenter"
-    WlrLayershell.keyboardFocus: WlrKeyboardFocus.OnDemand
+    WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
+
+    mask: Region {
+        Region {
+            x: 0
+            y: centerWin.isBottom ? 0 : centerWin.barTotalHeight
+            width: centerWin.width
+            height: centerWin.height - centerWin.barTotalHeight
+        }
+    }
 
     function hide() { Services.Notifications.centerVisible = false }
     function close() { hide() }
-    readonly property bool isBottom: Services.Config ? (Services.Config.barPosition === "bottom") : false
 
     Component.onCompleted: Services.OverlayManager.register(centerWin)
 
@@ -67,18 +78,27 @@ PanelWindow {
         return Qt.formatDateTime(d, "dd/MM hh:mm")
     }
 
-    // Group sequential notifications with same appName
+    // Group notifications by appName (ordered by most recent notification per app)
     property var groupedHistory: {
         const count = Services.Notifications.historyList.count
         const groups = []
-        let current = null
+        const appMap = {}
         for (let i = 0; i < count; i++) {
             const item = Services.Notifications.historyList.get(i)
-            if (current && current.appName === item.appName) {
-                current.items.push(item)
+            if (!item) continue
+            const app = item.appName || "Unknown"
+            if (appMap[app] !== undefined) {
+                const grp = groups[appMap[app]]
+                grp.items.push(item)
+                if (!grp.appIcon && item.appIcon) grp.appIcon = item.appIcon
             } else {
-                current = { appName: item.appName, appIcon: item.appIcon, items: [item] }
-                groups.push(current)
+                const grp = {
+                    appName: app,
+                    appIcon: item.appIcon || "",
+                    items: [item]
+                }
+                appMap[app] = groups.length
+                groups.push(grp)
             }
         }
         return groups
@@ -121,6 +141,7 @@ PanelWindow {
 
             // ── Header ──────────────────────────────────────────────
             RowLayout {
+                id: headerSection
                 Layout.fillWidth: true
                 Layout.topMargin: 14
                 Layout.bottomMargin: 12
@@ -173,7 +194,7 @@ PanelWindow {
                     border.color: Services.Notifications.doNotDisturb ? centerWin.t.danger : centerWin.t.border
                     border.width: 1
 
-                    Behavior on color { ColorAnimation { duration: 120 } }
+                    Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                     Text {
                         anchors.centerIn: parent
@@ -202,7 +223,7 @@ PanelWindow {
                     opacity: Services.Notifications.historyList.count > 0 ? 1 : 0.4
                     enabled: Services.Notifications.historyList.count > 0
 
-                    Behavior on color { ColorAnimation { duration: 120 } }
+                    Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                     Text {
                         anchors.centerIn: parent
@@ -237,12 +258,14 @@ PanelWindow {
                 id: historyView
                 Layout.fillWidth: true
                 Layout.fillHeight: true
+                Layout.bottomMargin: 12
                 clip: true
                 spacing: 8
-                topMargin: 10
-                bottomMargin: 12
+                topMargin: 8
+                bottomMargin: 6
                 leftMargin: 12
                 rightMargin: 12
+                boundsBehavior: Flickable.StopAtBounds
                 model: centerWin.groupedHistory
 
                 ScrollBar.vertical: ScrollBar {
@@ -255,7 +278,7 @@ PanelWindow {
                 }
 
                 displaced: Transition {
-                    NumberAnimation { properties: "y"; duration: 280; easing.type: Easing.OutCubic }
+                    NumberAnimation { properties: "y"; duration: 380; easing.type: Easing.OutExpo }
                 }
 
                 delegate: Rectangle {
@@ -271,14 +294,16 @@ PanelWindow {
                     property string activeReplyActionId: ""
 
                     property real expandProgress: expanded ? 1.0 : 0.0
-                    Behavior on expandProgress { NumberAnimation { duration: 320; easing.type: Easing.OutExpo } }
+                    Behavior on expandProgress { NumberAnimation { duration: 380; easing.type: Easing.OutExpo } }
 
                     width: historyView.width - 24
                     implicitHeight: cardContent.implicitHeight + 20
+                    height: implicitHeight
                     radius: 14
                     color: centerWin.t.surfaceVariant
                     border.color: isBatteryGroup ? centerWin.t.warning : (groupCard.isCritical ? centerWin.t.danger : centerWin.t.border)
                     border.width: 1
+                    clip: true
 
                     // Left strip for system warnings & critical alerts
                     Rectangle {
@@ -298,26 +323,34 @@ PanelWindow {
                         RowLayout {
                             id: headerRow
                             Layout.fillWidth: true
-                            spacing: 8
+                            spacing: 6
 
-                            // Expandable Header Info Zone (clickable if multi-item)
-                            MouseArea {
-                                id: headerClickArea
+                            // Expandable Header Pill (interactive button if multi-item)
+                            Rectangle {
+                                id: headerPill
                                 Layout.fillWidth: true
-                                Layout.preferredHeight: 26
-                                enabled: groupCard.isMulti
-                                hoverEnabled: groupCard.isMulti
-                                cursorShape: groupCard.isMulti ? Qt.PointingHandCursor : Qt.ArrowCursor
-                                onClicked: {
-                                    if (!groupCard.isMulti) return
-                                    const copy = Object.assign({}, centerWin.expandedGroups)
-                                    copy[groupCard.group.appName] = !groupCard.expanded
-                                    centerWin.expandedGroups = copy
+                                Layout.preferredHeight: 28
+                                radius: 8
+                                color: (headerMouse.containsMouse && groupCard.isMulti) ? centerWin.t.bgHover : "transparent"
+                                Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+
+                                MouseArea {
+                                    id: headerMouse
+                                    anchors.fill: parent
+                                    enabled: groupCard.isMulti
+                                    hoverEnabled: groupCard.isMulti
+                                    cursorShape: groupCard.isMulti ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                    onClicked: {
+                                        if (!groupCard.isMulti) return
+                                        const copy = Object.assign({}, centerWin.expandedGroups)
+                                        copy[groupCard.group.appName] = !groupCard.expanded
+                                        centerWin.expandedGroups = copy
+                                    }
                                 }
 
                                 RowLayout {
-                                    anchors.fill: parent
-                                    spacing: 8
+                                    anchors { fill: parent; leftMargin: 4; rightMargin: 4 }
+                                    spacing: 7
 
                                     // App Icon Squircle Container
                                     Item {
@@ -366,6 +399,7 @@ PanelWindow {
                                         color: centerWin.t.textPrimary
                                         font.pixelSize: 11
                                         font.bold: true
+                                        Layout.alignment: Qt.AlignVCenter
                                     }
 
                                     // System Warning Pill Tag (for Battery Warning)
@@ -377,6 +411,7 @@ PanelWindow {
                                         color: Qt.rgba(centerWin.t.warning.r, centerWin.t.warning.g, centerWin.t.warning.b, 0.2)
                                         border.color: centerWin.t.warning
                                         border.width: 1
+                                        Layout.alignment: Qt.AlignVCenter
 
                                         RowLayout {
                                             id: sysWarnTxt
@@ -394,29 +429,43 @@ PanelWindow {
                                         height: 18
                                         implicitWidth: badgeText.implicitWidth + 10
                                         radius: 9
-                                        color: Qt.rgba(centerWin.t.accent.r, centerWin.t.accent.g, centerWin.t.accent.b, 0.15)
-                                        border.color: Qt.rgba(centerWin.t.accent.r, centerWin.t.accent.g, centerWin.t.accent.b, 0.3)
+                                        color: groupCard.expanded
+                                            ? centerWin.t.accent
+                                            : Qt.rgba(centerWin.t.accent.r, centerWin.t.accent.g, centerWin.t.accent.b, 0.15)
+                                        border.color: groupCard.expanded
+                                            ? centerWin.t.accent
+                                            : Qt.rgba(centerWin.t.accent.r, centerWin.t.accent.g, centerWin.t.accent.b, 0.3)
                                         border.width: 1
+                                        Layout.alignment: Qt.AlignVCenter
+                                        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                                         Text {
                                             id: badgeText
                                             anchors.centerIn: parent
                                             text: groupCard.group.items.length
-                                            color: centerWin.t.accent
+                                            color: groupCard.expanded ? centerWin.t.bgOnAccent : centerWin.t.accent
                                             font.pixelSize: 10
                                             font.bold: true
+                                            Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                                         }
                                     }
 
                                     // Chevron expand/collapse icon (only if isMulti)
-                                    Text {
+                                    Item {
                                         visible: groupCard.isMulti
-                                        text: "󰅀"
-                                        color: centerWin.t.textDisabled
-                                        font.pixelSize: 12
+                                        Layout.preferredWidth: 14
+                                        Layout.preferredHeight: 14
                                         Layout.alignment: Qt.AlignVCenter
-                                        transformOrigin: Item.Center
-                                        rotation: -90 * (1.0 - groupCard.expandProgress)
+
+                                        Text {
+                                            anchors.centerIn: parent
+                                            text: "󰅀"
+                                            color: groupCard.expanded ? centerWin.t.accent : centerWin.t.textDisabled
+                                            font.pixelSize: 12
+                                            transformOrigin: Item.Center
+                                            rotation: -90 * (1.0 - groupCard.expandProgress)
+                                            Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                                        }
                                     }
 
                                     Item { Layout.fillWidth: true }
@@ -433,15 +482,15 @@ PanelWindow {
 
                             // Dismiss Group Button ×
                             Item {
-                                width: 20
-                                height: 20
+                                width: 22
+                                height: 22
                                 Layout.alignment: Qt.AlignVCenter
 
                                 Rectangle {
                                     anchors.fill: parent
-                                    radius: 5
+                                    radius: 6
                                     color: groupDismissBtn.containsMouse ? centerWin.t.bgHover : "transparent"
-                                    Behavior on color { ColorAnimation { duration: 80 } }
+                                    Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                                 }
                                 Text {
                                     anchors.centerIn: parent
@@ -545,7 +594,7 @@ PanelWindow {
                                                 anchors.fill: parent
                                                 radius: 5
                                                 color: pItemDismissBtn.containsMouse ? centerWin.t.bgHover : "transparent"
-                                                Behavior on color { ColorAnimation { duration: 80 } }
+                                                Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                                             }
                                             Text {
                                                 anchors.centerIn: parent
@@ -599,7 +648,7 @@ PanelWindow {
                                         border.width: 1
                                         implicitHeight: 24
                                         implicitWidth: pActLabel.implicitWidth + 16
-                                        Behavior on color { ColorAnimation { duration: 80 } }
+                                        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                                         Text {
                                             id: pActLabel
@@ -712,17 +761,29 @@ PanelWindow {
                                     // Send Button
                                     Rectangle {
                                         implicitHeight: 22
-                                        implicitWidth: pSendTxt.implicitWidth + 14
+                                        implicitWidth: pSendRow.implicitWidth + 16
                                         radius: 6
-                                        color: pSendMouse.containsMouse ? centerWin.t.textPrimary : centerWin.t.accent
+                                        color: pSendMouse.containsMouse ? Qt.lighter(centerWin.t.accent, 1.1) : centerWin.t.accent
 
-                                        Text {
-                                            id: pSendTxt
+                                        RowLayout {
+                                            id: pSendRow
                                             anchors.centerIn: parent
-                                            text: "Send 󰏲"
-                                            color: Services.Theme.bgDeep
-                                            font.pixelSize: 10
-                                            font.bold: true
+                                            spacing: 4
+
+                                            Text {
+                                                text: "Send"
+                                                font.family: Services.Theme.fontMono
+                                                color: Services.Theme.bgOnAccent
+                                                font.pixelSize: 10
+                                                font.bold: true
+                                            }
+
+                                            Text {
+                                                text: Services.Icons.send || "\uf1d8"
+                                                font.family: Services.Theme.fontSymbols
+                                                color: Services.Theme.bgOnAccent
+                                                font.pixelSize: 10
+                                            }
                                         }
 
                                         MouseArea {
@@ -732,13 +793,12 @@ PanelWindow {
                                             cursorShape: Qt.PointingHandCursor
                                             onClicked: {
                                                 if (pReplyInput.text.trim().length > 0) {
-                                                    Services.Notifications.invokeAction(
-                                                        groupCard.primaryItem.notifId,
-                                                        groupCard.activeReplyActionId,
-                                                        pReplyInput.text.trim()
-                                                    )
+                                                    const msg = pReplyInput.text.trim()
+                                                    const nId = groupCard.primaryItem.notifId
+                                                    const aId = groupCard.activeReplyActionId
                                                     groupCard.replyMode = false
                                                     pReplyInput.text = ""
+                                                    Services.Notifications.invokeAction(nId, aId, msg)
                                                 }
                                             }
                                         }
@@ -747,25 +807,31 @@ PanelWindow {
                             }
                         }
 
-                        // ── 3. MULTI-ITEM STACK: COLLAPSED PEEK PILL (Only when isMulti) ──
+                        // ── 3. MULTI-ITEM ACCORDION (Peek Pill + Thread History) ──
                         Item {
-                            id: stackPeekWrapper
-                            visible: groupCard.isMulti && groupCard.expandProgress < 0.99
+                            id: groupAccordion
+                            visible: groupCard.isMulti
                             Layout.fillWidth: true
-                            implicitHeight: Math.round((1.0 - groupCard.expandProgress) * (stackPeekPill.implicitHeight + 2))
+                            Layout.preferredHeight: implicitHeight
+                            implicitHeight: Math.round(
+                                (1.0 - groupCard.expandProgress) * (stackPeekPill.implicitHeight) +
+                                groupCard.expandProgress * olderItemsCol.implicitHeight
+                            )
                             clip: true
-                            opacity: Math.max(0.0, 1.0 - groupCard.expandProgress * 2.5)
-                            transform: Translate { y: -groupCard.expandProgress * 6 }
 
+                            // 1. Collapsed Peek Pill (smooth crossfade out)
                             Rectangle {
                                 id: stackPeekPill
                                 anchors { left: parent.left; right: parent.right; top: parent.top }
-                                implicitHeight: stackPeekContent.implicitHeight + 8
+                                height: stackPeekContent.implicitHeight + 8
+                                implicitHeight: height
                                 radius: 8
                                 color: peekMouse.containsMouse ? centerWin.t.bgHover : centerWin.t.surface
                                 border.color: centerWin.t.border
                                 border.width: 1
-                                Behavior on color { ColorAnimation { duration: 80 } }
+                                opacity: Math.max(0.0, 1.0 - groupCard.expandProgress * 2.2)
+                                visible: opacity > 0.01
+                                Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                                 RowLayout {
                                     id: stackPeekContent
@@ -779,18 +845,27 @@ PanelWindow {
                                     }
 
                                     Text {
-                                        text: (groupCard.group && groupCard.group.items && groupCard.group.items.length > 1 && groupCard.group.items[1]) ? (groupCard.group.items[1].summary || "") : ""
+                                        text: (groupCard.group && groupCard.group.items && groupCard.group.items.length > 1 && groupCard.group.items[1]) ? (groupCard.group.items[1].summary || groupCard.group.items[1].body || "") : ""
                                         color: centerWin.t.textSecondary
                                         font.pixelSize: 11
                                         elide: Text.ElideRight
                                         Layout.fillWidth: true
                                     }
 
-                                    Text {
-                                        text: "+" + (groupCard.group.items.length - 1) + " older"
-                                        color: centerWin.t.accent
-                                        font.pixelSize: 10
-                                        font.bold: true
+                                    Rectangle {
+                                        implicitWidth: olderCountTxt.implicitWidth + 8
+                                        implicitHeight: 16
+                                        radius: 4
+                                        color: Qt.rgba(centerWin.t.accent.r, centerWin.t.accent.g, centerWin.t.accent.b, 0.12)
+
+                                        Text {
+                                            id: olderCountTxt
+                                            anchors.centerIn: parent
+                                            text: "+" + (groupCard.group.items.length - 1) + " older"
+                                            color: centerWin.t.accent
+                                            font.pixelSize: 10
+                                            font.bold: true
+                                        }
                                     }
                                 }
 
@@ -806,22 +881,15 @@ PanelWindow {
                                     }
                                 }
                             }
-                        }
 
-                        // ── 4. MULTI-ITEM STACK: EXPANDED OLDER ITEMS ACCORDION ─────
-                        Item {
-                            id: olderItemsWrapper
-                            visible: groupCard.isMulti && groupCard.expandProgress > 0.01
-                            Layout.fillWidth: true
-                            implicitHeight: Math.round(groupCard.expandProgress * olderItemsCol.implicitHeight)
-                            clip: true
-                            opacity: Math.max(0.0, (groupCard.expandProgress - 0.15) / 0.85)
-                            transform: Translate { y: (1.0 - groupCard.expandProgress) * -10 }
-
+                            // 2. Expanded Older Items Thread (smooth slide & fade in)
                             ColumnLayout {
                                 id: olderItemsCol
                                 anchors { left: parent.left; right: parent.right; top: parent.top }
                                 spacing: 6
+                                opacity: Math.min(1.0, Math.max(0.0, (groupCard.expandProgress - 0.15) / 0.85))
+                                visible: groupCard.expandProgress > 0.02
+                                transform: Translate { y: (1.0 - groupCard.expandProgress) * -12 }
 
                                 Repeater {
                                     model: groupCard.isMulti ? groupCard.group.items.slice(1) : []
@@ -843,8 +911,8 @@ PanelWindow {
                                             height: 1
                                             color: centerWin.t.border
                                             opacity: 0.65
-                                            Layout.topMargin: 2
-                                            Layout.bottomMargin: 2
+                                            Layout.topMargin: 4
+                                            Layout.bottomMargin: 4
                                         }
 
                                         RowLayout {
@@ -904,7 +972,7 @@ PanelWindow {
                                                             anchors.fill: parent
                                                             radius: 5
                                                             color: olderDismissBtn.containsMouse ? centerWin.t.bgHover : "transparent"
-                                                            Behavior on color { ColorAnimation { duration: 80 } }
+                                                            Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                                                         }
                                                         Text {
                                                             anchors.centerIn: parent
@@ -956,7 +1024,7 @@ PanelWindow {
                                                     border.width: 1
                                                     implicitHeight: 24
                                                     implicitWidth: oActLabel.implicitWidth + 16
-                                                    Behavior on color { ColorAnimation { duration: 80 } }
+                                                    Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                                                     Text {
                                                         id: oActLabel
@@ -1067,17 +1135,29 @@ PanelWindow {
 
                                                 Rectangle {
                                                     implicitHeight: 22
-                                                    implicitWidth: oSendTxt.implicitWidth + 14
+                                                    implicitWidth: oSendRow.implicitWidth + 16
                                                     radius: 6
-                                                    color: oSendMouse.containsMouse ? centerWin.t.textPrimary : centerWin.t.accent
+                                                    color: oSendMouse.containsMouse ? Qt.lighter(centerWin.t.accent, 1.1) : centerWin.t.accent
 
-                                                    Text {
-                                                        id: oSendTxt
+                                                    RowLayout {
+                                                        id: oSendRow
                                                         anchors.centerIn: parent
-                                                        text: "Send 󰏲"
-                                                        color: Services.Theme.bgDeep
-                                                        font.pixelSize: 10
-                                                        font.bold: true
+                                                        spacing: 4
+
+                                                        Text {
+                                                            text: "Send"
+                                                            font.family: Services.Theme.fontMono
+                                                            color: Services.Theme.bgOnAccent
+                                                            font.pixelSize: 10
+                                                            font.bold: true
+                                                        }
+
+                                                        Text {
+                                                            text: Services.Icons.send || "\uf1d8"
+                                                            font.family: Services.Theme.fontSymbols
+                                                            color: Services.Theme.bgOnAccent
+                                                            font.pixelSize: 10
+                                                        }
                                                     }
 
                                                     MouseArea {

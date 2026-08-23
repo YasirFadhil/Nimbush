@@ -130,14 +130,30 @@ Singleton {
     readonly property string sparkle:       "\uf0d0"   // alias
     readonly property string expand:        "\uf065"   // nf-fa-expand
     readonly property string layout:        "\uf009"   // nf-fa-th_large
+    readonly property string grid:          "\uf009"   // nf-fa-th_large / grid alias
+    readonly property string eye:           "\uf06e"   // nf-fa-eye alias
     readonly property string terminal:      "\uf120"   // nf-fa-terminal
     readonly property string info:          "\uf129"   // nf-fa-info
     readonly property string tray:          "\uf0c9"   // nf-fa-bars / tray
     readonly property string checkCircle:   "\uf058"   // nf-fa-check_circle
     readonly property string dotCircle:     "\uf192"   // nf-fa-dot_circle_o
     readonly property string slidersH:      "\uf1de"   // nf-fa-sliders
+    readonly property string send:          "\uf1d8"   // nf-fa-paper_plane / send
+    readonly property string paperPlane:    "\uf1d8"   // nf-fa-paper_plane
+    readonly property string error:         "\uf06a"   // nf-fa-exclamation_circle
+    readonly property string warning:       "\uf071"   // nf-fa-exclamation_triangle
 
     // ── Helper Functions ─────────────────────────────────────────────────────────
+
+    readonly property string mic:       "\uf130"  // nf-fa-microphone
+    readonly property string micMute:   "\uf131"  // nf-fa-microphone_slash
+    readonly property string leaf:      "\uf06c"  // nf-fa-leaf
+    readonly property string balance:   "\uf24e"  // nf-fa-balance_scale
+    readonly property string speed:     "\uf0e4"  // nf-fa-tachometer / performance
+    readonly property string plug:      "\uf1e6"  // nf-fa-plug
+    readonly property string bolt:      "\uf0e7"  // nf-fa-bolt
+    readonly property string heartPulse:"\uf21e"  // nf-fa-heartbeat / health
+    readonly property string cycle:     "\uf01e"  // nf-fa-repeat / cycle
 
     function volumeIcon(volume, muted, isHeadphone, isTws) {
         if (isTws) {
@@ -184,7 +200,22 @@ Singleton {
     }
 
     function sinkIcon(description) {
-        return description.toLowerCase().includes("headphone") ? headphone : speaker
+        const d = (description || "").toLowerCase()
+        if (d.includes("headphone") || d.includes("headset") || d.includes("earbud") || d.includes("tws")) return headphone
+        if (d.includes("hdmi") || d.includes("displayport") || d.includes("monitor") || d.includes("tv")) return display
+        return speaker
+    }
+
+    function sourceIcon(description) {
+        const d = (description || "").toLowerCase()
+        if (d.includes("headphone") || d.includes("headset")) return headphone
+        return mic
+    }
+
+    function powerProfileIcon(profile) {
+        if (profile === "power-saver") return leaf
+        if (profile === "performance") return speed
+        return balance
     }
 
     function updateIcon(isPulling, isChecking) {
@@ -195,5 +226,18 @@ Singleton {
 
     function refreshOrSpinIcon(isLoading) {
         return isLoading ? spinner : refresh
+    }
+
+    function playerIcon(identity) {
+        if (!identity) return "\uf001"
+        const id = identity.toLowerCase()
+        if (id.includes("spotify")) return "󰓇"
+        if (id.includes("firefox")) return "󰈹"
+        if (id.includes("chrome") || id.includes("chromium") || id.includes("brave")) return "󰊯"
+        if (id.includes("vlc")) return "󰕼"
+        if (id.includes("mpv")) return "󰎈"
+        if (id.includes("apple") || id.includes("music")) return "󰎆"
+        if (id.includes("youtube") || id.includes("ytm")) return "󰗃"
+        return "󰎈"
     }
 }

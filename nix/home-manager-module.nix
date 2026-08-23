@@ -110,6 +110,7 @@ in
           brightnessctl
           cliphist
           wl-clipboard
+          wtype
           power-profiles-daemon
           upower
           socat
@@ -123,6 +124,12 @@ in
           slurp
           swappy
           zenity
+          fastfetch
+          sound-theme-freedesktop
+          matugen
+          wireplumber
+          swww
+          swaybg
           (python3.withPackages (ps: with ps; [
             pygobject3
             dbus-python
@@ -176,10 +183,15 @@ in
           "SUPER, SPACE, exec, qs ipc call launcher toggle"
           "SUPER, V, exec, qs ipc call clipboard toggle"
           "SUPER, P, exec, qs ipc call powermenu toggle"
-          "SUPER, L, exec, qs ipc call lockscreen toggle"
+          "SUPER ALT, L, exec, qs ipc call lockscreen toggle"
           "SUPER, D, exec, qs ipc call dashboard toggle"
           "SUPER, N, exec, qs ipc call notifCenter toggle"
           "SUPER, C, exec, qs ipc call controlCenter toggle"
+          "SUPER, B, exec, qs ipc call battery toggle"
+          "SUPER, COMMA, exec, qs ipc call settings toggle"
+          ", PRINT, exec, ~/.config/quickshell/scripts/screenshot.sh full"
+          "SHIFT, PRINT, exec, ~/.config/quickshell/scripts/screenshot.sh region"
+          "SUPER, PRINT, exec, ~/.config/quickshell/scripts/screenshot.sh window"
         ];
         layerrule = [
           "blur, quickshell:bar"
@@ -197,6 +209,23 @@ in
           "ignorezero, quickshell:calendar"
           "blur, quickshell:hud"
           "ignorezero, quickshell:hud"
+          "blur, quickshell:traymenu"
+          "ignorezero, quickshell:traymenu"
+          "blur, quickshell:trayoverflow"
+          "ignorezero, quickshell:trayoverflow"
+          "blur, quickshell:battery"
+          "ignorezero, quickshell:battery"
+          "blur, quickshell:volume"
+          "ignorezero, quickshell:volume"
+          "blur, quickshell:settings"
+          "ignorezero, quickshell:settings"
+          "blur, quickshell:welcome"
+          "ignorezero, quickshell:welcome"
+          "blur, quickshell:powermenu"
+          "ignorezero, quickshell:powermenu"
+          "blur, quickshell:lockscreen"
+          "blur, quickshell:osd"
+          "ignorezero, quickshell:osd"
         ];
       };
     })
@@ -212,10 +241,15 @@ in
           "Mod+Space".action.spawn = [ "qs" "ipc" "call" "launcher" "toggle" ];
           "Mod+V".action.spawn = [ "qs" "ipc" "call" "clipboard" "toggle" ];
           "Mod+P".action.spawn = [ "qs" "ipc" "call" "powermenu" "toggle" ];
-          "Mod+L".action.spawn = [ "qs" "ipc" "call" "lockscreen" "toggle" ];
+          "Mod+Alt+L".action.spawn = [ "qs" "ipc" "call" "lockscreen" "toggle" ];
           "Mod+D".action.spawn = [ "qs" "ipc" "call" "dashboard" "toggle" ];
           "Mod+N".action.spawn = [ "qs" "ipc" "call" "notifCenter" "toggle" ];
           "Mod+C".action.spawn = [ "qs" "ipc" "call" "controlCenter" "toggle" ];
+          "Mod+B".action.spawn = [ "qs" "ipc" "call" "battery" "toggle" ];
+          "Mod+Comma".action.spawn = [ "qs" "ipc" "call" "settings" "toggle" ];
+          "Print".action.spawn = [ "sh" "-c" "~/.config/quickshell/scripts/screenshot.sh full" ];
+          "Shift+Print".action.spawn = [ "sh" "-c" "~/.config/quickshell/scripts/screenshot.sh region" ];
+          "Mod+Print".action.spawn = [ "sh" "-c" "~/.config/quickshell/scripts/screenshot.sh window" ];
         };
       };
     })

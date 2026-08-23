@@ -25,15 +25,16 @@ Rectangle {
          : (isUnified ? Qt.rgba(Services.Theme.border.r, Services.Theme.border.g, Services.Theme.border.b, 0.3) : "transparent")))
     border.width: isMinimal ? 0 : 1
 
-    Behavior on color { ColorAnimation { duration: 150 } }
-    Behavior on border.color { ColorAnimation { duration: 150 } }
+    Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+    Behavior on border.color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
     Text {
         id: clockText
         anchors.centerIn: parent
-        font.family: Services.Theme.fontMono
+        font.family: Services.Theme.fontFamily
         font.pixelSize: clockPill.isMinimal ? Services.Theme.fontSizeMd : Services.Theme.fontSizeLg
-        font.weight: Font.Bold
+        font.weight: Font.DemiBold
+        font.letterSpacing: 0.3
         color: Services.Theme.textPrimary
 
         function updateTime() {
@@ -48,14 +49,14 @@ Rectangle {
 
             let datePrefix = ""
             if (showDate) {
-                datePrefix = (dateFmt === "full" ? "dddd, d MMMM " : "ddd, d MMM ")
+                datePrefix = (dateFmt === "full" ? "dddd, d MMMM  " : "ddd, d MMM  ")
             }
 
             clockText.text = Qt.formatDateTime(new Date(), datePrefix + timePattern)
         }
 
         Timer {
-            interval: 1000
+            interval: (Services.Config && Services.Config.clockShowSeconds) ? 1000 : 5000
             running: true
             repeat: true
             onTriggered: clockText.updateTime()

@@ -8,13 +8,27 @@ PanelWindow {
     id: root
     property string overlayId: "calendar"
 
+    readonly property bool isBottom: Services.Config ? (Services.Config.barPosition === "bottom") : false
+    readonly property string barStyle: Services.Config ? Services.Config.barStyle : "islands"
+    readonly property bool isCenteredBar: barStyle !== "islands"
+    readonly property int barTotalHeight: Services.Config ? (Services.Config.barStyle === "minimal" ? 30 : (Services.Config.barStyle === "unified" ? 38 : (Services.Config.barStyle === "floating" ? 46 : 36))) : 36
+
     anchors { top: true; bottom: true; left: true; right: true }
     color: "transparent"
     exclusiveZone: 0
     visible: Services.OverlayManager.calendarVisible
     WlrLayershell.layer: WlrLayer.Top
     WlrLayershell.namespace: "quickshell:calendar"
-    WlrLayershell.keyboardFocus: WlrKeyboardFocus.OnDemand
+    WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
+
+    mask: Region {
+        Region {
+            x: 0
+            y: root.isBottom ? 0 : root.barTotalHeight
+            width: root.width
+            height: root.height - root.barTotalHeight
+        }
+    }
 
     Item {
         id: escFocus
@@ -24,11 +38,6 @@ PanelWindow {
 
     property date viewDate: new Date()
     readonly property date today: new Date()
-    readonly property bool isBottom: Services.Config ? (Services.Config.barPosition === "bottom") : false
-    readonly property string barStyle: Services.Config ? Services.Config.barStyle : "islands"
-    readonly property bool isCenteredBar: barStyle !== "islands"
-    readonly property int topMargin: 12
-    readonly property int bottomMargin: 12
 
     function close() {
         Services.OverlayManager.calendarVisible = false
@@ -67,8 +76,6 @@ PanelWindow {
             border.width: 1
             clip: true
 
-            Behavior on x { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
-
             opacity: Services.OverlayManager.calendarVisible ? 1 : 0
             transform: Translate {
                 y: Services.OverlayManager.calendarVisible ? 0 : (root.isBottom ? 32 : -32)
@@ -101,7 +108,7 @@ PanelWindow {
                     Rectangle {
                         width: 24; height: 24; radius: 6
                         color: prevMonthMouse.containsMouse ? Services.Theme.bgHover : "transparent"
-                        Behavior on color { ColorAnimation { duration: 120 } }
+                        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                         Text {
                             anchors.centerIn: parent
@@ -109,7 +116,7 @@ PanelWindow {
                             font.family: Services.Theme.fontSymbols
                             font.pixelSize: 11
                             color: prevMonthMouse.containsMouse ? Services.Theme.accent : Services.Theme.textSecondary
-                            Behavior on color { ColorAnimation { duration: 120 } }
+                            Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                         }
                         MouseArea {
                             id: prevMonthMouse
@@ -123,7 +130,7 @@ PanelWindow {
                     Rectangle {
                         width: 24; height: 24; radius: 6
                         color: nextMonthMouse.containsMouse ? Services.Theme.bgHover : "transparent"
-                        Behavior on color { ColorAnimation { duration: 120 } }
+                        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                         Text {
                             anchors.centerIn: parent
@@ -131,7 +138,7 @@ PanelWindow {
                             font.family: Services.Theme.fontSymbols
                             font.pixelSize: 11
                             color: nextMonthMouse.containsMouse ? Services.Theme.accent : Services.Theme.textSecondary
-                            Behavior on color { ColorAnimation { duration: 120 } }
+                            Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                         }
                         MouseArea {
                             id: nextMonthMouse
@@ -179,8 +186,8 @@ PanelWindow {
                             border.color: (!isToday && modelData > 0 && dayMouse.containsMouse) ? Services.Theme.border : "transparent"
                             border.width: 1
 
-                            Behavior on color { ColorAnimation { duration: 120 } }
-                            Behavior on border.color { ColorAnimation { duration: 120 } }
+                            Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                            Behavior on border.color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                             Text {
                                 anchors.centerIn: parent
@@ -188,7 +195,7 @@ PanelWindow {
                                 font.pixelSize: 11
                                 font.bold: isToday
                                 color: isToday ? Services.Theme.bgOnAccent : (dayMouse.containsMouse ? Services.Theme.accent : Services.Theme.textPrimary)
-                                Behavior on color { ColorAnimation { duration: 120 } }
+                                Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                             }
 
                             MouseArea {

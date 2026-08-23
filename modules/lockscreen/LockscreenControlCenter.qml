@@ -52,8 +52,8 @@ Rectangle {
         border.width: 1
         clip: true
 
-        Behavior on color { ColorAnimation { duration: 120 } }
-        Behavior on border.color { ColorAnimation { duration: 120 } }
+        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+        Behavior on border.color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
         // Active track fill
         Rectangle {
@@ -63,7 +63,7 @@ Rectangle {
             color: sliderMouse.containsMouse ? Qt.lighter(Services.Theme.accent, 1.08) : Services.Theme.accent
             width: Math.max(38, Math.min(parent.width, sliderRoot.value * parent.width))
             Behavior on width { NumberAnimation { duration: 80 } }
-            Behavior on color { ColorAnimation { duration: 120 } }
+            Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
         }
 
         RowLayout {
@@ -79,7 +79,7 @@ Rectangle {
                 font.family: Services.Theme.fontSymbols
                 font.pixelSize: 14
                 color: (fillBar.width > (iconText.x + sliderContentRow.x + iconText.width / 2)) ? Services.Theme.bgDeep : Services.Theme.textPrimary
-                Behavior on color { ColorAnimation { duration: 80 } }
+                Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
             }
 
             Item { Layout.fillWidth: true }
@@ -90,7 +90,7 @@ Rectangle {
                 font.pixelSize: 11
                 font.bold: true
                 color: (fillBar.width > (percentText.x + sliderContentRow.x + percentText.width / 2)) ? Services.Theme.bgDeep : Services.Theme.textPrimary
-                Behavior on color { ColorAnimation { duration: 80 } }
+                Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
             }
         }
 
@@ -209,7 +209,7 @@ Rectangle {
             Rectangle {
                 width: 24; height: 24; radius: 12
                 color: (root.pwrExpanded || pwrMouse.containsMouse) ? Qt.rgba(Services.Theme.danger.r, Services.Theme.danger.g, Services.Theme.danger.b, 0.2) : "transparent"
-                Behavior on color { ColorAnimation { duration: 100 } }
+                Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                 Text {
                     anchors.centerIn: parent
@@ -238,7 +238,7 @@ Rectangle {
             Rectangle {
                 width: 24; height: 24; radius: 12
                 color: closeMouse.containsMouse ? Services.Theme.bgHover : "transparent"
-                Behavior on color { ColorAnimation { duration: 100 } }
+                Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                 Text {
                     anchors.centerIn: parent
@@ -283,7 +283,7 @@ Rectangle {
                 Behavior on Layout.preferredWidth { NumberAnimation { duration: 240; easing.type: Easing.OutCubic } }
                 Behavior on Layout.preferredHeight { NumberAnimation { duration: 240; easing.type: Easing.OutCubic } }
                 Behavior on opacity { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
-                Behavior on color { ColorAnimation { duration: 150 } }
+                Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                 ColumnLayout {
                     anchors.fill: parent
@@ -568,7 +568,7 @@ Rectangle {
                 Behavior on Layout.preferredWidth { NumberAnimation { duration: 240; easing.type: Easing.OutCubic } }
                 Behavior on Layout.preferredHeight { NumberAnimation { duration: 240; easing.type: Easing.OutCubic } }
                 Behavior on opacity { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
-                Behavior on color { ColorAnimation { duration: 150 } }
+                Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                 ColumnLayout {
                     anchors.fill: parent

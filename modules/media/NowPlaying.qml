@@ -8,8 +8,6 @@ Item {
     id: card
     visible: Services.Mpris.activePlayer !== null
     
-    // implicitHeight (instead of height) read by ColumnLayout for sizing
-    // Behavior here allows smooth animation for layout space
     implicitHeight: visible ? (card.isPlaying ? 160 : 62) : 0
     height: implicitHeight
     Behavior on implicitHeight { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
@@ -118,23 +116,35 @@ Item {
                     Layout.alignment: Qt.AlignVCenter
                     spacing: 2
 
-                    // Player identity badge — playing state only, completely collapsed when idle
+                    // Player source selector pill
+                    // Player identity badge
                     Rectangle {
-                        height: 14
-                        implicitWidth: Math.min(badgeTxt.implicitWidth + 10, 80)
+                        height: 15
+                        implicitWidth: badgeRow.implicitWidth + 8
                         radius: 4
                         color: card.t.surfaceVariant
-                        // visible false = consumes no layout space at all
                         visible: card.isPlaying && (card.player?.identity ?? "").length > 0
 
-                        Text {
-                            id: badgeTxt
+                        RowLayout {
+                            id: badgeRow
                             anchors.centerIn: parent
-                            text: card.player?.identity ?? ""
-                            color: card.t.textDisabled
-                            font.pixelSize: 8
-                            font.bold: true
-                            elide: Text.ElideRight
+                            spacing: 3
+
+                            Text {
+                                text: Services.Icons.playerIcon(card.player?.identity)
+                                color: card.t.accent
+                                font.family: card.t.fontSymbols
+                                font.pixelSize: 9
+                            }
+
+                            Text {
+                                text: card.player?.identity ?? ""
+                                color: card.t.textDisabled
+                                font.pixelSize: 8
+                                font.bold: true
+                                elide: Text.ElideRight
+                                Layout.maximumWidth: 80
+                            }
                         }
                     }
 
@@ -164,7 +174,7 @@ Item {
                 Rectangle {
                     width: 28; height: 28; radius: 7
                     color: compactPlay.containsMouse ? Qt.lighter(card.t.accent, 1.1) : card.t.accent
-                    Behavior on color { ColorAnimation { duration: 80 } }
+                    Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                     opacity: card.isPlaying ? 0 : 1
                     Behavior on opacity { NumberAnimation { duration: 160 } }
                     Layout.alignment: Qt.AlignVCenter
@@ -195,7 +205,7 @@ Item {
                 Text {
                     id: posLabel
                     anchors { left: parent.left; top: parent.top }
-                    text: card.fmtTime(card.player?.position)
+                    text: card.fmtTime(nowPlayingWavyBar.livePosition)
                     color: card.t.textDisabled; font.pixelSize: 9
                 }
 
@@ -210,47 +220,23 @@ Item {
                     color: card.t.textDisabled; font.pixelSize: 9
                 }
 
-                // Track bg
-                Rectangle {
-                    id: progressBg
+                WavyProgressBar {
+                    id: nowPlayingWavyBar
                     anchors {
                         left: parent.left; right: parent.right
-                        top: posLabel.bottom; topMargin: 4
+                        top: posLabel.bottom; topMargin: 2
                     }
-                    height: 4; radius: 2
-                    color: card.t.surfaceVariant
-
-                    // Fill
-                    Rectangle {
-                        id: progressFill
-                        height: parent.height; radius: 2
-                        color: card.t.accent
-                        width: {
-                            const len = card.player?.length ?? 0
-                            const pos = card.player?.position ?? 0
-                            return len > 0 ? Math.max(0, Math.min(1, pos / len)) * parent.width : 0
-                        }
-                        Behavior on width { NumberAnimation { duration: 900; easing.type: Easing.Linear } }
-                    }
-
-                    // Thumb
-                    Rectangle {
-                        width: 10; height: 10; radius: 5
-                        color: card.t.accent
-                        anchors.verticalCenter: parent.verticalCenter
-                        x: Math.max(0, progressFill.width - 5)
-                        visible: seekArea.containsMouse || seekArea.pressed
-                    }
-                }
-
-                MouseArea {
-                    id: seekArea
-                    anchors.fill: progressBg
-                    height: 14; hoverEnabled: true
-                    onClicked: (mouse) => {
-                        const ratio = mouse.x / width
+                    height: 18
+                    isPlaying: card.isPlaying
+                    waveColor: card.t.accent
+                    trackColor: card.t.surfaceVariant
+                    lineWidth: 3.0
+                    maxAmplitude: 3.0
+                    position: card.player?.position ?? 0
+                    duration: card.player?.length ?? 0
+                    onSeekRequested: (ratio) => {
                         const len = card.player?.length ?? 0
-                        if (len > 0 && (card.player?.positionSupported ?? false))
+                        if (len > 0 && (card.player?.canSeek ?? (card.player?.positionSupported ?? false)))
                             card.player.position = ratio * len
                     }
                 }
@@ -268,7 +254,7 @@ Item {
                 Item {
                     width: 32; height: 32
                     opacity: (card.player?.shuffleSupported ?? false) ? 1 : 0.2
-                    Rectangle { anchors.fill: parent; radius: 8; color: shArea.containsMouse ? card.t.surfaceVariant : "transparent"; Behavior on color { ColorAnimation { duration: 80 } } }
+                    Rectangle { anchors.fill: parent; radius: 8; color: shArea.containsMouse ? card.t.surfaceVariant : "transparent"; Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } } }
                     Text { anchors.centerIn: parent; text: Services.Icons.mediaShuffle; font.family: Services.Theme.fontSymbols; font.pixelSize: Services.Theme.fontSizeLg; color: (card.player?.shuffle ?? false) ? card.t.accent : card.t.textSecondary }
                     MouseArea { id: shArea; anchors.fill: parent; hoverEnabled: true; enabled: card.player?.shuffleSupported ?? false; onClicked: card.player.shuffle = !card.player.shuffle }
                 }
@@ -279,7 +265,7 @@ Item {
                 Item {
                     width: 32; height: 32
                     opacity: (card.player?.canGoPrevious ?? false) ? 1 : 0.3
-                    Rectangle { anchors.fill: parent; radius: 8; color: prvArea.containsMouse ? card.t.surfaceVariant : "transparent"; Behavior on color { ColorAnimation { duration: 80 } } }
+                    Rectangle { anchors.fill: parent; radius: 8; color: prvArea.containsMouse ? card.t.surfaceVariant : "transparent"; Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } } }
                     Text { anchors.centerIn: parent; text: Services.Icons.mediaPrev; font.family: Services.Theme.fontSymbols; font.pixelSize: Services.Theme.fontSizeXl; color: card.t.textSecondary }
                     MouseArea { id: prvArea; anchors.fill: parent; hoverEnabled: true; enabled: card.player?.canGoPrevious ?? false; onClicked: card.player.previous() }
                 }
@@ -288,7 +274,7 @@ Item {
                 Rectangle {
                     width: 36; height: 36; radius: 10
                     color: playArea.containsMouse ? Qt.lighter(card.t.accent, 1.12) : card.t.accent
-                    Behavior on color { ColorAnimation { duration: 80 } }
+                    Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                     Layout.alignment: Qt.AlignVCenter
 
                     Text {
@@ -304,7 +290,7 @@ Item {
                 Item {
                     width: 32; height: 32
                     opacity: (card.player?.canGoNext ?? false) ? 1 : 0.3
-                    Rectangle { anchors.fill: parent; radius: 8; color: nxtArea.containsMouse ? card.t.surfaceVariant : "transparent"; Behavior on color { ColorAnimation { duration: 80 } } }
+                    Rectangle { anchors.fill: parent; radius: 8; color: nxtArea.containsMouse ? card.t.surfaceVariant : "transparent"; Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } } }
                     Text { anchors.centerIn: parent; text: Services.Icons.mediaNext; font.family: Services.Theme.fontSymbols; font.pixelSize: Services.Theme.fontSizeXl; color: card.t.textSecondary }
                     MouseArea { id: nxtArea; anchors.fill: parent; hoverEnabled: true; enabled: card.player?.canGoNext ?? false; onClicked: card.player.next() }
                 }
@@ -315,7 +301,7 @@ Item {
                 Item {
                     width: 32; height: 32
                     opacity: (card.player?.loopSupported ?? false) ? 1 : 0.2
-                    Rectangle { anchors.fill: parent; radius: 8; color: rpArea.containsMouse ? card.t.surfaceVariant : "transparent"; Behavior on color { ColorAnimation { duration: 80 } } }
+                    Rectangle { anchors.fill: parent; radius: 8; color: rpArea.containsMouse ? card.t.surfaceVariant : "transparent"; Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } } }
                     Text {
                         anchors.centerIn: parent
                         font.family: Services.Theme.fontSymbols; font.pixelSize: Services.Theme.fontSizeLg

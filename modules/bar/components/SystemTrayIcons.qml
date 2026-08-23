@@ -55,8 +55,8 @@ Rectangle {
                     border.color: itemArea.containsMouse ? Services.Theme.borderHighlight : "transparent"
                     border.width: 1
 
-                    Behavior on color { ColorAnimation { duration: 150 } }
-                    Behavior on border.color { ColorAnimation { duration: 150 } }
+                    Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                    Behavior on border.color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                 }
 
                 Image {
@@ -150,8 +150,8 @@ Rectangle {
                 border.color: overflowArea.containsMouse ? Services.Theme.borderHighlight : "transparent"
                 border.width: 1
 
-                Behavior on color { ColorAnimation { duration: 150 } }
-                Behavior on border.color { ColorAnimation { duration: 150 } }
+                Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                Behavior on border.color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
             }
 
             Text {

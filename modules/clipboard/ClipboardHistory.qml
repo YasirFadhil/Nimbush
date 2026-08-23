@@ -103,7 +103,7 @@ PanelWindow {
                     font.family: Services.Theme.fontSymbols
                     font.pixelSize: Services.Theme.fontSize3xl
                     color: searchField.activeFocus ? Services.Theme.accent : Services.Theme.textDisabled
-                    Behavior on color { ColorAnimation { duration: 150 } }
+                    Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                 }
 
                 TextField {
@@ -206,7 +206,7 @@ PanelWindow {
                             border.color: Services.Clipboard.filterType === modelData.id ? Services.Theme.borderHighlight : "transparent"
                             border.width: 1
 
-                            Behavior on color { ColorAnimation { duration: 120 } }
+                            Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                             Text {
                                 id: filterText
@@ -215,7 +215,7 @@ PanelWindow {
                                 font.pixelSize: Services.Theme.fontSizeMd
                                 font.weight: Services.Clipboard.filterType === parent.modelData.id ? Font.Medium : Font.Normal
                                 color: Services.Clipboard.filterType === parent.modelData.id ? Services.Theme.accent : Services.Theme.textDisabled
-                                Behavior on color { ColorAnimation { duration: 120 } }
+                                Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                             }
 
                             MouseArea {
@@ -241,8 +241,8 @@ PanelWindow {
                     border.width: 1
                     Layout.alignment: Qt.AlignVCenter
 
-                    Behavior on color { ColorAnimation { duration: 120 } }
-                    Behavior on border.color { ColorAnimation { duration: 120 } }
+                    Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                    Behavior on border.color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                     Text {
                         anchors.centerIn: parent
@@ -250,7 +250,7 @@ PanelWindow {
                         font.family: Services.Theme.fontSymbols
                         font.pixelSize: Services.Theme.fontSizeLg
                         color: clearHistMouse.containsMouse ? Services.Theme.danger : Services.Theme.textDisabled
-                        Behavior on color { ColorAnimation { duration: 120 } }
+                        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                     }
 
                     MouseArea {
@@ -298,8 +298,8 @@ PanelWindow {
                         : (hoverArea.containsMouse ? Services.Theme.bgHover : "transparent")
                     border.color: isCurrent ? Services.Theme.accent : "transparent"
                     border.width: isCurrent ? 1 : 0
-                    Behavior on color { ColorAnimation { duration: 100 } }
-                    Behavior on border.color { ColorAnimation { duration: 100 } }
+                    Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                    Behavior on border.color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                     property bool isImage: Services.Clipboard.isImageEntry(modelData)
                     property bool isPinnedItem: Services.Clipboard.isPinned(modelData)
@@ -392,7 +392,7 @@ PanelWindow {
                                     elide: Text.ElideRight
                                     Layout.fillWidth: true
                                     maximumLineCount: 1
-                                    Behavior on color { ColorAnimation { duration: 120 } }
+                                    Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                                 }
 
                                 Text {
@@ -402,7 +402,7 @@ PanelWindow {
                                     font.pixelSize: Services.Theme.fontSizeXl
                                     font.weight: card.index === resultList.currentIndex ? Font.Medium : Font.Normal
                                     Layout.fillWidth: true
-                                    Behavior on color { ColorAnimation { duration: 120 } }
+                                    Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                                 }
 
                                 Text {
@@ -451,7 +451,7 @@ PanelWindow {
                                 radius: 7
                                 color: card.isPinnedItem ? Services.Theme.surfaceVariant : (pinArea.containsMouse ? Services.Theme.surfaceVariant : "transparent")
 
-                                Behavior on color { ColorAnimation { duration: 120 } }
+                                Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                                 Text {
                                     anchors.centerIn: parent
@@ -459,7 +459,7 @@ PanelWindow {
                                     font.family: Services.Theme.fontSymbols
                                     font.pixelSize: Services.Theme.fontSizeLg
                                     color: card.isPinnedItem ? Services.Theme.accent : (pinArea.containsMouse ? Services.Theme.textPrimary : Services.Theme.textDisabled)
-                                    Behavior on color { ColorAnimation { duration: 120 } }
+                                    Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                                 }
 
                                 MouseArea {
@@ -476,7 +476,7 @@ PanelWindow {
                                 radius: 7
                                 color: deleteArea.containsMouse ? Services.Theme.surfaceVariant : "transparent"
 
-                                Behavior on color { ColorAnimation { duration: 120 } }
+                                Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                                 Text {
                                     anchors.centerIn: parent
@@ -484,7 +484,7 @@ PanelWindow {
                                     font.family: Services.Theme.fontSymbols
                                     font.pixelSize: Services.Theme.fontSizeXl
                                     color: deleteArea.containsMouse ? Services.Theme.danger : Services.Theme.textDisabled
-                                    Behavior on color { ColorAnimation { duration: 120 } }
+                                    Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                                 }
 
                                 MouseArea {

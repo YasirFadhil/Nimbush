@@ -68,9 +68,22 @@ Singleton {
     property bool hyprTouchpadTap: true
     property bool hyprTouchpadDwt: true
     property real hyprSensitivity: 0.0
+    property int hyprFollowMouse: 1
+    property bool hyprWorkspaceSwipe: true
+    property bool hyprSwipeInvert: false
 
-    // Performance & Misc
+    // Performance, Gaming & Power
     property bool hyprDisableLogo: false
+    property bool hyprVFR: true
+    property bool hyprAllowTearing: false
+    property bool hyprSmartGaps: false
+    property string activePreset: "custom"
+
+    // ── Keybindings from Compositor Config ────────────────────────────────────
+    property var keybindsList: []
+    property bool isLoadingBinds: false
+    property string keybindStatus: ""
+    property string keybindError: ""
 
     // ── Discovered Compositors & Configs ──────────────────────────────────────
     property var installedCompositors: []
@@ -90,9 +103,186 @@ Singleton {
         return p.length > 0 ? p : (Quickshell.env("HOME") + "/.config/quickshell/scripts/compositor-helper.py")
     }
 
-    // ── Internal Queue for async option updates ───────────────────────────────
-    property var _pendingQueue: []
+    // ── Fast Direct Key Mapping for Hyprland (.conf fallback) ─────────────────
+    readonly property var hyprKeyMap: ({
+        "blur": "decoration:blur:enabled",
+        "blur_size": "decoration:blur:size",
+        "blur_passes": "decoration:blur:passes",
+        "anim": "animations:enabled",
+        "shadow": "decoration:shadow:enabled",
+        "shadow_range": "decoration:shadow:range",
+        "shadow_power": "decoration:shadow:render_power",
+        "rounding": "decoration:rounding",
+        "border_size": "general:border_size",
+        "gaps_in": "general:gaps_in",
+        "gaps_out": "general:gaps_out",
+        "active_opacity": "decoration:active_opacity",
+        "inactive_opacity": "decoration:inactive_opacity",
+        "dim_inactive": "decoration:dim_inactive",
+        "dim_strength": "decoration:dim_strength",
+        "layout": "general:layout",
+        "touchpad_natural": "input:touchpad:natural_scroll",
+        "touchpad_tap": "input:touchpad:tap-to-click",
+        "touchpad_dwt": "input:touchpad:disable_while_typing",
+        "sensitivity": "input:sensitivity",
+        "follow_mouse": "input:follow_mouse",
+        "workspace_swipe": "gestures:workspace_swipe",
+        "workspace_swipe_invert": "gestures:workspace_swipe_invert",
+        "resize_border": "general:resize_on_border",
+        "disable_hyprland_logo": "misc:disable_hyprland_logo",
+        "vfr": "misc:vfr",
+        "allow_tearing": "general:allow_tearing",
+        "smart_gaps": "dwindle:no_gaps_when_only"
+    })
+
+    // ── Lua Config Builder for Hyprland 0.56+ (hl.config) ──────────────────────
+    function buildLuaConfig(changes) {
+        let decor = {}
+        let general = {}
+        let anim = {}
+        let input = {}
+        let misc = {}
+        let gestures = {}
+
+        for (let k in changes) {
+            let v = changes[k]
+            switch (k) {
+                case "blur":
+                    if (!decor.blur) decor.blur = {}
+                    decor.blur.enabled = Boolean(v)
+                    break
+                case "blur_size":
+                    if (!decor.blur) decor.blur = {}
+                    decor.blur.size = Math.round(Number(v))
+                    break
+                case "blur_passes":
+                    if (!decor.blur) decor.blur = {}
+                    decor.blur.passes = Math.round(Number(v))
+                    break
+                case "shadow":
+                    if (!decor.shadow) decor.shadow = {}
+                    decor.shadow.enabled = Boolean(v)
+                    break
+                case "shadow_range":
+                    if (!decor.shadow) decor.shadow = {}
+                    decor.shadow.range = Math.round(Number(v))
+                    break
+                case "shadow_power":
+                    if (!decor.shadow) decor.shadow = {}
+                    decor.shadow.render_power = Math.round(Number(v))
+                    break
+                case "rounding":
+                    decor.rounding = Math.round(Number(v))
+                    break
+                case "active_opacity":
+                    decor.active_opacity = Number(Number(v).toFixed(2))
+                    break
+                case "inactive_opacity":
+                    decor.inactive_opacity = Number(Number(v).toFixed(2))
+                    break
+                case "dim_inactive":
+                    decor.dim_inactive = Boolean(v)
+                    break
+                case "dim_strength":
+                    decor.dim_strength = Number(Number(v).toFixed(2))
+                    break
+                case "anim":
+                    anim.enabled = Boolean(v)
+                    break
+                case "border_size":
+                    general.border_size = Math.round(Number(v))
+                    break
+                case "gaps_in":
+                    general.gaps_in = Math.round(Number(v))
+                    break
+                case "gaps_out":
+                    general.gaps_out = Math.round(Number(v))
+                    break
+                case "layout":
+                    general.layout = String(v)
+                    break
+                case "resize_border":
+                    general.resize_on_border = Boolean(v)
+                    break
+                case "touchpad_natural":
+                    if (!input.touchpad) input.touchpad = {}
+                    input.touchpad.natural_scroll = Boolean(v)
+                    break
+                case "touchpad_tap":
+                    if (!input.touchpad) input.touchpad = {}
+                    input.touchpad.tap_to_click = Boolean(v)
+                    break
+                case "touchpad_dwt":
+                    if (!input.touchpad) input.touchpad = {}
+                    input.touchpad.disable_while_typing = Boolean(v)
+                    break
+                case "sensitivity":
+                    input.sensitivity = Number(Number(v).toFixed(2))
+                    break
+                case "disable_hyprland_logo":
+                    misc.disable_hyprland_logo = Boolean(v)
+                    break
+                case "vfr":
+                    misc.vfr = Boolean(v)
+                    break
+                case "allow_tearing":
+                    general.allow_tearing = Boolean(v)
+                    break
+                case "smart_gaps":
+                    general.no_gaps_when_only = Boolean(v) ? 1 : 0
+                    break
+                case "follow_mouse":
+                    input.follow_mouse = Math.round(Number(v))
+                    break
+                case "workspace_swipe":
+                    gestures.workspace_swipe = Boolean(v)
+                    break
+                case "workspace_swipe_invert":
+                    gestures.workspace_swipe_invert = Boolean(v)
+                    break
+                case "border_color_preset":
+                    if (!general.col) general.col = {}
+                    general.col.active_border = v
+                    break
+            }
+        }
+
+        function toLua(val) {
+            if (typeof val === "boolean") return val ? "true" : "false"
+            if (typeof val === "number") return String(val)
+            if (typeof val === "string") return '"' + val.replace(/"/g, '\\"') + '"'
+            if (typeof val === "object" && val !== null) {
+                let parts = []
+                for (let prop in val) {
+                    parts.push(prop + " = " + toLua(val[prop]))
+                }
+                return "{ " + parts.join(", ") + " }"
+            }
+            return "nil"
+        }
+
+        let rootTable = {}
+        if (Object.keys(decor).length > 0) rootTable.decoration = decor
+        if (Object.keys(general).length > 0) rootTable.general = general
+        if (Object.keys(anim).length > 0) rootTable.animations = anim
+        if (Object.keys(input).length > 0) rootTable.input = input
+        if (Object.keys(misc).length > 0) rootTable.misc = misc
+        if (Object.keys(gestures).length > 0) rootTable.gestures = gestures
+
+        if (Object.keys(rootTable).length === 0) return ""
+        return "hl.config(" + toLua(rootTable) + ")"
+    }
+
+    // Coalesced pending changes for batch & zero-latency execution
+    property var _pendingChanges: ({})
     property bool _isApplying: false
+
+    Timer {
+        id: batchTimer
+        interval: 16 // 60fps coalescing timer
+        repeat: false
+        onTriggered: root._flushPendingChanges()
+    }
 
     Component.onCompleted: {
         refreshState()
@@ -103,21 +293,82 @@ Singleton {
         queryProcess.running = true
     }
 
-    // ── Option Application Queue ──────────────────────────────────────────────
+    // ── Direct & Fast Option Application ──────────────────────────────────────
     function setOption(optName, optVal) {
-        _pendingQueue.push({ name: optName, val: optVal })
-        _processQueue()
+        _pendingChanges[optName] = optVal
+        if (!_isApplying) {
+            if (!batchTimer.running) {
+                batchTimer.restart()
+            }
+        }
     }
 
-    function _processQueue() {
-        if (_isApplying || _pendingQueue.length === 0) return
-        const next = _pendingQueue.shift()
+    function _flushPendingChanges() {
+        if (_isApplying) return
+        const keys = Object.keys(_pendingChanges)
+        if (keys.length === 0) return
+
+        const currentChanges = Object.assign({}, _pendingChanges)
+        _pendingChanges = {}
         _isApplying = true
 
-        applyProcess.targetOpt = next.name
-        applyProcess.targetVal = String(next.val)
-        applyProcess.command = [helperScript, "set", next.name, String(next.val)]
-        applyProcess.running = true
+        if (activeCompositor === "hyprland") {
+            if (configType === "lua") {
+                const luaCode = buildLuaConfig(currentChanges)
+                if (luaCode.length > 0) {
+                    fastHyprProc.command = ["hyprctl", "eval", luaCode]
+                    fastHyprProc.running = true
+                    return
+                }
+            } else {
+                let cmdParts = []
+                for (let i = 0; i < keys.length; i++) {
+                    const k = keys[i]
+                    const v = currentChanges[k]
+                    const hyprKey = hyprKeyMap[k]
+                    if (hyprKey) {
+                        let formattedVal = String(v)
+                        if (typeof v === "boolean") formattedVal = v ? "1" : "0"
+                        cmdParts.push("keyword " + hyprKey + " " + formattedVal)
+                    }
+                }
+                if (cmdParts.length > 0) {
+                    fastHyprProc.command = ["hyprctl", "--batch", cmdParts.join(" ; ")]
+                    fastHyprProc.running = true
+                    return
+                }
+            }
+            _isApplying = false
+        } else {
+            // Fallback to helper script for other compositors
+            const firstKey = keys[0]
+            const firstVal = currentChanges[firstKey]
+            delete currentChanges[firstKey]
+            _pendingChanges = Object.assign(currentChanges, _pendingChanges)
+
+            applyProcess.command = [helperScript, "set", firstKey, String(firstVal)]
+            applyProcess.running = true
+        }
+    }
+
+    Process {
+        id: fastHyprProc
+        onExited: {
+            root._isApplying = false
+            if (Object.keys(root._pendingChanges).length > 0) {
+                root._flushPendingChanges()
+            }
+        }
+    }
+
+    Process {
+        id: applyProcess
+        onExited: {
+            root._isApplying = false
+            if (Object.keys(root._pendingChanges).length > 0) {
+                root._flushPendingChanges()
+            }
+        }
     }
 
     // ── Live Setting Updates & Helpers ────────────────────────────────────────
@@ -136,13 +387,13 @@ Singleton {
     }
 
     function setHyprBlurSize(val) {
-        hyprBlurSize = val
-        setOption("blur_size", val)
+        hyprBlurSize = Math.round(Number(val))
+        setOption("blur_size", hyprBlurSize)
     }
 
     function setHyprBlurPasses(val) {
-        hyprBlurPasses = val
-        setOption("blur_passes", val)
+        hyprBlurPasses = Math.round(Number(val))
+        setOption("blur_passes", hyprBlurPasses)
     }
 
     function toggleHyprShadow() {
@@ -151,23 +402,23 @@ Singleton {
     }
 
     function setHyprShadowRange(val) {
-        hyprShadowRange = val
-        setOption("shadow_range", val)
+        hyprShadowRange = Math.round(Number(val))
+        setOption("shadow_range", hyprShadowRange)
     }
 
     function setHyprShadowPower(val) {
-        hyprShadowPower = val
-        setOption("shadow_power", val)
+        hyprShadowPower = Math.round(Number(val))
+        setOption("shadow_power", hyprShadowPower)
     }
 
     function setHyprActiveOpacity(val) {
-        hyprActiveOpacity = val
-        setOption("active_opacity", val)
+        hyprActiveOpacity = Number(Number(val).toFixed(2))
+        setOption("active_opacity", hyprActiveOpacity)
     }
 
     function setHyprInactiveOpacity(val) {
-        hyprInactiveOpacity = val
-        setOption("inactive_opacity", val)
+        hyprInactiveOpacity = Number(Number(val).toFixed(2))
+        setOption("inactive_opacity", hyprInactiveOpacity)
     }
 
     function toggleHyprDimInactive() {
@@ -176,33 +427,33 @@ Singleton {
     }
 
     function setHyprDimStrength(val) {
-        hyprDimStrength = val
-        setOption("dim_strength", val)
+        hyprDimStrength = Number(Number(val).toFixed(2))
+        setOption("dim_strength", hyprDimStrength)
     }
 
     function setHyprRounding(val) {
-        hyprRounding = val
-        setOption("rounding", val)
+        hyprRounding = Math.round(Number(val))
+        setOption("rounding", hyprRounding)
     }
 
     function setHyprBorderSize(val) {
-        hyprBorderSize = val
-        setOption("border_size", val)
+        hyprBorderSize = Math.round(Number(val))
+        setOption("border_size", hyprBorderSize)
     }
 
     function setHyprGapsIn(val) {
-        hyprGapsIn = val
-        setOption("gaps_in", val)
+        hyprGapsIn = Math.round(Number(val))
+        setOption("gaps_in", hyprGapsIn)
     }
 
     function setHyprGapsOut(val) {
-        hyprGapsOut = val
-        setOption("gaps_out", val)
+        hyprGapsOut = Math.round(Number(val))
+        setOption("gaps_out", hyprGapsOut)
     }
 
     function setHyprLayout(val) {
-        hyprLayout = val
-        setOption("layout", val)
+        hyprLayout = String(val)
+        setOption("layout", hyprLayout)
     }
 
     function toggleHyprTouchpadNatural() {
@@ -221,8 +472,8 @@ Singleton {
     }
 
     function setHyprSensitivity(val) {
-        hyprSensitivity = val
-        setOption("sensitivity", val)
+        hyprSensitivity = Number(Number(val).toFixed(2))
+        setOption("sensitivity", hyprSensitivity)
     }
 
     function toggleHyprResizeBorder() {
@@ -240,6 +491,156 @@ Singleton {
         if (configType === "lua") {
             setOption("border_color_preset", gradientStr)
         }
+    }
+
+    function toggleHyprVFR() {
+        hyprVFR = !hyprVFR
+        setOption("vfr", hyprVFR)
+    }
+
+    function toggleHyprTearing() {
+        hyprAllowTearing = !hyprAllowTearing
+        setOption("allow_tearing", hyprAllowTearing)
+    }
+
+    function toggleHyprSmartGaps() {
+        hyprSmartGaps = !hyprSmartGaps
+        setOption("smart_gaps", hyprSmartGaps)
+    }
+
+    function setHyprFollowMouse(val) {
+        hyprFollowMouse = Math.round(Number(val))
+        setOption("follow_mouse", hyprFollowMouse)
+    }
+
+    function toggleHyprWorkspaceSwipe() {
+        hyprWorkspaceSwipe = !hyprWorkspaceSwipe
+        setOption("workspace_swipe", hyprWorkspaceSwipe)
+    }
+
+    function toggleHyprSwipeInvert() {
+        hyprSwipeInvert = !hyprSwipeInvert
+        setOption("workspace_swipe_invert", hyprSwipeInvert)
+    }
+
+    function setMonitorScale(monName, scaleVal) {
+        if (!monName) return
+        const s = Number(Number(scaleVal).toFixed(2))
+        if (configType === "lua") {
+            fastHyprProc.command = ["hyprctl", "eval", `hl.monitor({ output = "${monName}", scale = ${s} })`]
+        } else {
+            fastHyprProc.command = ["hyprctl", "keyword", "monitor", `${monName},preferred,auto,${s}`]
+        }
+        fastHyprProc.running = true
+        refreshTimer.restart()
+    }
+
+    function setMonitorVRR(monName, vrrBool) {
+        if (!monName) return
+        const v = vrrBool ? 1 : 0
+        if (configType === "lua") {
+            fastHyprProc.command = ["hyprctl", "eval", `hl.monitor({ output = "${monName}", vrr = ${v} }) ; hl.config({ misc = { vrr = ${v} } })`]
+        } else {
+            fastHyprProc.command = ["hyprctl", "keyword", "misc:vrr", `${v}`]
+        }
+        fastHyprProc.running = true
+        refreshTimer.restart()
+    }
+
+    Timer {
+        id: refreshTimer
+        interval: 300
+        repeat: false
+        onTriggered: root.refreshState()
+    }
+
+    function applyPreset(presetId) {
+        activePreset = presetId
+        switch (presetId) {
+            case "glass":
+                hyprAnim = true; setOption("anim", true)
+                hyprBlur = true; setOption("blur", true)
+                hyprBlurSize = 6; setOption("blur_size", 6)
+                hyprBlurPasses = 3; setOption("blur_passes", 3)
+                hyprShadow = true; setOption("shadow", true)
+                hyprShadowRange = 14; setOption("shadow_range", 14)
+                hyprActiveOpacity = 0.88; setOption("active_opacity", 0.88)
+                hyprInactiveOpacity = 0.92; setOption("inactive_opacity", 0.92)
+                hyprRounding = 14; setOption("rounding", 14)
+                hyprBorderSize = 1; setOption("border_size", 1)
+                hyprGapsIn = 6; setOption("gaps_in", 6)
+                hyprGapsOut = 12; setOption("gaps_out", 12)
+                break
+            case "gaming":
+                hyprAnim = false; setOption("anim", false)
+                hyprBlur = false; setOption("blur", false)
+                hyprShadow = false; setOption("shadow", false)
+                hyprAllowTearing = true; setOption("allow_tearing", true)
+                hyprVFR = true; setOption("vfr", true)
+                hyprActiveOpacity = 1.0; setOption("active_opacity", 1.0)
+                hyprInactiveOpacity = 1.0; setOption("inactive_opacity", 1.0)
+                hyprRounding = 4; setOption("rounding", 4)
+                hyprBorderSize = 1; setOption("border_size", 1)
+                hyprGapsIn = 0; setOption("gaps_in", 0)
+                hyprGapsOut = 0; setOption("gaps_out", 0)
+                break
+            case "minimal":
+                hyprAnim = true; setOption("anim", true)
+                hyprBlur = false; setOption("blur", false)
+                hyprShadow = false; setOption("shadow", false)
+                hyprActiveOpacity = 1.0; setOption("active_opacity", 1.0)
+                hyprInactiveOpacity = 1.0; setOption("inactive_opacity", 1.0)
+                hyprRounding = 0; setOption("rounding", 0)
+                hyprBorderSize = 0; setOption("border_size", 0)
+                hyprGapsIn = 0; setOption("gaps_in", 0)
+                hyprGapsOut = 0; setOption("gaps_out", 0)
+                break
+            case "material":
+                hyprAnim = true; setOption("anim", true)
+                hyprBlur = true; setOption("blur", true)
+                hyprBlurSize = 4; setOption("blur_size", 4)
+                hyprBlurPasses = 2; setOption("blur_passes", 2)
+                hyprShadow = true; setOption("shadow", true)
+                hyprActiveOpacity = 0.92; setOption("active_opacity", 0.92)
+                hyprInactiveOpacity = 0.96; setOption("inactive_opacity", 0.96)
+                hyprRounding = 12; setOption("rounding", 12)
+                hyprBorderSize = 1; setOption("border_size", 1)
+                hyprGapsIn = 5; setOption("gaps_in", 5)
+                hyprGapsOut = 10; setOption("gaps_out", 10)
+                break
+        }
+    }
+
+    // ── Keybindings Management (Direct from Compositor Config) ───────────────
+    function loadKeybinds() {
+        isLoadingBinds = true
+        bindsListProc.qOutput = ""
+        bindsListProc.command = [root.helperScript, "binds-list"]
+        bindsListProc.running = true
+    }
+
+    function addKeybind(keys, action, desc) {
+        if (!keys || !action) return
+        keybindStatus = "Adding keybind..."
+        bindsAddProc.qOutput = ""
+        bindsAddProc.command = [root.helperScript, "binds-add", "--keys", keys, "--action", action, "--desc", desc || ""]
+        bindsAddProc.running = true
+    }
+
+    function updateKeybind(lineNum, keys, action, desc) {
+        if (!lineNum || !keys || !action) return
+        keybindStatus = "Updating keybind..."
+        bindsUpdateProc.qOutput = ""
+        bindsUpdateProc.command = [root.helperScript, "binds-update", "--line", String(lineNum), "--keys", keys, "--action", action, "--desc", desc || ""]
+        bindsUpdateProc.running = true
+    }
+
+    function deleteKeybind(lineNum) {
+        if (!lineNum) return
+        keybindStatus = "Deleting keybind..."
+        bindsDeleteProc.qOutput = ""
+        bindsDeleteProc.command = [root.helperScript, "binds-delete", "--line", String(lineNum)]
+        bindsDeleteProc.running = true
     }
 
     // ── Config File Management ────────────────────────────────────────────────
@@ -299,21 +700,6 @@ Singleton {
     }
 
     // ── Sub-processes ─────────────────────────────────────────────────────────
-
-    Process {
-        id: applyProcess
-        property string targetOpt: ""
-        property string targetVal: ""
-        property string outData: ""
-        stdout: SplitParser {
-            onRead: chunk => applyProcess.outData += chunk
-        }
-        onExited: (exitCode) => {
-            root._isApplying = false
-            applyProcess.outData = ""
-            root._processQueue()
-        }
-    }
 
     Process {
         id: openEditorProc
@@ -384,7 +770,7 @@ Singleton {
                 if (res && res.ok) {
                     root.originalContent = root.currentContent
                     root.saveStatus = "saved"
-                    root.statusMessage = "Saved successfully! Backup created: " + (res.backup ? res.backup.split('/').pop() : "")
+                    root.statusMessage = "Saved successfully! Backup created: " + (res.backup ? res.backup.split("/").pop() : "")
                     root.reloadCompositor()
                 } else if (res && res.syntax_error) {
                     root.saveStatus = "error"
@@ -443,6 +829,12 @@ Singleton {
                     if (data.touchpad_tap !== undefined) root.hyprTouchpadTap = data.touchpad_tap
                     if (data.touchpad_dwt !== undefined) root.hyprTouchpadDwt = data.touchpad_dwt
                     if (data.sensitivity !== undefined) root.hyprSensitivity = data.sensitivity
+                    if (data.follow_mouse !== undefined) root.hyprFollowMouse = data.follow_mouse
+                    if (data.workspace_swipe !== undefined) root.hyprWorkspaceSwipe = data.workspace_swipe
+                    if (data.workspace_swipe_invert !== undefined) root.hyprSwipeInvert = data.workspace_swipe_invert
+                    if (data.vfr !== undefined) root.hyprVFR = data.vfr
+                    if (data.allow_tearing !== undefined) root.hyprAllowTearing = data.allow_tearing
+                    if (data.smart_gaps !== undefined) root.hyprSmartGaps = data.smart_gaps
                     if (data.resize_border !== undefined) root.hyprResizeOnBorder = data.resize_border
                     if (data.disable_hyprland_logo !== undefined) root.hyprDisableLogo = data.disable_hyprland_logo
                     if (data.monitorsCount !== undefined) root.monitorsCount = data.monitorsCount
@@ -459,6 +851,99 @@ Singleton {
                 }
             } catch (e) {}
             queryProcess.qOutput = ""
+        }
+    }
+
+    Process {
+        id: bindsListProc
+        property string qOutput: ""
+        command: [root.helperScript, "binds-list"]
+        stdout: SplitParser {
+            onRead: chunk => {
+                bindsListProc.qOutput += chunk
+            }
+        }
+        onExited: {
+            root.isLoadingBinds = false
+            try {
+                const data = JSON.parse(bindsListProc.qOutput.trim())
+                if (data && data.ok && Array.isArray(data.binds)) {
+                    root.keybindsList = data.binds
+                }
+            } catch (e) {}
+            bindsListProc.qOutput = ""
+        }
+    }
+
+    Process {
+        id: bindsAddProc
+        property string qOutput: ""
+        stdout: SplitParser {
+            onRead: chunk => {
+                bindsAddProc.qOutput += chunk
+            }
+        }
+        onExited: (exitCode) => {
+            try {
+                const res = JSON.parse(bindsAddProc.qOutput.trim())
+                if (res && res.ok) {
+                    root.keybindStatus = "Keybind added successfully"
+                    root.loadKeybinds()
+                } else {
+                    root.keybindError = res.error || "Failed to add keybind"
+                }
+            } catch (e) {
+                root.loadKeybinds()
+            }
+            bindsAddProc.qOutput = ""
+        }
+    }
+
+    Process {
+        id: bindsUpdateProc
+        property string qOutput: ""
+        stdout: SplitParser {
+            onRead: chunk => {
+                bindsUpdateProc.qOutput += chunk
+            }
+        }
+        onExited: (exitCode) => {
+            try {
+                const res = JSON.parse(bindsUpdateProc.qOutput.trim())
+                if (res && res.ok) {
+                    root.keybindStatus = "Keybind updated successfully"
+                    root.loadKeybinds()
+                } else {
+                    root.keybindError = res.error || "Failed to update keybind"
+                }
+            } catch (e) {
+                root.loadKeybinds()
+            }
+            bindsUpdateProc.qOutput = ""
+        }
+    }
+
+    Process {
+        id: bindsDeleteProc
+        property string qOutput: ""
+        stdout: SplitParser {
+            onRead: chunk => {
+                bindsDeleteProc.qOutput += chunk
+            }
+        }
+        onExited: (exitCode) => {
+            try {
+                const res = JSON.parse(bindsDeleteProc.qOutput.trim())
+                if (res && res.ok) {
+                    root.keybindStatus = "Keybind deleted successfully"
+                    root.loadKeybinds()
+                } else {
+                    root.keybindError = res.error || "Failed to delete keybind"
+                }
+            } catch (e) {
+                root.loadKeybinds()
+            }
+            bindsDeleteProc.qOutput = ""
         }
     }
 }

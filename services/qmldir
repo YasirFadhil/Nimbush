@@ -19,4 +19,5 @@ singleton SoundFeedback 1.0 SoundFeedback.qml
 singleton Wallpaper 1.0 Wallpaper.qml
 singleton Config 1.0 Config.qml
 singleton Compositor 1.0 Compositor.qml
+singleton Emojis 1.0 Emojis.qml
 
