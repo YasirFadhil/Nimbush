@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# Quickshell Desktop Environment Installer
+# Nimbush Wayland Desktop Environment Installer
 # Interactive setup, real-time dependency resolver & compositor injector
 # First-class support for Arch, Debian/Ubuntu, Fedora, NixOS, openSUSE & more.
 # ==============================================================================
@@ -56,7 +56,7 @@ SKIP_DEPS=false
 SHOW_NIX_GUIDE=false
 
 print_help() {
-    echo -e "${BOLD}Quickshell Desktop Environment Installer${NC}"
+    echo -e "${BOLD}Nimbush Wayland Desktop Environment Installer${NC}"
     echo ""
     echo -e "${BOLD}Usage:${NC} ./install.sh [OPTIONS]"
     echo ""
@@ -68,28 +68,38 @@ print_help() {
     echo "  --nix-guide        Display NixOS & Home Manager declarative setup instructions"
     echo "  -h, --help         Show this help message and exit"
     echo ""
-    exit 0
 }
 
-for arg in "$@"; do
-    case "$arg" in
+while [[ $# -gt 0 ]]; do
+    case "$1" in
         -y|--yes)
             AUTO_YES=true
+            shift
             ;;
         --check-only)
             CHECK_ONLY=true
+            shift
             ;;
         --inject-only)
             INJECT_ONLY=true
+            shift
             ;;
         --skip-deps)
             SKIP_DEPS=true
+            shift
             ;;
         --nix-guide)
             SHOW_NIX_GUIDE=true
+            shift
             ;;
         -h|--help)
             print_help
+            exit 0
+            ;;
+        *)
+            echo -e "${RED}Unknown option: $1${NC}"
+            print_help
+            exit 1
             ;;
     esac
 done
@@ -101,14 +111,14 @@ print_banner() {
     cat << 'EOF'
  ╔══════════════════════════════════════════════════════════════════════════════╗
  ║                                                                              ║
- ║      ██████╗ ██╗   ██╗██╗ ██████╗██╗  ██╗███████╗██╗  ██╗███████╗██╗     ██╗ ║
- ║     ██╔═══██╗██║   ██║██║██╔════╝██║ ██╔╝██╔════╝██║  ██║██╔════╝██║     ██║ ║
- ║     ██║   ██║██║   ██║██║██║     █████╔╝ ███████╗███████║█████╗  ██║     ██║ ║
- ║     ██║▄▄ ██║██║   ██║██║██║     ██╔═██╗ ╚════██║██╔══██║██╔══╝  ██║     ██║ ║
- ║     ╚██████╔╝╚██████╔╝██║╚██████╗██║  ██╗███████║██║  ██║███████╗███████╗███████╗
- ║      ╚══▀▀═╝  ╚═════╝ ╚═╝ ╚═════╝╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝╚══════╝╚══════╝╚══════╝
+ ║    ███╗   ██╗  ██╗  ███╗   ███╗  ██████╗   ██╗   ██╗  ███████╗  ██╗  ██╗     ║
+ ║    ████╗  ██║  ██║  ████╗ ████║  ██╔══██╗  ██║   ██║  ██╔════╝  ██║  ██║     ║
+ ║    ██╔██╗ ██║  ██║  ██╔████╔██║  ██████╔╝  ██║   ██║  ███████╗  ███████║     ║
+ ║    ██║╚██╗██║  ██║  ██║╚██╔╝██║  ██╔══██╗  ██║   ██║  ╚════██║  ██╔══██║     ║
+ ║    ██║ ╚████║  ██║  ██║ ╚═╝ ██║  ██████╔╝  ╚██████╔╝  ███████║  ██║  ██║     ║
+ ║    ╚═╝  ╚═══╝  ╚═╝  ╚═╝     ╚═╝  ╚═════╝    ╚═════╝   ╚══════╝  ╚═╝  ╚═╝     ║
  ║                                                                              ║
- ║                 Quickshell Desktop Environment Installer                     ║
+ ║                  Nimbush Wayland Desktop Shell Installer                     ║
  ║             Interactive Setup, Dependency Resolver & Compositor Injector     ║
  ╚══════════════════════════════════════════════════════════════════════════════╝
 EOF
@@ -160,7 +170,7 @@ show_nix_declarative_guide() {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
     home-manager.url = "github:nix-community/home-manager";
     quickshell-shell = {
-      url = "github:YasirFadhil/Shell";
+      url = "github:YasirFadhil/Nimbush";
       inputs.nixpkgs.follows = "nixpkgs";
     };
   };
@@ -187,7 +197,7 @@ EOF
     echo -e "  ${DIM}────────────────────────────────────────────────────────────────────────${NC}\n"
 
     echo -e "${BOLD}3. Test Quickshell instantly with Nix Flakes (No install needed):${NC}"
-    echo -e "   ${GREEN}nix run github:YasirFadhil/Shell${NC}  or  ${GREEN}nix run .${NC}\n"
+    echo -e "   ${GREEN}nix run github:YasirFadhil/Nimbush${NC}  or  ${GREEN}nix run .${NC}\n"
 
     echo -e "${BOLD}4. Enter a temporary Nix development shell:${NC}"
     echo -e "   ${GREEN}nix develop${NC}\n"

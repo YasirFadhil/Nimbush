@@ -1,5 +1,5 @@
 {
-  description = "YasirFadhil's Quickshell Wayland Desktop Environment Shell";
+  description = "Nimbush - Quickshell Wayland Desktop Environment by YasirFadhil";
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
@@ -71,7 +71,7 @@
           '';
 
           meta = with pkgs.lib; {
-            description = "Quickshell Wayland desktop environment configuration by YasirFadhil";
+            description = "Nimbush - Quickshell Wayland desktop environment configuration by YasirFadhil";
             license = licenses.mit;
             platforms = platforms.linux;
           };

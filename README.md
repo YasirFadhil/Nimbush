@@ -1,6 +1,6 @@
-# Shell by YasirFadhil
+# Nimbush
 
-This repository contains a modern Wayland desktop environment configuration built with **Quickshell**.
+This repository contains a modern Wayland desktop environment configuration built with **Quickshell** by YasirFadhil.
 
 ## What is this?
 
@@ -63,7 +63,7 @@ Before running Quickshell, ensure the required dependencies are installed:
 ### Automated Install
 
 ```bash
-git clone https://github.com/YasirFadhil/Shell.git ~/.config/quickshell
+git clone https://github.com/YasirFadhil/Nimbush.git ~/.config/quickshell
 cd ~/.config/quickshell
 ./install.sh
 ```
@@ -81,7 +81,7 @@ This repository includes a `flake.nix` and a built-in **Home Manager module** ([
 Run Quickshell directly via Flake without manual installation:
 
 ```bash
-nix run github:YasirFadhil/Shell
+nix run github:YasirFadhil/Nimbush
 ```
 
 Or from inside the cloned repository directory:
@@ -102,7 +102,7 @@ Add this repository to your system `flake.nix` inputs:
     home-manager.url = "github:nix-community/home-manager";
 
     quickshell-shell = {
-      url = "github:YasirFadhil/Shell";
+      url = "github:YasirFadhil/Nimbush";
       inputs.nixpkgs.follows = "nixpkgs";
     };
   };

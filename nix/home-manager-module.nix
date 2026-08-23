@@ -25,7 +25,7 @@ let
 in
 {
   options.programs.quickshell-shell = {
-    enable = mkEnableOption "YasirFadhil's Quickshell Wayland Desktop Shell";
+    enable = mkEnableOption "Nimbush - YasirFadhil's Quickshell Wayland Desktop Shell";
 
     package = mkOption {
       type = types.nullOr types.package;
@@ -153,7 +153,7 @@ in
       systemd.user.services.quickshell-shell = mkIf cfg.enableSystemdService {
         Unit = {
           Description = "Quickshell Wayland Desktop Shell";
-          Documentation = [ "https://github.com/YasirFadhil/Shell" ];
+          Documentation = [ "https://github.com/YasirFadhil/Nimbush" ];
           PartOf = [ "graphical-session.target" ];
           After = [ "graphical-session.target" ];
         };
