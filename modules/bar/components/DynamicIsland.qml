@@ -186,6 +186,7 @@ Item {
     }
 
     function showSysHud(icon, title, detail, iconColor, customDuration) {
+        if (root.notifActive) return
         sysHudIcon = icon
         sysHudTitle = title
         sysHudDetail = detail || ""
@@ -565,7 +566,7 @@ Item {
     }
 
     function pulse() {
-        if (pinned) return
+        if (pinned || notifActive) return
         autoExpanded = true
         autoCollapseTimer.restart()
     }
@@ -632,6 +633,8 @@ Item {
     Connections {
         target: Services.Notifications
         function onNewNotification(entry) {
+            root.sysHudActive = false
+            sysHudTimer.stop()
             root.activeNotifIndex = 0
             root.replyMode = false
             notifTimer.restart()
@@ -687,7 +690,8 @@ Item {
         width: root.expanded ? root.calculatedExpandedWidth : root.calculatedCollapsedWidth
         height: root.expanded ? root.calculatedExpandedHeight : root.collapsedHeight
 
-        radius: (root.sysHudActive || !root.expanded) ? (height / 2) : Services.Theme.radiusLg
+        readonly property bool isCapsuleShape: !root.expanded || (!root.notifActive && root.sysHudActive)
+        radius: isCapsuleShape ? (height / 2) : Services.Theme.radiusLg
 
         color: Services.Theme.bgPure
         border.color: root.isCritical ? Services.Theme.danger : (root.expanded ? Services.Theme.borderHighlight : Services.Theme.borderSubtle)
@@ -707,7 +711,7 @@ Item {
             }
         }
         Behavior on radius {
-            enabled: !root.sysHudActive && root.expanded
+            enabled: !island.isCapsuleShape || root.notifActive
             NumberAnimation {
                 duration: 280
                 easing.type: Easing.OutCubic

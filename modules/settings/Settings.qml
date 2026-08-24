@@ -131,7 +131,9 @@ FloatingWindow {
 
             ColumnLayout {
                 id: cardContent
-                anchors.fill: parent
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.top: parent.top
                 anchors.margins: 4
                 spacing: 0
             }
@@ -971,6 +973,415 @@ FloatingWindow {
         color: Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.05) : Qt.rgba(0, 0, 0, 0.06)
     }
 
+    // ── 7. Settings Key Recorder (Interactive Keyboard Shortcut Grabber) ──────
+    component KeyRecorder: Rectangle {
+        id: recRoot
+        property string value: ""
+        property bool isRecording: false
+        property var heldModifiers: []
+        property string placeholder: "Click to record shortcut..."
+        property bool showClearButton: true
+        property bool compact: false
+        signal recorded(string keys)
+        signal cleared()
+
+        implicitHeight: compact ? 32 : 36
+        radius: compact ? 6 : Services.Theme.radiusSm
+        color: isRecording 
+            ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.08)
+            : (recMouse.containsMouse ? Services.Theme.surfaceVariant : Services.Theme.bgDeep)
+        border.color: isRecording 
+            ? Services.Theme.accent 
+            : (recMouse.containsMouse ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.45) : Services.Theme.border)
+        border.width: isRecording ? 1.5 : 1
+
+        Behavior on color { ColorAnimation { duration: 150 } }
+        Behavior on border.color { ColorAnimation { duration: 150 } }
+
+        // Invisible key event receiver
+        Item {
+            id: keyReceiver
+            anchors.fill: parent
+            focus: recRoot.isRecording
+
+            Keys.onPressed: (event) => {
+                if (!recRoot.isRecording) return
+
+                // Check for cancel with Escape (only when no modifiers held)
+                if (event.key === Qt.Key_Escape && event.modifiers === Qt.NoModifier) {
+                    recRoot.isRecording = false
+                    recRoot.heldModifiers = []
+                    event.accepted = true
+                    return
+                }
+
+                // Check for Backspace/Delete to clear
+                if ((event.key === Qt.Key_Backspace || event.key === Qt.Key_Delete) && event.modifiers === Qt.NoModifier) {
+                    recRoot.value = ""
+                    recRoot.isRecording = false
+                    recRoot.heldModifiers = []
+                    recRoot.cleared()
+                    event.accepted = true
+                    return
+                }
+
+                const mods = []
+                if ((event.modifiers & Qt.MetaModifier) || event.key === Qt.Key_Super_L || event.key === Qt.Key_Super_R || event.key === Qt.Key_Meta) mods.push("SUPER")
+                if ((event.modifiers & Qt.ControlModifier) || event.key === Qt.Key_Control) mods.push("CTRL")
+                if ((event.modifiers & Qt.AltModifier) || event.key === Qt.Key_Alt) mods.push("ALT")
+                if ((event.modifiers & Qt.ShiftModifier) || event.key === Qt.Key_Shift) mods.push("SHIFT")
+
+                // If purely a modifier key was pressed, update held modifiers preview
+                if (event.key === Qt.Key_Super_L || event.key === Qt.Key_Super_R || event.key === Qt.Key_Meta ||
+                    event.key === Qt.Key_Control || event.key === Qt.Key_Alt || event.key === Qt.Key_Shift) {
+                    recRoot.heldModifiers = mods
+                    event.accepted = true
+                    return
+                }
+
+                // Main non-modifier key pressed
+                const keyName = recRoot.resolveKeyName(event.key, event.text)
+                if (keyName && keyName.length > 0) {
+                    const allParts = [...mods, keyName]
+                    const resultStr = allParts.join(" + ")
+                    recRoot.value = resultStr
+                    recRoot.isRecording = false
+                    recRoot.heldModifiers = []
+                    recRoot.recorded(resultStr)
+                }
+                event.accepted = true
+            }
+
+            Keys.onReleased: (event) => {
+                if (!recRoot.isRecording) return
+                const mods = []
+                if (event.modifiers & Qt.MetaModifier) mods.push("SUPER")
+                if (event.modifiers & Qt.ControlModifier) mods.push("CTRL")
+                if (event.modifiers & Qt.AltModifier) mods.push("ALT")
+                if (event.modifiers & Qt.ShiftModifier) mods.push("SHIFT")
+                recRoot.heldModifiers = mods
+                event.accepted = true
+            }
+        }
+
+        function resolveKeyName(key, text) {
+            switch (key) {
+                case Qt.Key_Return:
+                case Qt.Key_Enter: return "Return"
+                case Qt.Key_Space: return "Space"
+                case Qt.Key_Tab:
+                case Qt.Key_Backtab: return "Tab"
+                case Qt.Key_Backspace: return "BackSpace"
+                case Qt.Key_Delete: return "Delete"
+                case Qt.Key_Insert: return "Insert"
+                case Qt.Key_Home: return "Home"
+                case Qt.Key_End: return "End"
+                case Qt.Key_PageUp: return "Page_Up"
+                case Qt.Key_PageDown: return "Page_Down"
+                case Qt.Key_Left: return "Left"
+                case Qt.Key_Right: return "Right"
+                case Qt.Key_Up: return "Up"
+                case Qt.Key_Down: return "Down"
+                case Qt.Key_Print: return "Print"
+                case Qt.Key_Pause: return "Pause"
+                case Qt.Key_CapsLock: return "Caps_Lock"
+                case Qt.Key_NumLock: return "Num_Lock"
+                case Qt.Key_ScrollLock: return "Scroll_Lock"
+                case Qt.Key_F1: return "F1"
+                case Qt.Key_F2: return "F2"
+                case Qt.Key_F3: return "F3"
+                case Qt.Key_F4: return "F4"
+                case Qt.Key_F5: return "F5"
+                case Qt.Key_F6: return "F6"
+                case Qt.Key_F7: return "F7"
+                case Qt.Key_F8: return "F8"
+                case Qt.Key_F9: return "F9"
+                case Qt.Key_F10: return "F10"
+                case Qt.Key_F11: return "F11"
+                case Qt.Key_F12: return "F12"
+                case Qt.Key_VolumeUp: return "XF86AudioRaiseVolume"
+                case Qt.Key_VolumeDown: return "XF86AudioLowerVolume"
+                case Qt.Key_VolumeMute: return "XF86AudioMute"
+                case Qt.Key_MicMute: return "XF86AudioMicMute"
+                case Qt.Key_MediaPlay:
+                case Qt.Key_MediaTogglePlayPause: return "XF86AudioPlay"
+                case Qt.Key_MediaNext: return "XF86AudioNext"
+                case Qt.Key_MediaPrevious: return "XF86AudioPrev"
+                case Qt.Key_MediaStop: return "XF86AudioStop"
+                case Qt.Key_MonBrightnessUp: return "XF86MonBrightnessUp"
+                case Qt.Key_MonBrightnessDown: return "XF86MonBrightnessDown"
+                case Qt.Key_KbdBrightnessUp: return "XF86KbdBrightnessUp"
+                case Qt.Key_KbdBrightnessDown: return "XF86KbdBrightnessDown"
+                case Qt.Key_Calculator: return "XF86Calculator"
+                case Qt.Key_Minus: return "minus"
+                case Qt.Key_Plus:
+                case Qt.Key_Equal: return "equal"
+                case Qt.Key_BracketLeft: return "bracketleft"
+                case Qt.Key_BracketRight: return "bracketright"
+                case Qt.Key_BraceLeft: return "braceleft"
+                case Qt.Key_BraceRight: return "braceright"
+                case Qt.Key_Semicolon: return "semicolon"
+                case Qt.Key_Apostrophe: return "apostrophe"
+                case Qt.Key_QuoteLeft:
+                case Qt.Key_AsciiTilde: return "grave"
+                case Qt.Key_Backslash: return "backslash"
+                case Qt.Key_Comma: return "comma"
+                case Qt.Key_Period: return "period"
+                case Qt.Key_Slash: return "slash"
+                default:
+                    if (key >= Qt.Key_A && key <= Qt.Key_Z) {
+                        return String.fromCharCode(key).toLowerCase()
+                    }
+                    if (key >= Qt.Key_0 && key <= Qt.Key_9) {
+                        return String.fromCharCode(key)
+                    }
+                    if (text && text.trim().length === 1) {
+                        return text.trim()
+                    }
+                    return ""
+            }
+        }
+
+        function startRecording() {
+            recRoot.heldModifiers = []
+            recRoot.isRecording = true
+            Qt.callLater(() => keyReceiver.forceActiveFocus())
+        }
+
+        function stopRecording() {
+            recRoot.isRecording = false
+            recRoot.heldModifiers = []
+        }
+
+        RowLayout {
+            anchors.fill: parent
+            anchors.leftMargin: recRoot.compact ? 8 : 12
+            anchors.rightMargin: recRoot.compact ? 8 : 12
+            spacing: 8
+
+            // Recording Pulsing Dot / Keyboard Icon
+            Item {
+                Layout.preferredWidth: recRoot.compact ? 16 : 20
+                Layout.preferredHeight: recRoot.compact ? 16 : 20
+                Layout.alignment: Qt.AlignVCenter
+
+                Rectangle {
+                    anchors.centerIn: parent
+                    width: recRoot.isRecording ? 10 : 16
+                    height: width
+                    radius: width / 2
+                    color: recRoot.isRecording ? Services.Theme.danger : "transparent"
+                    visible: recRoot.isRecording
+
+                    SequentialAnimation on scale {
+                        running: recRoot.isRecording
+                        loops: Animation.Infinite
+                        NumberAnimation { from: 1.0; to: 1.4; duration: 550; easing.type: Easing.InOutSine }
+                        NumberAnimation { from: 1.4; to: 1.0; duration: 550; easing.type: Easing.InOutSine }
+                    }
+                }
+
+                Text {
+                    anchors.centerIn: parent
+                    visible: !recRoot.isRecording
+                    text: Services.Icons.keyboard || "󰌌"
+                    font.family: Services.Theme.fontSymbols
+                    font.pixelSize: recRoot.compact ? 11 : 13
+                    color: recRoot.value.length > 0 ? Services.Theme.accent : Services.Theme.textDisabled
+                }
+            }
+
+            // Key Badges / Recording Status Area
+            Item {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                clip: true
+
+                // Active Recording Mode
+                Row {
+                    anchors.left: parent.left
+                    anchors.verticalCenter: parent.verticalCenter
+                    visible: recRoot.isRecording
+                    spacing: 4
+
+                    Repeater {
+                        model: recRoot.heldModifiers
+                        delegate: Rectangle {
+                            height: recRoot.compact ? 20 : 24
+                            width: hModTxt.implicitWidth + 12
+                            radius: 4
+                            color: Services.Theme.accent
+                            Text {
+                                id: hModTxt
+                                anchors.centerIn: parent
+                                text: modelData
+                                font.family: Services.Theme.fontMono
+                                font.pixelSize: recRoot.compact ? 8 : 9
+                                font.bold: true
+                                color: "#ffffff"
+                            }
+                        }
+                    }
+
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: recRoot.heldModifiers.length > 0 ? "+ press key..." : "Press key combination on keyboard..."
+                        font.pixelSize: recRoot.compact ? 9 : 11
+                        font.weight: Font.Medium
+                        color: Services.Theme.accent
+                        elide: Text.ElideRight
+                    }
+                }
+
+                // Idle with Value: Physical-style Keycaps
+                Row {
+                    anchors.left: parent.left
+                    anchors.verticalCenter: parent.verticalCenter
+                    visible: !recRoot.isRecording && recRoot.value.length > 0
+                    spacing: 4
+
+                    readonly property var tokens: {
+                        const raw = (recRoot.value || "").trim()
+                        if (!raw) return []
+                        return raw.split("+").map(s => s.trim()).filter(s => s.length > 0)
+                    }
+
+                    Repeater {
+                        model: parent.tokens
+                        delegate: Row {
+                            id: tokRow
+                            required property string modelData
+                            required property int index
+                            spacing: 4
+                            anchors.verticalCenter: parent.verticalCenter
+
+                            readonly property bool isMod: (tokRow.modelData.toUpperCase() === "SUPER" || tokRow.modelData.toUpperCase() === "CTRL" || tokRow.modelData.toUpperCase() === "ALT" || tokRow.modelData.toUpperCase() === "SHIFT")
+
+                            Rectangle {
+                                height: recRoot.compact ? 20 : 24
+                                width: Math.max(22, tokTxt.implicitWidth + (recRoot.compact ? 8 : 12))
+                                radius: 4
+                                color: Services.Theme.bgElevated
+                                border.color: tokRow.isMod ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.45) : Services.Theme.border
+                                border.width: 1
+
+                                Text {
+                                    id: tokTxt
+                                    anchors.centerIn: parent
+                                    text: tokRow.modelData
+                                    font.family: Services.Theme.fontMono
+                                    font.pixelSize: recRoot.compact ? 8 : 9
+                                    font.bold: true
+                                    color: tokRow.isMod ? Services.Theme.accent : Services.Theme.textPrimary
+                                }
+                            }
+
+                            Text {
+                                anchors.verticalCenter: parent.verticalCenter
+                                visible: tokRow.index < (parent.parent.tokens.length - 1)
+                                text: "+"
+                                font.pixelSize: recRoot.compact ? 8 : 9
+                                font.bold: true
+                                color: Services.Theme.textDisabled
+                            }
+                        }
+                    }
+                }
+
+                // Idle Empty State
+                Text {
+                    anchors.fill: parent
+                    verticalAlignment: Text.AlignVCenter
+                    visible: !recRoot.isRecording && recRoot.value.length === 0
+                    text: recRoot.placeholder
+                    font.pixelSize: recRoot.compact ? 9 : 11
+                    color: Services.Theme.textDisabled
+                    elide: Text.ElideRight
+                }
+            }
+
+            // Right Buttons (Record / Stop / Clear)
+            RowLayout {
+                spacing: 4
+                Layout.alignment: Qt.AlignVCenter
+
+                Rectangle {
+                    height: recRoot.compact ? 22 : 26
+                    implicitWidth: rBtnTxt.implicitWidth + (recRoot.compact ? 10 : 16)
+                    radius: 4
+                    color: recRoot.isRecording 
+                        ? Services.Theme.danger
+                        : (rBtnMouse.containsMouse ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.18) : Services.Theme.surfaceVariant)
+                    border.color: recRoot.isRecording ? Services.Theme.danger : Services.Theme.border
+                    border.width: 1
+
+                    RowLayout {
+                        id: rBtnTxt
+                        anchors.centerIn: parent
+                        spacing: 4
+                        Text {
+                            text: recRoot.isRecording ? (Services.Icons.close || "✕") : "Record"
+                            font.pixelSize: recRoot.compact ? 8 : 10
+                            font.weight: Font.DemiBold
+                            color: recRoot.isRecording ? "#ffffff" : Services.Theme.textPrimary
+                        }
+                    }
+
+                    MouseArea {
+                        id: rBtnMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            if (recRoot.isRecording) recRoot.stopRecording()
+                            else recRoot.startRecording()
+                        }
+                    }
+                }
+
+                Rectangle {
+                    visible: recRoot.showClearButton && !recRoot.isRecording && recRoot.value.length > 0
+                    height: recRoot.compact ? 22 : 26
+                    width: height
+                    radius: 4
+                    color: clrBtnMouse.containsMouse ? Qt.rgba(0.9, 0.2, 0.2, 0.15) : "transparent"
+                    border.color: clrBtnMouse.containsMouse ? Services.Theme.danger : "transparent"
+                    border.width: 1
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "✕"
+                        font.pixelSize: recRoot.compact ? 8 : 10
+                        font.bold: true
+                        color: clrBtnMouse.containsMouse ? Services.Theme.danger : Services.Theme.textDisabled
+                    }
+
+                    MouseArea {
+                        id: clrBtnMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            recRoot.value = ""
+                            recRoot.cleared()
+                        }
+                    }
+                }
+            }
+        }
+
+        MouseArea {
+            id: recMouse
+            anchors.fill: parent
+            z: -1
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onClicked: {
+                if (!recRoot.isRecording) recRoot.startRecording()
+            }
+        }
+    }
+
     // ═════════════════════════════════════════════════════════════════════════
     // WINDOW ROOT LAYOUT
     // ═════════════════════════════════════════════════════════════════════════
@@ -1405,7 +1816,7 @@ FloatingWindow {
                     id: contentFlick
                     anchors.fill: parent
                     anchors.margins: 18
-                    contentHeight: tabStack.implicitHeight + 28
+                    contentHeight: Math.max(contentFlick.height, tabStack.currentContentHeight + 40)
                     contentWidth: width
                     clip: true
                     boundsBehavior: Flickable.StopAtBounds
@@ -1417,10 +1828,17 @@ FloatingWindow {
                         width: contentFlick.width - 10
                         currentIndex: rootWindow.currentTab
 
+                        readonly property var tabItems: [tab0, tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8]
+                        readonly property Item currentItem: (currentIndex >= 0 && currentIndex < tabItems.length) ? tabItems[currentIndex] : null
+                        readonly property real currentContentHeight: currentItem ? currentItem.implicitHeight : implicitHeight
+
+                        height: currentContentHeight
+
                         // ═════════════════════════════════════════════
                         // TAB 0: APPEARANCE & THEMING (macOS STYLE)
                         // ═════════════════════════════════════════════
                         ColumnLayout {
+                            id: tab0
                             Layout.fillWidth: true
                             spacing: 16
 
@@ -2000,6 +2418,7 @@ FloatingWindow {
                         // TAB 1: BAR & DYNAMIC ISLAND
                         // ═════════════════════════════════════════════
                         ColumnLayout {
+                            id: tab1
                             Layout.fillWidth: true
                             spacing: 14
 
@@ -2188,6 +2607,7 @@ FloatingWindow {
                         // TAB 2: NOTIFICATIONS
                         // ═════════════════════════════════════════════
                         ColumnLayout {
+                            id: tab2
                             Layout.fillWidth: true
                             spacing: 14
 
@@ -2290,6 +2710,7 @@ FloatingWindow {
                         // TAB 3: SOUND & AUDIO
                         // ═════════════════════════════════════════════
                         ColumnLayout {
+                            id: tab3
                             Layout.fillWidth: true
                             spacing: 14
 
@@ -2364,6 +2785,7 @@ FloatingWindow {
                         // TAB 4: LOCKSCREEN & POWER
                         // ═════════════════════════════════════════════
                         ColumnLayout {
+                            id: tab4
                             Layout.fillWidth: true
                             spacing: 14
 
@@ -2646,6 +3068,7 @@ FloatingWindow {
                         // TAB 5: COMPOSITOR & DISPLAYS
                         // ═════════════════════════════════════════════
                         ColumnLayout {
+                            id: tab5
                             Layout.fillWidth: true
                             spacing: 12
 
@@ -2806,19 +3229,117 @@ FloatingWindow {
 
 
 
-                            // ── Segment Switcher Pill Bar ──────────────────────────
+                            // ── Segment Switcher Pill Bar (Liquid Glass Elastic Tabs) ──────────────────────────
                             Rectangle {
+                                id: compTabBar
                                 Layout.fillWidth: true
-                                height: 36
-                                radius: Services.Theme.radiusSm
+                                height: 38
+                                radius: 8
                                 color: Services.Theme.surfaceVariant
                                 border.color: Services.Theme.border
                                 border.width: 1
+                                clip: true
+
+                                // Liquid Glass Sliding Indicator Pill
+                                Rectangle {
+                                    id: liquidPill
+                                    z: 1
+                                    y: 3
+                                    height: parent.height - 6
+                                    radius: 6
+
+                                    readonly property int tabCount: 4
+                                    readonly property real itemWidth: Math.max(0, (compTabBar.width - 6 - (tabCount - 1) * 3) / tabCount)
+                                    x: 3 + rootWindow.compSubTab * (itemWidth + 3)
+                                    width: itemWidth
+
+                                    // Liquid Transparent Glass Material
+                                    color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.22)
+                                    border.color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.55)
+                                    border.width: 1
+
+                                    property real stretchScaleX: 1.0
+                                    property real stretchScaleY: 1.0
+                                    transform: Scale {
+                                        origin.x: liquidPill.width / 2
+                                        origin.y: liquidPill.height / 2
+                                        xScale: liquidPill.stretchScaleX
+                                        yScale: liquidPill.stretchScaleY
+                                    }
+
+                                    // Top Specular Glass Highlight Line
+                                    Rectangle {
+                                        anchors.top: parent.top
+                                        anchors.left: parent.left
+                                        anchors.right: parent.right
+                                        anchors.topMargin: 1
+                                        anchors.leftMargin: 4
+                                        anchors.rightMargin: 4
+                                        height: 1
+                                        radius: 0.5
+                                        color: Qt.rgba(1, 1, 1, 0.40)
+                                    }
+
+                                    // Liquid Gloss Curved Sheen
+                                    Rectangle {
+                                        anchors.top: parent.top
+                                        anchors.left: parent.left
+                                        anchors.right: parent.right
+                                        anchors.topMargin: 1
+                                        anchors.leftMargin: 2
+                                        anchors.rightMargin: 2
+                                        height: parent.height * 0.46
+                                        radius: 5
+                                        gradient: Gradient {
+                                            GradientStop { position: 0.0; color: Qt.rgba(1, 1, 1, 0.16) }
+                                            GradientStop { position: 1.0; color: Qt.rgba(1, 1, 1, 0.0) }
+                                        }
+                                    }
+
+                                    // Fluid Sliding Transitions
+                                    Behavior on x {
+                                        NumberAnimation {
+                                            duration: 320
+                                            easing.type: Easing.OutBack
+                                            easing.overshoot: 1.15
+                                        }
+                                    }
+                                    Behavior on width {
+                                        NumberAnimation {
+                                            duration: 320
+                                            easing.type: Easing.OutBack
+                                            easing.overshoot: 1.15
+                                        }
+                                    }
+                                    Behavior on color { ColorAnimation { duration: 250 } }
+                                    Behavior on border.color { ColorAnimation { duration: 250 } }
+                                }
+
+                                // Fluid Elastic Squash & Stretch Animation
+                                SequentialAnimation {
+                                    id: fluidStretchAnim
+                                    ParallelAnimation {
+                                        NumberAnimation { target: liquidPill; property: "stretchScaleX"; to: 1.08; duration: 85; easing.type: Easing.OutQuad }
+                                        NumberAnimation { target: liquidPill; property: "stretchScaleY"; to: 0.92; duration: 85; easing.type: Easing.OutQuad }
+                                    }
+                                    ParallelAnimation {
+                                        NumberAnimation { target: liquidPill; property: "stretchScaleX"; to: 1.0; duration: 235; easing.type: Easing.OutBack; easing.overshoot: 1.28 }
+                                        NumberAnimation { target: liquidPill; property: "stretchScaleY"; to: 1.0; duration: 235; easing.type: Easing.OutBack; easing.overshoot: 1.28 }
+                                    }
+                                }
+
+                                Connections {
+                                    target: rootWindow
+                                    function onCompSubTabChanged() {
+                                        fluidStretchAnim.restart()
+                                    }
+                                }
 
                                 RowLayout {
                                     anchors.fill: parent
                                     anchors.margins: 3
                                     spacing: 3
+                                    z: 2
 
                                     Repeater {
                                         model: [
@@ -2828,14 +3349,20 @@ FloatingWindow {
                                             { id: 3, label: "Power & Gaming",   icon: Services.Icons.speed }
                                         ]
 
-                                        delegate: Rectangle {
+                                        delegate: Item {
                                             Layout.fillWidth: true
                                             Layout.fillHeight: true
-                                            radius: 4
                                             readonly property bool isCur: rootWindow.compSubTab === modelData.id
                                             readonly property bool isHyprOnly: modelData.id !== 1
                                             readonly property bool nonHypr: isHyprOnly && !(Services.Compositor && Services.Compositor.activeCompositor === "hyprland")
-                                            color: isCur ? Services.Theme.accent : (subMouse.containsMouse ? Qt.rgba(1, 1, 1, 0.06) : "transparent")
+
+                                            // Hover effect for unselected tabs
+                                            Rectangle {
+                                                anchors.fill: parent
+                                                radius: 5
+                                                color: subMouse.containsMouse && !isCur ? Qt.rgba(1, 1, 1, 0.05) : "transparent"
+                                                Behavior on color { ColorAnimation { duration: 150 } }
+                                            }
 
                                             // Orange dot indicator for limited-support tabs
                                             Rectangle {
@@ -2844,22 +3371,34 @@ FloatingWindow {
                                                 anchors.topMargin: 4; anchors.rightMargin: 5
                                                 width: 5; height: 5; radius: 2.5
                                                 color: "#ff9500"; opacity: 0.9
+                                                z: 3
                                             }
 
                                             RowLayout {
-                                                anchors.centerIn: parent; spacing: 5
+                                                anchors.centerIn: parent
+                                                spacing: 6
+                                                z: 2
                                                 Text {
                                                     text: modelData.icon
-                                                    font.family: Services.Theme.fontSymbols; font.pixelSize: 10
-                                                    color: isCur ? "#ffffff" : (subMouse.containsMouse ? Services.Theme.textPrimary : (nonHypr ? "#ff9500" : Services.Theme.textSecondary))
+                                                    font.family: Services.Theme.fontSymbols; font.pixelSize: 11
+                                                    color: isCur ? Services.Theme.accent : (subMouse.containsMouse ? Services.Theme.textPrimary : (nonHypr ? "#ff9500" : Services.Theme.textSecondary))
+                                                    Behavior on color { ColorAnimation { duration: 200 } }
                                                 }
                                                 Text {
-                                                    text: modelData.label; font.pixelSize: 10
+                                                    text: modelData.label
+                                                    font.pixelSize: 11
                                                     font.weight: isCur ? Font.DemiBold : Font.Normal
-                                                    color: isCur ? "#ffffff" : (subMouse.containsMouse ? Services.Theme.textPrimary : (nonHypr ? "#ff9500" : Services.Theme.textSecondary))
+                                                    color: isCur ? Services.Theme.textPrimary : (subMouse.containsMouse ? Services.Theme.textPrimary : (nonHypr ? "#ff9500" : Services.Theme.textSecondary))
+                                                    Behavior on color { ColorAnimation { duration: 200 } }
                                                 }
                                             }
-                                            MouseArea { id: subMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: rootWindow.compSubTab = modelData.id }
+                                            MouseArea {
+                                                id: subMouse
+                                                anchors.fill: parent
+                                                hoverEnabled: true
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: rootWindow.compSubTab = modelData.id
+                                            }
                                         }
                                     }
                                 }
@@ -3308,10 +3847,97 @@ FloatingWindow {
                         // TAB 6: KEYBINDINGS (LIVE FROM COMPOSITOR CONFIG)
                         // ═════════════════════════════════════════════
                         ColumnLayout {
+                            id: tab6
                             Layout.fillWidth: true
                             spacing: 14
 
-                            // ── Top Toolbar: Search + Add Button ──────────────────
+                            property string addCategoryType: "shell" // "shell", "compositor", "apps", "custom"
+
+                            readonly property var shellActions: [
+                                { id: "qs ipc call launcher toggle",        label: "App Launcher",               desc: "Toggle application search & launcher",       icon: Services.Icons.sparkle || "󰀉" },
+                                { id: "qs ipc call dashboard toggle",       label: "Dashboard & Control Center", desc: "Toggle quick control center and widgets",    icon: Services.Icons.dashboard || "󰕮" },
+                                { id: "qs ipc call powermenu toggle",       label: "Power Menu",                 desc: "Toggle power, sleep, and session menu",      icon: Services.Icons.power || "󰐥" },
+                                { id: "qs ipc call clipboard toggle",       label: "Clipboard Manager",          desc: "Toggle clipboard history manager",           icon: Services.Icons.clipboard || "󰅌" },
+                                { id: "qs ipc call lockscreen toggle",      label: "Lock Screen",                desc: "Lock session immediately",                   icon: Services.Icons.lock || "󰌾" },
+                                { id: "qs ipc call settings toggle",        label: "Settings Panel",             desc: "Toggle Quickshell system settings",          icon: Services.Icons.settings || "󰒓" },
+                                { id: "qs ipc call notifications toggle",   label: "Notification Center",        desc: "Toggle notification history panel",          icon: Services.Icons.bell || "󰂚" },
+                                { id: "qs ipc call wallpaper toggle",       label: "Wallpaper Selector",         desc: "Open wallpaper picker",                      icon: Services.Icons.image || "󰋩" }
+                            ]
+
+                            readonly property var compositorActions: [
+                                { id: "close window",                                     label: "Close Active Window",       desc: "Close the currently focused window",        icon: Services.Icons.close || "✕" },
+                                { id: "toggle floating",                                  label: "Toggle Floating Window",    desc: "Switch window between tile and float",      icon: Services.Icons.layout || "󰕰" },
+                                { id: "toggle fullscreen",                                label: "Toggle Fullscreen",         desc: "Toggle fullscreen mode for active window",  icon: Services.Icons.maximize || "󰊓" },
+                                { id: "~/.config/quickshell/scripts/screenshot.sh region", label: "Screenshot: Selected Area", desc: "Capture a selected region to clipboard",   icon: Services.Icons.camera || "󰄀" },
+                                { id: "~/.config/quickshell/scripts/screenshot.sh full",   label: "Screenshot: Full Screen",    desc: "Capture the entire screen",                 icon: Services.Icons.camera || "󰄀" },
+                                { id: "wpctl set-volume -l 1 @DEFAULT_AUDIO_SINK@ 5%+",   label: "Volume Up (+5%)",           desc: "Increase audio output volume",              icon: Services.Icons.volumeUp || "󰕾" },
+                                { id: "wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%-",       label: "Volume Down (-5%)",         desc: "Decrease audio output volume",              icon: Services.Icons.volumeDown || "󰖀" },
+                                { id: "wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle",      label: "Toggle Audio Mute",         desc: "Mute or unmute speaker sink",               icon: Services.Icons.volumeMute || "󰝟" },
+                                { id: "wpctl set-mute @DEFAULT_AUDIO_SOURCE@ toggle",    label: "Toggle Microphone Mute",    desc: "Mute or unmute default mic",                icon: Services.Icons.micMute || "󰍭" },
+                                { id: "playerctl play-pause",                            label: "Media: Play / Pause",       desc: "Play or pause current media playback",       icon: Services.Icons.music || "󰎈" },
+                                { id: "playerctl next",                                  label: "Media: Next Track",         desc: "Skip to next media track",                  icon: Services.Icons.music || "󰎈" },
+                                { id: "playerctl previous",                              label: "Media: Previous Track",     desc: "Skip to previous media track",              icon: Services.Icons.music || "󰎈" },
+                                { id: "brightnessctl set 5%+",                           label: "Brightness Up (+5%)",       desc: "Increase monitor backlight brightness",      icon: Services.Icons.sun || "󰃠" },
+                                { id: "brightnessctl set 5%-",                           label: "Brightness Down (-5%)",     desc: "Decrease monitor backlight brightness",      icon: Services.Icons.sun || "󰃠" }
+                            ]
+
+                            readonly property var appActions: [
+                                { id: "kitty",         label: "Kitty Terminal",        desc: "Fast GPU-accelerated terminal",          icon: Services.Icons.terminal || "󰞷" },
+                                { id: "alacritty",     label: "Alacritty Terminal",    desc: "Simple OpenGL terminal",                  icon: Services.Icons.terminal || "󰞷" },
+                                { id: "nautilus",      label: "Nautilus File Manager", desc: "GNOME Files / Directory browser",         icon: Services.Icons.folder || "󰉋" },
+                                { id: "thunar",        label: "Thunar File Manager",   desc: "Lightweight file manager",                icon: Services.Icons.folder || "󰉋" },
+                                { id: "firefox",       label: "Firefox Web Browser",   desc: "Mozilla Firefox browser",                 icon: Services.Icons.globe || "󰈹" },
+                                { id: "google-chrome", label: "Google Chrome",         desc: "Google Chrome web browser",               icon: Services.Icons.globe || "󰈹" },
+                                { id: "code",          label: "Visual Studio Code",    desc: "Code and script editor",                  icon: Services.Icons.code || "󰨞" },
+                                { id: "cursor",        label: "Cursor AI Editor",      desc: "AI coding environment",                   icon: Services.Icons.code || "󰨞" },
+                                { id: "spotify",       label: "Spotify Music",         desc: "Spotify music streaming",                 icon: Services.Icons.music || "󰓇" },
+                                { id: "discord",       label: "Discord",               desc: "Chat & voice communications",             icon: Services.Icons.message || "󰙯" }
+                            ]
+
+                            function getHumanActionTitle(action) {
+                                if (!action) return "Custom Shortcut"
+                                const act = action.toLowerCase().trim()
+                                if (act.includes("launcher toggle")) return "App Launcher"
+                                if (act.includes("dashboard toggle")) return "Dashboard & Control Center"
+                                if (act.includes("powermenu toggle")) return "Power & Session Menu"
+                                if (act.includes("clipboard toggle")) return "Clipboard Manager"
+                                if (act.includes("lockscreen toggle")) return "Lock Screen"
+                                if (act.includes("settings toggle")) return "Settings Panel"
+                                if (act.includes("notification")) return "Notification Center"
+                                if (act.includes("wallpaper")) return "Wallpaper Selector"
+                                if (act.includes("screenshot") && act.includes("region")) return "Screenshot: Selected Area"
+                                if (act.includes("screenshot") && act.includes("full")) return "Screenshot: Full Screen"
+                                if (act.includes("killactive") || act === "close window") return "Close Active Window"
+                                if (act.includes("togglefloating") || act === "toggle floating") return "Toggle Floating Window"
+                                if (act.includes("fullscreen") || act === "toggle fullscreen") return "Toggle Fullscreen"
+                                if (act.includes("set-volume") && act.includes("+")) return "Volume Up"
+                                if (act.includes("set-volume") && act.includes("-")) return "Volume Down"
+                                if (act.includes("set-mute") && act.includes("sink")) return "Toggle Audio Mute"
+                                if (act.includes("set-mute") && act.includes("source")) return "Toggle Mic Mute"
+                                if (act.includes("play-pause")) return "Media: Play / Pause"
+                                if (act.includes("next")) return "Media: Next Track"
+                                if (act.includes("previous") || act.includes("prev")) return "Media: Previous Track"
+                                if (act.includes("brightness") && act.includes("+")) return "Brightness Up"
+                                if (act.includes("brightness") && act.includes("-")) return "Brightness Down"
+                                if (act === "kitty") return "Kitty Terminal"
+                                if (act === "alacritty") return "Alacritty Terminal"
+                                if (act === "foot") return "Foot Terminal"
+                                if (act === "ghostty") return "Ghostty Terminal"
+                                if (act === "nautilus") return "Nautilus File Manager"
+                                if (act === "thunar") return "Thunar File Manager"
+                                if (act === "dolphin") return "Dolphin File Manager"
+                                if (act === "firefox") return "Firefox Web Browser"
+                                if (act === "google-chrome" || act === "chromium") return "Chrome Web Browser"
+                                if (act === "brave" || act === "brave-browser") return "Brave Web Browser"
+                                if (act === "code") return "Visual Studio Code"
+                                if (act === "cursor") return "Cursor Editor"
+                                if (act === "spotify") return "Spotify Music"
+                                if (act === "discord") return "Discord"
+                                if (act.includes("workspace")) return act.replace("dispatch workspace", "Workspace").replace("workspace", "Workspace")
+                                return action
+                            }
+
+                            // ── Top Toolbar: Search + Quick Stats + Add Button ────
                             RowLayout {
                                 Layout.fillWidth: true
                                 spacing: 10
@@ -3332,7 +3958,7 @@ FloatingWindow {
                                         spacing: 8
 
                                         Text {
-                                            text: Services.Icons.search
+                                            text: Services.Icons.search || "󰍉"
                                             font.family: Services.Theme.fontSymbols
                                             font.pixelSize: 12
                                             color: keySearchInput.activeFocus ? Services.Theme.accent : Services.Theme.textDisabled
@@ -3341,7 +3967,7 @@ FloatingWindow {
                                         TextField {
                                             id: keySearchInput
                                             Layout.fillWidth: true
-                                            placeholderText: "Search shortcuts by keys, command, or category..."
+                                            placeholderText: "Search shortcuts by keys, title, command, or category..."
                                             placeholderTextColor: Services.Theme.textDisabled
                                             text: rootWindow.keySearchQuery
                                             onTextChanged: rootWindow.keySearchQuery = text
@@ -3371,25 +3997,29 @@ FloatingWindow {
                                     }
                                 }
 
-                                // Add Keybind Toggle Button
+                                // Add Keybind Primary Toggle Button
                                 Rectangle {
                                     height: 38
-                                    implicitWidth: addTxt.implicitWidth + 28
+                                    implicitWidth: addBtnRow.implicitWidth + 24
                                     radius: Services.Theme.radiusSm
-                                    color: rootWindow.isAddingKeybind ? Services.Theme.bgElevated : (addMouse.containsMouse ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.9) : Services.Theme.accent)
+                                    color: rootWindow.isAddingKeybind 
+                                        ? Services.Theme.bgElevated 
+                                        : (addKbToggleMouse.containsMouse ? Qt.lighter(Services.Theme.accent, 1.1) : Services.Theme.accent)
                                     border.color: rootWindow.isAddingKeybind ? Services.Theme.accent : "transparent"
                                     border.width: rootWindow.isAddingKeybind ? 1.5 : 0
 
                                     RowLayout {
-                                        anchors.centerIn: parent; spacing: 6
+                                        id: addBtnRow
+                                        anchors.centerIn: parent
+                                        spacing: 6
                                         Text {
                                             text: rootWindow.isAddingKeybind ? (Services.Icons.close || "✕") : (Services.Icons.plus || "+")
                                             font.family: Services.Theme.fontSymbols
                                             font.pixelSize: 10
+                                            font.bold: true
                                             color: rootWindow.isAddingKeybind ? Services.Theme.accent : "#ffffff"
                                         }
                                         Text {
-                                            id: addTxt
                                             text: rootWindow.isAddingKeybind ? "Close Form" : "Add Shortcut"
                                             font.pixelSize: 11
                                             font.weight: Font.DemiBold
@@ -3397,12 +4027,15 @@ FloatingWindow {
                                         }
                                     }
                                     MouseArea {
-                                        id: addMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                                        id: addKbToggleMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
                                         onClicked: {
                                             rootWindow.isAddingKeybind = !rootWindow.isAddingKeybind
-                                            rootWindow.formKeys = ""
-                                            rootWindow.formAction = ""
-                                            rootWindow.formDesc = ""
+                                            if (rootWindow.isAddingKeybind) {
+                                                rootWindow.formKeys = ""
+                                                tab6.addCategoryType = "shell"
+                                                rootWindow.formAction = tab6.shellActions[0].id
+                                                rootWindow.formDesc = tab6.shellActions[0].label
+                                            }
                                         }
                                     }
                                 }
@@ -3413,32 +4046,44 @@ FloatingWindow {
                                 Layout.fillWidth: true
                                 spacing: 6
 
+                                readonly property var allBinds: (Services.Compositor ? Services.Compositor.keybindsList : []) || []
+
+                                function getCatCount(catId) {
+                                    if (catId === "all") return allBinds.length
+                                    return allBinds.filter(k => k.category === catId).length
+                                }
+
                                 Repeater {
                                     model: [
-                                        { id: "all",        label: "All Shortcuts", icon: Services.Icons.keyboard },
-                                        { id: "quickshell", label: "Quickshell",    icon: Services.Icons.sparkle },
-                                        { id: "nav",        label: "Window & Nav",  icon: Services.Icons.layout },
-                                        { id: "apps",       label: "Applications",  icon: Services.Icons.terminal },
-                                        { id: "screenshot", label: "Screenshot",    icon: Services.Icons.camera },
-                                        { id: "media",      label: "Media & Sound", icon: Services.Icons.music }
+                                        { id: "all",        label: "All",           icon: Services.Icons.keyboard || "󰌌" },
+                                        { id: "quickshell", label: "Quickshell",    icon: Services.Icons.sparkle || "󰀉" },
+                                        { id: "nav",        label: "Window & Nav",  icon: Services.Icons.layout || "󰕰" },
+                                        { id: "apps",       label: "Applications",  icon: Services.Icons.terminal || "󰞷" },
+                                        { id: "screenshot", label: "Screenshot",    icon: Services.Icons.camera || "󰄀" },
+                                        { id: "media",      label: "Media & Sound", icon: Services.Icons.music || "󰎈" }
                                     ]
 
                                     delegate: Rectangle {
-                                        height: 26
-                                        implicitWidth: catRow.implicitWidth + 16
-                                        radius: 5
+                                        height: 28
+                                        implicitWidth: catRow.implicitWidth + 18
+                                        radius: 6
                                         readonly property bool isCur: rootWindow.keyCategory === modelData.id
-                                        color: isCur ? Services.Theme.accent : (catMouse.containsMouse ? Qt.rgba(1, 1, 1, 0.07) : Services.Theme.surfaceVariant)
+                                        readonly property int count: parent.getCatCount(modelData.id)
+
+                                        color: isCur 
+                                            ? Services.Theme.accent 
+                                            : (catMouse.containsMouse ? Qt.rgba(1, 1, 1, 0.08) : Services.Theme.surfaceVariant)
                                         border.color: isCur ? Services.Theme.accent : Services.Theme.border
                                         border.width: 1
 
                                         RowLayout {
                                             id: catRow
-                                            anchors.centerIn: parent; spacing: 5
+                                            anchors.centerIn: parent
+                                            spacing: 6
                                             Text {
                                                 text: modelData.icon
                                                 font.family: Services.Theme.fontSymbols
-                                                font.pixelSize: 9
+                                                font.pixelSize: 10
                                                 color: isCur ? "#ffffff" : (catMouse.containsMouse ? Services.Theme.textPrimary : Services.Theme.textSecondary)
                                             }
                                             Text {
@@ -3446,6 +4091,21 @@ FloatingWindow {
                                                 font.pixelSize: 10
                                                 font.weight: isCur ? Font.DemiBold : Font.Normal
                                                 color: isCur ? "#ffffff" : (catMouse.containsMouse ? Services.Theme.textPrimary : Services.Theme.textSecondary)
+                                            }
+                                            // Count Badge
+                                            Rectangle {
+                                                height: 15
+                                                implicitWidth: catCountTxt.implicitWidth + 8
+                                                radius: 7.5
+                                                color: isCur ? Qt.rgba(0, 0, 0, 0.25) : Services.Theme.bgElevated
+                                                Text {
+                                                    id: catCountTxt
+                                                    anchors.centerIn: parent
+                                                    text: String(count)
+                                                    font.pixelSize: 8
+                                                    font.weight: Font.Bold
+                                                    color: isCur ? "#ffffff" : Services.Theme.textDisabled
+                                                }
                                             }
                                         }
 
@@ -3459,93 +4119,402 @@ FloatingWindow {
                                 Item { Layout.fillWidth: true }
                             }
 
-                            // ── Add Keybinding Form Card (Collapsible) ──────────────
+                            // ── Add Keybinding Form Card (Sleek Compact Drawer) ──
                             Rectangle {
                                 visible: rootWindow.isAddingKeybind
                                 Layout.fillWidth: true
-                                implicitHeight: addFormCol.implicitHeight + 28
-                                radius: Services.Theme.radiusMd
+                                implicitHeight: addFormCol.implicitHeight + 20
+                                radius: Services.Theme.radiusSm
                                 color: Services.Theme.surfaceVariant
                                 border.color: Services.Theme.accent
-                                border.width: 1.5
+                                border.width: 1
 
                                 ColumnLayout {
                                     id: addFormCol
                                     anchors.fill: parent
-                                    anchors.margins: 14
-                                    spacing: 12
+                                    anchors.margins: 10
+                                    spacing: 8
 
+                                    // Row 1: Header + Category Tabs + Close Button
                                     RowLayout {
                                         Layout.fillWidth: true
                                         spacing: 8
-                                        Text { text: Services.Icons.plus || "+"; font.family: Services.Theme.fontSymbols; font.pixelSize: 11; color: Services.Theme.accent }
-                                        Text { text: "Add New Shortcut to Compositor Config"; font.pixelSize: 12; font.weight: Font.Bold; color: Services.Theme.textPrimary }
-                                        Item { Layout.fillWidth: true }
+
                                         Text {
-                                            text: Services.Icons.close || "✕"
-                                            font.family: Services.Theme.fontSymbols; font.pixelSize: 10; color: Services.Theme.textDisabled
+                                            text: "New Shortcut:"
+                                            font.pixelSize: 11
+                                            font.weight: Font.DemiBold
+                                            color: Services.Theme.textPrimary
+                                        }
+
+                                        // Category Tabs (Compact segmented pills)
+                                        RowLayout {
+                                            spacing: 4
+
+                                            Repeater {
+                                                model: [
+                                                    { id: "shell",      label: "Shell",      icon: Services.Icons.sparkle || "󰀉" },
+                                                    { id: "compositor", label: "Compositor", icon: Services.Icons.layout || "󰕰" },
+                                                    { id: "apps",       label: "Apps",       icon: Services.Icons.terminal || "󰞷" },
+                                                    { id: "custom",     label: "Custom",     icon: Services.Icons.code || "󰅍" }
+                                                ]
+
+                                                delegate: Rectangle {
+                                                    height: 24
+                                                    implicitWidth: cTabRow.implicitWidth + 14
+                                                    radius: 4
+                                                    readonly property bool isSelected: tab6.addCategoryType === modelData.id
+
+                                                    color: isSelected
+                                                        ? Services.Theme.accent
+                                                        : (catTabMouse.containsMouse ? Services.Theme.bgHover : Services.Theme.bgDeep)
+                                                    border.color: isSelected ? Services.Theme.accent : Services.Theme.border
+                                                    border.width: 1
+
+                                                    RowLayout {
+                                                        id: cTabRow
+                                                        anchors.centerIn: parent
+                                                        spacing: 4
+                                                        Text {
+                                                            text: modelData.icon
+                                                            font.family: Services.Theme.fontSymbols
+                                                            font.pixelSize: 9
+                                                            color: isSelected ? "#ffffff" : Services.Theme.textSecondary
+                                                        }
+                                                        Text {
+                                                            text: modelData.label
+                                                            font.pixelSize: 9
+                                                            font.weight: isSelected ? Font.DemiBold : Font.Normal
+                                                            color: isSelected ? "#ffffff" : Services.Theme.textPrimary
+                                                        }
+                                                    }
+
+                                                    MouseArea {
+                                                        id: catTabMouse
+                                                        anchors.fill: parent
+                                                        hoverEnabled: true
+                                                        cursorShape: Qt.PointingHandCursor
+                                                        onClicked: {
+                                                            tab6.addCategoryType = modelData.id
+                                                            if (modelData.id === "shell") {
+                                                                rootWindow.formAction = tab6.shellActions[0].id
+                                                                rootWindow.formDesc = tab6.shellActions[0].label
+                                                            } else if (modelData.id === "compositor") {
+                                                                rootWindow.formAction = tab6.compositorActions[0].id
+                                                                rootWindow.formDesc = tab6.compositorActions[0].label
+                                                            } else if (modelData.id === "apps") {
+                                                                rootWindow.formAction = tab6.appActions[0].id
+                                                                rootWindow.formDesc = tab6.appActions[0].label
+                                                            } else {
+                                                                rootWindow.formAction = ""
+                                                                rootWindow.formDesc = ""
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        Item { Layout.fillWidth: true }
+
+                                        Rectangle {
+                                            width: 20; height: 20; radius: 10
+                                            color: closeFormMouse.containsMouse ? Qt.rgba(1, 1, 1, 0.12) : "transparent"
+                                            Text {
+                                                anchors.centerIn: parent
+                                                text: Services.Icons.close || "✕"
+                                                font.family: Services.Theme.fontSymbols; font.pixelSize: 9; color: Services.Theme.textSecondary
+                                            }
                                             MouseArea {
-                                                anchors.fill: parent; cursorShape: Qt.PointingHandCursor
+                                                id: closeFormMouse
+                                                anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
                                                 onClicked: rootWindow.isAddingKeybind = false
                                             }
                                         }
                                     }
 
+                                    // Row 2: Action Dropdown (or Custom Command) + Key Recorder side by side!
                                     RowLayout {
                                         Layout.fillWidth: true
-                                        spacing: 10
+                                        spacing: 8
 
-                                        // Keys Input
-                                        ColumnLayout {
-                                            Layout.preferredWidth: 200
-                                            spacing: 4
-                                            Text { text: "KEY COMBINATION"; font.pixelSize: 8; font.weight: Font.Bold; font.letterSpacing: 0.5; color: Services.Theme.textSecondary }
-                                            Rectangle {
-                                                Layout.fillWidth: true; height: 32; radius: 4
-                                                color: Services.Theme.bgDeep; border.color: Services.Theme.border; border.width: 1
-                                                TextField {
-                                                    anchors.fill: parent; anchors.margins: 6
-                                                    placeholderText: "SUPER + RETURN"
-                                                    placeholderTextColor: Services.Theme.textDisabled
-                                                    text: rootWindow.formKeys
-                                                    onTextChanged: rootWindow.formKeys = text
-                                                    font.family: Services.Theme.fontMono; font.pixelSize: 11; color: Services.Theme.textPrimary
-                                                    background: null
-                                                }
-                                            }
-                                        }
-
-                                        // Action Input
-                                        ColumnLayout {
-                                            Layout.fillWidth: true
-                                            spacing: 4
-                                            Text { text: "COMMAND / DISPATCHER ACTION"; font.pixelSize: 8; font.weight: Font.Bold; font.letterSpacing: 0.5; color: Services.Theme.textSecondary }
-                                            Rectangle {
-                                                Layout.fillWidth: true; height: 32; radius: 4
-                                                color: Services.Theme.bgDeep; border.color: Services.Theme.border; border.width: 1
-                                                TextField {
-                                                    anchors.fill: parent; anchors.margins: 6
-                                                    placeholderText: "kitty  or  qs ipc call powermenu toggle"
-                                                    placeholderTextColor: Services.Theme.textDisabled
-                                                    text: rootWindow.formAction
-                                                    onTextChanged: rootWindow.formAction = text
-                                                    font.family: Services.Theme.fontMono; font.pixelSize: 11; color: Services.Theme.textPrimary
-                                                    background: null
-                                                }
-                                            }
-                                        }
-
-                                        // Save Button
+                                        // Action Picker Dropdown (when Shell, Compositor, Apps)
                                         Rectangle {
-                                            Layout.alignment: Qt.AlignBottom
-                                            height: 32; implicitWidth: saveAddTxt.implicitWidth + 20; radius: 4
-                                            color: Services.Theme.accent
-                                            Text { id: saveAddTxt; anchors.centerIn: parent; text: "Save Shortcut"; font.pixelSize: 10; font.weight: Font.DemiBold; color: "#ffffff" }
+                                            id: actionPickerBtn
+                                            visible: tab6.addCategoryType !== "custom"
+                                            Layout.fillWidth: true
+                                            Layout.minimumWidth: 200
+                                            height: 32
+                                            radius: 5
+                                            color: Services.Theme.bgDeep
+                                            border.color: actionPickerPopup.visible ? Services.Theme.accent : (pickerMouse.containsMouse ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.45) : Services.Theme.border)
+                                            border.width: 1
+
+                                            readonly property var currentList: {
+                                                if (tab6.addCategoryType === "shell") return tab6.shellActions
+                                                if (tab6.addCategoryType === "compositor") return tab6.compositorActions
+                                                if (tab6.addCategoryType === "apps") return tab6.appActions
+                                                return []
+                                            }
+
+                                            readonly property var currentSelected: {
+                                                for (let i = 0; i < currentList.length; i++) {
+                                                    if (currentList[i].id === rootWindow.formAction) return currentList[i]
+                                                }
+                                                return currentList.length > 0 ? currentList[0] : { label: "Select action...", desc: "", id: "" }
+                                            }
+
+                                            RowLayout {
+                                                anchors.fill: parent
+                                                anchors.leftMargin: 8
+                                                anchors.rightMargin: 8
+                                                spacing: 6
+
+                                                Text {
+                                                    text: actionPickerBtn.currentSelected.icon || (Services.Icons.sliders || "⚙")
+                                                    font.family: Services.Theme.fontSymbols
+                                                    font.pixelSize: 10
+                                                    color: Services.Theme.accent
+                                                }
+
+                                                Text {
+                                                    text: actionPickerBtn.currentSelected.label
+                                                    font.pixelSize: 10
+                                                    font.weight: Font.DemiBold
+                                                    color: Services.Theme.textPrimary
+                                                    elide: Text.ElideRight
+                                                }
+
+                                                Text {
+                                                    text: "• " + actionPickerBtn.currentSelected.id
+                                                    font.pixelSize: 9
+                                                    color: Services.Theme.textDisabled
+                                                    elide: Text.ElideRight
+                                                    Layout.fillWidth: true
+                                                }
+
+                                                Text {
+                                                    text: "▾"
+                                                    font.pixelSize: 9
+                                                    color: Services.Theme.textSecondary
+                                                }
+                                            }
+
                                             MouseArea {
-                                                anchors.fill: parent; cursorShape: Qt.PointingHandCursor
+                                                id: pickerMouse
+                                                anchors.fill: parent
+                                                hoverEnabled: true
+                                                cursorShape: Qt.PointingHandCursor
                                                 onClicked: {
-                                                    if (Services.Compositor && rootWindow.formKeys && rootWindow.formAction) {
-                                                        Services.Compositor.addKeybind(rootWindow.formKeys, rootWindow.formAction, rootWindow.formDesc)
+                                                    if (actionPickerPopup.visible) actionPickerPopup.close()
+                                                    else actionPickerPopup.open()
+                                                }
+                                            }
+
+                                            Popup {
+                                                id: actionPickerPopup
+                                                y: actionPickerBtn.height + 4
+                                                width: actionPickerBtn.width
+                                                height: Math.min(220, pickerListCol.implicitHeight + 8)
+                                                padding: 4
+                                                closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutsideParent
+                                                modal: false
+                                                focus: true
+
+                                                background: Rectangle {
+                                                    radius: 6
+                                                    color: Services.Theme.isDark ? "#1c1c24" : "#ffffff"
+                                                    border.color: Services.Theme.isDark ? "#383846" : "#d0d0dc"
+                                                    border.width: 1
+                                                }
+
+                                                contentItem: Flickable {
+                                                    contentHeight: pickerListCol.implicitHeight
+                                                    clip: true
+                                                    boundsBehavior: Flickable.StopAtBounds
+                                                    ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+
+                                                    ColumnLayout {
+                                                        id: pickerListCol
+                                                        width: parent.width
+                                                        spacing: 2
+
+                                                        Repeater {
+                                                            model: actionPickerBtn.currentList
+                                                            delegate: Rectangle {
+                                                                required property var modelData
+                                                                Layout.fillWidth: true
+                                                                height: 30
+                                                                radius: 4
+                                                                readonly property bool isSelected: rootWindow.formAction === modelData.id
+                                                                color: isSelected
+                                                                    ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.18)
+                                                                    : (itemArea.containsMouse ? Qt.rgba(1, 1, 1, 0.06) : "transparent")
+
+                                                                RowLayout {
+                                                                    anchors.fill: parent
+                                                                    anchors.leftMargin: 8
+                                                                    anchors.rightMargin: 8
+                                                                    spacing: 6
+
+                                                                    Text {
+                                                                        text: modelData.icon || "•"
+                                                                        font.family: Services.Theme.fontSymbols
+                                                                        font.pixelSize: 10
+                                                                        color: isSelected ? Services.Theme.accent : Services.Theme.textSecondary
+                                                                    }
+
+                                                                    Text {
+                                                                        text: modelData.label
+                                                                        font.pixelSize: 10
+                                                                        font.weight: isSelected ? Font.DemiBold : Font.Normal
+                                                                        color: isSelected ? Services.Theme.accent : Services.Theme.textPrimary
+                                                                    }
+
+                                                                    Text {
+                                                                        text: modelData.desc || modelData.id
+                                                                        font.pixelSize: 8
+                                                                        color: Services.Theme.textDisabled
+                                                                        elide: Text.ElideRight
+                                                                        Layout.fillWidth: true
+                                                                    }
+
+                                                                    Text {
+                                                                        visible: isSelected
+                                                                        text: Services.Icons.check || "✓"
+                                                                        font.family: Services.Theme.fontSymbols
+                                                                        font.pixelSize: 9
+                                                                        font.bold: true
+                                                                        color: Services.Theme.accent
+                                                                    }
+                                                                }
+
+                                                                MouseArea {
+                                                                    id: itemArea
+                                                                    anchors.fill: parent
+                                                                    hoverEnabled: true
+                                                                    cursorShape: Qt.PointingHandCursor
+                                                                    onClicked: {
+                                                                        rootWindow.formAction = modelData.id
+                                                                        rootWindow.formDesc = modelData.label
+                                                                        actionPickerPopup.close()
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        // Custom Command Input
+                                        Rectangle {
+                                            visible: tab6.addCategoryType === "custom"
+                                            Layout.fillWidth: true
+                                            Layout.minimumWidth: 200
+                                            height: 32
+                                            radius: 5
+                                            color: Services.Theme.bgDeep
+                                            border.color: customCmdInput.activeFocus ? Services.Theme.accent : Services.Theme.border
+                                            border.width: 1
+
+                                            TextField {
+                                                id: customCmdInput
+                                                anchors.fill: parent
+                                                anchors.margins: 4
+                                                anchors.leftMargin: 8
+                                                placeholderText: "Type custom shell command (e.g. kitty, rofi -show drun)..."
+                                                placeholderTextColor: Services.Theme.textDisabled
+                                                text: rootWindow.formAction
+                                                onTextChanged: rootWindow.formAction = text
+                                                font.family: Services.Theme.fontMono
+                                                font.pixelSize: 10
+                                                color: Services.Theme.textPrimary
+                                                background: null
+                                                selectByMouse: true
+                                            }
+                                        }
+
+                                        // Compact KeyRecorder
+                                        KeyRecorder {
+                                            id: addKeyRec
+                                            Layout.preferredWidth: 230
+                                            Layout.fillWidth: false
+                                            height: 32
+                                            compact: true
+                                            value: rootWindow.formKeys
+                                            placeholder: "Click to record shortcut..."
+                                            onRecorded: (k) => { rootWindow.formKeys = k }
+                                            onCleared: { rootWindow.formKeys = "" }
+                                        }
+                                    }
+
+                                    // Row 3: Quick Modifiers Chips + Save / Cancel Buttons
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 6
+
+                                        Text { text: "Quick Keys:"; font.pixelSize: 8; color: Services.Theme.textDisabled }
+
+                                        Repeater {
+                                            model: ["SUPER", "SHIFT", "CTRL", "ALT", "Return", "Space", "Print"]
+                                            delegate: Rectangle {
+                                                height: 20
+                                                implicitWidth: qkTxt.implicitWidth + 8
+                                                radius: 3
+                                                color: qkMouse.containsMouse ? Services.Theme.bgHover : Services.Theme.bgDeep
+                                                border.color: Services.Theme.border; border.width: 1
+                                                Text { id: qkTxt; anchors.centerIn: parent; text: modelData; font.family: Services.Theme.fontMono; font.pixelSize: 8; color: Services.Theme.textSecondary }
+                                                MouseArea {
+                                                    id: qkMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                                                    onClicked: {
+                                                        if (rootWindow.formKeys.length > 0) rootWindow.formKeys += " + " + modelData
+                                                        else rootWindow.formKeys = modelData
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        Item { Layout.fillWidth: true }
+
+                                        Rectangle {
+                                            height: 24
+                                            implicitWidth: addFormCanTxt.implicitWidth + 14
+                                            radius: 4
+                                            color: addFormCanMouse.containsMouse ? Services.Theme.bgHover : Services.Theme.surfaceVariant
+                                            border.color: Services.Theme.border; border.width: 1
+                                            Text { id: addFormCanTxt; anchors.centerIn: parent; text: "Cancel"; font.pixelSize: 10; color: Services.Theme.textSecondary }
+                                            MouseArea {
+                                                id: addFormCanMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                                                onClicked: rootWindow.isAddingKeybind = false
+                                            }
+                                        }
+
+                                        Rectangle {
+                                            readonly property bool isValid: rootWindow.formKeys.trim().length > 0 && rootWindow.formAction.trim().length > 0
+                                            height: 24
+                                            implicitWidth: addFormSaveTxt.implicitWidth + 18
+                                            radius: 4
+                                            color: isValid ? (addFormSaveMouse.containsMouse ? Qt.lighter(Services.Theme.accent, 1.1) : Services.Theme.accent) : Services.Theme.bgElevated
+                                            opacity: isValid ? 1.0 : 0.5
+
+                                            Text {
+                                                id: addFormSaveTxt
+                                                anchors.centerIn: parent
+                                                text: "Save Shortcut"
+                                                font.pixelSize: 10
+                                                font.weight: Font.DemiBold
+                                                color: parent.isValid ? "#ffffff" : Services.Theme.textDisabled
+                                            }
+
+                                            MouseArea {
+                                                id: addFormSaveMouse
+                                                anchors.fill: parent
+                                                enabled: parent.isValid
+                                                cursorShape: parent.isValid ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                                onClicked: {
+                                                    if (Services.Compositor && parent.isValid) {
+                                                        Services.Compositor.addKeybind(rootWindow.formKeys.trim(), rootWindow.formAction.trim(), rootWindow.formDesc)
                                                         rootWindow.isAddingKeybind = false
                                                     }
                                                 }
@@ -3555,10 +4524,10 @@ FloatingWindow {
                                 }
                             }
 
-                            // ── Live Keybindings List ──────────────────────────────
+                            // ── Live Keybindings List Card ──────────────────────────
                             SettingsSection {
                                 id: keybindsSection
-                                title: (Services.Compositor ? Services.Compositor.activeDisplayName : "Compositor") + " Keybinds  ·  " + (Services.Compositor ? Services.Compositor.keybindsList.length : 0) + " configured"
+                                title: (Services.Compositor ? Services.Compositor.activeDisplayName : "Compositor") + " Keybinds  ·  " + keybindsSection.filteredBinds.length + " shortcuts"
                                 icon: Services.Icons.keyboard
 
                                 readonly property var filteredBinds: {
@@ -3570,7 +4539,8 @@ FloatingWindow {
                                         if (q.length === 0) return true
                                         const ks = (k.keys || "").toLowerCase()
                                         const act = (k.action || "").toLowerCase()
-                                        return ks.includes(q) || act.includes(q)
+                                        const title = tab6.getHumanActionTitle(k.action).toLowerCase()
+                                        return ks.includes(q) || act.includes(q) || title.includes(q)
                                     })
                                 }
 
@@ -3578,7 +4548,7 @@ FloatingWindow {
                                 Rectangle {
                                     visible: keybindsSection.filteredBinds.length === 0
                                     Layout.fillWidth: true
-                                    implicitHeight: 120
+                                    implicitHeight: 140
                                     color: "transparent"
 
                                     ColumnLayout {
@@ -3586,18 +4556,27 @@ FloatingWindow {
                                         spacing: 8
                                         Text {
                                             Layout.alignment: Qt.AlignHCenter
-                                            text: Services.Icons.search
-                                            font.family: Services.Theme.fontSymbols; font.pixelSize: 22; color: Services.Theme.textDisabled
+                                            text: Services.Icons.search || "󰍉"
+                                            font.family: Services.Theme.fontSymbols; font.pixelSize: 26; color: Services.Theme.textDisabled
                                         }
                                         Text {
                                             Layout.alignment: Qt.AlignHCenter
-                                            text: "No shortcuts match your filter"
-                                            font.pixelSize: 11; font.weight: Font.Medium; color: Services.Theme.textSecondary
+                                            text: "No shortcuts match your search"
+                                            font.pixelSize: 12; font.weight: Font.Medium; color: Services.Theme.textSecondary
                                         }
-                                        Text {
+                                        Rectangle {
                                             Layout.alignment: Qt.AlignHCenter
-                                            text: "Try changing your search keywords or switching category"
-                                            font.pixelSize: 9; color: Services.Theme.textDisabled
+                                            height: 24; implicitWidth: resetFilterTxt.implicitWidth + 14; radius: 4
+                                            color: resetFilterMouse.containsMouse ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.15) : Services.Theme.surfaceVariant
+                                            border.color: Services.Theme.border; border.width: 1
+                                            Text { id: resetFilterTxt; anchors.centerIn: parent; text: "Reset Filters"; font.pixelSize: 10; color: Services.Theme.accent }
+                                            MouseArea {
+                                                id: resetFilterMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                                                onClicked: {
+                                                    rootWindow.keySearchQuery = ""
+                                                    rootWindow.keyCategory = "all"
+                                                }
+                                            }
                                         }
                                     }
                                 }
@@ -3610,23 +4589,41 @@ FloatingWindow {
                                         required property var modelData
                                         required property int index
                                         Layout.fillWidth: true
-                                        implicitHeight: isEditingThis ? (editCardCol.implicitHeight + 20) : 48
+                                        implicitHeight: isEditingThis ? (editCardCol.implicitHeight + 24) : 52
                                         radius: Services.Theme.radiusSm
                                         color: isEditingThis
                                             ? Services.Theme.bgDeep
-                                            : (itemMouse.containsMouse ? Qt.rgba(1, 1, 1, 0.04) : "transparent")
+                                            : (itemMouse.containsMouse ? Qt.rgba(1, 1, 1, 0.035) : "transparent")
 
                                         readonly property bool isEditingThis: rootWindow.editingBindLine === modelData.startLine
+                                        property bool isConfirmingDelete: false
+                                        property bool justCopied: false
 
-                                        // Helper for category icon
+                                        Timer {
+                                            id: copyFeedbackTimer
+                                            interval: 1400
+                                            onTriggered: bindItemRoot.justCopied = false
+                                        }
+
                                         function getCategoryIcon(cat) {
                                             switch (cat) {
-                                                case "quickshell": return Services.Icons.sparkle;
-                                                case "nav": return Services.Icons.layout;
-                                                case "apps": return Services.Icons.terminal;
-                                                case "screenshot": return Services.Icons.camera;
-                                                case "media": return Services.Icons.music;
-                                                default: return Services.Icons.keyboard;
+                                                case "quickshell": return Services.Icons.sparkle || "󰀉";
+                                                case "nav": return Services.Icons.layout || "󰕰";
+                                                case "apps": return Services.Icons.terminal || "󰞷";
+                                                case "screenshot": return Services.Icons.camera || "󰄀";
+                                                case "media": return Services.Icons.music || "󰎈";
+                                                default: return Services.Icons.keyboard || "󰌌";
+                                            }
+                                        }
+
+                                        function getCategoryColor(cat) {
+                                            switch (cat) {
+                                                case "quickshell": return "#a855f7";
+                                                case "nav": return "#3b82f6";
+                                                case "apps": return "#10b981";
+                                                case "screenshot": return "#f59e0b";
+                                                case "media": return "#ec4899";
+                                                default: return Services.Theme.accent;
                                             }
                                         }
 
@@ -3637,54 +4634,58 @@ FloatingWindow {
                                             acceptedButtons: Qt.NoButton
                                         }
 
-                                        // Regular Display Row
+                                        // ── Regular Display Row ──
                                         RowLayout {
                                             visible: !bindItemRoot.isEditingThis
                                             anchors.fill: parent
-                                            anchors.leftMargin: 8
-                                            anchors.rightMargin: 8
+                                            anchors.leftMargin: 10
+                                            anchors.rightMargin: 10
                                             spacing: 12
 
-                                            // Category Icon Chip
+                                            // Category Icon Badge
                                             Rectangle {
-                                                width: 26; height: 26; radius: 5
-                                                color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.1)
-                                                border.color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.25)
+                                                readonly property color catColor: bindItemRoot.getCategoryColor(bindItemRoot.modelData.category)
+                                                width: 34; height: 34; radius: 8
+                                                color: Qt.rgba(catColor.r, catColor.g, catColor.b, 0.14)
+                                                border.color: Qt.rgba(catColor.r, catColor.g, catColor.b, 0.30)
                                                 border.width: 1
                                                 Text {
                                                     anchors.centerIn: parent
                                                     text: bindItemRoot.getCategoryIcon(bindItemRoot.modelData.category)
                                                     font.family: Services.Theme.fontSymbols
-                                                    font.pixelSize: 10
-                                                    color: Services.Theme.accent
+                                                    font.pixelSize: 14
+                                                    color: parent.catColor
                                                 }
                                             }
 
-                                            // Action details & metadata
+                                            // Human-Readable Title & Command Subtitle
                                             ColumnLayout {
                                                 spacing: 2
                                                 Layout.fillWidth: true
+                                                Layout.alignment: Qt.AlignVCenter
 
                                                 RowLayout {
-                                                    spacing: 8
+                                                    spacing: 6
                                                     Text {
-                                                        text: bindItemRoot.modelData.action || "No action"
-                                                        font.family: Services.Theme.fontMono
-                                                        font.pixelSize: 11
+                                                        text: tab6.getHumanActionTitle(bindItemRoot.modelData.action)
+                                                        font.pixelSize: 12
                                                         font.weight: Font.DemiBold
                                                         color: Services.Theme.textPrimary
-                                                        elide: Text.ElideMiddle
-                                                        Layout.maximumWidth: 320
+                                                        elide: Text.ElideRight
+                                                        Layout.maximumWidth: 260
                                                     }
                                                     Rectangle {
-                                                        height: 14; implicitWidth: cBadgeTxt.implicitWidth + 8; radius: 3
+                                                        height: 14
+                                                        implicitWidth: cBadgeTxt.implicitWidth + 8
+                                                        radius: 3
                                                         color: Services.Theme.bgElevated
-                                                        border.color: Services.Theme.border; border.width: 1
+                                                        border.color: Services.Theme.border
+                                                        border.width: 1
                                                         Text {
                                                             id: cBadgeTxt
                                                             anchors.centerIn: parent
                                                             text: bindItemRoot.modelData.category || "custom"
-                                                            font.pixelSize: 7
+                                                            font.pixelSize: 8
                                                             font.weight: Font.Bold
                                                             color: Services.Theme.textSecondary
                                                         }
@@ -3692,17 +4693,21 @@ FloatingWindow {
                                                 }
 
                                                 Text {
-                                                    text: "Line " + bindItemRoot.modelData.startLine + (bindItemRoot.modelData.opts ? " • " + bindItemRoot.modelData.opts : "")
-                                                    font.pixelSize: 8
+                                                    text: (bindItemRoot.modelData.action || "No action") + "  •  Line " + bindItemRoot.modelData.startLine + (bindItemRoot.modelData.opts ? " (" + bindItemRoot.modelData.opts + ")" : "")
+                                                    font.family: Services.Theme.fontMono
+                                                    font.pixelSize: 9
                                                     color: Services.Theme.textDisabled
+                                                    elide: Text.ElideMiddle
+                                                    Layout.maximumWidth: 320
                                                 }
                                             }
 
                                             Item { Layout.fillWidth: true }
 
-                                            // Shortcut Key Badges (Aligned right)
+                                            // Tactile Keycap Badges
                                             RowLayout {
                                                 spacing: 4
+                                                Layout.alignment: Qt.AlignVCenter
 
                                                 Repeater {
                                                     id: keyTokenRep
@@ -3713,23 +4718,37 @@ FloatingWindow {
                                                         required property int index
                                                         spacing: 4
 
-                                                        // Authentic keycap badge
+                                                        readonly property bool isMod: (tokenDelegate.modelData.toUpperCase() === "SUPER" || tokenDelegate.modelData.toUpperCase() === "CTRL" || tokenDelegate.modelData.toUpperCase() === "ALT" || tokenDelegate.modelData.toUpperCase() === "SHIFT")
+
                                                         Rectangle {
-                                                            height: 24
+                                                            height: 26
                                                             implicitWidth: Math.max(26, kbTxt.implicitWidth + 14)
-                                                            radius: 4
+                                                            radius: 5
                                                             color: Services.Theme.bgElevated
-                                                            border.color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.4)
+                                                            border.color: tokenDelegate.isMod 
+                                                                ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.45) 
+                                                                : Services.Theme.border
                                                             border.width: 1
+
+                                                            // Subtle Top Lighting Glow on Keycap
+                                                            Rectangle {
+                                                                anchors.left: parent.left
+                                                                anchors.right: parent.right
+                                                                anchors.top: parent.top
+                                                                anchors.margins: 1
+                                                                height: 1
+                                                                radius: 1
+                                                                color: Qt.rgba(1, 1, 1, Services.Theme.isDark ? 0.08 : 0.25)
+                                                            }
 
                                                             Text {
                                                                 id: kbTxt
                                                                 anchors.centerIn: parent
                                                                 text: tokenDelegate.modelData
                                                                 font.family: Services.Theme.fontMono
-                                                                font.pixelSize: 9
+                                                                font.pixelSize: 10
                                                                 font.bold: true
-                                                                color: Services.Theme.accent
+                                                                color: tokenDelegate.isMod ? Services.Theme.accent : Services.Theme.textPrimary
                                                             }
                                                         }
 
@@ -3737,56 +4756,65 @@ FloatingWindow {
                                                             visible: tokenDelegate.index < (keyTokenRep.count - 1)
                                                             text: "+"
                                                             font.pixelSize: 9
-                                                            font.weight: Font.Bold
+                                                            font.bold: true
                                                             color: Services.Theme.textDisabled
                                                         }
                                                     }
                                                 }
                                             }
 
-                                            // Divider between keys and actions
+                                            // Divider
                                             Rectangle {
-                                                width: 1; height: 16
+                                                width: 1; height: 18
                                                 color: Services.Theme.border
-                                                opacity: 0.6
-                                                Layout.leftMargin: 2
+                                                opacity: 0.5
+                                                Layout.leftMargin: 4
                                                 Layout.rightMargin: 2
                                             }
 
-                                            // Actions Group: Copy, Edit, Delete
+                                            // Quick Actions Group: Copy, Record/Edit, Delete
                                             RowLayout {
-                                                spacing: 3
-                                                opacity: itemMouse.containsMouse ? 1.0 : 0.6
-                                                Behavior on opacity { NumberAnimation { duration: 100 } }
+                                                spacing: 4
+                                                opacity: itemMouse.containsMouse || bindItemRoot.isConfirmingDelete ? 1.0 : 0.55
+                                                Behavior on opacity { NumberAnimation { duration: 120 } }
 
-                                                // Copy Button
+                                                // Copy Action
                                                 Rectangle {
-                                                    width: 26; height: 26; radius: 4
-                                                    color: cpMouse.containsMouse ? Qt.rgba(1, 1, 1, 0.1) : "transparent"
+                                                    width: 28; height: 28; radius: 5
+                                                    color: bindItemRoot.justCopied
+                                                        ? Qt.rgba(Services.Theme.success ? Services.Theme.success.r : 0.2, 0.8, 0.3, 0.2)
+                                                        : (cpMouse.containsMouse ? Qt.rgba(1, 1, 1, 0.08) : "transparent")
+                                                    border.color: bindItemRoot.justCopied ? (Services.Theme.success || "#10b981") : "transparent"
+                                                    border.width: 1
+
                                                     Text {
                                                         anchors.centerIn: parent
-                                                        text: Services.Icons.clipboard
+                                                        text: bindItemRoot.justCopied ? (Services.Icons.check || "✓") : (Services.Icons.clipboard || "󰅌")
                                                         font.family: Services.Theme.fontSymbols
-                                                        font.pixelSize: 10
-                                                        color: cpMouse.containsMouse ? Services.Theme.accent : Services.Theme.textSecondary
+                                                        font.pixelSize: 11
+                                                        color: bindItemRoot.justCopied ? (Services.Theme.success || "#10b981") : (cpMouse.containsMouse ? Services.Theme.accent : Services.Theme.textSecondary)
                                                     }
                                                     MouseArea {
                                                         id: cpMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
                                                         onClicked: {
-                                                            if (Services.Clipboard) Services.Clipboard.copyText(bindItemRoot.modelData.action)
+                                                            if (Services.Clipboard) {
+                                                                Services.Clipboard.copyText(bindItemRoot.modelData.action)
+                                                                bindItemRoot.justCopied = true
+                                                                copyFeedbackTimer.restart()
+                                                            }
                                                         }
                                                     }
                                                 }
 
-                                                // Edit Button
+                                                // Record / Edit Button
                                                 Rectangle {
-                                                    width: 26; height: 26; radius: 4
-                                                    color: edMouse.containsMouse ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.15) : "transparent"
+                                                    width: 28; height: 28; radius: 5
+                                                    color: edMouse.containsMouse ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.18) : "transparent"
                                                     Text {
                                                         anchors.centerIn: parent
                                                         text: Services.Icons.sliders || "✎"
                                                         font.family: Services.Theme.fontSymbols
-                                                        font.pixelSize: 10
+                                                        font.pixelSize: 11
                                                         color: edMouse.containsMouse ? Services.Theme.accent : Services.Theme.textSecondary
                                                     }
                                                     MouseArea {
@@ -3795,108 +4823,186 @@ FloatingWindow {
                                                             rootWindow.editingBindLine = bindItemRoot.modelData.startLine
                                                             rootWindow.formKeys = bindItemRoot.modelData.keys
                                                             rootWindow.formAction = bindItemRoot.modelData.action
+                                                            bindItemRoot.isConfirmingDelete = false
                                                         }
                                                     }
                                                 }
 
-                                                // Delete Button
-                                                Rectangle {
-                                                    width: 26; height: 26; radius: 4
-                                                    color: delMouse.containsMouse ? Qt.rgba(0.9, 0.2, 0.2, 0.15) : "transparent"
-                                                    Text {
-                                                        anchors.centerIn: parent
-                                                        text: Services.Icons.trash
-                                                        font.family: Services.Theme.fontSymbols
-                                                        font.pixelSize: 10
-                                                        color: delMouse.containsMouse ? Services.Theme.danger : Services.Theme.textDisabled
+                                                // Delete with Confirmation
+                                                Item {
+                                                    width: bindItemRoot.isConfirmingDelete ? confirmDelRow.implicitWidth : 28
+                                                    height: 28
+
+                                                    // Regular Delete Trash Icon
+                                                    Rectangle {
+                                                        visible: !bindItemRoot.isConfirmingDelete
+                                                        anchors.fill: parent; radius: 5
+                                                        color: delMouse.containsMouse ? Qt.rgba(0.9, 0.2, 0.2, 0.15) : "transparent"
+                                                        Text {
+                                                            anchors.centerIn: parent
+                                                            text: Services.Icons.trash || "󰩹"
+                                                            font.family: Services.Theme.fontSymbols
+                                                            font.pixelSize: 11
+                                                            color: delMouse.containsMouse ? Services.Theme.danger : Services.Theme.textDisabled
+                                                        }
+                                                        MouseArea {
+                                                            id: delMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                                                            onClicked: bindItemRoot.isConfirmingDelete = true
+                                                        }
                                                     }
-                                                    MouseArea {
-                                                        id: delMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
-                                                        onClicked: {
-                                                            if (Services.Compositor) Services.Compositor.deleteKeybind(bindItemRoot.modelData.startLine)
+
+                                                    // Confirmation Buttons (Delete? Yes / No)
+                                                    RowLayout {
+                                                        id: confirmDelRow
+                                                        visible: bindItemRoot.isConfirmingDelete
+                                                        anchors.verticalCenter: parent.verticalCenter
+                                                        spacing: 4
+
+                                                        Rectangle {
+                                                            height: 24; implicitWidth: 44; radius: 4
+                                                            color: Services.Theme.danger
+                                                            Text { anchors.centerIn: parent; text: "Delete"; font.pixelSize: 9; font.bold: true; color: "#ffffff" }
+                                                            MouseArea {
+                                                                anchors.fill: parent; cursorShape: Qt.PointingHandCursor
+                                                                onClicked: {
+                                                                    if (Services.Compositor) Services.Compositor.deleteKeybind(bindItemRoot.modelData.startLine)
+                                                                    bindItemRoot.isConfirmingDelete = false
+                                                                }
+                                                            }
+                                                        }
+
+                                                        Rectangle {
+                                                            height: 24; implicitWidth: 24; radius: 4
+                                                            color: Services.Theme.surfaceVariant
+                                                            border.color: Services.Theme.border; border.width: 1
+                                                            Text { anchors.centerIn: parent; text: "✕"; font.pixelSize: 9; color: Services.Theme.textSecondary }
+                                                            MouseArea {
+                                                                anchors.fill: parent; cursorShape: Qt.PointingHandCursor
+                                                                onClicked: bindItemRoot.isConfirmingDelete = false
+                                                            }
                                                         }
                                                     }
                                                 }
                                             }
                                         }
 
-                                        // Inline Edit Row (when active)
+                                        // ── Inline Shortcut Editor / Key Recorder Card (Spacious 2-Row Design) ──
                                         ColumnLayout {
                                             id: editCardCol
                                             visible: bindItemRoot.isEditingThis
                                             anchors.fill: parent
-                                            anchors.margins: 10
-                                            spacing: 8
+                                            anchors.margins: 12
+                                            spacing: 10
 
+                                            RowLayout {
+                                                Layout.fillWidth: true
+                                                spacing: 6
+                                                Text { text: "Edit Shortcut  ·  Line " + bindItemRoot.modelData.startLine; font.pixelSize: 11; font.weight: Font.Bold; color: Services.Theme.accent }
+                                                Item { Layout.fillWidth: true }
+                                            }
+
+                                            // Row 1: Action Command Input + Key Recorder
                                             RowLayout {
                                                 Layout.fillWidth: true
                                                 spacing: 8
 
-                                                // Keys Input
-                                                Rectangle {
-                                                    Layout.preferredWidth: 160
-                                                    height: 30
-                                                    radius: 4
-                                                    color: Services.Theme.surfaceVariant
-                                                    border.color: Services.Theme.accent
-                                                    border.width: 1
-
-                                                    TextField {
-                                                        anchors.fill: parent; anchors.margins: 4
-                                                        text: rootWindow.formKeys
-                                                        onTextChanged: rootWindow.formKeys = text
-                                                        font.family: Services.Theme.fontMono; font.pixelSize: 10; color: Services.Theme.textPrimary
-                                                        placeholderText: "Keys (SUPER + K)"
-                                                        placeholderTextColor: Services.Theme.textDisabled
-                                                        background: null
-                                                    }
-                                                }
-
-                                                // Action Input
+                                                // Action Command TextField
                                                 Rectangle {
                                                     Layout.fillWidth: true
-                                                    height: 30
-                                                    radius: 4
+                                                    Layout.minimumWidth: 180
+                                                    height: 32
+                                                    radius: 5
                                                     color: Services.Theme.surfaceVariant
-                                                    border.color: Services.Theme.accent
+                                                    border.color: edActionInput.activeFocus ? Services.Theme.accent : Services.Theme.border
                                                     border.width: 1
 
                                                     TextField {
-                                                        anchors.fill: parent; anchors.margins: 4
+                                                        id: edActionInput
+                                                        anchors.fill: parent
+                                                        anchors.margins: 4
+                                                        anchors.leftMargin: 8
                                                         text: rootWindow.formAction
                                                         onTextChanged: rootWindow.formAction = text
-                                                        font.family: Services.Theme.fontMono; font.pixelSize: 10; color: Services.Theme.textPrimary
-                                                        placeholderText: "Action (kitty)"
+                                                        font.family: Services.Theme.fontMono
+                                                        font.pixelSize: 10
+                                                        color: Services.Theme.textPrimary
+                                                        placeholderText: "Action command..."
                                                         placeholderTextColor: Services.Theme.textDisabled
                                                         background: null
+                                                        selectByMouse: true
                                                     }
                                                 }
 
-                                                // Save Edit Button
-                                                Rectangle {
-                                                    height: 30; implicitWidth: svEdTxt.implicitWidth + 16; radius: 4
-                                                    color: Services.Theme.accent
-                                                    Text { id: svEdTxt; anchors.centerIn: parent; text: "Save"; font.pixelSize: 10; font.weight: Font.DemiBold; color: "#ffffff" }
-                                                    MouseArea {
-                                                        anchors.fill: parent; cursorShape: Qt.PointingHandCursor
-                                                        onClicked: {
-                                                            if (Services.Compositor && rootWindow.formKeys && rootWindow.formAction) {
-                                                                Services.Compositor.updateKeybind(bindItemRoot.modelData.startLine, rootWindow.formKeys, rootWindow.formAction, "")
-                                                                rootWindow.editingBindLine = -1
+                                                // Key Recorder in Inline Mode
+                                                KeyRecorder {
+                                                    Layout.preferredWidth: 230
+                                                    Layout.fillWidth: false
+                                                    height: 32
+                                                    compact: true
+                                                    value: rootWindow.formKeys
+                                                    placeholder: "Click to record..."
+                                                    onRecorded: (k) => { rootWindow.formKeys = k }
+                                                    onCleared: { rootWindow.formKeys = "" }
+                                                }
+                                            }
+
+                                            // Row 2: Quick Modifiers Chips + Save / Cancel Buttons
+                                            RowLayout {
+                                                Layout.fillWidth: true
+                                                spacing: 6
+
+                                                Text { text: "Quick Keys:"; font.pixelSize: 8; color: Services.Theme.textDisabled }
+
+                                                Repeater {
+                                                    model: ["SUPER", "SHIFT", "CTRL", "ALT", "Return", "Space"]
+                                                    delegate: Rectangle {
+                                                        height: 20
+                                                        implicitWidth: qModTxt.implicitWidth + 8
+                                                        radius: 3
+                                                        color: qModMouse.containsMouse ? Services.Theme.bgHover : Services.Theme.surfaceVariant
+                                                        border.color: Services.Theme.border; border.width: 1
+                                                        Text { id: qModTxt; anchors.centerIn: parent; text: modelData; font.family: Services.Theme.fontMono; font.pixelSize: 8; color: Services.Theme.textSecondary }
+                                                        MouseArea {
+                                                            id: qModMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                                                            onClicked: {
+                                                                if (rootWindow.formKeys.length > 0) rootWindow.formKeys += " + " + modelData
+                                                                else rootWindow.formKeys = modelData
                                                             }
                                                         }
                                                     }
                                                 }
 
+                                                Item { Layout.fillWidth: true }
+
                                                 // Cancel Edit Button
                                                 Rectangle {
-                                                    height: 30; implicitWidth: cnEdTxt.implicitWidth + 14; radius: 4
+                                                    height: 28
+                                                    implicitWidth: cnEdTxt.implicitWidth + 14
+                                                    radius: 6
                                                     color: Services.Theme.surfaceVariant
                                                     border.color: Services.Theme.border; border.width: 1
                                                     Text { id: cnEdTxt; anchors.centerIn: parent; text: "Cancel"; font.pixelSize: 10; color: Services.Theme.textSecondary }
                                                     MouseArea {
                                                         anchors.fill: parent; cursorShape: Qt.PointingHandCursor
                                                         onClicked: rootWindow.editingBindLine = -1
+                                                    }
+                                                }
+
+                                                // Save Edit Button
+                                                Rectangle {
+                                                    height: 28
+                                                    implicitWidth: svEdTxt.implicitWidth + 18
+                                                    radius: 6
+                                                    color: Services.Theme.accent
+                                                    Text { id: svEdTxt; anchors.centerIn: parent; text: "Save Changes"; font.pixelSize: 10; font.weight: Font.DemiBold; color: "#ffffff" }
+                                                    MouseArea {
+                                                        anchors.fill: parent; cursorShape: Qt.PointingHandCursor
+                                                        onClicked: {
+                                                            if (Services.Compositor && rootWindow.formKeys && rootWindow.formAction) {
+                                                                Services.Compositor.updateKeybind(bindItemRoot.modelData.startLine, rootWindow.formKeys.trim(), rootWindow.formAction.trim(), "")
+                                                                rootWindow.editingBindLine = -1
+                                                            }
+                                                        }
                                                     }
                                                 }
                                             }
@@ -3910,6 +5016,7 @@ FloatingWindow {
                         // TAB 7: BACKUP & RESET
                         // ═════════════════════════════════════════════
                         ColumnLayout {
+                            id: tab7
                             Layout.fillWidth: true
                             spacing: 14
 
@@ -3981,6 +5088,7 @@ FloatingWindow {
                         // TAB 8: ABOUT & SYSTEM INFORMATION
                         // ═════════════════════════════════════════════
                         ColumnLayout {
+                            id: tab8
                             Layout.fillWidth: true
                             spacing: 14
 
