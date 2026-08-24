@@ -210,11 +210,98 @@ def query_all():
         }
         res.update(raw_opts)
         return res
+    elif comp == "niri":
+        clean_monitors = []
+        workspaces_count = 1
+        windows_count = 0
+        ver = "Niri"
+        try:
+            ver_p = subprocess.run(["niri", "--version"], capture_output=True, text=True, timeout=0.8)
+            if ver_p.returncode == 0:
+                ver = ver_p.stdout.strip()
+        except Exception:
+            pass
+
+        try:
+            out_p = subprocess.run(["niri", "msg", "-j", "outputs"], capture_output=True, text=True, timeout=0.8)
+            if out_p.returncode == 0:
+                outs = json.loads(out_p.stdout)
+                if isinstance(outs, dict):
+                    for name, m in outs.items():
+                        modes = m.get("modes", [])
+                        cur_mode = m.get("current_mode", 0)
+                        mode_info = modes[cur_mode] if (isinstance(cur_mode, int) and cur_mode < len(modes)) else (modes[0] if modes else {})
+                        clean_monitors.append({
+                            "id": name,
+                            "name": name,
+                            "description": (m.get("make", "") + " " + m.get("model", "")).strip() or name,
+                            "width": mode_info.get("width", 1920),
+                            "height": mode_info.get("height", 1080),
+                            "refreshRate": round(mode_info.get("refresh_rate", 60000) / 1000.0, 1),
+                            "scale": m.get("scale", 1.0),
+                            "focused": True,
+                            "vrr": m.get("vrr", False)
+                        })
+        except Exception:
+            pass
+
+        try:
+            ws_p = subprocess.run(["niri", "msg", "-j", "workspaces"], capture_output=True, text=True, timeout=0.8)
+            if ws_p.returncode == 0:
+                ws_list = json.loads(ws_p.stdout)
+                if isinstance(ws_list, list):
+                    workspaces_count = max(1, len(ws_list))
+        except Exception:
+            pass
+
+        try:
+            win_p = subprocess.run(["niri", "msg", "-j", "windows"], capture_output=True, text=True, timeout=0.8)
+            if win_p.returncode == 0:
+                win_list = json.loads(win_p.stdout)
+                if isinstance(win_list, list):
+                    windows_count = len(win_list)
+        except Exception:
+            pass
+
+        return {
+            "activeCompositor": "niri",
+            "activeDisplayName": "Niri",
+            "configType": "kdl",
+            "version": ver,
+            "blur": True,
+            "blur_size": 4,
+            "blur_passes": 2,
+            "anim": True,
+            "shadow": True,
+            "shadow_range": 4,
+            "shadow_power": 3,
+            "rounding": 10,
+            "border_size": 1,
+            "gaps_in": 5,
+            "gaps_out": 10,
+            "active_opacity": 1.0,
+            "inactive_opacity": 1.0,
+            "dim_inactive": False,
+            "dim_strength": 0.5,
+            "layout": "scrolling",
+            "touchpad_natural": True,
+            "touchpad_tap": True,
+            "touchpad_dwt": False,
+            "sensitivity": 0.0,
+            "resize_border": False,
+            "disable_hyprland_logo": False,
+            "monitorsCount": max(1, len(clean_monitors)),
+            "monitors": clean_monitors,
+            "workspacesCount": max(1, workspaces_count),
+            "windowsCount": windows_count,
+            "installedCompositors": installed_compositors,
+            "discoveredConfigFiles": found_files
+        }
     else:
         return {
             "activeCompositor": comp,
             "activeDisplayName": comp.capitalize(),
-            "configType": "kdl" if comp == "niri" else "conf",
+            "configType": "conf",
             "version": comp.capitalize(),
             "blur": True,
             "blur_size": 4,
@@ -611,6 +698,56 @@ def list_keybinds():
                     "opts": ""
                 })
 
+    elif cfg_type == "niri":
+        # Niri kdl binds format: Mod+Return { spawn "kitty"; }
+        niri_bind_re = re.compile(r'^\s*([A-Za-z0-9_\+\-]+)(?:\s+[^\{]+)?\s*\{\s*([^;\}]+);?\s*\}')
+        in_binds_block = False
+        for idx, line in enumerate(lines):
+            line_str = line.strip()
+            if not line_str or line_str.startswith("//"):
+                continue
+            if "binds {" in line_str:
+                in_binds_block = True
+                continue
+            if in_binds_block and line_str == "}":
+                in_binds_block = False
+                continue
+            if in_binds_block:
+                m = niri_bind_re.match(line_str)
+                if m:
+                    combo = m.group(1).replace("-", "+").replace("+", " + ")
+                    action = m.group(2).strip()
+                    if action.startswith('spawn "') and action.endswith('"'):
+                        parts = re.findall(r'"([^"]*)"', action)
+                        action = " ".join(parts) if parts else action
+
+                    cat = "other"
+                    ca_low = action.lower()
+                    cb_low = combo.lower()
+                    if "qs ipc call" in ca_low or "quickshell" in ca_low:
+                        cat = "quickshell"
+                    elif any(x in ca_low for x in ["kitty", "alacritty", "foot", "nautilus", "thunar", "dolphin", "browser", "firefox"]):
+                        cat = "apps"
+                    elif any(x in ca_low for x in ["close-window", "fullscreen", "focus-", "move-", "column", "workspace"]):
+                        cat = "nav"
+                    elif "screenshot" in ca_low or "grim" in ca_low or "print" in cb_low:
+                        cat = "screenshot"
+                    elif any(x in ca_low for x in ["wpctl", "pactl", "volume", "brightnessctl", "playerctl"]):
+                        cat = "media"
+
+                    key_tokens = [k.strip() for k in combo.split("+") if k.strip()]
+                    binds.append({
+                        "id": idx + 1,
+                        "startLine": idx + 1,
+                        "endLine": idx + 1,
+                        "keys": combo,
+                        "keyTokens": key_tokens,
+                        "action": action,
+                        "raw": line_str,
+                        "category": cat,
+                        "opts": ""
+                    })
+
     return {
         "ok": True,
         "binds": binds,
@@ -636,15 +773,12 @@ def add_keybind(keys, action, desc=""):
         return {"ok": False, "error": str(e)}
 
     if cfg_type == "lua":
-        # Format hl.bind("COMBO", hl.dsp.exec_cmd("CMD"))
-        # Check if action is known dispatcher or exec
         if action.startswith("hl.dsp."):
             new_line = f'hl.bind("{keys}", {action})\n'
         else:
             escaped_action = action.replace('\\', '\\\\').replace('"', '\\"')
             new_line = f'hl.bind("{keys}", hl.dsp.exec_cmd("{escaped_action}"))\n'
 
-        # Find insertion position: right before "WINDOW / LAYER RULES" or end of file
         insert_idx = len(lines)
         for i, l in enumerate(lines):
             if "WINDOW / LAYER RULES" in l or "WINDOW RULES" in l or "LAYER RULES" in l:
@@ -654,7 +788,6 @@ def add_keybind(keys, action, desc=""):
         lines.insert(insert_idx, new_line)
 
     elif cfg_type == "hyprconf":
-        # Parse keys into mod and key
         parts = [p.strip() for p in keys.split("+") if p.strip()]
         if len(parts) > 1:
             mod = " ".join(parts[:-1])
@@ -665,6 +798,22 @@ def add_keybind(keys, action, desc=""):
 
         new_line = f"bind = {mod}, {k}, exec, {action}\n"
         lines.append(new_line)
+
+    elif cfg_type == "niri":
+        clean_combo = keys.replace(" ", "")
+        if action.startswith("niri:") or "(" in action or "-" in action:
+            new_line = f'    {clean_combo} {{ {action}; }}\n'
+        else:
+            parts = action.split()
+            quoted_parts = " ".join(f'"{p}"' for p in parts)
+            new_line = f'    {clean_combo} {{ spawn {quoted_parts}; }}\n'
+
+        insert_idx = len(lines)
+        for i, l in enumerate(lines):
+            if "binds {" in l:
+                insert_idx = i + 1
+                break
+        lines.insert(insert_idx, new_line)
 
     content = "".join(lines)
     res = _write_and_validate(cfg_path, content)
@@ -709,6 +858,14 @@ def update_keybind(line_num, keys, action, desc=""):
             mod = ""
             k = parts[0]
         lines[line_idx] = f"bind = {mod}, {k}, exec, {action}\n"
+    elif cfg_type == "niri":
+        clean_combo = keys.replace(" ", "")
+        if action.startswith("niri:") or "(" in action or "-" in action:
+            lines[line_idx] = f'    {clean_combo} {{ {action}; }}\n'
+        else:
+            parts = action.split()
+            quoted_parts = " ".join(f'"{p}"' for p in parts)
+            lines[line_idx] = f'    {clean_combo} {{ spawn {quoted_parts}; }}\n'
 
     content = "".join(lines)
     res = _write_and_validate(cfg_path, content)

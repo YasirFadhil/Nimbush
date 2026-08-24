@@ -1665,7 +1665,7 @@ FloatingWindow {
                         Layout.fillWidth: true
                         Layout.fillHeight: true
                         spacing: 3
-                        clip: true
+                        clip: false
                         interactive: false
 
                         readonly property var allNavTabs: [
@@ -1693,15 +1693,32 @@ FloatingWindow {
                             height: 38
                             radius: 8
                             readonly property bool isCur: rootWindow.currentTab === modelData.id
-                            scale: tabMouse.pressed ? 0.96 : (tabMouse.containsMouse ? 1.01 : 1.0)
-                            Behavior on scale { NumberAnimation { duration: 180; easing.type: Easing.OutBack; easing.overshoot: 1.35 } }
+                            scale: tabMouse.pressed ? 0.98 : 1.0
+                            Behavior on scale { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
 
                             color: isCur 
-                                ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.16)
-                                : (tabMouse.containsMouse ? Qt.rgba(255, 255, 255, 0.05) : "transparent")
-                            border.color: isCur ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.28) : "transparent"
+                                ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.18)
+                                : (tabMouse.containsMouse ? Qt.rgba(255, 255, 255, 0.06) : "transparent")
+                            border.color: isCur 
+                                ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.45) 
+                                : (tabMouse.containsMouse ? Qt.rgba(255, 255, 255, 0.08) : "transparent")
                             border.width: 1
-                            Behavior on color { ColorAnimation { duration: 180 } }
+                            Behavior on color { ColorAnimation { duration: 150 } }
+                            Behavior on border.color { ColorAnimation { duration: 150 } }
+
+                            // Top Specular Glass Highlight Line
+                            Rectangle {
+                                visible: isCur
+                                anchors.top: parent.top
+                                anchors.left: parent.left
+                                anchors.right: parent.right
+                                anchors.topMargin: 1
+                                anchors.leftMargin: 4
+                                anchors.rightMargin: 4
+                                height: 1
+                                radius: 0.5
+                                color: Qt.rgba(1, 1, 1, 0.35)
+                            }
 
                             RowLayout {
                                 anchors.fill: parent
@@ -1709,22 +1726,26 @@ FloatingWindow {
                                 anchors.rightMargin: 10
                                 spacing: 10
 
-                                // macOS Squircle Icon Container
+                                // macOS Squircle Icon Container (Unified Static Styling)
                                 Rectangle {
                                     Layout.preferredWidth: 26
                                     Layout.preferredHeight: 26
                                     Layout.alignment: Qt.AlignVCenter
                                     radius: 7
-                                    color: modelData.color
+                                    color: isCur ? Services.Theme.accent : Qt.rgba(1, 1, 1, 0.08)
+                                    border.color: isCur ? Services.Theme.accent : Qt.rgba(1, 1, 1, 0.06)
+                                    border.width: 1
                                     scale: isCur ? 1.06 : 1.0
                                     Behavior on scale { NumberAnimation { duration: 200; easing.type: Easing.OutBack; easing.overshoot: 1.3 } }
+                                    Behavior on color { ColorAnimation { duration: 180 } }
 
                                     Text {
                                         anchors.centerIn: parent
                                         text: modelData.icon
                                         font.family: Services.Theme.fontSymbols
                                         font.pixelSize: 13
-                                        color: "#ffffff"
+                                        color: isCur ? (Services.Theme.bgOnAccent || "#ffffff") : (tabMouse.containsMouse ? Services.Theme.textPrimary : Services.Theme.textSecondary)
+                                        Behavior on color { ColorAnimation { duration: 180 } }
                                     }
                                 }
 
@@ -3072,162 +3093,187 @@ FloatingWindow {
                             Layout.fillWidth: true
                             spacing: 12
 
-                            // ── Hero / Status Header Card (Redesigned) ───────────────
+                            // ── Hero / Status Header Card (Luxurious Compositor Glass Hero) ───────────────
                             Rectangle {
                                 Layout.fillWidth: true
-                                implicitHeight: compHeroCol.implicitHeight + 20
-                                radius: Services.Theme.radiusMd
+                                height: 70
+                                radius: Services.Theme.radiusLg || 12
                                 color: Services.Theme.surfaceVariant
                                 border.color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.35)
                                 border.width: 1
 
-                                // Subtle gradient left-tint
+                                // Ambient Glass Refractive Glow
                                 Rectangle {
                                     anchors.fill: parent
                                     radius: parent.radius
                                     gradient: Gradient {
                                         orientation: Gradient.Horizontal
-                                        GradientStop { position: 0.0; color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.07) }
-                                        GradientStop { position: 0.6; color: "transparent" }
+                                        GradientStop { position: 0.0; color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.14) }
+                                        GradientStop { position: 0.45; color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.02) }
+                                        GradientStop { position: 1.0; color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.08) }
                                     }
                                 }
 
-                                ColumnLayout {
-                                    id: compHeroCol
+                                // Top Specular Glass Line
+                                Rectangle {
+                                    anchors.top: parent.top; anchors.left: parent.left; anchors.right: parent.right
+                                    anchors.leftMargin: 8; anchors.rightMargin: 8; anchors.topMargin: 1
+                                    height: 1; radius: 0.5
+                                    color: Qt.rgba(1, 1, 1, 0.30)
+                                }
+
+                                RowLayout {
                                     anchors.fill: parent
-                                    anchors.margins: 14
-                                    spacing: 10
+                                    anchors.leftMargin: 14
+                                    anchors.rightMargin: 14
+                                    spacing: 14
 
-                                    // Top row: live dot + icon + name + badges + reload
-                                    RowLayout {
-                                        Layout.fillWidth: true
-                                        spacing: 10
+                                    // Desktop / Compositor Icon Squircle Badge
+                                    Rectangle {
+                                        Layout.preferredWidth: 44
+                                        Layout.preferredHeight: 44
+                                        Layout.alignment: Qt.AlignVCenter
+                                        radius: 11
+                                        color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.18)
+                                        border.color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.45)
+                                        border.width: 1.2
 
-                                        // Pulsing live dot
-                                        Rectangle {
-                                            width: 7; height: 7; radius: 3.5
+                                        Text {
+                                            anchors.centerIn: parent
+                                            text: Services.Icons.display
+                                            font.family: Services.Theme.fontSymbols
+                                            font.pixelSize: 20
                                             color: Services.Theme.accent
-                                            Layout.alignment: Qt.AlignVCenter
+                                        }
+
+                                        // Pulsing live indicator dot
+                                        Rectangle {
+                                            anchors.top: parent.top; anchors.right: parent.right
+                                            anchors.topMargin: 3; anchors.rightMargin: 3
+                                            width: 7; height: 7; radius: 3.5
+                                            color: "#10b981"
+                                            border.color: Services.Theme.surfaceVariant
+                                            border.width: 1
                                             SequentialAnimation on opacity {
                                                 running: true; loops: Animation.Infinite
-                                                NumberAnimation { to: 0.2; duration: 1000; easing.type: Easing.InOutSine }
-                                                NumberAnimation { to: 1.0; duration: 1000; easing.type: Easing.InOutSine }
+                                                NumberAnimation { to: 0.3; duration: 900; easing.type: Easing.InOutSine }
+                                                NumberAnimation { to: 1.0; duration: 900; easing.type: Easing.InOutSine }
+                                            }
+                                        }
+                                    }
+
+                                    // Title & Version Column
+                                    ColumnLayout {
+                                        spacing: 3
+                                        Layout.alignment: Qt.AlignVCenter
+
+                                        RowLayout {
+                                            spacing: 8
+                                            Text {
+                                                text: Services.Compositor ? Services.Compositor.activeDisplayName : "Hyprland"
+                                                font.pixelSize: 15
+                                                font.weight: Font.Bold
+                                                color: Services.Theme.textPrimary
+                                            }
+
+                                            // Config Type Pill
+                                            Rectangle {
+                                                height: 20
+                                                implicitWidth: cfgTypeBadge.implicitWidth + 14
+                                                radius: 4
+                                                color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.15)
+                                                border.color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.40)
+                                                border.width: 1
+                                                RowLayout {
+                                                    anchors.centerIn: parent; spacing: 4
+                                                    Text { text: Services.Icons.code || "󰅍"; font.family: Services.Theme.fontSymbols; font.pixelSize: 9; color: Services.Theme.accent }
+                                                    Text { id: cfgTypeBadge; text: (Services.Compositor && Services.Compositor.configType ? Services.Compositor.configType.toUpperCase() : "LUA") + " CONFIG"; font.pixelSize: 8; font.weight: Font.Bold; color: Services.Theme.accent; font.letterSpacing: 0.5 }
+                                                }
                                             }
                                         }
 
                                         Text {
-                                            text: Services.Icons.display
-                                            font.family: Services.Theme.fontSymbols
-                                            font.pixelSize: 17
-                                            color: Services.Theme.accent
-                                            Layout.alignment: Qt.AlignVCenter
-                                        }
-
-                                        ColumnLayout {
-                                            spacing: 2
-                                            Layout.alignment: Qt.AlignVCenter
-                                            Text {
-                                                text: Services.Compositor ? Services.Compositor.activeDisplayName : "Compositor"
-                                                font.pixelSize: 13
-                                                font.weight: Font.Bold
-                                                color: Services.Theme.textPrimary
+                                            text: {
+                                                const v = Services.Compositor ? Services.Compositor.activeVersion : ""
+                                                const cleanV = v.split(" built")[0].replace(/^hyprland\s*/i, "").trim()
+                                                return (cleanV ? ("v" + cleanV + " · ") : "") + "Wayland Session"
                                             }
-                                            Text {
-                                                text: Services.Compositor ? (Services.Compositor.activeVersion.split(" built")[0] || "Wayland Compositor") : "Wayland"
-                                                font.pixelSize: 9
-                                                color: Services.Theme.textDisabled
-                                                elide: Text.ElideRight
-                                                Layout.maximumWidth: 200
-                                            }
+                                            font.pixelSize: 11
+                                            color: Services.Theme.textSecondary
+                                            elide: Text.ElideRight
+                                            Layout.maximumWidth: 260
                                         }
+                                    }
 
-                                        Item { Layout.fillWidth: true }
+                                    Item { Layout.fillWidth: true }
 
-                                        // Config type badge
+                                    // Badges & Actions Group (Balanced Heights & Spacing)
+                                    RowLayout {
+                                        spacing: 8
+                                        Layout.alignment: Qt.AlignVCenter
+
+                                        // Display count badge
                                         Rectangle {
-                                            height: 20; implicitWidth: cfgTypeBadge.implicitWidth + 10; radius: 4
-                                            color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.12)
-                                            border.color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.3); border.width: 1
-                                            Text { id: cfgTypeBadge; anchors.centerIn: parent; text: (Services.Compositor && Services.Compositor.configType ? Services.Compositor.configType.toUpperCase() : "CONF") + " CONFIG"; font.pixelSize: 7; font.weight: Font.Bold; color: Services.Theme.accent; font.letterSpacing: 0.5 }
-                                        }
-
-                                        // Display count
-                                        Rectangle {
-                                            height: 20; implicitWidth: heroMonTxt.implicitWidth + 10; radius: 4
-                                            color: Services.Theme.bgElevated; border.color: Services.Theme.border; border.width: 1
-                                            RowLayout { anchors.centerIn: parent; spacing: 3
-                                                Text { text: Services.Icons.display; font.family: Services.Theme.fontSymbols; font.pixelSize: 8; color: Services.Theme.textSecondary }
-                                                Text { id: heroMonTxt; text: (Services.Compositor ? Services.Compositor.monitorsCount : 1) + " Display"; font.pixelSize: 8; color: Services.Theme.textSecondary }
+                                            height: 32
+                                            implicitWidth: heroMonRow.implicitWidth + 16
+                                            radius: 6
+                                            color: Services.Theme.bgElevated
+                                            border.color: Services.Theme.border
+                                            border.width: 1
+                                            RowLayout {
+                                                id: heroMonRow
+                                                anchors.centerIn: parent; spacing: 5
+                                                Text { text: Services.Icons.display; font.family: Services.Theme.fontSymbols; font.pixelSize: 11; color: Services.Theme.textSecondary }
+                                                Text { text: (Services.Compositor ? Services.Compositor.monitorsCount : 1) + " Display"; font.pixelSize: 10; font.weight: Font.Medium; color: Services.Theme.textPrimary }
                                             }
                                         }
 
-                                        // Workspace count
+                                        // Workspace count badge
                                         Rectangle {
-                                            height: 20; implicitWidth: heroWsTxt.implicitWidth + 10; radius: 4
-                                            color: Services.Theme.bgElevated; border.color: Services.Theme.border; border.width: 1
-                                            RowLayout { anchors.centerIn: parent; spacing: 3
-                                                Text { text: Services.Icons.grid; font.family: Services.Theme.fontSymbols; font.pixelSize: 8; color: Services.Theme.textSecondary }
-                                                Text { id: heroWsTxt; text: (Services.Compositor ? Services.Compositor.workspacesCount : 1) + " WS"; font.pixelSize: 8; color: Services.Theme.textSecondary }
+                                            height: 32
+                                            implicitWidth: heroWsRow.implicitWidth + 16
+                                            radius: 6
+                                            color: Services.Theme.bgElevated
+                                            border.color: Services.Theme.border
+                                            border.width: 1
+                                            RowLayout {
+                                                id: heroWsRow
+                                                anchors.centerIn: parent; spacing: 5
+                                                Text { text: Services.Icons.grid; font.family: Services.Theme.fontSymbols; font.pixelSize: 11; color: Services.Theme.textSecondary }
+                                                Text { text: (Services.Compositor ? Services.Compositor.workspacesCount : 1) + " Workspace"; font.pixelSize: 10; font.weight: Font.Medium; color: Services.Theme.textPrimary }
                                             }
                                         }
 
                                         // Reload button
                                         Rectangle {
-                                            height: 26; implicitWidth: heroRlTxt.implicitWidth + 16; radius: 5
-                                            color: heroRlMouse.containsMouse ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.22) : Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.08)
-                                            border.color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.3); border.width: 1
-                                            RowLayout { anchors.centerIn: parent; spacing: 5
-                                                Text { text: Services.Icons.refresh; font.family: Services.Theme.fontSymbols; font.pixelSize: 10; color: Services.Theme.accent }
-                                                Text { id: heroRlTxt; text: "Reload"; font.pixelSize: 10; font.weight: Font.Medium; color: Services.Theme.accent }
+                                            height: 32
+                                            implicitWidth: heroRlRow.implicitWidth + 18
+                                            radius: 6
+                                            color: heroRlMouse.containsMouse ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.28) : Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.14)
+                                            border.color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.50)
+                                            border.width: 1
+                                            scale: heroRlMouse.pressed ? 0.96 : (heroRlMouse.containsMouse ? 1.02 : 1.0)
+                                            Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutBack; easing.overshoot: 1.3 } }
+                                            Behavior on color { ColorAnimation { duration: 150 } }
+
+                                            RowLayout {
+                                                id: heroRlRow
+                                                anchors.centerIn: parent
+                                                spacing: 6
+                                                Text { text: Services.Icons.refresh; font.family: Services.Theme.fontSymbols; font.pixelSize: 12; color: Services.Theme.accent }
+                                                Text { text: "Reload"; font.pixelSize: 11; font.weight: Font.Bold; color: Services.Theme.accent }
                                             }
-                                            MouseArea { id: heroRlMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: { if (Services.Compositor) Services.Compositor.reloadCompositor() } }
-                                        }
-                                    }
-
-                                    // Config file path row
-                                    Rectangle {
-                                        Layout.fillWidth: true
-                                        height: 26; radius: 4
-                                        color: Services.Theme.bgDeep
-                                        border.color: Services.Theme.border; border.width: 1
-
-                                        RowLayout {
-                                            anchors.fill: parent; anchors.leftMargin: 8; anchors.rightMargin: 8; spacing: 6
-
-                                            Text { text: Services.Icons.folder || ""; font.family: Services.Theme.fontSymbols; font.pixelSize: 9; color: Services.Theme.textDisabled }
-
-                                            Text {
-                                                Layout.fillWidth: true
-                                                text: {
-                                                    const p = Services.Compositor ? Services.Compositor.selectedConfigFile : ""
-                                                    const h = Quickshell.env("HOME") || ""
-                                                    return (h && p.startsWith(h)) ? "~" + p.substring(h.length) : (p || "No config file detected")
-                                                }
-                                                font.family: Services.Theme.fontMono; font.pixelSize: 9; color: Services.Theme.textSecondary; elide: Text.ElideMiddle
-                                            }
-
-                                            // Limited support badge for non-Hyprland
-                                            Rectangle {
-                                                visible: Services.Compositor && Services.Compositor.activeCompositor !== "hyprland"
-                                                height: 16; implicitWidth: limSuptTxt.implicitWidth + 8; radius: 3
-                                                color: Qt.rgba(1, 0.6, 0, 0.1); border.color: Qt.rgba(1, 0.6, 0, 0.25); border.width: 1
-                                                Text { id: limSuptTxt; anchors.centerIn: parent; text: "LIMITED SUPPORT"; font.pixelSize: 7; font.weight: Font.Bold; color: "#ff9500"; font.letterSpacing: 0.4 }
-                                            }
-
-                                            // Open in editor
-                                            Rectangle {
-                                                height: 18; implicitWidth: heroEdTxt.implicitWidth + 10; radius: 3
-                                                color: heroEdMouse.containsMouse ? Qt.rgba(1,1,1,0.08) : "transparent"
-                                                border.color: heroEdMouse.containsMouse ? Services.Theme.border : "transparent"; border.width: 1
-                                                Text { id: heroEdTxt; anchors.centerIn: parent; text: "Open Editor"; font.pixelSize: 8; color: heroEdMouse.containsMouse ? Services.Theme.accent : Services.Theme.textDisabled }
-                                                MouseArea { id: heroEdMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: { if (Services.Compositor) Services.Compositor.openExternalEditor("") } }
+                                            MouseArea {
+                                                id: heroRlMouse
+                                                anchors.fill: parent
+                                                hoverEnabled: true
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: { if (Services.Compositor) Services.Compositor.reloadCompositor() }
                                             }
                                         }
                                     }
                                 }
                             }
-
-
 
                             // ── Segment Switcher Pill Bar (Liquid Glass Elastic Tabs) ──────────────────────────
                             Rectangle {
@@ -3354,7 +3400,7 @@ FloatingWindow {
                                             Layout.fillHeight: true
                                             readonly property bool isCur: rootWindow.compSubTab === modelData.id
                                             readonly property bool isHyprOnly: modelData.id !== 1
-                                            readonly property bool nonHypr: isHyprOnly && !(Services.Compositor && Services.Compositor.activeCompositor === "hyprland")
+                                            readonly property bool nonHypr: isHyprOnly && !(Services.Compositor && (Services.Compositor.activeCompositor === "hyprland" || Services.Compositor.activeCompositor === "niri"))
 
                                             // Hover effect for unselected tabs
                                             Rectangle {
@@ -3364,16 +3410,6 @@ FloatingWindow {
                                                 Behavior on color { ColorAnimation { duration: 150 } }
                                             }
 
-                                            // Orange dot indicator for limited-support tabs
-                                            Rectangle {
-                                                visible: nonHypr
-                                                anchors.top: parent.top; anchors.right: parent.right
-                                                anchors.topMargin: 4; anchors.rightMargin: 5
-                                                width: 5; height: 5; radius: 2.5
-                                                color: "#ff9500"; opacity: 0.9
-                                                z: 3
-                                            }
-
                                             RowLayout {
                                                 anchors.centerIn: parent
                                                 spacing: 6
@@ -3381,14 +3417,14 @@ FloatingWindow {
                                                 Text {
                                                     text: modelData.icon
                                                     font.family: Services.Theme.fontSymbols; font.pixelSize: 11
-                                                    color: isCur ? Services.Theme.accent : (subMouse.containsMouse ? Services.Theme.textPrimary : (nonHypr ? "#ff9500" : Services.Theme.textSecondary))
+                                                    color: isCur ? Services.Theme.accent : (subMouse.containsMouse ? Services.Theme.textPrimary : Services.Theme.textSecondary)
                                                     Behavior on color { ColorAnimation { duration: 200 } }
                                                 }
                                                 Text {
                                                     text: modelData.label
                                                     font.pixelSize: 11
                                                     font.weight: isCur ? Font.DemiBold : Font.Normal
-                                                    color: isCur ? Services.Theme.textPrimary : (subMouse.containsMouse ? Services.Theme.textPrimary : (nonHypr ? "#ff9500" : Services.Theme.textSecondary))
+                                                    color: isCur ? Services.Theme.textPrimary : (subMouse.containsMouse ? Services.Theme.textPrimary : Services.Theme.textSecondary)
                                                     Behavior on color { ColorAnimation { duration: 200 } }
                                                 }
                                             }
@@ -3410,146 +3446,164 @@ FloatingWindow {
                                 Layout.fillWidth: true
                                 spacing: 10
 
-                                // Hyprland-only content
-                                ColumnLayout {
-                                    visible: Services.Compositor && Services.Compositor.activeCompositor === "hyprland"
-                                    Layout.fillWidth: true
-                                    spacing: 10
+                                SettingsSection {
+                                    title: "Glass Blur & Animations"
+                                    icon: Services.Icons.sparkle
 
-                                    SettingsSection {
-                                        title: "Glass Blur & Animations"
-                                        icon: Services.Icons.sparkle
-
-                                        SettingsSwitch {
-                                            title: "Window Animations"
-                                            subtitle: "Smooth window open/close and workspace transitions"
-                                            checked: Services.Compositor ? Services.Compositor.hyprAnim : true
-                                            onToggled: () => { if (Services.Compositor) Services.Compositor.toggleHyprAnim() }
-                                        }
-
-                                        SettingsDivider {}
-
-                                        SettingsSwitch {
-                                            title: "Dual Kawase Glass Blur"
-                                            subtitle: "Background blur for translucent windows and quickshell panels"
-                                            checked: Services.Compositor ? Services.Compositor.hyprBlur : true
-                                            onToggled: () => { if (Services.Compositor) Services.Compositor.toggleHyprBlur() }
-                                        }
-
-                                        SettingsDivider {}
-
-                                        SettingsSlider {
-                                            title: "Blur Radius (Size)"
-                                            from: 1; to: 16; stepSize: 1; valueSuffix: "px"
-                                            value: Services.Compositor ? Services.Compositor.hyprBlurSize : 4
-                                            onMoved: (v) => { if (Services.Compositor) Services.Compositor.setHyprBlurSize(Math.round(v)) }
-                                        }
-
-                                        SettingsDivider {}
-
-                                        SettingsSlider {
-                                            title: "Blur Iterations (Passes)"
-                                            from: 1; to: 5; stepSize: 1; valueSuffix: "x"
-                                            value: Services.Compositor ? Services.Compositor.hyprBlurPasses : 2
-                                            onMoved: (v) => { if (Services.Compositor) Services.Compositor.setHyprBlurPasses(Math.round(v)) }
-                                        }
+                                    SettingsSwitch {
+                                        title: "Window Animations"
+                                        subtitle: "Smooth window open/close and workspace transitions"
+                                        checked: Services.Compositor ? Services.Compositor.hyprAnim : true
+                                        onToggled: () => { if (Services.Compositor) Services.Compositor.toggleHyprAnim() }
                                     }
 
-                                    SettingsSection {
-                                        title: "Window Opacity & Dimming"
-                                        icon: Services.Icons.contrast
+                                    SettingsDivider {}
 
-                                        SettingsSlider {
-                                            title: "Active Window Opacity"
-                                            from: 0.50; to: 1.00; stepSize: 0.01; decimals: 2
-                                            value: Services.Compositor ? Services.Compositor.hyprActiveOpacity : 0.90
-                                            onMoved: (v) => { if (Services.Compositor) Services.Compositor.setHyprActiveOpacity(Number(v.toFixed(2))) }
-                                        }
-
-                                        SettingsDivider {}
-
-                                        SettingsSlider {
-                                            title: "Inactive Window Opacity"
-                                            from: 0.50; to: 1.00; stepSize: 0.01; decimals: 2
-                                            value: Services.Compositor ? Services.Compositor.hyprInactiveOpacity : 0.95
-                                            onMoved: (v) => { if (Services.Compositor) Services.Compositor.setHyprInactiveOpacity(Number(v.toFixed(2))) }
-                                        }
-
-                                        SettingsDivider {}
-
-                                        SettingsSwitch {
-                                            title: "Dim Inactive Windows"
-                                            subtitle: "Darken background windows to emphasize active focus"
-                                            checked: Services.Compositor ? Services.Compositor.hyprDimInactive : false
-                                            onToggled: () => { if (Services.Compositor) Services.Compositor.toggleHyprDimInactive() }
-                                        }
+                                    SettingsSwitch {
+                                        title: "Dual Kawase Glass Blur"
+                                        subtitle: "Background blur for translucent windows and quickshell panels"
+                                        checked: Services.Compositor ? Services.Compositor.hyprBlur : true
+                                        onToggled: () => { if (Services.Compositor) Services.Compositor.toggleHyprBlur() }
                                     }
 
-                                    SettingsSection {
-                                        title: "Window Geometry & Gaps"
-                                        icon: Services.Icons.layout
+                                    SettingsDivider {}
 
-                                        SettingsSlider {
-                                            title: "Window Corner Radius"
-                                            from: 0; to: 28; stepSize: 1; valueSuffix: "px"
-                                            value: Services.Compositor ? Services.Compositor.hyprRounding : 10
-                                            onMoved: (v) => { if (Services.Compositor) Services.Compositor.setHyprRounding(Math.round(v)) }
-                                        }
+                                    SettingsSlider {
+                                        title: "Blur Radius (Size)"
+                                        from: 1; to: 16; stepSize: 1; valueSuffix: "px"
+                                        value: Services.Compositor ? Services.Compositor.hyprBlurSize : 4
+                                        onMoved: (v) => { if (Services.Compositor) Services.Compositor.setHyprBlurSize(Math.round(v)) }
+                                    }
 
-                                        SettingsDivider {}
+                                    SettingsDivider {}
 
-                                        SettingsSlider {
-                                            title: "Border Thickness"
-                                            from: 0; to: 6; stepSize: 1; valueSuffix: "px"
-                                            value: Services.Compositor ? Services.Compositor.hyprBorderSize : 0
-                                            onMoved: (v) => { if (Services.Compositor) Services.Compositor.setHyprBorderSize(Math.round(v)) }
-                                        }
+                                    SettingsSlider {
+                                        title: "Blur Iterations (Passes)"
+                                        from: 1; to: 5; stepSize: 1; valueSuffix: "x"
+                                        value: Services.Compositor ? Services.Compositor.hyprBlurPasses : 2
+                                        onMoved: (v) => { if (Services.Compositor) Services.Compositor.setHyprBlurPasses(Math.round(v)) }
+                                    }
 
-                                        SettingsDivider {}
+                                    SettingsDivider {}
 
-                                        SettingsSlider {
-                                            title: "Gaps In (Between Windows)"
-                                            from: 0; to: 24; stepSize: 1; valueSuffix: "px"
-                                            value: Services.Compositor ? Services.Compositor.hyprGapsIn : 5
-                                            onMoved: (v) => { if (Services.Compositor) Services.Compositor.setHyprGapsIn(Math.round(v)) }
-                                        }
+                                    SettingsSwitch {
+                                        title: "Window Drop Shadows"
+                                        subtitle: "Render soft ambient depth shadows behind active and floating windows"
+                                        checked: Services.Compositor ? Services.Compositor.hyprShadow : true
+                                        onToggled: () => { if (Services.Compositor) Services.Compositor.toggleHyprShadow() }
+                                    }
 
-                                        SettingsDivider {}
+                                    SettingsDivider {}
 
-                                        SettingsSlider {
-                                            title: "Gaps Out (Screen Margins)"
-                                            from: 0; to: 36; stepSize: 1; valueSuffix: "px"
-                                            value: Services.Compositor ? Services.Compositor.hyprGapsOut : 10
-                                            onMoved: (v) => { if (Services.Compositor) Services.Compositor.setHyprGapsOut(Math.round(v)) }
-                                        }
-
-                                        SettingsDivider {}
-
-                                        SettingsSwitch {
-                                            title: "Smart Gaps (No Gaps When Only)"
-                                            subtitle: "Automatically remove gaps and borders if only one window is open"
-                                            checked: Services.Compositor ? Services.Compositor.hyprSmartGaps : false
-                                            onToggled: () => { if (Services.Compositor) Services.Compositor.toggleHyprSmartGaps() }
-                                        }
+                                    SettingsSlider {
+                                        title: "Shadow Range / Blur"
+                                        from: 0; to: 30; stepSize: 1; valueSuffix: "px"
+                                        value: Services.Compositor ? Services.Compositor.hyprShadowRange : 4
+                                        onMoved: (v) => { if (Services.Compositor) Services.Compositor.setHyprShadowRange(Math.round(v)) }
                                     }
                                 }
 
-                                // Non-Hyprland fallback card
-                                Rectangle {
-                                    visible: !(Services.Compositor && Services.Compositor.activeCompositor === "hyprland")
-                                    Layout.fillWidth: true
-                                    implicitHeight: noHyprStyling.implicitHeight + 40
-                                    radius: Services.Theme.radiusMd
-                                    color: Services.Theme.surfaceVariant
-                                    border.color: Services.Theme.border; border.width: 1
+                                SettingsSection {
+                                    title: "Window Opacity & Dimming"
+                                    icon: Services.Icons.contrast
 
-                                    ColumnLayout {
-                                        id: noHyprStyling
-                                        anchors.centerIn: parent
-                                        spacing: 8
-                                        Text { Layout.alignment: Qt.AlignHCenter; text: Services.Icons.display; font.family: Services.Theme.fontSymbols; font.pixelSize: 24; color: Services.Theme.textDisabled }
-                                        Text { Layout.alignment: Qt.AlignHCenter; text: "Window styling controls require Hyprland"; font.pixelSize: 12; font.weight: Font.Medium; color: Services.Theme.textSecondary }
-                                        Text { Layout.alignment: Qt.AlignHCenter; text: "Detected compositor: " + (Services.Compositor ? Services.Compositor.activeDisplayName : "Unknown"); font.pixelSize: 10; color: Services.Theme.textDisabled }
+                                    SettingsSlider {
+                                        title: "Active Window Opacity"
+                                        from: 0.50; to: 1.00; stepSize: 0.01; decimals: 2
+                                        value: Services.Compositor ? Services.Compositor.hyprActiveOpacity : 0.90
+                                        onMoved: (v) => { if (Services.Compositor) Services.Compositor.setHyprActiveOpacity(Number(v.toFixed(2))) }
+                                    }
+
+                                    SettingsDivider {}
+
+                                    SettingsSlider {
+                                        title: "Inactive Window Opacity"
+                                        from: 0.50; to: 1.00; stepSize: 0.01; decimals: 2
+                                        value: Services.Compositor ? Services.Compositor.hyprInactiveOpacity : 0.95
+                                        onMoved: (v) => { if (Services.Compositor) Services.Compositor.setHyprInactiveOpacity(Number(v.toFixed(2))) }
+                                    }
+
+                                    SettingsDivider {}
+
+                                    SettingsSwitch {
+                                        title: "Dim Inactive Windows"
+                                        subtitle: "Darken background windows to emphasize active focus"
+                                        checked: Services.Compositor ? Services.Compositor.hyprDimInactive : false
+                                        onToggled: () => { if (Services.Compositor) Services.Compositor.toggleHyprDimInactive() }
+                                    }
+
+                                    SettingsDivider {}
+
+                                    SettingsSlider {
+                                        title: "Dim Strength"
+                                        from: 0.10; to: 0.90; stepSize: 0.05; decimals: 2
+                                        value: Services.Compositor ? Services.Compositor.hyprDimStrength : 0.50
+                                        onMoved: (v) => { if (Services.Compositor) Services.Compositor.setHyprDimStrength(Number(v.toFixed(2))) }
+                                    }
+                                }
+
+                                SettingsSection {
+                                    title: "Window Geometry, Gaps & Layout"
+                                    icon: Services.Icons.layout
+
+                                    SettingsRow {
+                                        title: "Tiling Layout Engine"
+                                        subtitle: "Select active window tiling algorithm"
+
+                                        SettingsDropdown {
+                                            currentValue: Services.Compositor ? Services.Compositor.hyprLayout : "scrolling"
+                                            model: [
+                                                { id: "scrolling", label: "Scrolling" },
+                                                { id: "dwindle",   label: "Dwindle" },
+                                                { id: "master",    label: "Master" }
+                                            ]
+                                            onSelected: (val) => { if (Services.Compositor) Services.Compositor.setHyprLayout(val) }
+                                        }
+                                    }
+
+                                    SettingsDivider {}
+
+                                    SettingsSlider {
+                                        title: "Window Corner Radius"
+                                        from: 0; to: 28; stepSize: 1; valueSuffix: "px"
+                                        value: Services.Compositor ? Services.Compositor.hyprRounding : 10
+                                        onMoved: (v) => { if (Services.Compositor) Services.Compositor.setHyprRounding(Math.round(v)) }
+                                    }
+
+                                    SettingsDivider {}
+
+                                    SettingsSlider {
+                                        title: "Border Thickness"
+                                        from: 0; to: 6; stepSize: 1; valueSuffix: "px"
+                                        value: Services.Compositor ? Services.Compositor.hyprBorderSize : 0
+                                        onMoved: (v) => { if (Services.Compositor) Services.Compositor.setHyprBorderSize(Math.round(v)) }
+                                    }
+
+                                    SettingsDivider {}
+
+                                    SettingsSlider {
+                                        title: "Gaps In (Between Windows)"
+                                        from: 0; to: 24; stepSize: 1; valueSuffix: "px"
+                                        value: Services.Compositor ? Services.Compositor.hyprGapsIn : 5
+                                        onMoved: (v) => { if (Services.Compositor) Services.Compositor.setHyprGapsIn(Math.round(v)) }
+                                    }
+
+                                    SettingsDivider {}
+
+                                    SettingsSlider {
+                                        title: "Gaps Out (Screen Margins)"
+                                        from: 0; to: 36; stepSize: 1; valueSuffix: "px"
+                                        value: Services.Compositor ? Services.Compositor.hyprGapsOut : 10
+                                        onMoved: (v) => { if (Services.Compositor) Services.Compositor.setHyprGapsOut(Math.round(v)) }
+                                    }
+
+                                    SettingsDivider {}
+
+                                    SettingsSwitch {
+                                        title: "Smart Gaps (No Gaps When Only)"
+                                        subtitle: "Automatically remove gaps and borders if only one window is open"
+                                        checked: Services.Compositor ? Services.Compositor.hyprSmartGaps : false
+                                        onToggled: () => { if (Services.Compositor) Services.Compositor.toggleHyprSmartGaps() }
                                     }
                                 }
                             }
@@ -4041,82 +4095,172 @@ FloatingWindow {
                                 }
                             }
 
-                            // ── Category Filter Pills Bar ─────────────────────────
-                            RowLayout {
+                            // ── Category Filter Pills Bar (Liquid Glass Elastic Tabs) ─────────────────────────
+                            Rectangle {
+                                id: keyCatTabBar
                                 Layout.fillWidth: true
-                                spacing: 6
+                                height: 36
+                                radius: 8
+                                color: Services.Theme.surfaceVariant
+                                border.color: Services.Theme.border
+                                border.width: 1
+                                clip: true
 
                                 readonly property var allBinds: (Services.Compositor ? Services.Compositor.keybindsList : []) || []
-
                                 function getCatCount(catId) {
                                     if (catId === "all") return allBinds.length
                                     return allBinds.filter(k => k.category === catId).length
                                 }
 
-                                Repeater {
-                                    model: [
-                                        { id: "all",        label: "All",           icon: Services.Icons.keyboard || "󰌌" },
-                                        { id: "quickshell", label: "Quickshell",    icon: Services.Icons.sparkle || "󰀉" },
-                                        { id: "nav",        label: "Window & Nav",  icon: Services.Icons.layout || "󰕰" },
-                                        { id: "apps",       label: "Applications",  icon: Services.Icons.terminal || "󰞷" },
-                                        { id: "screenshot", label: "Screenshot",    icon: Services.Icons.camera || "󰄀" },
-                                        { id: "media",      label: "Media & Sound", icon: Services.Icons.music || "󰎈" }
-                                    ]
+                                readonly property var catList: ["all", "quickshell", "nav", "apps", "screenshot", "media"]
+                                readonly property int curCatIdx: Math.max(0, catList.indexOf(rootWindow.keyCategory))
 
-                                    delegate: Rectangle {
-                                        height: 28
-                                        implicitWidth: catRow.implicitWidth + 18
-                                        radius: 6
-                                        readonly property bool isCur: rootWindow.keyCategory === modelData.id
-                                        readonly property int count: parent.getCatCount(modelData.id)
+                                // Liquid Glass Sliding Indicator Pill
+                                Rectangle {
+                                    id: catLiquidPill
+                                    z: 1
+                                    y: 3
+                                    height: parent.height - 6
+                                    radius: 6
 
-                                        color: isCur 
-                                            ? Services.Theme.accent 
-                                            : (catMouse.containsMouse ? Qt.rgba(1, 1, 1, 0.08) : Services.Theme.surfaceVariant)
-                                        border.color: isCur ? Services.Theme.accent : Services.Theme.border
-                                        border.width: 1
+                                    x: (keyCatRow.children[keyCatTabBar.curCatIdx] ? keyCatRow.children[keyCatTabBar.curCatIdx].x : 3) + 3
+                                    width: keyCatRow.children[keyCatTabBar.curCatIdx] ? keyCatRow.children[keyCatTabBar.curCatIdx].width : 60
 
-                                        RowLayout {
-                                            id: catRow
-                                            anchors.centerIn: parent
-                                            spacing: 6
-                                            Text {
-                                                text: modelData.icon
-                                                font.family: Services.Theme.fontSymbols
-                                                font.pixelSize: 10
-                                                color: isCur ? "#ffffff" : (catMouse.containsMouse ? Services.Theme.textPrimary : Services.Theme.textSecondary)
-                                            }
-                                            Text {
-                                                text: modelData.label
-                                                font.pixelSize: 10
-                                                font.weight: isCur ? Font.DemiBold : Font.Normal
-                                                color: isCur ? "#ffffff" : (catMouse.containsMouse ? Services.Theme.textPrimary : Services.Theme.textSecondary)
-                                            }
-                                            // Count Badge
-                                            Rectangle {
-                                                height: 15
-                                                implicitWidth: catCountTxt.implicitWidth + 8
-                                                radius: 7.5
-                                                color: isCur ? Qt.rgba(0, 0, 0, 0.25) : Services.Theme.bgElevated
-                                                Text {
-                                                    id: catCountTxt
-                                                    anchors.centerIn: parent
-                                                    text: String(count)
-                                                    font.pixelSize: 8
-                                                    font.weight: Font.Bold
-                                                    color: isCur ? "#ffffff" : Services.Theme.textDisabled
-                                                }
-                                            }
+                                    // Liquid Transparent Glass Material
+                                    color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.22)
+                                    border.color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.55)
+                                    border.width: 1
+
+                                    property real stretchScaleX: 1.0
+                                    property real stretchScaleY: 1.0
+                                    transform: Scale {
+                                        origin.x: catLiquidPill.width / 2
+                                        origin.y: catLiquidPill.height / 2
+                                        xScale: catLiquidPill.stretchScaleX
+                                        yScale: catLiquidPill.stretchScaleY
+                                    }
+
+                                    // Top Specular Glass Highlight Line
+                                    Rectangle {
+                                        anchors.top: parent.top; anchors.left: parent.left; anchors.right: parent.right
+                                        anchors.topMargin: 1; anchors.leftMargin: 4; anchors.rightMargin: 4
+                                        height: 1; radius: 0.5
+                                        color: Qt.rgba(1, 1, 1, 0.40)
+                                    }
+
+                                    // Liquid Gloss Curved Sheen
+                                    Rectangle {
+                                        anchors.top: parent.top; anchors.left: parent.left; anchors.right: parent.right
+                                        anchors.topMargin: 1; anchors.leftMargin: 2; anchors.rightMargin: 2
+                                        height: parent.height * 0.46; radius: 5
+                                        gradient: Gradient {
+                                            GradientStop { position: 0.0; color: Qt.rgba(1, 1, 1, 0.16) }
+                                            GradientStop { position: 1.0; color: Qt.rgba(1, 1, 1, 0.0) }
                                         }
+                                    }
 
-                                        MouseArea {
-                                            id: catMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
-                                            onClicked: rootWindow.keyCategory = modelData.id
-                                        }
+                                    // Fluid Sliding Transitions
+                                    Behavior on x {
+                                        NumberAnimation { duration: 320; easing.type: Easing.OutBack; easing.overshoot: 1.15 }
+                                    }
+                                    Behavior on width {
+                                        NumberAnimation { duration: 320; easing.type: Easing.OutBack; easing.overshoot: 1.15 }
                                     }
                                 }
 
-                                Item { Layout.fillWidth: true }
+                                // Fluid Elastic Squash & Stretch Animation
+                                SequentialAnimation {
+                                    id: catStretchAnim
+                                    ParallelAnimation {
+                                        NumberAnimation { target: catLiquidPill; property: "stretchScaleX"; to: 1.08; duration: 85; easing.type: Easing.OutQuad }
+                                        NumberAnimation { target: catLiquidPill; property: "stretchScaleY"; to: 0.92; duration: 85; easing.type: Easing.OutQuad }
+                                    }
+                                    ParallelAnimation {
+                                        NumberAnimation { target: catLiquidPill; property: "stretchScaleX"; to: 1.0; duration: 235; easing.type: Easing.OutBack; easing.overshoot: 1.28 }
+                                        NumberAnimation { target: catLiquidPill; property: "stretchScaleY"; to: 1.0; duration: 235; easing.type: Easing.OutBack; easing.overshoot: 1.28 }
+                                    }
+                                }
+
+                                Connections {
+                                    target: rootWindow
+                                    function onKeyCategoryChanged() {
+                                        catStretchAnim.restart()
+                                    }
+                                }
+
+                                RowLayout {
+                                    id: keyCatRow
+                                    anchors.fill: parent
+                                    anchors.margins: 3
+                                    spacing: 3
+                                    z: 2
+
+                                    Repeater {
+                                        model: [
+                                            { id: "all",        label: "All",           icon: Services.Icons.keyboard || "󰌌" },
+                                            { id: "quickshell", label: "Quickshell",    icon: Services.Icons.sparkle || "󰀉" },
+                                            { id: "nav",        label: "Window & Nav",  icon: Services.Icons.layout || "󰕰" },
+                                            { id: "apps",       label: "Applications",  icon: Services.Icons.terminal || "󰞷" },
+                                            { id: "screenshot", label: "Screenshot",    icon: Services.Icons.camera || "󰄀" },
+                                            { id: "media",      label: "Media & Sound", icon: Services.Icons.music || "󰎈" }
+                                        ]
+
+                                        delegate: Item {
+                                            Layout.fillWidth: true
+                                            Layout.fillHeight: true
+                                            readonly property bool isCur: rootWindow.keyCategory === modelData.id
+                                            readonly property int count: keyCatTabBar.getCatCount(modelData.id)
+
+                                            // Hover effect for unselected tabs
+                                            Rectangle {
+                                                anchors.fill: parent
+                                                radius: 5
+                                                color: catMouse.containsMouse && !isCur ? Qt.rgba(1, 1, 1, 0.05) : "transparent"
+                                                Behavior on color { ColorAnimation { duration: 150 } }
+                                            }
+
+                                            RowLayout {
+                                                anchors.centerIn: parent
+                                                spacing: 6
+                                                z: 2
+                                                Text {
+                                                    text: modelData.icon
+                                                    font.family: Services.Theme.fontSymbols
+                                                    font.pixelSize: 10
+                                                    color: isCur ? Services.Theme.accent : (catMouse.containsMouse ? Services.Theme.textPrimary : Services.Theme.textSecondary)
+                                                    Behavior on color { ColorAnimation { duration: 200 } }
+                                                }
+                                                Text {
+                                                    text: modelData.label
+                                                    font.pixelSize: 10
+                                                    font.weight: isCur ? Font.DemiBold : Font.Normal
+                                                    color: isCur ? Services.Theme.textPrimary : (catMouse.containsMouse ? Services.Theme.textPrimary : Services.Theme.textSecondary)
+                                                    Behavior on color { ColorAnimation { duration: 200 } }
+                                                }
+                                                // Count Badge
+                                                Rectangle {
+                                                    height: 15
+                                                    implicitWidth: catCountTxt.implicitWidth + 8
+                                                    radius: 7.5
+                                                    color: isCur ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.35) : Services.Theme.bgElevated
+                                                    Text {
+                                                        id: catCountTxt
+                                                        anchors.centerIn: parent
+                                                        text: String(count)
+                                                        font.pixelSize: 8
+                                                        font.weight: Font.Bold
+                                                        color: isCur ? "#ffffff" : Services.Theme.textDisabled
+                                                    }
+                                                }
+                                            }
+
+                                            MouseArea {
+                                                id: catMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                                                onClicked: rootWindow.keyCategory = modelData.id
+                                            }
+                                        }
+                                    }
+                                }
                             }
 
                             // ── Add Keybinding Form Card (Sleek Compact Drawer) ──
@@ -4147,67 +4291,151 @@ FloatingWindow {
                                             color: Services.Theme.textPrimary
                                         }
 
-                                        // Category Tabs (Compact segmented pills)
-                                        RowLayout {
-                                            spacing: 4
+                                        // Category Tabs (Liquid Glass Segmented Bar)
+                                        Rectangle {
+                                            id: addFormCatTabBar
+                                            height: 28
+                                            implicitWidth: addFormCatRow.implicitWidth + 6
+                                            radius: 6
+                                            color: Services.Theme.bgDeep
+                                            border.color: Services.Theme.border
+                                            border.width: 1
+                                            clip: true
 
-                                            Repeater {
-                                                model: [
-                                                    { id: "shell",      label: "Shell",      icon: Services.Icons.sparkle || "󰀉" },
-                                                    { id: "compositor", label: "Compositor", icon: Services.Icons.layout || "󰕰" },
-                                                    { id: "apps",       label: "Apps",       icon: Services.Icons.terminal || "󰞷" },
-                                                    { id: "custom",     label: "Custom",     icon: Services.Icons.code || "󰅍" }
-                                                ]
+                                            readonly property var formCatList: ["shell", "compositor", "apps", "custom"]
+                                            readonly property int curFormCatIdx: Math.max(0, formCatList.indexOf(tab6.addCategoryType))
 
-                                                delegate: Rectangle {
-                                                    height: 24
-                                                    implicitWidth: cTabRow.implicitWidth + 14
-                                                    radius: 4
-                                                    readonly property bool isSelected: tab6.addCategoryType === modelData.id
+                                            // Liquid Glass Sliding Indicator Pill
+                                            Rectangle {
+                                                id: formCatLiquidPill
+                                                z: 1
+                                                y: 2
+                                                height: parent.height - 4
+                                                radius: 4
 
-                                                    color: isSelected
-                                                        ? Services.Theme.accent
-                                                        : (catTabMouse.containsMouse ? Services.Theme.bgHover : Services.Theme.bgDeep)
-                                                    border.color: isSelected ? Services.Theme.accent : Services.Theme.border
-                                                    border.width: 1
+                                                x: (addFormCatRow.children[addFormCatTabBar.curFormCatIdx] ? addFormCatRow.children[addFormCatTabBar.curFormCatIdx].x : 2) + 2
+                                                width: addFormCatRow.children[addFormCatTabBar.curFormCatIdx] ? addFormCatRow.children[addFormCatTabBar.curFormCatIdx].width : 45
 
-                                                    RowLayout {
-                                                        id: cTabRow
-                                                        anchors.centerIn: parent
-                                                        spacing: 4
-                                                        Text {
-                                                            text: modelData.icon
-                                                            font.family: Services.Theme.fontSymbols
-                                                            font.pixelSize: 9
-                                                            color: isSelected ? "#ffffff" : Services.Theme.textSecondary
+                                                // Liquid Transparent Glass Material
+                                                color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.24)
+                                                border.color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.55)
+                                                border.width: 1
+
+                                                property real stretchScaleX: 1.0
+                                                property real stretchScaleY: 1.0
+                                                transform: Scale {
+                                                    origin.x: formCatLiquidPill.width / 2
+                                                    origin.y: formCatLiquidPill.height / 2
+                                                    xScale: formCatLiquidPill.stretchScaleX
+                                                    yScale: formCatLiquidPill.stretchScaleY
+                                                }
+
+                                                // Top Specular Glass Highlight Line
+                                                Rectangle {
+                                                    anchors.top: parent.top; anchors.left: parent.left; anchors.right: parent.right
+                                                    anchors.topMargin: 0.5; anchors.leftMargin: 2; anchors.rightMargin: 2
+                                                    height: 1; radius: 0.5
+                                                    color: Qt.rgba(1, 1, 1, 0.40)
+                                                }
+
+                                                // Fluid Sliding Transitions
+                                                Behavior on x {
+                                                    NumberAnimation { duration: 280; easing.type: Easing.OutBack; easing.overshoot: 1.15 }
+                                                }
+                                                Behavior on width {
+                                                    NumberAnimation { duration: 280; easing.type: Easing.OutBack; easing.overshoot: 1.15 }
+                                                }
+                                            }
+
+                                            // Fluid Elastic Squash & Stretch Animation
+                                            SequentialAnimation {
+                                                id: formCatStretchAnim
+                                                ParallelAnimation {
+                                                    NumberAnimation { target: formCatLiquidPill; property: "stretchScaleX"; to: 1.08; duration: 80; easing.type: Easing.OutQuad }
+                                                    NumberAnimation { target: formCatLiquidPill; property: "stretchScaleY"; to: 0.92; duration: 80; easing.type: Easing.OutQuad }
+                                                }
+                                                ParallelAnimation {
+                                                    NumberAnimation { target: formCatLiquidPill; property: "stretchScaleX"; to: 1.0; duration: 200; easing.type: Easing.OutBack; easing.overshoot: 1.25 }
+                                                    NumberAnimation { target: formCatLiquidPill; property: "stretchScaleY"; to: 1.0; duration: 200; easing.type: Easing.OutBack; easing.overshoot: 1.25 }
+                                                }
+                                            }
+
+                                            Connections {
+                                                target: tab6
+                                                function onAddCategoryTypeChanged() {
+                                                    formCatStretchAnim.restart()
+                                                }
+                                            }
+
+                                            RowLayout {
+                                                id: addFormCatRow
+                                                anchors.fill: parent
+                                                anchors.margins: 2
+                                                spacing: 2
+                                                z: 2
+
+                                                Repeater {
+                                                    model: [
+                                                        { id: "shell",      label: "Shell",      icon: Services.Icons.sparkle || "󰀉" },
+                                                        { id: "compositor", label: "Compositor", icon: Services.Icons.layout || "󰕰" },
+                                                        { id: "apps",       label: "Apps",       icon: Services.Icons.terminal || "󰞷" },
+                                                        { id: "custom",     label: "Custom",     icon: Services.Icons.code || "󰅍" }
+                                                    ]
+
+                                                    delegate: Item {
+                                                        implicitHeight: 24
+                                                        implicitWidth: cTabRow.implicitWidth + 14
+                                                        readonly property bool isSelected: tab6.addCategoryType === modelData.id
+
+                                                        // Hover effect for unselected tabs
+                                                        Rectangle {
+                                                            anchors.fill: parent
+                                                            radius: 4
+                                                            color: catTabMouse.containsMouse && !isSelected ? Qt.rgba(1, 1, 1, 0.05) : "transparent"
+                                                            Behavior on color { ColorAnimation { duration: 150 } }
                                                         }
-                                                        Text {
-                                                            text: modelData.label
-                                                            font.pixelSize: 9
-                                                            font.weight: isSelected ? Font.DemiBold : Font.Normal
-                                                            color: isSelected ? "#ffffff" : Services.Theme.textPrimary
-                                                        }
-                                                    }
 
-                                                    MouseArea {
-                                                        id: catTabMouse
-                                                        anchors.fill: parent
-                                                        hoverEnabled: true
-                                                        cursorShape: Qt.PointingHandCursor
-                                                        onClicked: {
-                                                            tab6.addCategoryType = modelData.id
-                                                            if (modelData.id === "shell") {
-                                                                rootWindow.formAction = tab6.shellActions[0].id
-                                                                rootWindow.formDesc = tab6.shellActions[0].label
-                                                            } else if (modelData.id === "compositor") {
-                                                                rootWindow.formAction = tab6.compositorActions[0].id
-                                                                rootWindow.formDesc = tab6.compositorActions[0].label
-                                                            } else if (modelData.id === "apps") {
-                                                                rootWindow.formAction = tab6.appActions[0].id
-                                                                rootWindow.formDesc = tab6.appActions[0].label
-                                                            } else {
-                                                                rootWindow.formAction = ""
-                                                                rootWindow.formDesc = ""
+                                                        RowLayout {
+                                                            id: cTabRow
+                                                            anchors.centerIn: parent
+                                                            spacing: 4
+                                                            z: 2
+                                                            Text {
+                                                                text: modelData.icon
+                                                                font.family: Services.Theme.fontSymbols
+                                                                font.pixelSize: 9
+                                                                color: isSelected ? Services.Theme.accent : Services.Theme.textSecondary
+                                                                Behavior on color { ColorAnimation { duration: 200 } }
+                                                            }
+                                                            Text {
+                                                                text: modelData.label
+                                                                font.pixelSize: 9
+                                                                font.weight: isSelected ? Font.DemiBold : Font.Normal
+                                                                color: isSelected ? Services.Theme.textPrimary : Services.Theme.textSecondary
+                                                                Behavior on color { ColorAnimation { duration: 200 } }
+                                                            }
+                                                        }
+
+                                                        MouseArea {
+                                                            id: catTabMouse
+                                                            anchors.fill: parent
+                                                            hoverEnabled: true
+                                                            cursorShape: Qt.PointingHandCursor
+                                                            onClicked: {
+                                                                tab6.addCategoryType = modelData.id
+                                                                if (modelData.id === "shell") {
+                                                                    rootWindow.formAction = tab6.shellActions[0].id
+                                                                    rootWindow.formDesc = tab6.shellActions[0].label
+                                                                } else if (modelData.id === "compositor") {
+                                                                    rootWindow.formAction = tab6.compositorActions[0].id
+                                                                    rootWindow.formDesc = tab6.compositorActions[0].label
+                                                                } else if (modelData.id === "apps") {
+                                                                    rootWindow.formAction = tab6.appActions[0].id
+                                                                    rootWindow.formDesc = tab6.appActions[0].label
+                                                                } else {
+                                                                    rootWindow.formAction = ""
+                                                                    rootWindow.formDesc = ""
+                                                                }
                                                             }
                                                         }
                                                     }
@@ -5085,40 +5313,306 @@ FloatingWindow {
                         }
 
                         // ═════════════════════════════════════════════
-                        // TAB 8: ABOUT & SYSTEM INFORMATION
+                        // TAB 8: ABOUT & SYSTEM INFORMATION (Rich Branded Glass)
                         // ═════════════════════════════════════════════
                         ColumnLayout {
                             id: tab8
                             Layout.fillWidth: true
-                            spacing: 14
+                            spacing: 16
 
+                            // ── Hero Branding Glass Card ──────────────────────────
+                            Rectangle {
+                                Layout.fillWidth: true
+                                height: 160
+                                radius: Services.Theme.radiusLg || 14
+                                color: Services.Theme.surfaceVariant
+                                border.color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.40)
+                                border.width: 1
+
+                                // Radial / Linear Glass Sheen
+                                Rectangle {
+                                    anchors.fill: parent
+                                    radius: parent.radius
+                                    gradient: Gradient {
+                                        orientation: Gradient.Horizontal
+                                        GradientStop { position: 0.0; color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.18) }
+                                        GradientStop { position: 0.45; color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.04) }
+                                        GradientStop { position: 1.0; color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.12) }
+                                    }
+                                }
+
+                                // Top Specular Shine Line
+                                Rectangle {
+                                    anchors.top: parent.top; anchors.left: parent.left; anchors.right: parent.right
+                                    anchors.leftMargin: 12; anchors.rightMargin: 12; anchors.topMargin: 1
+                                    height: 1; radius: 0.5
+                                    color: Qt.rgba(1, 1, 1, 0.35)
+                                }
+
+                                RowLayout {
+                                    anchors.fill: parent
+                                    anchors.margins: 20
+                                    spacing: 18
+
+                                    // Grand Glowing Logo Container
+                                    Rectangle {
+                                        Layout.preferredWidth: 80
+                                        Layout.preferredHeight: 80
+                                        Layout.alignment: Qt.AlignVCenter
+                                        radius: 20
+                                        color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.22)
+                                        border.color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.55)
+                                        border.width: 1.5
+
+                                        // Ambient Logo Glow
+                                        Rectangle {
+                                            anchors.centerIn: parent
+                                            width: parent.width + 12
+                                            height: parent.height + 12
+                                            radius: 26
+                                            color: "transparent"
+                                            border.color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.18)
+                                            border.width: 1
+                                        }
+
+                                        Text {
+                                            anchors.centerIn: parent
+                                            text: (Services.OsInfo && Services.OsInfo.logoGlyph) ? Services.OsInfo.logoGlyph : (Services.Icons.sparkle || "󰀉")
+                                            font.family: Services.Theme.fontSymbols
+                                            font.pixelSize: 42
+                                            color: Services.Theme.accent
+                                        }
+                                    }
+
+                                    // Suite Information
+                                    ColumnLayout {
+                                        spacing: 4
+                                        Layout.alignment: Qt.AlignVCenter
+
+                                        RowLayout {
+                                            spacing: 8
+                                            Text {
+                                                text: "Quickshell Desktop"
+                                                font.pixelSize: 18
+                                                font.weight: Font.Bold
+                                                color: Services.Theme.textPrimary
+                                            }
+                                            Rectangle {
+                                                height: 20
+                                                implicitWidth: qsVerTxt.implicitWidth + 10
+                                                radius: 10
+                                                color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.20)
+                                                border.color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.50)
+                                                border.width: 1
+                                                Text {
+                                                    id: qsVerTxt
+                                                    anchors.centerIn: parent
+                                                    text: "v1.2 Liquid Glass"
+                                                    font.pixelSize: 8
+                                                    font.weight: Font.Bold
+                                                    color: Services.Theme.accent
+                                                }
+                                            }
+                                        }
+
+                                        Text {
+                                            text: "Crafted with Qt 6, QML & Wayland LayerShell protocols."
+                                            font.pixelSize: 11
+                                            color: Services.Theme.textSecondary
+                                        }
+
+                                        Text {
+                                            text: "Host: " + (Services.OsInfo.hostname || "local") + "  ·  Kernel: " + (Services.OsInfo.kernel || "Linux")
+                                            font.family: Services.Theme.fontMono
+                                            font.pixelSize: 9
+                                            color: Services.Theme.textDisabled
+                                        }
+                                    }
+
+                                    Item { Layout.fillWidth: true }
+                                }
+                            }
+
+                            // ── System Hardware & Environment Grid ────────────────
+                            GridLayout {
+                                Layout.fillWidth: true
+                                columns: 2
+                                rowSpacing: 10
+                                columnSpacing: 10
+
+                                // Tile 1: OS Distro
+                                Rectangle {
+                                    Layout.fillWidth: true
+                                    height: 68
+                                    radius: 10
+                                    color: Services.Theme.surfaceVariant
+                                    border.color: Services.Theme.border; border.width: 1
+
+                                    RowLayout {
+                                        anchors.fill: parent; anchors.margins: 12; spacing: 12
+                                        Rectangle {
+                                            Layout.preferredWidth: 36; Layout.preferredHeight: 36; radius: 8
+                                            color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.12)
+                                            border.color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.3)
+                                            border.width: 1
+                                            Text { anchors.centerIn: parent; text: (Services.OsInfo && Services.OsInfo.logoGlyph) ? Services.OsInfo.logoGlyph : "󰌽"; font.family: Services.Theme.fontSymbols; font.pixelSize: 18; color: Services.Theme.accent }
+                                        }
+                                        ColumnLayout {
+                                            spacing: 2; Layout.fillWidth: true
+                                            Text { text: "Distribution"; font.pixelSize: 9; color: Services.Theme.textDisabled }
+                                            Text { text: Services.OsInfo.distroName || "Linux"; font.pixelSize: 12; font.weight: Font.DemiBold; color: Services.Theme.textPrimary; elide: Text.ElideRight; Layout.fillWidth: true }
+                                        }
+                                    }
+                                }
+
+                                // Tile 2: Kernel
+                                Rectangle {
+                                    Layout.fillWidth: true
+                                    height: 68
+                                    radius: 10
+                                    color: Services.Theme.surfaceVariant
+                                    border.color: Services.Theme.border; border.width: 1
+
+                                    RowLayout {
+                                        anchors.fill: parent; anchors.margins: 12; spacing: 12
+                                        Rectangle {
+                                            Layout.preferredWidth: 36; Layout.preferredHeight: 36; radius: 8
+                                            color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.12)
+                                            border.color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.3)
+                                            border.width: 1
+                                            Text { anchors.centerIn: parent; text: "󰌽"; font.family: Services.Theme.fontSymbols; font.pixelSize: 18; color: Services.Theme.accent }
+                                        }
+                                        ColumnLayout {
+                                            spacing: 2; Layout.fillWidth: true
+                                            Text { text: "Linux Kernel"; font.pixelSize: 9; color: Services.Theme.textDisabled }
+                                            Text { text: Services.OsInfo.kernel || "-"; font.family: Services.Theme.fontMono; font.pixelSize: 11; font.weight: Font.Medium; color: Services.Theme.textPrimary; elide: Text.ElideRight; Layout.fillWidth: true }
+                                        }
+                                    }
+                                }
+
+                                // Tile 3: Compositor
+                                Rectangle {
+                                    Layout.fillWidth: true
+                                    height: 68
+                                    radius: 10
+                                    color: Services.Theme.surfaceVariant
+                                    border.color: Services.Theme.border; border.width: 1
+
+                                    RowLayout {
+                                        anchors.fill: parent; anchors.margins: 12; spacing: 12
+                                        Rectangle {
+                                            Layout.preferredWidth: 36; Layout.preferredHeight: 36; radius: 8
+                                            color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.12)
+                                            border.color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.3)
+                                            border.width: 1
+
+                                            Text {
+                                                anchors.centerIn: parent
+                                                text: Services.Icons.display
+                                                font.family: Services.Theme.fontSymbols
+                                                font.pixelSize: 18
+                                                color: Services.Theme.accent
+                                            }
+                                        }
+                                        ColumnLayout {
+                                            spacing: 2; Layout.fillWidth: true
+                                            Text { text: "Window Compositor"; font.pixelSize: 9; color: Services.Theme.textDisabled }
+                                            Text { text: (Services.Compositor ? Services.Compositor.activeDisplayName : "Wayland") + " (" + (Services.Compositor && Services.Compositor.configType ? Services.Compositor.configType.toUpperCase() : "CONF") + ")"; font.pixelSize: 12; font.weight: Font.DemiBold; color: Services.Theme.textPrimary; elide: Text.ElideRight; Layout.fillWidth: true }
+                                        }
+                                    }
+                                }
+
+                                // Tile 4: Host & User
+                                Rectangle {
+                                    Layout.fillWidth: true
+                                    height: 68
+                                    radius: 10
+                                    color: Services.Theme.surfaceVariant
+                                    border.color: Services.Theme.border; border.width: 1
+
+                                    RowLayout {
+                                        anchors.fill: parent; anchors.margins: 12; spacing: 12
+                                        Rectangle {
+                                            Layout.preferredWidth: 36; Layout.preferredHeight: 36; radius: 8
+                                            color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.12)
+                                            border.color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.3)
+                                            border.width: 1
+                                            Text { anchors.centerIn: parent; text: Services.Icons.user || "󰀉"; font.family: Services.Theme.fontSymbols; font.pixelSize: 18; color: Services.Theme.accent }
+                                        }
+                                        ColumnLayout {
+                                            spacing: 2; Layout.fillWidth: true
+                                            Text { text: "Host & Shell"; font.pixelSize: 9; color: Services.Theme.textDisabled }
+                                            Text { text: (Services.OsInfo.username || "user") + "@" + (Services.OsInfo.hostname || "local") + " · " + (Services.OsInfo.shellName || "sh"); font.pixelSize: 12; font.weight: Font.DemiBold; color: Services.Theme.textPrimary; elide: Text.ElideRight; Layout.fillWidth: true }
+                                        }
+                                    }
+                                }
+                            }
+
+                            // ── Interactive Actions Bar ───────────────────────────
                             SettingsSection {
-                                title: "System Information"
-                                icon: Services.Icons.info
+                                title: "Quick Actions & Tools"
+                                icon: Services.Icons.sliders
 
-                                SettingsRow {
-                                    title: "OS Distribution"
-                                    Text { text: Services.OsInfo.distroName || "Linux"; font.pixelSize: 11; font.weight: Font.Medium; color: Services.Theme.accent }
-                                }
-                                SettingsDivider {}
-                                SettingsRow {
-                                    title: "Kernel Version"
-                                    Text { text: Services.OsInfo.kernel || "-"; font.pixelSize: 11; color: Services.Theme.textSecondary }
-                                }
-                                SettingsDivider {}
-                                SettingsRow {
-                                    title: "Host Machine"
-                                    Text { text: Services.OsInfo.hostname || "local"; font.pixelSize: 11; color: Services.Theme.textSecondary }
-                                }
-                                SettingsDivider {}
-                                SettingsRow {
-                                    title: "User Shell"
-                                    Text { text: Services.OsInfo.shellName || "sh"; font.pixelSize: 11; color: Services.Theme.textSecondary }
-                                }
-                                SettingsDivider {}
-                                SettingsRow {
-                                    title: "Compositor Protocol"
-                                    Text { text: (Services.Compositor ? Services.Compositor.activeDisplayName : "Wayland") + " (Wayland LayerShell v1)"; font.pixelSize: 11; color: Services.Theme.textSecondary }
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    Layout.margins: 10
+                                    spacing: 8
+
+                                    // Copy System Specs Button
+                                    Rectangle {
+                                        property bool justCopied: false
+                                        Layout.fillWidth: true
+                                        height: 36
+                                        radius: 6
+                                        color: justCopied ? Qt.rgba(0.2, 0.8, 0.3, 0.2) : (copyMouse.containsMouse ? Qt.rgba(1, 1, 1, 0.08) : Services.Theme.bgElevated)
+                                        border.color: justCopied ? (Services.Theme.success || "#10b981") : Services.Theme.border
+                                        border.width: 1
+
+                                        RowLayout {
+                                            anchors.centerIn: parent; spacing: 6
+                                            Text { text: parent.parent.justCopied ? (Services.Icons.check || "✓") : (Services.Icons.clipboard || "󰅌"); font.family: Services.Theme.fontSymbols; font.pixelSize: 11; color: parent.parent.justCopied ? (Services.Theme.success || "#10b981") : Services.Theme.accent }
+                                            Text { text: parent.parent.justCopied ? "Copied to Clipboard!" : "Copy System Specs"; font.pixelSize: 10; font.weight: Font.Medium; color: parent.parent.justCopied ? (Services.Theme.success || "#10b981") : Services.Theme.textPrimary }
+                                        }
+
+                                        Timer {
+                                            id: copySpecsTimer
+                                            interval: 1800
+                                            onTriggered: parent.justCopied = false
+                                        }
+
+                                        MouseArea {
+                                            id: copyMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                                            onClicked: {
+                                                const specs = `OS: ${Services.OsInfo.distroName || "Linux"}\nKernel: ${Services.OsInfo.kernel || "-"}\nHost: ${Services.OsInfo.hostname || "local"}\nCompositor: ${Services.Compositor ? Services.Compositor.activeDisplayName : "Wayland"}\nShell: ${Services.OsInfo.shellName || "sh"}\nDesktop: Quickshell v1.2 Liquid Glass`
+                                                if (Services.Clipboard) Services.Clipboard.copyText(specs)
+                                                parent.justCopied = true
+                                                copySpecsTimer.restart()
+                                            }
+                                        }
+                                    }
+
+                                    // Open Terminal Button
+                                    Rectangle {
+                                        Layout.fillWidth: true
+                                        height: 36
+                                        radius: 6
+                                        color: termMouse.containsMouse ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.22) : Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.10)
+                                        border.color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.40)
+                                        border.width: 1
+
+                                        RowLayout {
+                                            anchors.centerIn: parent; spacing: 6
+                                            Text { text: Services.Icons.terminal || "󰞷"; font.family: Services.Theme.fontSymbols; font.pixelSize: 11; color: Services.Theme.accent }
+                                            Text { text: "Open Terminal"; font.pixelSize: 10; font.weight: Font.Bold; color: Services.Theme.accent }
+                                        }
+
+                                        MouseArea {
+                                            id: termMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                                            onClicked: {
+                                                openTermProc.running = true
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -5129,6 +5623,10 @@ FloatingWindow {
     }
 
     // ── Helper Processes ─────────────────────────────────────────────────────
+    Process {
+        id: openTermProc
+        command: ["sh", "-c", "kitty || alacritty || foot || xterm || ghostty"]
+    }
     Process {
         id: testNotifProc
         command: ["notify-send", "-a", "Quickshell Settings", "Settings Test", "Your notification preferences are working!"]

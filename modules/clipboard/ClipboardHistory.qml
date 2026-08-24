@@ -184,79 +184,176 @@ PanelWindow {
                     }
                 }
 
-                // Filter Pill Tabs
-                RowLayout {
-                    spacing: 4
+                // Liquid Glass Elastic Filter Pill Bar (Capsule Geometry)
+                Rectangle {
+                    id: clipFilterBar
+                    height: 30
+                    implicitWidth: 236
+                    radius: 15
+                    color: Services.Theme.surfaceVariant
+                    border.color: Services.Theme.border
+                    border.width: 1
+                    clip: true
                     Layout.alignment: Qt.AlignVCenter
 
-                    Repeater {
-                        model: [
-                            { id: "all", label: "All" },
-                            { id: "text", label: "Text" },
-                            { id: "image", label: "Images" },
-                            { id: "pinned", label: "Pinned" }
-                        ]
+                    readonly property var filterIds: ["all", "text", "image", "pinned"]
+                    readonly property int activeIdx: Math.max(0, filterIds.indexOf(Services.Clipboard.filterType))
+                    readonly property int tabCount: 4
+                    readonly property real itemWidth: Math.max(0, (clipFilterBar.width - 6 - (tabCount - 1) * 2) / tabCount)
 
+                    // Sliding Liquid Glass Indicator Pill (Capsule Pill)
+                    Rectangle {
+                        id: clipLiquidPill
+                        z: 1
+                        y: 3
+                        height: parent.height - 6
+                        radius: 12
+
+                        x: 3 + clipFilterBar.activeIdx * (clipFilterBar.itemWidth + 2)
+                        width: clipFilterBar.itemWidth
+
+                        // Liquid Transparent Glass Material
+                        color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.24)
+                        border.color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.55)
+                        border.width: 1
+
+                        property real stretchScaleX: 1.0
+                        property real stretchScaleY: 1.0
+                        transform: Scale {
+                            origin.x: clipLiquidPill.width / 2
+                            origin.y: clipLiquidPill.height / 2
+                            xScale: clipLiquidPill.stretchScaleX
+                            yScale: clipLiquidPill.stretchScaleY
+                        }
+
+                        // Top Specular Glass Line
                         Rectangle {
-                            required property var modelData
-                            height: 24
-                            width: filterText.implicitWidth + 14
-                            radius: 7
-                            color: Services.Clipboard.filterType === modelData.id ? Services.Theme.surfaceVariant : (tabMouse.containsMouse ? Services.Theme.bgHover : "transparent")
-                            border.color: Services.Clipboard.filterType === modelData.id ? Services.Theme.borderHighlight : "transparent"
-                            border.width: 1
+                            anchors.top: parent.top; anchors.left: parent.left; anchors.right: parent.right
+                            anchors.topMargin: 1; anchors.leftMargin: 6; anchors.rightMargin: 6
+                            height: 1; radius: 0.5
+                            color: Qt.rgba(1, 1, 1, 0.40)
+                        }
 
-                            Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
-
-                            Text {
-                                id: filterText
-                                anchors.centerIn: parent
-                                text: parent.modelData.label
-                                font.pixelSize: Services.Theme.fontSizeMd
-                                font.weight: Services.Clipboard.filterType === parent.modelData.id ? Font.Medium : Font.Normal
-                                color: Services.Clipboard.filterType === parent.modelData.id ? Services.Theme.accent : Services.Theme.textDisabled
-                                Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                        // Gloss Curved Sheen
+                        Rectangle {
+                            anchors.top: parent.top; anchors.left: parent.left; anchors.right: parent.right
+                            anchors.topMargin: 1; anchors.leftMargin: 3; anchors.rightMargin: 3
+                            height: parent.height * 0.46; radius: 10
+                            gradient: Gradient {
+                                GradientStop { position: 0.0; color: Qt.rgba(1, 1, 1, 0.16) }
+                                GradientStop { position: 1.0; color: Qt.rgba(1, 1, 1, 0.0) }
                             }
+                        }
 
-                            MouseArea {
-                                id: tabMouse
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                onClicked: {
-                                    Services.Clipboard.filterType = parent.modelData.id
-                                    resultList.currentIndex = 0
+                        // Fluid Sliding Transitions
+                        Behavior on x {
+                            NumberAnimation { duration: 300; easing.type: Easing.OutBack; easing.overshoot: 1.15 }
+                        }
+                        Behavior on width {
+                            NumberAnimation { duration: 300; easing.type: Easing.OutBack; easing.overshoot: 1.15 }
+                        }
+                    }
+
+                    // Fluid Squash & Stretch Animation
+                    SequentialAnimation {
+                        id: clipStretchAnim
+                        ParallelAnimation {
+                            NumberAnimation { target: clipLiquidPill; property: "stretchScaleX"; to: 1.08; duration: 80; easing.type: Easing.OutQuad }
+                            NumberAnimation { target: clipLiquidPill; property: "stretchScaleY"; to: 0.92; duration: 80; easing.type: Easing.OutQuad }
+                        }
+                        ParallelAnimation {
+                            NumberAnimation { target: clipLiquidPill; property: "stretchScaleX"; to: 1.0; duration: 220; easing.type: Easing.OutBack; easing.overshoot: 1.28 }
+                            NumberAnimation { target: clipLiquidPill; property: "stretchScaleY"; to: 1.0; duration: 220; easing.type: Easing.OutBack; easing.overshoot: 1.28 }
+                        }
+                    }
+
+                    Connections {
+                        target: Services.Clipboard
+                        function onFilterTypeChanged() {
+                            clipStretchAnim.restart()
+                        }
+                    }
+
+                    RowLayout {
+                        id: clipTabRow
+                        anchors.fill: parent
+                        anchors.margins: 3
+                        spacing: 2
+                        z: 2
+
+                        Repeater {
+                            id: clipTabRepeater
+                            model: [
+                                { id: "all",    label: "All" },
+                                { id: "text",   label: "Text" },
+                                { id: "image",  label: "Images" },
+                                { id: "pinned", label: "Pinned" }
+                            ]
+
+                            Item {
+                                Layout.fillWidth: true
+                                Layout.fillHeight: true
+                                readonly property bool isCur: Services.Clipboard.filterType === modelData.id
+
+                                Rectangle {
+                                    anchors.fill: parent
+                                    radius: 10
+                                    color: tabMouse.containsMouse && !isCur ? Qt.rgba(1, 1, 1, 0.05) : "transparent"
+                                    Behavior on color { ColorAnimation { duration: 150 } }
+                                }
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: modelData.label
+                                    font.pixelSize: Services.Theme.fontSizeMd
+                                    font.weight: isCur ? Font.DemiBold : Font.Normal
+                                    color: isCur ? Services.Theme.textPrimary : (tabMouse.containsMouse ? Services.Theme.textPrimary : Services.Theme.textDisabled)
+                                    Behavior on color { ColorAnimation { duration: 200 } }
+                                }
+
+                                MouseArea {
+                                    id: tabMouse
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: {
+                                        Services.Clipboard.filterType = modelData.id
+                                        resultList.currentIndex = 0
+                                    }
                                 }
                             }
                         }
                     }
                 }
 
-                // Clear History Button
+                // Clear History Button (Circle / Capsule Styling)
                 Rectangle {
-                    height: 24
-                    width: 24
-                    radius: 7
-                    color: clearHistMouse.containsMouse ? Services.Theme.surfaceVariant : "transparent"
-                    border.color: clearHistMouse.containsMouse ? Services.Theme.danger : "transparent"
+                    height: 30
+                    width: 30
+                    radius: 15
+                    color: clearHistMouse.containsMouse ? Qt.rgba(0.9, 0.2, 0.2, 0.18) : Services.Theme.surfaceVariant
+                    border.color: clearHistMouse.containsMouse ? Services.Theme.danger : Services.Theme.border
                     border.width: 1
                     Layout.alignment: Qt.AlignVCenter
-
-                    Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
-                    Behavior on border.color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                    scale: clearHistMouse.pressed ? 0.94 : (clearHistMouse.containsMouse ? 1.04 : 1.0)
+                    Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutBack; easing.overshoot: 1.3 } }
+                    Behavior on color { ColorAnimation { duration: 180 } }
+                    Behavior on border.color { ColorAnimation { duration: 180 } }
 
                     Text {
                         anchors.centerIn: parent
                         text: Services.Icons.trash
                         font.family: Services.Theme.fontSymbols
-                        font.pixelSize: Services.Theme.fontSizeLg
+                        font.pixelSize: 12
                         color: clearHistMouse.containsMouse ? Services.Theme.danger : Services.Theme.textDisabled
-                        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                        Behavior on color { ColorAnimation { duration: 180 } }
                     }
 
                     MouseArea {
                         id: clearHistMouse
                         anchors.fill: parent
                         hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
                         onClicked: Services.Clipboard.clearAll()
                     }
                 }
