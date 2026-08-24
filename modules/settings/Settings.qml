@@ -197,6 +197,11 @@ FloatingWindow {
         id: dropRoot
         property var model: [] // [{ id, label }]
         property var currentValue: null
+        property bool searchable: false
+        property string searchPlaceholder: "Search..."
+        property int maxPopupHeight: 260
+        property int minButtonWidth: 130
+        property string searchQuery: ""
         signal selected(var val)
 
         readonly property var currentItem: {
@@ -206,12 +211,20 @@ FloatingWindow {
             return model.length > 0 ? model[0] : { label: "Select..." }
         }
 
+        readonly property var filteredModel: {
+            if (!searchable || !searchQuery || searchQuery.trim().length === 0) return model
+            const q = searchQuery.toLowerCase().trim()
+            return model.filter(function(item) {
+                return (item.label || "").toLowerCase().indexOf(q) !== -1 || String(item.id || "").toLowerCase().indexOf(q) !== -1
+            })
+        }
+
         implicitWidth: dropBtn.implicitWidth
         implicitHeight: dropBtn.height
 
         Rectangle {
             id: dropBtn
-            implicitWidth: Math.max(130, dropBtnText.implicitWidth + 34)
+            implicitWidth: Math.max(dropRoot.minButtonWidth, dropBtnText.implicitWidth + 34)
             height: 26
             radius: 6
             color: dropMenu.visible 
@@ -257,7 +270,10 @@ FloatingWindow {
                 cursorShape: Qt.PointingHandCursor
                 onClicked: {
                     if (dropMenu.visible) dropMenu.close()
-                    else dropMenu.open()
+                    else {
+                        dropRoot.searchQuery = ""
+                        dropMenu.open()
+                    }
                 }
             }
 
@@ -265,8 +281,8 @@ FloatingWindow {
                 id: dropMenu
                 y: dropBtn.height + 4
                 x: Math.min(0, dropBtn.width - width)
-                width: Math.max(dropBtn.width, 175)
-                height: Math.min(240, menuCol.implicitHeight + 8)
+                width: Math.max(dropBtn.width, 190)
+                height: Math.min(dropRoot.maxPopupHeight, (dropRoot.searchable ? 36 : 0) + menuCol.implicitHeight + 12)
                 padding: 4
                 closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutsideParent
                 modal: false
@@ -289,72 +305,139 @@ FloatingWindow {
                     }
                 }
 
-                contentItem: Flickable {
-                    contentHeight: menuCol.implicitHeight
-                    clip: true
-                    boundsBehavior: Flickable.StopAtBounds
-                    ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+                contentItem: ColumnLayout {
+                    spacing: 4
 
-                    ColumnLayout {
-                        id: menuCol
-                        width: parent.width
-                        spacing: 2
+                    // Optional Search Bar for Large Lists (e.g. Fonts, Themes)
+                    Rectangle {
+                        visible: dropRoot.searchable
+                        Layout.fillWidth: true
+                        height: 26
+                        radius: 5
+                        color: Services.Theme.isDark ? "#282834" : "#f1f2f6"
+                        border.color: searchInput.activeFocus ? Services.Theme.accent : (Services.Theme.isDark ? "#3e3e4e" : "#d8d8e2")
+                        border.width: 1
 
-                        Repeater {
-                            model: dropRoot.model
-                            delegate: Rectangle {
-                                required property var modelData
+                        RowLayout {
+                            anchors.fill: parent
+                            anchors.leftMargin: 6
+                            anchors.rightMargin: 6
+                            spacing: 4
+
+                            Text {
+                                text: Services.Icons.search || "🔍"
+                                font.family: Services.Theme.fontSymbols
+                                font.pixelSize: 9
+                                color: Services.Theme.textSecondary
+                            }
+
+                            TextInput {
+                                id: searchInput
                                 Layout.fillWidth: true
-                                height: 28
-                                radius: 5
-                                readonly property bool isSelected: dropRoot.currentValue === modelData.id
-
-                                color: isSelected 
-                                    ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.15)
-                                    : (itemArea.containsMouse 
-                                        ? (Services.Theme.isDark ? "#282834" : "#f0f0f6") 
-                                        : "transparent")
-                                border.color: isSelected 
-                                    ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.30) 
-                                    : "transparent"
-                                border.width: 1
-                                Behavior on color { ColorAnimation { duration: 120 } }
-
-                                RowLayout {
-                                    anchors.fill: parent
-                                    anchors.leftMargin: 8
-                                    anchors.rightMargin: 8
-                                    spacing: 6
-
-                                    Text {
-                                        Layout.fillWidth: true
-                                        text: modelData.label
-                                        font.pixelSize: Services.Theme.fontSizeSm
-                                        font.weight: isSelected ? Font.DemiBold : Font.Normal
-                                        color: isSelected ? Services.Theme.accent : (Services.Theme.isDark ? "#e4e4ec" : "#1c1c24")
-                                        elide: Text.ElideRight
-                                    }
-
-                                    Text {
-                                        visible: isSelected
-                                        text: Services.Icons.check || "✓"
-                                        font.family: Services.Theme.fontSymbols
-                                        font.pixelSize: 9
-                                        font.bold: true
-                                        color: Services.Theme.accent
-                                    }
+                                text: dropRoot.searchQuery
+                                font.pixelSize: 11
+                                color: Services.Theme.textPrimary
+                                selectByMouse: true
+                                onTextChanged: dropRoot.searchQuery = text
+                                Component.onCompleted: {
+                                    if (dropRoot.searchable && dropMenu.visible) forceActiveFocus()
                                 }
+                            }
 
+                            Text {
+                                visible: dropRoot.searchQuery.length > 0
+                                text: "✕"
+                                font.pixelSize: 9
+                                color: Services.Theme.textSecondary
                                 MouseArea {
-                                    id: itemArea
                                     anchors.fill: parent
-                                    hoverEnabled: true
                                     cursorShape: Qt.PointingHandCursor
-                                    onClicked: {
-                                        dropRoot.selected(modelData.id)
-                                        dropMenu.close()
+                                    onClicked: { dropRoot.searchQuery = ""; searchInput.text = "" }
+                                }
+                            }
+                        }
+                    }
+
+                    Flickable {
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        contentHeight: menuCol.implicitHeight
+                        clip: true
+                        boundsBehavior: Flickable.StopAtBounds
+                        ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+
+                        ColumnLayout {
+                            id: menuCol
+                            width: parent.width
+                            spacing: 2
+
+                            Repeater {
+                                model: dropRoot.filteredModel
+                                delegate: Rectangle {
+                                    required property var modelData
+                                    Layout.fillWidth: true
+                                    height: 28
+                                    radius: 5
+                                    readonly property bool isSelected: dropRoot.currentValue === modelData.id
+
+                                    color: isSelected 
+                                        ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.15)
+                                        : (itemArea.containsMouse 
+                                            ? (Services.Theme.isDark ? "#282834" : "#f0f0f6") 
+                                            : "transparent")
+                                    border.color: isSelected 
+                                        ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.30) 
+                                        : "transparent"
+                                    border.width: 1
+                                    Behavior on color { ColorAnimation { duration: 120 } }
+
+                                    RowLayout {
+                                        anchors.fill: parent
+                                        anchors.leftMargin: 8
+                                        anchors.rightMargin: 8
+                                        spacing: 6
+
+                                        Text {
+                                            Layout.fillWidth: true
+                                            text: modelData.label
+                                            font.pixelSize: Services.Theme.fontSizeSm
+                                            font.weight: isSelected ? Font.DemiBold : Font.Normal
+                                            color: isSelected ? Services.Theme.accent : (Services.Theme.isDark ? "#e4e4ec" : "#1c1c24")
+                                            elide: Text.ElideRight
+                                        }
+
+                                        Text {
+                                            visible: isSelected
+                                            text: Services.Icons.check || "✓"
+                                            font.family: Services.Theme.fontSymbols
+                                            font.pixelSize: 9
+                                            font.bold: true
+                                            color: Services.Theme.accent
+                                        }
+                                    }
+
+                                    MouseArea {
+                                        id: itemArea
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: {
+                                            dropRoot.selected(modelData.id)
+                                            dropMenu.close()
+                                        }
                                     }
                                 }
+                            }
+
+                            Text {
+                                visible: dropRoot.filteredModel.length === 0
+                                Layout.fillWidth: true
+                                Layout.topMargin: 12
+                                Layout.bottomMargin: 12
+                                horizontalAlignment: Text.AlignHCenter
+                                text: "No matching items"
+                                font.pixelSize: 11
+                                color: Services.Theme.textSecondary
                             }
                         }
                     }
@@ -1669,7 +1752,7 @@ FloatingWindow {
                         interactive: false
 
                         readonly property var allNavTabs: [
-                            { id: 0, title: "Appearance",    icon: Services.Icons.palette,       color: "#3b82f6", cat: "Personalization", kw: "appearance theme dark light wallpaper accent color font scale radius matugen" },
+                            { id: 0, title: "Appearance",    icon: Services.Icons.palette,       color: "#3b82f6", cat: "Personalization", kw: "appearance theme dark light wallpaper accent color font gtk icon cursor scale radius matugen compositor typography hinting antialiasing" },
                             { id: 1, title: "Bar & Island",   icon: Services.Icons.controlcenter, color: "#8b5cf6", cat: "Personalization", kw: "bar dynamic island notch workspaces clock date format pills" },
                             { id: 2, title: "Notifications",  icon: Services.Icons.bell,          color: "#f97316", cat: "Personalization", kw: "notifications dnd do not disturb timeout retention banner history" },
                             { id: 3, title: "Sound & Audio",  icon: Services.Icons.speaker,       color: "#ec4899", cat: "Personalization", kw: "sound audio volume feedback clicks effects mute" },
@@ -1856,16 +1939,16 @@ FloatingWindow {
                         height: currentContentHeight
 
                         // ═════════════════════════════════════════════
-                        // TAB 0: APPEARANCE & THEMING (macOS STYLE)
+                        // TAB 0: APPEARANCE & THEMING (GNOME 47 / TAHOE PRO STYLE)
                         // ═════════════════════════════════════════════
                         ColumnLayout {
                             id: tab0
                             Layout.fillWidth: true
                             spacing: 16
 
-                            // 1. Theme Mode (macOS Sequoia Style Visual Cards)
+                            // ── 1. Style & Accent Colors (GNOME 47 Style Visual Cards) ──
                             SettingsSection {
-                                title: "Appearance"
+                                title: "Style & Colors"
                                 icon: Services.Icons.palette || "󰏘"
 
                                 ColumnLayout {
@@ -1879,235 +1962,259 @@ FloatingWindow {
                                         spacing: 24
 
                                         // Light Mode Mockup Card
-                                        ColumnLayout {
-                                            spacing: 8
-                                            Layout.alignment: Qt.AlignHCenter
+                                        Rectangle {
+                                            Layout.preferredWidth: 136
+                                            Layout.preferredHeight: 114
+                                            color: "transparent"
 
-                                            Rectangle {
-                                                width: 136
-                                                height: 84
-                                                radius: 8
-                                                color: "#f5f6f9"
-                                                border.color: (Services.Config && Services.Config.themeMode === "light") ? Services.Theme.accent : (lightMouse.containsMouse ? Services.Theme.borderHighlight : Services.Theme.border)
-                                                border.width: (Services.Config && Services.Config.themeMode === "light") ? 2 : 1
-                                                clip: true
-                                                scale: (Services.Config && Services.Config.themeMode === "light") ? 1.03 : (lightMouse.pressed ? 0.95 : (lightMouse.containsMouse ? 1.02 : 1.0))
-                                                Behavior on scale { NumberAnimation { duration: 220; easing.type: Easing.OutBack; easing.overshoot: 1.35 } }
+                                            ColumnLayout {
+                                                id: lightCol
+                                                anchors.fill: parent
+                                                spacing: 8
+                                                Layout.alignment: Qt.AlignHCenter
 
-                                                // Mini Window Mockup
-                                                ColumnLayout {
-                                                    anchors.fill: parent
-                                                    spacing: 0
+                                                Rectangle {
+                                                    width: 136
+                                                    height: 84
+                                                    radius: 8
+                                                    color: "#f5f6f9"
+                                                    border.color: (Services.Config && Services.Config.themeMode === "light") ? Services.Theme.accent : (lightMouse.containsMouse ? Services.Theme.borderHighlight : Services.Theme.border)
+                                                    border.width: (Services.Config && Services.Config.themeMode === "light") ? 2 : 1
+                                                    clip: true
+                                                    scale: (Services.Config && Services.Config.themeMode === "light") ? 1.03 : (lightMouse.pressed ? 0.95 : (lightMouse.containsMouse ? 1.02 : 1.0))
+                                                    Behavior on scale { NumberAnimation { duration: 220; easing.type: Easing.OutBack; easing.overshoot: 1.35 } }
 
-                                                    // Mockup Titlebar
-                                                    Rectangle {
-                                                        Layout.fillWidth: true
-                                                        height: 18
-                                                        color: "#e8eaef"
-
-                                                        Rectangle {
-                                                            anchors.left: parent.left
-                                                            anchors.leftMargin: 8
-                                                            anchors.verticalCenter: parent.verticalCenter
-                                                            width: 24; height: 4; radius: 2
-                                                            color: "#c8ccd6"
-                                                        }
-                                                    }
-
-                                                    // Mockup Body
-                                                    RowLayout {
-                                                        Layout.fillWidth: true
-                                                        Layout.fillHeight: true
+                                                    // Mini Window Mockup
+                                                    ColumnLayout {
+                                                        anchors.fill: parent
                                                         spacing: 0
 
-                                                        // Mockup Sidebar
+                                                        // Mockup Titlebar
                                                         Rectangle {
-                                                            Layout.preferredWidth: 36
-                                                            Layout.fillHeight: true
-                                                            color: "#e2e5eb"
+                                                            Layout.fillWidth: true
+                                                            height: 18
+                                                            color: "#e8eaef"
 
-                                                            ColumnLayout {
-                                                                anchors.fill: parent
-                                                                anchors.margins: 4
-                                                                spacing: 3
-                                                                Rectangle { Layout.fillWidth: true; height: 4; radius: 2; color: "#0071e3" }
-                                                                Rectangle { Layout.fillWidth: true; height: 4; radius: 2; color: "#cbd1db" }
-                                                                Rectangle { Layout.fillWidth: true; height: 4; radius: 2; color: "#cbd1db" }
+                                                            Rectangle {
+                                                                anchors.left: parent.left
+                                                                anchors.leftMargin: 8
+                                                                anchors.verticalCenter: parent.verticalCenter
+                                                                width: 24; height: 4; radius: 2
+                                                                color: "#c8ccd6"
                                                             }
                                                         }
 
-                                                        // Mockup Content Card
-                                                        Rectangle {
+                                                        // Mockup Body
+                                                        RowLayout {
                                                             Layout.fillWidth: true
                                                             Layout.fillHeight: true
-                                                            color: "#f5f6f9"
+                                                            spacing: 0
 
+                                                            // Mockup Sidebar
                                                             Rectangle {
-                                                                anchors.centerIn: parent
-                                                                width: parent.width - 10
-                                                                height: parent.height - 10
-                                                                radius: 4
-                                                                color: "#ffffff"
-                                                                border.color: "#e2e5eb"
-                                                                border.width: 1
+                                                                Layout.preferredWidth: 36
+                                                                Layout.fillHeight: true
+                                                                color: "#e2e5eb"
+
+                                                                ColumnLayout {
+                                                                    anchors.fill: parent
+                                                                    anchors.margins: 4
+                                                                    spacing: 3
+                                                                    Rectangle { Layout.fillWidth: true; height: 4; radius: 2; color: "#0071e3" }
+                                                                    Rectangle { Layout.fillWidth: true; height: 4; radius: 2; color: "#cbd1db" }
+                                                                    Rectangle { Layout.fillWidth: true; height: 4; radius: 2; color: "#cbd1db" }
+                                                                }
+                                                            }
+
+                                                            // Mockup Content Card
+                                                            Rectangle {
+                                                                Layout.fillWidth: true
+                                                                Layout.fillHeight: true
+                                                                color: "#f5f6f9"
+
+                                                                Rectangle {
+                                                                    anchors.centerIn: parent
+                                                                    width: parent.width - 10
+                                                                    height: parent.height - 10
+                                                                    radius: 4
+                                                                    color: "#ffffff"
+                                                                    border.color: "#e2e5eb"
+                                                                    border.width: 1
+                                                                }
                                                             }
                                                         }
                                                     }
                                                 }
 
-                                                MouseArea {
-                                                    id: lightMouse
-                                                    anchors.fill: parent
-                                                    hoverEnabled: true
-                                                    cursorShape: Qt.PointingHandCursor
-                                                    onClicked: { if (Services.Config) Services.Config.setThemeMode("light") }
+                                                // Radio Selector
+                                                RowLayout {
+                                                    Layout.alignment: Qt.AlignHCenter
+                                                    spacing: 6
+
+                                                    Rectangle {
+                                                        width: 14; height: 14; radius: 7
+                                                        color: "transparent"
+                                                        border.color: (Services.Config && Services.Config.themeMode === "light") ? Services.Theme.accent : Services.Theme.border
+                                                        border.width: 1.5
+
+                                                        Rectangle {
+                                                            anchors.centerIn: parent
+                                                            width: 6; height: 6; radius: 3
+                                                            color: Services.Theme.accent
+                                                            scale: (Services.Config && Services.Config.themeMode === "light") ? 1.0 : 0.0
+                                                            opacity: (Services.Config && Services.Config.themeMode === "light") ? 1.0 : 0.0
+                                                            Behavior on scale { NumberAnimation { duration: 240; easing.type: Easing.OutBack; easing.overshoot: 1.5 } }
+                                                            Behavior on opacity { NumberAnimation { duration: 180 } }
+                                                        }
+                                                    }
+
+                                                    Text {
+                                                        text: "Light"
+                                                        font.pixelSize: 12
+                                                        font.weight: (Services.Config && Services.Config.themeMode === "light") ? Font.DemiBold : Font.Normal
+                                                        color: (Services.Config && Services.Config.themeMode === "light") ? Services.Theme.textPrimary : Services.Theme.textSecondary
+                                                    }
                                                 }
                                             }
 
-                                            // Radio Selector
-                                            RowLayout {
-                                                Layout.alignment: Qt.AlignHCenter
-                                                spacing: 6
-
-                                                Rectangle {
-                                                    width: 14; height: 14; radius: 7
-                                                    color: "transparent"
-                                                    border.color: (Services.Config && Services.Config.themeMode === "light") ? Services.Theme.accent : Services.Theme.border
-                                                    border.width: 1.5
-
-                                                    Rectangle {
-                                                        anchors.centerIn: parent
-                                                        width: 6; height: 6; radius: 3
-                                                        color: Services.Theme.accent
-                                                        scale: (Services.Config && Services.Config.themeMode === "light") ? 1.0 : 0.0
-                                                        opacity: (Services.Config && Services.Config.themeMode === "light") ? 1.0 : 0.0
-                                                        Behavior on scale { NumberAnimation { duration: 240; easing.type: Easing.OutBack; easing.overshoot: 1.5 } }
-                                                        Behavior on opacity { NumberAnimation { duration: 180 } }
-                                                    }
-                                                }
-
-                                                Text {
-                                                    text: "Light"
-                                                    font.pixelSize: 12
-                                                    font.weight: (Services.Config && Services.Config.themeMode === "light") ? Font.DemiBold : Font.Normal
-                                                    color: (Services.Config && Services.Config.themeMode === "light") ? Services.Theme.textPrimary : Services.Theme.textSecondary
+                                            MouseArea {
+                                                id: lightMouse
+                                                anchors.fill: parent
+                                                z: 50
+                                                hoverEnabled: true
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: {
+                                                    if (Services.Config) Services.Config.setThemeMode("light")
+                                                    if (Services.SystemTheme) Services.SystemTheme.setColorScheme("prefer-light")
                                                 }
                                             }
                                         }
 
                                         // Dark Mode Mockup Card
-                                        ColumnLayout {
-                                            spacing: 8
-                                            Layout.alignment: Qt.AlignHCenter
+                                        Rectangle {
+                                            Layout.preferredWidth: 136
+                                            Layout.preferredHeight: 114
+                                            color: "transparent"
 
-                                            Rectangle {
-                                                width: 136
-                                                height: 84
-                                                radius: 8
-                                                color: "#18181c"
-                                                border.color: (Services.Config && Services.Config.themeMode === "dark") ? Services.Theme.accent : (darkMouse.containsMouse ? Services.Theme.borderHighlight : Services.Theme.border)
-                                                border.width: (Services.Config && Services.Config.themeMode === "dark") ? 2 : 1
-                                                clip: true
-                                                scale: (Services.Config && Services.Config.themeMode === "dark") ? 1.03 : (darkMouse.pressed ? 0.95 : (darkMouse.containsMouse ? 1.02 : 1.0))
-                                                Behavior on scale { NumberAnimation { duration: 220; easing.type: Easing.OutBack; easing.overshoot: 1.35 } }
+                                            ColumnLayout {
+                                                id: darkCol
+                                                anchors.fill: parent
+                                                spacing: 8
+                                                Layout.alignment: Qt.AlignHCenter
 
-                                                // Mini Window Mockup
-                                                ColumnLayout {
-                                                    anchors.fill: parent
-                                                    spacing: 0
+                                                Rectangle {
+                                                    width: 136
+                                                    height: 84
+                                                    radius: 8
+                                                    color: "#18181c"
+                                                    border.color: (Services.Config && Services.Config.themeMode === "dark") ? Services.Theme.accent : (darkMouse.containsMouse ? Services.Theme.borderHighlight : Services.Theme.border)
+                                                    border.width: (Services.Config && Services.Config.themeMode === "dark") ? 2 : 1
+                                                    clip: true
+                                                    scale: (Services.Config && Services.Config.themeMode === "dark") ? 1.03 : (darkMouse.pressed ? 0.95 : (darkMouse.containsMouse ? 1.02 : 1.0))
+                                                    Behavior on scale { NumberAnimation { duration: 220; easing.type: Easing.OutBack; easing.overshoot: 1.35 } }
 
-                                                    // Mockup Titlebar
-                                                    Rectangle {
-                                                        Layout.fillWidth: true
-                                                        height: 18
-                                                        color: "#222228"
-
-                                                        Rectangle {
-                                                            anchors.left: parent.left
-                                                            anchors.leftMargin: 8
-                                                            anchors.verticalCenter: parent.verticalCenter
-                                                            width: 24; height: 4; radius: 2
-                                                            color: "#383844"
-                                                        }
-                                                    }
-
-                                                    // Mockup Body
-                                                    RowLayout {
-                                                        Layout.fillWidth: true
-                                                        Layout.fillHeight: true
+                                                    // Mini Window Mockup
+                                                    ColumnLayout {
+                                                        anchors.fill: parent
                                                         spacing: 0
 
-                                                        // Mockup Sidebar
+                                                        // Mockup Titlebar
                                                         Rectangle {
-                                                            Layout.preferredWidth: 36
-                                                            Layout.fillHeight: true
-                                                            color: "#1d1d24"
+                                                            Layout.fillWidth: true
+                                                            height: 18
+                                                            color: "#222228"
 
-                                                            ColumnLayout {
-                                                                anchors.fill: parent
-                                                                anchors.margins: 4
-                                                                spacing: 3
-                                                                Rectangle { Layout.fillWidth: true; height: 4; radius: 2; color: Services.Theme.accent }
-                                                                Rectangle { Layout.fillWidth: true; height: 4; radius: 2; color: "#32323e" }
-                                                                Rectangle { Layout.fillWidth: true; height: 4; radius: 2; color: "#32323e" }
+                                                            Rectangle {
+                                                                anchors.left: parent.left
+                                                                anchors.leftMargin: 8
+                                                                anchors.verticalCenter: parent.verticalCenter
+                                                                width: 24; height: 4; radius: 2
+                                                                color: "#383844"
                                                             }
                                                         }
 
-                                                        // Mockup Content Card
-                                                        Rectangle {
+                                                        // Mockup Body
+                                                        RowLayout {
                                                             Layout.fillWidth: true
                                                             Layout.fillHeight: true
-                                                            color: "#141418"
+                                                            spacing: 0
 
+                                                            // Mockup Sidebar
                                                             Rectangle {
-                                                                anchors.centerIn: parent
-                                                                width: parent.width - 10
-                                                                height: parent.height - 10
-                                                                radius: 4
-                                                                color: "#24242e"
-                                                                border.color: "#32323e"
-                                                                border.width: 1
+                                                                Layout.preferredWidth: 36
+                                                                Layout.fillHeight: true
+                                                                color: "#1d1d24"
+
+                                                                ColumnLayout {
+                                                                    anchors.fill: parent
+                                                                    anchors.margins: 4
+                                                                    spacing: 3
+                                                                    Rectangle { Layout.fillWidth: true; height: 4; radius: 2; color: Services.Theme.accent }
+                                                                    Rectangle { Layout.fillWidth: true; height: 4; radius: 2; color: "#32323e" }
+                                                                    Rectangle { Layout.fillWidth: true; height: 4; radius: 2; color: "#32323e" }
+                                                                }
+                                                            }
+
+                                                            // Mockup Content Card
+                                                            Rectangle {
+                                                                Layout.fillWidth: true
+                                                                Layout.fillHeight: true
+                                                                color: "#141418"
+
+                                                                Rectangle {
+                                                                    anchors.centerIn: parent
+                                                                    width: parent.width - 10
+                                                                    height: parent.height - 10
+                                                                    radius: 4
+                                                                    color: "#24242e"
+                                                                    border.color: "#32323e"
+                                                                    border.width: 1
+                                                                }
                                                             }
                                                         }
                                                     }
                                                 }
 
-                                                MouseArea {
-                                                    id: darkMouse
-                                                    anchors.fill: parent
-                                                    hoverEnabled: true
-                                                    cursorShape: Qt.PointingHandCursor
-                                                    onClicked: { if (Services.Config) Services.Config.setThemeMode("dark") }
+                                                // Radio Selector
+                                                RowLayout {
+                                                    Layout.alignment: Qt.AlignHCenter
+                                                    spacing: 6
+
+                                                    Rectangle {
+                                                        width: 14; height: 14; radius: 7
+                                                        color: "transparent"
+                                                        border.color: (Services.Config && Services.Config.themeMode === "dark") ? Services.Theme.accent : Services.Theme.border
+                                                        border.width: 1.5
+
+                                                        Rectangle {
+                                                            anchors.centerIn: parent
+                                                            width: 6; height: 6; radius: 3
+                                                            color: Services.Theme.accent
+                                                            scale: (Services.Config && Services.Config.themeMode === "dark") ? 1.0 : 0.0
+                                                            opacity: (Services.Config && Services.Config.themeMode === "dark") ? 1.0 : 0.0
+                                                            Behavior on scale { NumberAnimation { duration: 240; easing.type: Easing.OutBack; easing.overshoot: 1.5 } }
+                                                            Behavior on opacity { NumberAnimation { duration: 180 } }
+                                                        }
+                                                    }
+
+                                                    Text {
+                                                        text: "Dark"
+                                                        font.pixelSize: 12
+                                                        font.weight: (Services.Config && Services.Config.themeMode === "dark") ? Font.DemiBold : Font.Normal
+                                                        color: (Services.Config && Services.Config.themeMode === "dark") ? Services.Theme.textPrimary : Services.Theme.textSecondary
+                                                    }
                                                 }
                                             }
 
-                                            // Radio Selector
-                                            RowLayout {
-                                                Layout.alignment: Qt.AlignHCenter
-                                                spacing: 6
-
-                                                Rectangle {
-                                                    width: 14; height: 14; radius: 7
-                                                    color: "transparent"
-                                                    border.color: (Services.Config && Services.Config.themeMode === "dark") ? Services.Theme.accent : Services.Theme.border
-                                                    border.width: 1.5
-
-                                                    Rectangle {
-                                                        anchors.centerIn: parent
-                                                        width: 6; height: 6; radius: 3
-                                                        color: Services.Theme.accent
-                                                        scale: (Services.Config && Services.Config.themeMode === "dark") ? 1.0 : 0.0
-                                                        opacity: (Services.Config && Services.Config.themeMode === "dark") ? 1.0 : 0.0
-                                                        Behavior on scale { NumberAnimation { duration: 240; easing.type: Easing.OutBack; easing.overshoot: 1.5 } }
-                                                        Behavior on opacity { NumberAnimation { duration: 180 } }
-                                                    }
-                                                }
-
-                                                Text {
-                                                    text: "Dark"
-                                                    font.pixelSize: 12
-                                                    font.weight: (Services.Config && Services.Config.themeMode === "dark") ? Font.DemiBold : Font.Normal
-                                                    color: (Services.Config && Services.Config.themeMode === "dark") ? Services.Theme.textPrimary : Services.Theme.textSecondary
+                                            MouseArea {
+                                                id: darkMouse
+                                                anchors.fill: parent
+                                                z: 50
+                                                hoverEnabled: true
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: {
+                                                    if (Services.Config) Services.Config.setThemeMode("dark")
+                                                    if (Services.SystemTheme) Services.SystemTheme.setColorScheme("prefer-dark")
                                                 }
                                             }
                                         }
@@ -2126,13 +2233,10 @@ FloatingWindow {
                                         }
                                     }
                                 }
-                            }
 
-                            // 2. Accent Color (macOS System Settings Circular Swatches)
-                            SettingsSection {
-                                title: "Accent Color"
-                                icon: Services.Icons.brush || "󰃉"
+                                SettingsDivider {}
 
+                                // Accent Colors Sub-Section
                                 ColumnLayout {
                                     Layout.fillWidth: true
                                     Layout.margins: 10
@@ -2229,7 +2333,7 @@ FloatingWindow {
                                 }
                             }
 
-                            // 3. Desktop Wallpaper Section
+                            // ── 2. Desktop Wallpaper Section ──
                             SettingsSection {
                                 title: "Desktop Wallpaper"
                                 icon: Services.Icons.image || "󰋩"
@@ -2369,36 +2473,210 @@ FloatingWindow {
                                 }
                             }
 
-                            // 4. Typography & Geometry Section
+                            // ── 3. Application & Desktop Themes (GTK, Icons, Cursors) ──
                             SettingsSection {
-                                title: "Typography & Geometry"
+                                title: "Application & Desktop Theming"
+                                icon: Services.Icons.sparkle || "󰮄"
+
+                                SettingsRow {
+                                    title: "GTK Application Theme"
+                                    subtitle: "Visual style applied to GTK3, GTK4 & Libadwaita applications"
+
+                                    SettingsDropdown {
+                                        minButtonWidth: 160
+                                        searchable: true
+                                        currentValue: Services.SystemTheme ? Services.SystemTheme.currentGtkTheme : "Tahoe-Dark"
+                                        model: Services.SystemTheme ? Services.SystemTheme.gtkThemes : []
+                                        onSelected: (val) => {
+                                            if (Services.SystemTheme) Services.SystemTheme.setGtkTheme(val)
+                                        }
+                                    }
+                                }
+
+                                SettingsDivider {}
+
+                                SettingsRow {
+                                    title: "Icon Theme"
+                                    subtitle: "System-wide icon set for launcher, file manager, and docks"
+
+                                    SettingsDropdown {
+                                        minButtonWidth: 160
+                                        searchable: true
+                                        currentValue: Services.SystemTheme ? Services.SystemTheme.currentIconTheme : "MacTahoe"
+                                        model: Services.SystemTheme ? Services.SystemTheme.iconThemes : []
+                                        onSelected: (val) => {
+                                            if (Services.SystemTheme) Services.SystemTheme.setIconTheme(val)
+                                        }
+                                    }
+                                }
+
+                                SettingsDivider {}
+
+                                SettingsRow {
+                                    title: "Cursor Theme"
+                                    subtitle: "Mouse pointer theme for Wayland session and apps"
+
+                                    SettingsDropdown {
+                                        minButtonWidth: 160
+                                        searchable: true
+                                        currentValue: Services.SystemTheme ? Services.SystemTheme.currentCursorTheme : "MacTahoe-dark"
+                                        model: Services.SystemTheme ? Services.SystemTheme.cursorThemes : []
+                                        onSelected: (val) => {
+                                            if (Services.SystemTheme) Services.SystemTheme.setCursorTheme(val)
+                                        }
+                                    }
+                                }
+
+                                SettingsDivider {}
+
+                                SettingsRow {
+                                    title: "Cursor Size"
+                                    subtitle: "Physical cursor size in pixels"
+
+                                    SettingsDropdown {
+                                        minButtonWidth: 130
+                                        currentValue: Services.SystemTheme ? Services.SystemTheme.currentCursorSize : 24
+                                        model: Services.SystemTheme ? Services.SystemTheme.cursorSizes : []
+                                        onSelected: (val) => {
+                                            if (Services.SystemTheme) Services.SystemTheme.setCursorSize(val)
+                                        }
+                                    }
+                                }
+                            }
+
+                            // ── 4. Fonts & Typography (GNOME Fonts & Tweaks) ──
+                            SettingsSection {
+                                title: "Fonts & Typography"
                                 icon: Services.Icons.font || "󰛄"
 
                                 SettingsRow {
-                                    title: "UI Font Family"
-                                    subtitle: "Global font for labels, widgets, and clock"
+                                    title: "Interface Font"
+                                    subtitle: "Primary typography for UI labels, widgets, and clock"
+
+                                    RowLayout {
+                                        spacing: 8
+                                        Layout.alignment: Qt.AlignVCenter
+
+                                        SettingsDropdown {
+                                            minButtonWidth: 155
+                                            searchable: true
+                                            currentValue: Services.SystemTheme ? Services.SystemTheme.currentFontFamily : "Liga SFMonoNerdFont"
+                                            model: Services.SystemTheme ? Services.SystemTheme.systemFonts : []
+                                            onSelected: (val) => {
+                                                if (Services.SystemTheme) Services.SystemTheme.setFont("interface", val, Services.SystemTheme.currentFontSize)
+                                            }
+                                        }
+
+                                        SettingsDropdown {
+                                            minButtonWidth: 70
+                                            currentValue: Services.SystemTheme ? Services.SystemTheme.currentFontSize : 11
+                                            model: [8, 9, 10, 11, 12, 13, 14, 15, 16, 18, 20].map(s => ({ id: s, label: s + " pt" }))
+                                            onSelected: (sz) => {
+                                                if (Services.SystemTheme) Services.SystemTheme.setFont("interface", Services.SystemTheme.currentFontFamily, sz)
+                                            }
+                                        }
+                                    }
+                                }
+
+                                SettingsDivider {}
+
+                                SettingsRow {
+                                    title: "Document Font"
+                                    subtitle: "Standard reading font for documents and previewers"
+
+                                    RowLayout {
+                                        spacing: 8
+                                        Layout.alignment: Qt.AlignVCenter
+
+                                        SettingsDropdown {
+                                            minButtonWidth: 155
+                                            searchable: true
+                                            currentValue: Services.SystemTheme ? Services.SystemTheme.currentDocFontFamily : "Adwaita Sans"
+                                            model: Services.SystemTheme ? Services.SystemTheme.systemFonts : []
+                                            onSelected: (val) => {
+                                                if (Services.SystemTheme) Services.SystemTheme.setFont("document", val, Services.SystemTheme.currentDocFontSize)
+                                            }
+                                        }
+
+                                        SettingsDropdown {
+                                            minButtonWidth: 70
+                                            currentValue: Services.SystemTheme ? Services.SystemTheme.currentDocFontSize : 12
+                                            model: [8, 9, 10, 11, 12, 13, 14, 15, 16, 18, 20].map(s => ({ id: s, label: s + " pt" }))
+                                            onSelected: (sz) => {
+                                                if (Services.SystemTheme) Services.SystemTheme.setFont("document", Services.SystemTheme.currentDocFontFamily, sz)
+                                            }
+                                        }
+                                    }
+                                }
+
+                                SettingsDivider {}
+
+                                SettingsRow {
+                                    title: "Monospace / Terminal Font"
+                                    subtitle: "Fixed-width font for terminals, code editors, and logs"
+
+                                    RowLayout {
+                                        spacing: 8
+                                        Layout.alignment: Qt.AlignVCenter
+
+                                        SettingsDropdown {
+                                            minButtonWidth: 155
+                                            searchable: true
+                                            currentValue: Services.SystemTheme ? Services.SystemTheme.currentMonoFontFamily : "Adwaita Mono"
+                                            model: Services.SystemTheme ? Services.SystemTheme.monospaceFonts : []
+                                            onSelected: (val) => {
+                                                if (Services.SystemTheme) Services.SystemTheme.setFont("monospace", val, Services.SystemTheme.currentMonoFontSize)
+                                            }
+                                        }
+
+                                        SettingsDropdown {
+                                            minButtonWidth: 70
+                                            currentValue: Services.SystemTheme ? Services.SystemTheme.currentMonoFontSize : 11
+                                            model: [8, 9, 10, 11, 12, 13, 14, 15, 16, 18, 20].map(s => ({ id: s, label: s + " pt" }))
+                                            onSelected: (sz) => {
+                                                if (Services.SystemTheme) Services.SystemTheme.setFont("monospace", Services.SystemTheme.currentMonoFontFamily, sz)
+                                            }
+                                        }
+                                    }
+                                }
+
+                                SettingsDivider {}
+
+                                SettingsRow {
+                                    title: "Font Hinting"
+                                    subtitle: "Glyph outline alignment to pixel grid for crisp rendering"
 
                                     SettingsDropdown {
-                                        currentValue: {
-                                             const f = Services.Config ? Services.Config.fontFamily : ""
-                                             if (f.indexOf("JetBrains") !== -1) return "jetbrains"
-                                             if (f.indexOf("SFMono") !== -1) return "sfmono"
-                                             if (f.indexOf("Inter") !== -1) return "inter"
-                                             if (f.indexOf("Fira") !== -1) return "firacode"
-                                             return "default"
-                                        }
+                                        minButtonWidth: 140
+                                        currentValue: Services.SystemTheme ? Services.SystemTheme.currentFontHinting : "slight"
                                         model: [
-                                             { id: "sfmono",    label: "SFMono Nerd Font" },
-                                             { id: "jetbrains", label: "JetBrains Mono" },
-                                             { id: "inter",     label: "Inter UI" },
-                                             { id: "firacode",  label: "FiraCode Mono" }
+                                            { id: "none",   label: "None" },
+                                            { id: "slight", label: "Slight (Default)" },
+                                            { id: "medium", label: "Medium" },
+                                            { id: "full",   label: "Full" }
                                         ]
                                         onSelected: (val) => {
-                                             if (!Services.Config) return
-                                             if (val === "sfmono") Services.Config.setFontFamily("Liga SFMono Nerd Font, monospace")
-                                             else if (val === "jetbrains") Services.Config.setFontFamily("JetBrainsMono Nerd Font, monospace")
-                                             else if (val === "inter") Services.Config.setFontFamily("Inter, Sans-Serif")
-                                             else if (val === "firacode") Services.Config.setFontFamily("FiraCode Nerd Font, monospace")
+                                            if (Services.SystemTheme) Services.SystemTheme.setFontHinting(val)
+                                        }
+                                    }
+                                }
+
+                                SettingsDivider {}
+
+                                SettingsRow {
+                                    title: "Font Antialiasing"
+                                    subtitle: "Subpixel smoothing technique for display sharpness"
+
+                                    SettingsDropdown {
+                                        minButtonWidth: 155
+                                        currentValue: Services.SystemTheme ? Services.SystemTheme.currentFontAntialiasing : "grayscale"
+                                        model: [
+                                            { id: "rgba",      label: "Subpixel (RGBA / LCD)" },
+                                            { id: "grayscale", label: "Standard (Grayscale)" },
+                                            { id: "none",      label: "None" }
+                                        ]
+                                        onSelected: (val) => {
+                                            if (Services.SystemTheme) Services.SystemTheme.setFontAntialiasing(val)
                                         }
                                     }
                                 }
@@ -2406,9 +2684,25 @@ FloatingWindow {
                                 SettingsDivider {}
 
                                 SettingsSlider {
+                                    title: "Text Scaling Factor"
+                                    subtitle: "System-wide text size multiplier across GTK and Wayland"
+                                    from: 0.75; to: 1.75; stepSize: 0.05; decimals: 2; valueSuffix: "x"
+                                    value: Services.SystemTheme ? Services.SystemTheme.currentTextScaling : 1.0
+                                    onMoved: (v) => {
+                                        if (Services.SystemTheme) Services.SystemTheme.setTextScaling(Number(v.toFixed(2)))
+                                    }
+                                }
+                            }
+
+                            // ── 5. Shell Geometry & Scaling ──
+                            SettingsSection {
+                                title: "Shell Geometry & Scaling"
+                                icon: Services.Icons.sliders || "󰛄"
+
+                                SettingsSlider {
                                     title: "Corner Rounding"
-                                    subtitle: "Radius for panels, widgets, and popup overlays"
-                                    from: 0; to: 28; stepSize: 1; valueSuffix: "px"
+                                    subtitle: "Radius for quickshell panels, widgets, and popup overlays"
+                                    from: 0; to: 32; stepSize: 1; valueSuffix: "px"
                                     value: Services.Config ? Services.Config.cornerRadius : 16
                                     onMoved: (v) => { if (Services.Config) Services.Config.setCornerRadius(Math.round(v)) }
                                 }
@@ -2416,21 +2710,21 @@ FloatingWindow {
                                 SettingsDivider {}
 
                                 SettingsSlider {
-                                    title: "UI Scale"
-                                    subtitle: "Proportional scaling factor for all overlays"
-                                    from: 75; to: 135; stepSize: 5; valueSuffix: "%"
-                                    value: Services.Config ? Math.round(Services.Config.uiScale * 100) : 100
-                                    onMoved: (v) => { if (Services.Config) Services.Config.setUiScale(v / 100) }
+                                    title: "Surface Glass Opacity"
+                                    subtitle: "Transparency level of quickshell overlay cards and panels"
+                                    from: 0.50; to: 1.00; stepSize: 0.05; decimals: 2
+                                    value: Services.Config ? Services.Config.glassOpacity : 0.85
+                                    onMoved: (v) => { if (Services.Config) Services.Config.setGlassOpacity(Number(v.toFixed(2))) }
                                 }
 
                                 SettingsDivider {}
 
                                 SettingsSlider {
-                                    title: "Surface Glass Opacity"
-                                    subtitle: "Transparency level of quickshell overlay cards"
-                                    from: 0.50; to: 1.00; stepSize: 0.05; decimals: 2
-                                    value: Services.Config ? Services.Config.glassOpacity : 0.85
-                                    onMoved: (v) => { if (Services.Config) Services.Config.setGlassOpacity(Number(v.toFixed(2))) }
+                                    title: "Quickshell UI Scale"
+                                    subtitle: "Proportional scaling factor for all shell overlays"
+                                    from: 75; to: 135; stepSize: 5; valueSuffix: "%"
+                                    value: Services.Config ? Math.round(Services.Config.uiScale * 100) : 100
+                                    onMoved: (v) => { if (Services.Config) Services.Config.setUiScale(v / 100) }
                                 }
                             }
                         }

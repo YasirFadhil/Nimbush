@@ -16,6 +16,13 @@ Singleton {
     onAppListChanged: _rebuildIndex()
     onQueryChanged: updateFiltered()
 
+    Connections {
+        target: Services.SystemTheme
+        function onIconThemeRevChanged() {
+            root._rebuildIndex()
+        }
+    }
+
     Component.onCompleted: _rebuildIndex()
 
     function _rebuildIndex() {

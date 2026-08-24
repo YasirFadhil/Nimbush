@@ -2,6 +2,7 @@ pragma Singleton
 import QtQuick
 import Quickshell
 import Quickshell.Io
+import "." as Services
 
 Singleton {
     id: root
@@ -447,7 +448,6 @@ Singleton {
     }
 
     function setThemeMode(mode) {
-        if (themeMode === mode) return
         themeMode = mode
         if (useMatugen || accentName === "Matugen (Wallpaper)") {
             accentColor = (mode === "light") ? matugenLightPrimary : matugenDarkPrimary
@@ -458,6 +458,9 @@ Singleton {
                     break
                 }
             }
+        }
+        if (Services.SystemTheme) {
+            Services.SystemTheme.setColorScheme(mode === "dark" ? "prefer-dark" : "prefer-light")
         }
         root.configChanged()
         saveConfig()
@@ -566,7 +569,13 @@ Singleton {
     function setLauncherMaxResults(val) { launcherMaxResults = val; saveConfig() }
 
     function setFirstRunCompleted(val) { firstRunCompleted = val; saveConfig() }
-    function setCornerRadius(radius) { cornerRadius = radius; saveConfig() }
+    function setCornerRadius(radius) {
+        cornerRadius = radius
+        if (Services.Compositor) {
+            Services.Compositor.setOption("rounding", radius)
+        }
+        saveConfig()
+    }
     function setUiScale(scale) { uiScale = scale; saveConfig() }
     function setFontFamily(family) { fontFamily = family; saveConfig() }
     function setGlassOpacity(op) { glassOpacity = op; saveConfig() }

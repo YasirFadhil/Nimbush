@@ -383,11 +383,15 @@ PanelWindow {
                                                 if (!icon) return ""
                                                 if (icon.startsWith("/") || icon.startsWith("file://") || icon.startsWith("http"))
                                                     return icon
+                                                if (Services.SystemTheme) {
+                                                    const res = Services.SystemTheme.getIcon(icon)
+                                                    if (res) return res
+                                                }
                                                 return Quickshell.iconPath(icon, true)
                                             }
                                             fillMode: Image.PreserveAspectFit
                                             asynchronous: true
-                                            cache: true
+                                            cache: false
                                             sourceSize: Qt.size(32, 32)
                                             visible: status === Image.Ready
                                         }

@@ -1,4 +1,5 @@
 import Quickshell
+import Quickshell.Widgets
 import Quickshell.Wayland
 import QtQuick
 import QtQuick.Controls
@@ -557,14 +558,15 @@ PanelWindow {
 
                         // App Icon
                         Item {
-                            Layout.preferredWidth: 30; Layout.preferredHeight: 30
+                            Layout.preferredWidth: 32; Layout.preferredHeight: 32
                             Layout.alignment: Qt.AlignVCenter
 
+                            // Fallback letter if icon cannot be loaded
                             Rectangle {
                                 anchors.fill: parent
                                 radius: 8
                                 color: appItem.index === resultList.currentIndex ? Qt.rgba(255, 255, 255, 0.1) : Qt.rgba(255, 255, 255, 0.05)
-                                visible: ico.status !== Image.Ready
+                                visible: !ico.source || ico.status === Image.Error
 
                                 Text {
                                     anchors.centerIn: parent
@@ -579,18 +581,25 @@ PanelWindow {
                                 id: ico
                                 anchors.fill: parent
                                 source: {
+                                    const rev = Services.SystemTheme ? Services.SystemTheme.iconThemeRev : 0
                                     const s = appItem.modelData.icon ?? ""
                                     if (!s) return ""
-                                    if (s.startsWith("/") || s.startsWith("file://")) return s
-                                    return Quickshell.iconPath(s, true)
+                                    if (Services.SystemTheme) {
+                                        const res = Services.SystemTheme.getIcon(s)
+                                        if (res && res.length > 0) return res
+                                    }
+                                    if (s.startsWith("file://")) return s
+                                    if (s.startsWith("/")) return "file://" + s
+                                    const qp = Quickshell.iconPath(s, true)
+                                    return (qp && qp.startsWith("/")) ? ("file://" + qp) : (qp || "")
                                 }
                                 fillMode: Image.PreserveAspectFit
-                                asynchronous: true
+                                asynchronous: false
                                 cache: true
-                                sourceSize: Qt.size(32, 32)
-                                visible: status === Image.Ready
-                                smooth: true
+                                sourceSize: Qt.size(64, 64)
                                 mipmap: true
+                                smooth: true
+                                visible: ico.status !== Image.Error
                             }
                         }
 
