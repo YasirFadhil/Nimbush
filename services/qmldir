@@ -21,5 +21,6 @@ singleton Config 1.0 Config.qml
 singleton Compositor 1.0 Compositor.qml
 singleton Emojis 1.0 Emojis.qml
 singleton SystemTheme 1.0 SystemTheme.qml
+singleton Weather 1.0 Weather.qml
 
 

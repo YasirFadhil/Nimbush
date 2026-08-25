@@ -20,6 +20,15 @@ Item {
     property bool replyMode: false
     property string activeReplyActionId: ""
 
+    // Wallpaper Studio State inside Dynamic Island
+    property bool wallpaperMode: false
+    property int wallpaperIndex: 0
+
+    readonly property var wallpaperList: {
+        const all = (Services.Wallpaper && Services.Wallpaper.allWallpapers) ? Services.Wallpaper.allWallpapers : []
+        return all.concat([{ isAddAction: true }])
+    }
+
     // Island visual dimensions for window masking
     readonly property bool isBottom: Services.Config ? (Services.Config.barPosition === "bottom") : false
     readonly property int islandWidth: island.width
@@ -186,7 +195,7 @@ Item {
     }
 
     function showSysHud(icon, title, detail, iconColor, customDuration) {
-        if (root.notifActive) return
+        if (root.notifActive || root.wallpaperMode) return
         sysHudIcon = icon
         sysHudTitle = title
         sysHudDetail = detail || ""
@@ -439,14 +448,24 @@ Item {
         }
     }
 
+    Connections {
+        target: Services.Wallpaper
+        function onCurrentWallpaperChanged() {
+            if (!root.hudReady || !Services.Wallpaper || !Services.Wallpaper.currentWallpaper) return
+            const path = Services.Wallpaper.currentWallpaper
+            const name = path.substring(path.lastIndexOf("/") + 1)
+            root.showSysHud(Services.Icons.image || "󰋩", "Wallpaper Applied", name, Services.Theme.accent, 2600)
+        }
+    }
+
     // MPRIS shortcuts
     readonly property var activePlayer: Services.Mpris.activePlayer
     readonly property bool mediaPlaying: activePlayer !== null && activePlayer.isPlaying
     readonly property bool hasMedia: activePlayer !== null && (activePlayer.trackTitle !== "" || mediaPlaying)
 
-    readonly property bool hasExpandContent: notifActive || sysHudActive || hasMedia
-    readonly property bool expanded: !lockBlocked && hasExpandContent && (pinned || autoExpanded || notifActive || sysHudActive)
-    readonly property bool isMediaPeek: !lockBlocked && autoExpanded && !pinned && !notifActive && !sysHudActive && hasMedia
+    readonly property bool hasExpandContent: notifActive || sysHudActive || hasMedia || wallpaperMode
+    readonly property bool expanded: !lockBlocked && hasExpandContent && (pinned || autoExpanded || notifActive || sysHudActive || wallpaperMode)
+    readonly property bool isMediaPeek: !lockBlocked && autoExpanded && !pinned && !notifActive && !sysHudActive && !wallpaperMode && hasMedia
 
     property int autoExpandDuration: 2500
     property int notifDuration: 5000
@@ -539,6 +558,7 @@ Item {
 
     readonly property int calculatedExpandedWidth: {
         if (notifActive) return replyMode ? 390 : 360
+        if (wallpaperMode) return 480
         if (sysHudActive) return 280
         if (isMediaPeek) return 280
         if (hasMedia) return 360
@@ -553,6 +573,7 @@ Item {
             if (hasNotifActions) h += 32
             return h
         }
+        if (wallpaperMode) return 120
         if (sysHudActive) return 54
         if (isMediaPeek) return 54
         if (hasMedia) return 138
@@ -584,9 +605,41 @@ Item {
         pinned = false
         autoExpanded = false
         replyMode = false
+        wallpaperMode = false
         if (notifActive && currentNotif) {
             Services.Notifications.dismiss(currentNotif.notifId)
         }
+    }
+
+    function toggleWallpaperMode() {
+        if (lockBlocked) return
+        if (wallpaperMode) {
+            collapse()
+        } else {
+            pinned = false
+            autoExpanded = false
+            autoCollapseTimer.stop()
+            replyMode = false
+            sysHudActive = false
+            sysHudTimer.stop()
+            wallpaperMode = true
+            if (Services.Wallpaper && Services.Wallpaper.currentWallpaper) {
+                const cur = Services.Wallpaper.currentWallpaper
+                const list = wallpaperList || []
+                for (let i = 0; i < list.length; i++) {
+                    if (list[i].path === cur || (list[i].isDynamic && Services.Wallpaper.isWallblerActive)) {
+                        wallpaperIndex = i
+                        break
+                    }
+                }
+            }
+        }
+    }
+
+    Connections {
+        target: Services.OverlayManager
+        function onWallpaperToggleRequested() { root.toggleWallpaperMode() }
+        function onWallpaperShowRequested() { root.toggleWallpaperMode() }
     }
 
     function nextNotif() {
@@ -633,6 +686,7 @@ Item {
     Connections {
         target: Services.Notifications
         function onNewNotification(entry) {
+            root.wallpaperMode = false
             root.sysHudActive = false
             sysHudTimer.stop()
             root.activeNotifIndex = 0
@@ -1381,7 +1435,7 @@ Item {
             anchors.fill: parent
             anchors.margins: 10
             spacing: 10
-            readonly property bool activeState: (root.sysHudTitle.includes("Caps Lock") || root.sysHudTitle.includes("Welcome") || !Services.OverlayManager.isLocked) && root.expanded && !root.notifActive && root.sysHudActive
+            readonly property bool activeState: (root.sysHudTitle.includes("Caps Lock") || root.sysHudTitle.includes("Welcome") || !Services.OverlayManager.isLocked) && root.expanded && !root.notifActive && !root.wallpaperMode && root.sysHudActive
             visible: activeState || opacity > 0.01
             opacity: activeState ? 1 : 0
             scale: activeState ? 1.0 : 0.15
@@ -1449,7 +1503,7 @@ Item {
             anchors.fill: parent
             anchors.margins: 10
             spacing: 10
-            readonly property bool activeState: !Services.OverlayManager.isLocked && root.expanded && !root.notifActive && !root.sysHudActive && root.isMediaPeek
+            readonly property bool activeState: !Services.OverlayManager.isLocked && root.expanded && !root.notifActive && !root.wallpaperMode && !root.sysHudActive && root.isMediaPeek
             visible: activeState || opacity > 0.01
             opacity: activeState ? 1 : 0
             scale: activeState ? 1.0 : 0.15
@@ -1542,7 +1596,7 @@ Item {
             anchors.fill: parent
             anchors.margins: 10
             spacing: 6
-            readonly property bool activeState: !Services.OverlayManager.isLocked && root.expanded && !root.notifActive && !root.sysHudActive && !root.isMediaPeek && root.hasMedia
+            readonly property bool activeState: !Services.OverlayManager.isLocked && root.expanded && !root.notifActive && !root.sysHudActive && !root.isMediaPeek && root.hasMedia && !root.wallpaperMode
             visible: activeState || opacity > 0.01
             opacity: activeState ? 1 : 0
             scale: activeState ? 1.0 : 0.15
@@ -1840,6 +1894,262 @@ Item {
                             else if (l === MprisLoopState.Playlist)  root.activePlayer.loop = MprisLoopState.Track
                             else                                     root.activePlayer.loop = MprisLoopState.None
                             mouse.accepted = true
+                        }
+                    }
+                }
+            }
+        }
+
+        // ==================== Expanded: Wallpaper Studio (Minimalist) ====================
+        ColumnLayout {
+            anchors.fill: parent
+            anchors.margins: 10
+            spacing: 6
+            readonly property bool activeState: !Services.OverlayManager.isLocked && root.expanded && !root.notifActive && root.wallpaperMode
+            visible: activeState || opacity > 0.01
+            opacity: activeState ? 1 : 0
+            scale: activeState ? 1.0 : 0.15
+            transformOrigin: Item.Center
+            enabled: activeState
+            z: 1
+
+            Behavior on opacity { NumberAnimation { duration: 300; easing.type: Easing.OutQuad } }
+            Behavior on scale   { NumberAnimation { duration: 450; easing.type: Easing.OutExpo } }
+
+            // Row 1: Minimal Header
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 22
+                spacing: 6
+
+                Text {
+                    text: "󰋩"
+                    font.family: Services.Theme.fontSymbols
+                    font.pixelSize: 13
+                    color: Services.Theme.accent
+                }
+
+                Text {
+                    text: "Wallpapers"
+                    color: Services.Theme.textPrimary
+                    font.pixelSize: Services.Theme.fontSizeSm
+                    font.bold: true
+                }
+
+                Item { Layout.fillWidth: true }
+
+                // Add Custom Button
+                Rectangle {
+                    width: 22; height: 22; radius: 11
+                    color: addBtnMouse.containsMouse ? Services.Theme.bgHover : "transparent"
+                    border.color: addBtnMouse.containsMouse ? Services.Theme.borderHighlight : Services.Theme.borderSubtle
+                    border.width: 1
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "+"
+                        font.pixelSize: 13
+                        font.bold: true
+                        color: addBtnMouse.containsMouse ? Services.Theme.accent : Services.Theme.textSecondary
+                    }
+
+                    MouseArea {
+                        id: addBtnMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            root.collapse()
+                            if (Services.Wallpaper) Services.Wallpaper.pickCustomWallpaper()
+                        }
+                    }
+                }
+
+                // Close Button
+                Rectangle {
+                    width: 22; height: 22; radius: 11
+                    color: closeIslandWallMouse.containsMouse ? Qt.rgba(239, 68, 68, 0.2) : "transparent"
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "✕"
+                        font.pixelSize: 10
+                        color: closeIslandWallMouse.containsMouse ? "#ef4444" : Services.Theme.textDisabled
+                    }
+
+                    MouseArea {
+                        id: closeIslandWallMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.collapse()
+                    }
+                }
+            }
+
+            // Row 2: Clean 16:9 Wallpaper Cards Carousel
+            Item {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+
+                ListView {
+                    id: islandWallList
+                    anchors.fill: parent
+                    orientation: ListView.Horizontal
+                    spacing: 8
+                    clip: true
+                    boundsBehavior: Flickable.StopAtBounds
+
+                    model: root.wallpaperList
+
+                    delegate: Item {
+                        id: iWallCell
+                        required property var modelData
+                        required property int index
+
+                        readonly property bool isAdd: iWallCell.modelData && iWallCell.modelData.isAddAction === true
+                        width: isAdd ? 72 : 124
+                        height: islandWallList.height
+
+                        readonly property bool isActive: !isAdd && Services.Wallpaper && (
+                            Services.Wallpaper.currentWallpaper === iWallCell.modelData.path ||
+                            (iWallCell.modelData.isDynamic === true && Services.Wallpaper.isWallblerActive)
+                        )
+
+                        // Wallpaper Card
+                        Rectangle {
+                            anchors.fill: parent
+                            radius: 10
+                            color: Services.Theme.surfaceVariant
+                            border.color: iWallCell.isActive
+                                ? Services.Theme.accent
+                                : (iWallMouse.containsMouse ? Services.Theme.borderHighlight : Services.Theme.borderSubtle)
+                            border.width: iWallCell.isActive ? 2 : 1
+                            clip: true
+                            scale: iWallMouse.containsMouse ? 1.03 : 1.0
+                            visible: !iWallCell.isAdd
+
+                            Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
+                            Behavior on border.color { ColorAnimation { duration: 150 } }
+
+                            Image {
+                                anchors.fill: parent
+                                source: (iWallCell.modelData && iWallCell.modelData.path) ? ("file://" + iWallCell.modelData.path) : ""
+                                fillMode: Image.PreserveAspectCrop
+                                asynchronous: true
+                                cache: true
+                                sourceSize: Qt.size(248, 148)
+                            }
+
+                            // Active Checkmark Pill
+                            Rectangle {
+                                anchors.top: parent.top; anchors.right: parent.right
+                                anchors.margins: 4
+                                width: 18; height: 18; radius: 9
+                                color: Services.Theme.accent
+                                visible: iWallCell.isActive
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: "✓"
+                                    color: Services.Theme.bgOnAccent
+                                    font.pixelSize: 10
+                                    font.bold: true
+                                }
+                            }
+
+                            // Dynamic Icon Badge (subtle)
+                            Rectangle {
+                                anchors.top: parent.top; anchors.left: parent.left
+                                anchors.margins: 4
+                                width: 18; height: 18; radius: 9
+                                color: Qt.rgba(0, 0, 0, 0.65)
+                                visible: iWallCell.modelData && iWallCell.modelData.isDynamic === true
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: "󰖔"
+                                    color: "#38bdf8"
+                                    font.family: Services.Theme.fontSymbols
+                                    font.pixelSize: 9
+                                }
+                            }
+
+                            // Bottom Gradient with Wallpaper Title
+                            Rectangle {
+                                anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom
+                                height: 26
+                                gradient: Gradient {
+                                    GradientStop { position: 0.0; color: "transparent" }
+                                    GradientStop { position: 0.4; color: Qt.rgba(0, 0, 0, 0.4) }
+                                    GradientStop { position: 1.0; color: Qt.rgba(0, 0, 0, 0.85) }
+                                }
+
+                                Text {
+                                    anchors.fill: parent
+                                    anchors.leftMargin: 6; anchors.rightMargin: 6; anchors.bottomMargin: 2
+                                    verticalAlignment: Text.AlignBottom
+                                    text: (iWallCell.modelData && iWallCell.modelData.name) ? iWallCell.modelData.name : "Wallpaper"
+                                    color: Services.Theme.white
+                                    font.pixelSize: 9
+                                    font.bold: iWallCell.isActive
+                                    elide: Text.ElideRight
+                                }
+                            }
+                        }
+
+                        // Add Image Card
+                        Rectangle {
+                            anchors.fill: parent
+                            radius: 10
+                            color: iAddMouse.containsMouse ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.12) : Qt.rgba(255, 255, 255, 0.03)
+                            border.color: iAddMouse.containsMouse ? Services.Theme.accent : Services.Theme.borderSubtle
+                            border.width: 1
+                            visible: iWallCell.isAdd
+
+                            ColumnLayout {
+                                anchors.centerIn: parent
+                                spacing: 2
+                                Text {
+                                    Layout.alignment: Qt.AlignHCenter
+                                    text: "+"
+                                    font.pixelSize: 16
+                                    font.bold: true
+                                    color: Services.Theme.accent
+                                }
+                                Text {
+                                    Layout.alignment: Qt.AlignHCenter
+                                    text: "Add"
+                                    color: Services.Theme.textSecondary
+                                    font.pixelSize: 9
+                                    font.bold: true
+                                }
+                            }
+
+                            MouseArea {
+                                id: iAddMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: {
+                                    root.collapse()
+                                    if (Services.Wallpaper) Services.Wallpaper.pickCustomWallpaper()
+                                }
+                            }
+                        }
+
+                        // Click to set wallpaper
+                        MouseArea {
+                            id: iWallMouse
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            visible: !iWallCell.isAdd
+                            onClicked: {
+                                if (iWallCell.modelData && iWallCell.modelData.path && Services.Wallpaper) {
+                                    Services.Wallpaper.setWallpaper(iWallCell.modelData.path)
+                                }
+                            }
                         }
                     }
                 }

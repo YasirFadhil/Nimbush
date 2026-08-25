@@ -604,14 +604,16 @@ inject_compositor_configs() {
     step_header "3/5 Compositor Integration & Keybinding Setup"
 
     HYPR_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/hypr"
+    HYPR_CONF_DIR="$HYPR_DIR/conf"
     HYPR_CONF="$HYPR_DIR/hyprland.conf"
-    HYPR_QS_CONF="$HYPR_DIR/quickshell.conf"
+    HYPR_QS_CONF="$HYPR_CONF_DIR/quickshell.conf"
     HYPR_LUA="$HYPR_DIR/hyprland.lua"
-    HYPR_QS_LUA="$HYPR_DIR/quickshell.lua"
+    HYPR_QS_LUA="$HYPR_CONF_DIR/quickshell.lua"
 
     NIRI_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/niri"
+    NIRI_CONF_DIR="$NIRI_DIR/conf"
     NIRI_CONF="$NIRI_DIR/config.kdl"
-    NIRI_QS_KDL="$NIRI_DIR/quickshell.kdl"
+    NIRI_QS_KDL="$NIRI_CONF_DIR/quickshell.kdl"
 
     # Scan current environment
     HAS_HYPR_LUA=false
@@ -644,40 +646,50 @@ inject_compositor_configs() {
     # ── Injection Helper Functions ────────────────────────────────────────────
 
     write_hypr_classic_modular() {
-        mkdir -p "$HYPR_DIR"
-        info "Writing modular Hyprland Quickshell configuration: $HYPR_QS_CONF"
+        mkdir -p "$HYPR_CONF_DIR"
+        info "Modularizing Hyprland Classic configuration: $HYPR_CONF -> $HYPR_QS_CONF..."
 
-        cat << 'EOF' > "$HYPR_QS_CONF"
+        local helper=""
+        if [ -f "$TARGET_DIR/scripts/compositor-helper.py" ]; then
+            helper="$TARGET_DIR/scripts/compositor-helper.py"
+        elif [ -f "$SCRIPT_DIR/scripts/compositor-helper.py" ]; then
+            helper="$SCRIPT_DIR/scripts/compositor-helper.py"
+        fi
+
+        if command -v python3 &>/dev/null && [ -n "$helper" ]; then
+            python3 "$helper" modularize hypr_conf >/dev/null 2>&1 || true
+            success "Extracted inline Quickshell rules/bindings and generated clean modular $HYPR_QS_CONF without duplicates."
+        else
+            # ── Fallback bash deduplicating modularization ──
+            cat << 'EOF' > "$HYPR_QS_CONF"
 # ══════════════════════════════════════════════════════════════════════════════
 #  Quickshell Desktop Environment Integration (Hyprland Classic)
 #  Included from ~/.config/hypr/hyprland.conf
 # ══════════════════════════════════════════════════════════════════════════════
 
-# ── Autostart Quickshell & Daemons ───────────────────────────────────────────
+# ── 1. Autostart Quickshell Desktop Environment ──────────────────────────────
 exec-once = qs
-exec-once = wl-paste --type text --watch cliphist store
-exec-once = wl-paste --type image --watch cliphist store
 
-# ── Quickshell IPC Keybindings ───────────────────────────────────────────────
-bind = SUPER, SPACE,     exec, qs ipc call launcher toggle
-bind = SUPER, V,         exec, qs ipc call clipboard toggle
-bind = SUPER, P,         exec, qs ipc call powermenu toggle
-bind = SUPER ALT, L,     exec, qs ipc call lockscreen toggle
-bind = SUPER, D,         exec, qs ipc call dashboard toggle
-bind = SUPER, N,         exec, qs ipc call notifCenter toggle
-bind = SUPER, C,         exec, qs ipc call controlCenter toggle
-bind = SUPER, B,         exec, qs ipc call battery toggle
-bind = SUPER, COMMA,     exec, qs ipc call settings toggle
+# ── 2. Quickshell IPC Keybindings ─────────────────────────────────────────────
+bind = SUPER, SPACE,         exec, qs ipc call launcher toggle
+bind = SUPER SHIFT, W,       exec, qs ipc call wallpaper toggle
+bind = SUPER SHIFT, E,       exec, qs ipc call emoji toggle
+bind = SUPER, V,             exec, qs ipc call clipboard toggle
+bind = SUPER, P,             exec, qs ipc call powermenu toggle
+bind = SUPER ALT, L,         exec, qs ipc call lockscreen toggle
+bind = SUPER, D,             exec, qs ipc call dashboard toggle
+bind = SUPER, N,             exec, qs ipc call notifCenter toggle
+bind = SUPER, C,             exec, qs ipc call controlCenter toggle
+bind = SUPER, B,             exec, qs ipc call battery toggle
 
-# ── Screenshot Keybindings (Grim + Slurp + Swappy + Quickshell Notification) ─
-bind = , PRINT,          exec, ~/.config/quickshell/scripts/screenshot.sh full
-bind = SHIFT, PRINT,     exec, ~/.config/quickshell/scripts/screenshot.sh region
-bind = SUPER, PRINT,     exec, ~/.config/quickshell/scripts/screenshot.sh window
-
-# ── Layer Rules (Blur & Transparency for Quickshell Panels) ─────────────────
+# ── 3. Quickshell Layer Rules (Blur & Transparency) ───────────────────────────
 layerrule = blur, quickshell:bar
 layerrule = blur, quickshell:launcher
 layerrule = ignorezero, quickshell:launcher
+layerrule = blur, quickshell:wallpaperselector
+layerrule = ignorezero, quickshell:wallpaperselector
+layerrule = blur, quickshell:emojipicker
+layerrule = ignorezero, quickshell:emojipicker
 layerrule = blur, quickshell:clipboard
 layerrule = ignorezero, quickshell:clipboard
 layerrule = blur, quickshell:controlcenter
@@ -714,216 +726,179 @@ layerrule = ignorezero, quickshell:brightnessosd
 layerrule = blur, ^quickshell:.*$
 layerrule = ignorezero, ^quickshell:.*$
 EOF
-        success "Wrote $HYPR_QS_CONF"
+            cp "$HYPR_QS_CONF" "$HYPR_DIR/quickshell.conf"
+            success "Wrote $HYPR_QS_CONF"
 
-        # Ensure hyprland.conf sources quickshell.conf
-        if [ -f "$HYPR_CONF" ]; then
-            if grep -q -E "quickshell\.conf|source.*quickshell" "$HYPR_CONF"; then
-                success "Hyprland configuration ($HYPR_CONF) already contains source directive for quickshell.conf."
-            else
+            if [ -f "$HYPR_CONF" ]; then
                 local backup_conf="${HYPR_CONF}.bak.$(date +%Y%m%d_%H%M%S)"
                 cp "$HYPR_CONF" "$backup_conf"
                 info "Created backup: $backup_conf"
-                echo -e "\n# ── Quickshell Desktop Environment Integration ──\nsource = ~/.config/hypr/quickshell.conf" >> "$HYPR_CONF"
-                success "Added 'source = ~/.config/hypr/quickshell.conf' to $HYPR_CONF"
+                sed -i '/quickshell\.conf/d' "$HYPR_CONF"
+                sed -i '/qs ipc call/d' "$HYPR_CONF"
+                sed -i '/quickshell:/d' "$HYPR_CONF"
+                sed -i '/exec-once = qs\b/d' "$HYPR_CONF"
+                echo -e "\n# ── Modular Configuration Sources ──\nsource = ~/.config/hypr/conf/quickshell.conf" >> "$HYPR_CONF"
+                success "Cleaned inline duplicates and connected modular source to $HYPR_CONF"
+            else
+                info "Creating starter $HYPR_CONF with source directive..."
+                echo -e "# Hyprland Configuration\n# ── Modular Configuration Sources ──\nsource = ~/.config/hypr/conf/quickshell.conf\n" > "$HYPR_CONF"
+                success "Created starter $HYPR_CONF"
             fi
-        else
-            # Create starter hyprland.conf
-            info "Creating starter $HYPR_CONF with source directive..."
-            echo -e "# Hyprland Configuration\n# ── Quickshell Desktop Environment Integration ──\nsource = ~/.config/hypr/quickshell.conf\n" > "$HYPR_CONF"
-            success "Created starter $HYPR_CONF"
         fi
     }
 
     write_hypr_lua_modular() {
-        mkdir -p "$HYPR_DIR"
+        mkdir -p "$HYPR_CONF_DIR"
+        info "Modularizing Hyprland Lua configuration: $HYPR_LUA -> $HYPR_QS_LUA..."
 
-        if [ -f "$HYPR_LUA" ]; then
-            local backup_lua="${HYPR_LUA}.bak.$(date +%Y%m%d_%H%M%S)"
-            cp "$HYPR_LUA" "$backup_lua"
-            info "Created backup: $backup_lua"
+        local helper=""
+        if [ -f "$TARGET_DIR/scripts/compositor-helper.py" ]; then
+            helper="$TARGET_DIR/scripts/compositor-helper.py"
+        elif [ -f "$SCRIPT_DIR/scripts/compositor-helper.py" ]; then
+            helper="$SCRIPT_DIR/scripts/compositor-helper.py"
+        fi
 
-            # Remove any stale duplicate dofile calls to quickshell.lua
-            sed -i '/quickshell\.lua/d' "$HYPR_LUA"
-            rm -f "$HYPR_QS_LUA"
-
-            # Ensure layer rules exist in hyprland.lua
-            if ! grep -q 'namespace = "quickshell:bar"' "$HYPR_LUA"; then
-                cat << 'EOF' >> "$HYPR_LUA"
-
--- ── Quickshell Layer Rules (Blur & Transparency) ──
-hl.layer_rule({ match = { namespace = "quickshell:bar" },           blur = true })
-hl.layer_rule({ match = { namespace = "quickshell:launcher" },      blur = true, ignore_alpha = 0 })
-hl.layer_rule({ match = { namespace = "quickshell:clipboard" },     blur = true, ignore_alpha = 0 })
-hl.layer_rule({ match = { namespace = "quickshell:controlcenter" }, blur = true, ignore_alpha = 0 })
-hl.layer_rule({ match = { namespace = "quickshell:notifcenter" },   blur = true, ignore_alpha = 0 })
-hl.layer_rule({ match = { namespace = "quickshell:dashboard" },     blur = true, ignore_alpha = 0 })
-hl.layer_rule({ match = { namespace = "quickshell:calendar" },      blur = true, ignore_alpha = 0 })
-hl.layer_rule({ match = { namespace = "quickshell:hud" },           blur = true, ignore_alpha = 0 })
-hl.layer_rule({ match = { namespace = "quickshell:traymenu" },      blur = true, ignore_alpha = 0 })
-hl.layer_rule({ match = { namespace = "quickshell:trayoverflow" },  blur = true, ignore_alpha = 0 })
-hl.layer_rule({ match = { namespace = "quickshell:settings" },      blur = true, ignore_alpha = 0 })
-hl.layer_rule({ match = { namespace = "quickshell:battery" },       blur = true, ignore_alpha = 0 })
-hl.layer_rule({ match = { namespace = "quickshell:volume" },        blur = true, ignore_alpha = 0 })
-hl.layer_rule({ match = { namespace = "quickshell:welcome" },       blur = true, ignore_alpha = 0 })
-hl.layer_rule({ match = { namespace = "quickshell:powermenu" },     blur = true, ignore_alpha = 0 })
-hl.layer_rule({ match = { namespace = "^quickshell:.*$" },          blur = true, ignore_alpha = 0 })
-EOF
-            fi
-
-            # Check if keybindings are present
-            if ! grep -q 'qs ipc call launcher' "$HYPR_LUA"; then
-                cat << 'EOF' >> "$HYPR_LUA"
-
--- ── Quickshell IPC Keybindings ──
-hl.bind(mainMod .. " + SPACE",     hl.dsp.exec_cmd("qs ipc call launcher toggle"))
-hl.bind(mainMod .. " + V",         hl.dsp.exec_cmd("qs ipc call clipboard toggle"))
-hl.bind(mainMod .. " + P",         hl.dsp.exec_cmd("qs ipc call powermenu toggle"))
-hl.bind(mainMod .. " + ALT + L",   hl.dsp.exec_cmd("qs ipc call lockscreen toggle"))
-hl.bind(mainMod .. " + D",         hl.dsp.exec_cmd("qs ipc call dashboard toggle"))
-hl.bind(mainMod .. " + N",         hl.dsp.exec_cmd("qs ipc call notifCenter toggle"))
-hl.bind(mainMod .. " + C",         hl.dsp.exec_cmd("qs ipc call controlCenter toggle"))
-hl.bind(mainMod .. " + B",         hl.dsp.exec_cmd("qs ipc call battery toggle"))
-hl.bind(mainMod .. " + COMMA",     hl.dsp.exec_cmd("qs ipc call settings toggle"))
-EOF
-            fi
-
-            success "Updated $HYPR_LUA with clean Quickshell integration."
+        if command -v python3 &>/dev/null && [ -n "$helper" ]; then
+            python3 "$helper" modularize hypr_lua >/dev/null 2>&1 || true
+            success "Extracted inline Quickshell rules/bindings and generated clean modular $HYPR_QS_LUA without duplicates."
         else
-            info "Writing starter $HYPR_LUA..."
-            cat << 'EOF' > "$HYPR_LUA"
+            # ── Fallback bash deduplicating modularization ──
+            cat << 'EOF' > "$HYPR_QS_LUA"
 -- ══════════════════════════════════════════════════════════════════════════════
---  Hyprland Lua Configuration (~/.config/hypr/hyprland.lua)
+--  Quickshell Desktop Environment Integration (Hyprland Lua)
+--  Loaded from ~/.config/hypr/hyprland.lua
 -- ══════════════════════════════════════════════════════════════════════════════
 
 local mainMod = "SUPER"
 
--- ── Autostart Quickshell & Services ──────────────────────────────────────────
+-- ── 1. Autostart Quickshell Desktop Environment ──────────────────────────────
 hl.on("hyprland.start", function ()
     hl.exec_cmd("qs")
-    hl.exec_cmd("wl-paste --type text --watch cliphist store")
-    hl.exec_cmd("wl-paste --type image --watch cliphist store")
 end)
 
--- ── Quickshell IPC Keybindings ───────────────────────────────────────────────
-hl.bind(mainMod .. " + SPACE",     hl.dsp.exec_cmd("qs ipc call launcher toggle"))
-hl.bind(mainMod .. " + V",         hl.dsp.exec_cmd("qs ipc call clipboard toggle"))
-hl.bind(mainMod .. " + P",         hl.dsp.exec_cmd("qs ipc call powermenu toggle"))
-hl.bind(mainMod .. " + ALT + L",   hl.dsp.exec_cmd("qs ipc call lockscreen toggle"))
-hl.bind(mainMod .. " + D",         hl.dsp.exec_cmd("qs ipc call dashboard toggle"))
-hl.bind(mainMod .. " + N",         hl.dsp.exec_cmd("qs ipc call notifCenter toggle"))
-hl.bind(mainMod .. " + C",         hl.dsp.exec_cmd("qs ipc call controlCenter toggle"))
-hl.bind(mainMod .. " + B",         hl.dsp.exec_cmd("qs ipc call battery toggle"))
-hl.bind(mainMod .. " + COMMA",     hl.dsp.exec_cmd("qs ipc call settings toggle"))
+-- ── 2. Quickshell IPC Keybindings ─────────────────────────────────────────────
+hl.bind(mainMod .. " + SPACE",         hl.dsp.exec_cmd("qs ipc call launcher toggle"))
+hl.bind(mainMod .. " + SHIFT + W",     hl.dsp.exec_cmd("qs ipc call wallpaper toggle"))
+hl.bind(mainMod .. " + SHIFT + E",     hl.dsp.exec_cmd("qs ipc call emoji toggle"))
+hl.bind(mainMod .. " + V",             hl.dsp.exec_cmd("qs ipc call clipboard toggle"))
+hl.bind(mainMod .. " + P",             hl.dsp.exec_cmd("qs ipc call powermenu toggle"))
+hl.bind(mainMod .. " + ALT + L",       hl.dsp.exec_cmd("qs ipc call lockscreen toggle"))
+hl.bind(mainMod .. " + D",             hl.dsp.exec_cmd("qs ipc call dashboard toggle"))
+hl.bind(mainMod .. " + N",             hl.dsp.exec_cmd("qs ipc call notifCenter toggle"))
+hl.bind(mainMod .. " + C",             hl.dsp.exec_cmd("qs ipc call controlCenter toggle"))
+hl.bind(mainMod .. " + B",             hl.dsp.exec_cmd("qs ipc call battery toggle"))
 
--- ── Screenshot Keybindings ───────────────────────────────────────────────────
-hl.bind("print",               hl.dsp.exec_cmd("~/.config/quickshell/scripts/screenshot.sh full"),   { locked = true })
-hl.bind("SHIFT + print",       hl.dsp.exec_cmd("~/.config/quickshell/scripts/screenshot.sh region"), { locked = true })
-hl.bind(mainMod .. " + print", hl.dsp.exec_cmd("~/.config/quickshell/scripts/screenshot.sh window"), { locked = true })
-
--- ── Layer Rules (Blur & Transparency) ────────────────────────────────────────
-hl.layer_rule({ match = { namespace = "quickshell:bar" },           blur = true })
-hl.layer_rule({ match = { namespace = "quickshell:launcher" },      blur = true, ignore_alpha = 0 })
-hl.layer_rule({ match = { namespace = "quickshell:clipboard" },     blur = true, ignore_alpha = 0 })
-hl.layer_rule({ match = { namespace = "quickshell:controlcenter" }, blur = true, ignore_alpha = 0 })
-hl.layer_rule({ match = { namespace = "quickshell:notifcenter" },   blur = true, ignore_alpha = 0 })
-hl.layer_rule({ match = { namespace = "quickshell:dashboard" },     blur = true, ignore_alpha = 0 })
-hl.layer_rule({ match = { namespace = "quickshell:calendar" },      blur = true, ignore_alpha = 0 })
-hl.layer_rule({ match = { namespace = "quickshell:hud" },           blur = true, ignore_alpha = 0 })
-hl.layer_rule({ match = { namespace = "quickshell:traymenu" },      blur = true, ignore_alpha = 0 })
-hl.layer_rule({ match = { namespace = "quickshell:trayoverflow" },  blur = true, ignore_alpha = 0 })
-hl.layer_rule({ match = { namespace = "quickshell:settings" },      blur = true, ignore_alpha = 0 })
-hl.layer_rule({ match = { namespace = "quickshell:battery" },       blur = true, ignore_alpha = 0 })
-hl.layer_rule({ match = { namespace = "quickshell:volume" },        blur = true, ignore_alpha = 0 })
-hl.layer_rule({ match = { namespace = "quickshell:welcome" },       blur = true, ignore_alpha = 0 })
-hl.layer_rule({ match = { namespace = "quickshell:powermenu" },     blur = true, ignore_alpha = 0 })
-hl.layer_rule({ match = { namespace = "^quickshell:.*$" },          blur = true, ignore_alpha = 0 })
+-- ── 3. Quickshell Layer Rules (Blur & Transparency) ───────────────────────────
+hl.layer_rule({ match = { namespace = "quickshell:bar" },               blur = true })
+hl.layer_rule({ match = { namespace = "quickshell:launcher" },          blur = true, ignore_alpha = 0 })
+hl.layer_rule({ match = { namespace = "quickshell:wallpaperselector" }, blur = true, ignore_alpha = 0 })
+hl.layer_rule({ match = { namespace = "quickshell:emojipicker" },       blur = true, ignore_alpha = 0 })
+hl.layer_rule({ match = { namespace = "quickshell:clipboard" },         blur = true, ignore_alpha = 0 })
+hl.layer_rule({ match = { namespace = "quickshell:controlcenter" },     blur = true, ignore_alpha = 0 })
+hl.layer_rule({ match = { namespace = "quickshell:notifcenter" },       blur = true, ignore_alpha = 0 })
+hl.layer_rule({ match = { namespace = "quickshell:dashboard" },         blur = true, ignore_alpha = 0 })
+hl.layer_rule({ match = { namespace = "quickshell:calendar" },          blur = true, ignore_alpha = 0 })
+hl.layer_rule({ match = { namespace = "quickshell:hud" },               blur = true, ignore_alpha = 0 })
+hl.layer_rule({ match = { namespace = "quickshell:traymenu" },          blur = true, ignore_alpha = 0 })
+hl.layer_rule({ match = { namespace = "quickshell:trayoverflow" },      blur = true, ignore_alpha = 0 })
+hl.layer_rule({ match = { namespace = "quickshell:settings" },          blur = true, ignore_alpha = 0 })
+hl.layer_rule({ match = { namespace = "quickshell:battery" },           blur = true, ignore_alpha = 0 })
+hl.layer_rule({ match = { namespace = "quickshell:volume" },            blur = true, ignore_alpha = 0 })
+hl.layer_rule({ match = { namespace = "quickshell:welcome" },           blur = true, ignore_alpha = 0 })
+hl.layer_rule({ match = { namespace = "quickshell:powermenu" },         blur = true, ignore_alpha = 0 })
+hl.layer_rule({ match = { namespace = "^quickshell:.*$" },              blur = true, ignore_alpha = 0 })
 EOF
-            success "Created starter $HYPR_LUA"
+            cp "$HYPR_QS_LUA" "$HYPR_DIR/quickshell.lua"
+            success "Wrote $HYPR_QS_LUA"
+
+            if [ -f "$HYPR_LUA" ]; then
+                local backup_lua="${HYPR_LUA}.bak.$(date +%Y%m%d_%H%M%S)"
+                cp "$HYPR_LUA" "$backup_lua"
+                info "Created backup: $backup_lua"
+                sed -i '/quickshell\.lua/d' "$HYPR_LUA"
+                sed -i '/qs ipc call/d' "$HYPR_LUA"
+                sed -i '/quickshell:/d' "$HYPR_LUA"
+                echo -e "\n-- ── Load Modular Configuration Files ──\nlocal home = os.getenv(\"HOME\") or \"\"\nlocal confDir = home .. \"/.config/hypr/conf\"\n\nlocal function load_conf(module_name)\n    local module_path = confDir .. \"/\" .. module_name .. \".lua\"\n    if io.open(module_path, \"r\") then\n        dofile(module_path)\n    end\nend\n\nload_conf(\"autostart\")\nload_conf(\"keybinds\")\nload_conf(\"rules\")\nload_conf(\"quickshell\")" >> "$HYPR_LUA"
+                success "Cleaned inline duplicates and connected modular loader to $HYPR_LUA"
+            else
+                info "Writing starter $HYPR_LUA with modular loader..."
+                cat << 'EOF' > "$HYPR_LUA"
+-- Hyprland Lua Configuration
+local home = os.getenv("HOME") or ""
+local confDir = home .. "/.config/hypr/conf"
+
+local function load_conf(module_name)
+    local module_path = confDir .. "/" .. module_name .. ".lua"
+    if io.open(module_path, "r") then
+        dofile(module_path)
+    end
+end
+
+load_conf("autostart")
+load_conf("keybinds")
+load_conf("rules")
+load_conf("quickshell")
+EOF
+                success "Created starter $HYPR_LUA"
+            fi
         fi
     }
 
-    write_niri_config() {
-        mkdir -p "$NIRI_DIR"
-        info "Configuring Niri integration: $NIRI_CONF"
+    write_niri_modular() {
+        mkdir -p "$NIRI_CONF_DIR"
+        info "Modularizing Niri configuration: $NIRI_CONF -> $NIRI_QS_KDL..."
 
-        if [ -f "$NIRI_CONF" ]; then
-            local backup_niri="${NIRI_CONF}.bak.$(date +%Y%m%d_%H%M%S)"
-            cp "$NIRI_CONF" "$backup_niri"
-            info "Created backup: $backup_niri"
+        local helper=""
+        if [ -f "$TARGET_DIR/scripts/compositor-helper.py" ]; then
+            helper="$TARGET_DIR/scripts/compositor-helper.py"
+        elif [ -f "$SCRIPT_DIR/scripts/compositor-helper.py" ]; then
+            helper="$SCRIPT_DIR/scripts/compositor-helper.py"
+        fi
 
-            # Check if autostart is already present
-            if ! grep -q 'spawn-at-startup "qs"' "$NIRI_CONF"; then
-                local tmp_niri=$(mktemp)
-                cat << 'EOF' > "$tmp_niri"
-// ── Quickshell Desktop Environment Integration ──
-spawn-at-startup "qs"
-spawn-at-startup "wl-paste" "--type" "text" "--watch" "cliphist" "store"
-spawn-at-startup "wl-paste" "--type" "image" "--watch" "cliphist" "store"
-
-EOF
-                cat "$NIRI_CONF" >> "$tmp_niri"
-                mv "$tmp_niri" "$NIRI_CONF"
-                success "Added Quickshell autostart daemons to top of $NIRI_CONF"
-            fi
-
-            # Check and inject binds
-            if grep -q -E "qs ipc call|quickshell" "$NIRI_CONF"; then
-                success "Niri keybindings for Quickshell already detected in $NIRI_CONF."
-            else
-                cat << 'EOF' >> "$NIRI_CONF"
-
-// ── Quickshell IPC Keybindings ──
-binds {
-    Mod+Space     { spawn "qs" "ipc" "call" "launcher" "toggle"; }
-    Mod+V         { spawn "qs" "ipc" "call" "clipboard" "toggle"; }
-    Mod+P         { spawn "qs" "ipc" "call" "powermenu" "toggle"; }
-    Mod+Alt+L     { spawn "qs" "ipc" "call" "lockscreen" "toggle"; }
-    Mod+D         { spawn "qs" "ipc" "call" "dashboard" "toggle"; }
-    Mod+N         { spawn "qs" "ipc" "call" "notifCenter" "toggle"; }
-    Mod+C         { spawn "qs" "ipc" "call" "controlCenter" "toggle"; }
-    Mod+B         { spawn "qs" "ipc" "call" "battery" "toggle"; }
-    Mod+Comma     { spawn "qs" "ipc" "call" "settings" "toggle"; }
-
-    // Screenshot Keybindings (Grim + Slurp + Swappy + Quickshell Notification)
-    Print       { spawn "sh" "-c" "~/.config/quickshell/scripts/screenshot.sh full"; }
-    Shift+Print { spawn "sh" "-c" "~/.config/quickshell/scripts/screenshot.sh region"; }
-    Mod+Print   { spawn "sh" "-c" "~/.config/quickshell/scripts/screenshot.sh window"; }
-}
-EOF
-                success "Appended Quickshell keybinding block to $NIRI_CONF"
-            fi
+        if command -v python3 &>/dev/null && [ -n "$helper" ]; then
+            python3 "$helper" modularize niri >/dev/null 2>&1 || true
+            success "Extracted inline Quickshell binds/autostart and generated clean modular $NIRI_QS_KDL without duplicates."
         else
-            info "Writing starter Niri configuration to $NIRI_CONF..."
-            cat << 'EOF' > "$NIRI_CONF"
+            # ── Fallback bash deduplicating modularization ──
+            cat << 'EOF' > "$NIRI_QS_KDL"
 // ══════════════════════════════════════════════════════════════════════════════
-//  Niri Configuration with Quickshell Integration (~/.config/niri/config.kdl)
+//  Quickshell Desktop Environment Integration (Niri)
+//  Included from ~/.config/niri/config.kdl
 // ══════════════════════════════════════════════════════════════════════════════
 
-// ── Autostart Quickshell & Services ──────────────────────────────────────────
+// ── 1. Autostart Quickshell Desktop Environment ──────────────────────────────
 spawn-at-startup "qs"
-spawn-at-startup "wl-paste" "--type" "text" "--watch" "cliphist" "store"
-spawn-at-startup "wl-paste" "--type" "image" "--watch" "cliphist" "store"
 
-// ── Quickshell IPC Keybindings ───────────────────────────────────────────────
+// ── 2. Quickshell IPC Keybindings ─────────────────────────────────────────────
 binds {
-    Mod+Space     { spawn "qs" "ipc" "call" "launcher" "toggle"; }
-    Mod+V         { spawn "qs" "ipc" "call" "clipboard" "toggle"; }
-    Mod+P         { spawn "qs" "ipc" "call" "powermenu" "toggle"; }
-    Mod+Alt+L     { spawn "qs" "ipc" "call" "lockscreen" "toggle"; }
-    Mod+D         { spawn "qs" "ipc" "call" "dashboard" "toggle"; }
-    Mod+N         { spawn "qs" "ipc" "call" "notifCenter" "toggle"; }
-    Mod+C         { spawn "qs" "ipc" "call" "controlCenter" "toggle"; }
-    Mod+B         { spawn "qs" "ipc" "call" "battery" "toggle"; }
-    Mod+Comma     { spawn "qs" "ipc" "call" "settings" "toggle"; }
-
-    // Screenshot Keybindings (Grim + Slurp + Swappy + Quickshell Notification)
-    Print       { spawn "sh" "-c" "~/.config/quickshell/scripts/screenshot.sh full"; }
-    Shift+Print { spawn "sh" "-c" "~/.config/quickshell/scripts/screenshot.sh region"; }
-    Mod+Print   { spawn "sh" "-c" "~/.config/quickshell/scripts/screenshot.sh window"; }
+    Mod+Space       { spawn "qs" "ipc" "call" "launcher" "toggle"; }
+    Mod+Shift+W     { spawn "qs" "ipc" "call" "wallpaper" "toggle"; }
+    Mod+Shift+E     { spawn "qs" "ipc" "call" "emoji" "toggle"; }
+    Mod+V           { spawn "qs" "ipc" "call" "clipboard" "toggle"; }
+    Mod+P           { spawn "qs" "ipc" "call" "powermenu" "toggle"; }
+    Mod+Alt+L       { spawn "qs" "ipc" "call" "lockscreen" "toggle"; }
+    Mod+D           { spawn "qs" "ipc" "call" "dashboard" "toggle"; }
+    Mod+N           { spawn "qs" "ipc" "call" "notifCenter" "toggle"; }
+    Mod+C           { spawn "qs" "ipc" "call" "controlCenter" "toggle"; }
+    Mod+B           { spawn "qs" "ipc" "call" "battery" "toggle"; }
 }
 EOF
-            success "Created starter Niri config at $NIRI_CONF"
+            cp "$NIRI_QS_KDL" "$NIRI_DIR/quickshell.kdl"
+            success "Wrote $NIRI_QS_KDL"
+
+            if [ -f "$NIRI_CONF" ]; then
+                local backup_niri="${NIRI_CONF}.bak.$(date +%Y%m%d_%H%M%S)"
+                cp "$NIRI_CONF" "$backup_niri"
+                info "Created backup: $backup_niri"
+                sed -i '/quickshell\.kdl/d' "$NIRI_CONF"
+                sed -i '/qs ipc call/d' "$NIRI_CONF"
+                echo -e "\n// ── Modular Configurations ──\ninclude \"conf/autostart.kdl\"\ninclude \"conf/keybinds.kdl\"\ninclude \"conf/rules.kdl\"\ninclude \"conf/quickshell.kdl\"" >> "$NIRI_CONF"
+                success "Cleaned inline duplicates and connected modular includes to $NIRI_CONF"
+            else
+                info "Writing starter $NIRI_CONF with include directive..."
+                echo -e "// Niri Configuration\n// ── Modular Configurations ──\ninclude \"conf/autostart.kdl\"\ninclude \"conf/keybinds.kdl\"\ninclude \"conf/rules.kdl\"\ninclude \"conf/quickshell.kdl\"\n" > "$NIRI_CONF"
+                success "Created starter $NIRI_CONF"
+            fi
         fi
     }
 
@@ -931,10 +906,10 @@ EOF
     INJECT_TARGET="auto"
     if [ "$AUTO_YES" = false ]; then
         echo -e "\n  ${BOLD}Compositor Integration Menu:${NC}"
-        echo -e "    ${CYAN}1)${NC} ${BOLD}Smart Auto-Inject${NC} (Auto-detect active compositor & apply clean integration) ${GREEN}(Recommended)${NC}"
+        echo -e "    ${CYAN}1)${NC} ${BOLD}Smart Auto-Inject${NC} (Auto-detect active compositor & apply clean modular integration) ${GREEN}(Recommended)${NC}"
         echo -e "    ${CYAN}2)${NC} Hyprland Lua (${DIM}~/.config/hypr/quickshell.lua + hyprland.lua${NC})"
         echo -e "    ${CYAN}3)${NC} Hyprland Classic (${DIM}~/.config/hypr/quickshell.conf + hyprland.conf${NC})"
-        echo -e "    ${CYAN}4)${NC} Niri (${DIM}~/.config/niri/config.kdl${NC})"
+        echo -e "    ${CYAN}4)${NC} Niri (${DIM}~/.config/niri/quickshell.kdl + config.kdl${NC})"
         echo -e "    ${CYAN}5)${NC} Configure All (Hyprland Lua, Hyprland Conf & Niri)"
         echo -e "    ${CYAN}6)${NC} Skip Compositor Configuration"
         read -rp "  Select option [1-6] (default: 1): " comp_menu_choice
@@ -957,7 +932,7 @@ EOF
                 write_hypr_classic_modular
             fi
             if [ "$HAS_NIRI_CONF" = true ] || ([ "$HAS_HYPR_LUA" = false ] && [ "$HAS_HYPR_CONF" = false ] && [ "$HAS_NIRI" = true ]); then
-                write_niri_config
+                write_niri_modular
             fi
             ;;
         hypr_lua)
@@ -967,12 +942,12 @@ EOF
             write_hypr_classic_modular
             ;;
         niri)
-            write_niri_config
+            write_niri_modular
             ;;
         all)
             write_hypr_lua_modular
             write_hypr_classic_modular
-            write_niri_config
+            write_niri_modular
             ;;
         skip)
             info "Skipped compositor injection."
@@ -1036,24 +1011,27 @@ post_installation_summary() {
     echo -e "${GREEN}${BOLD}==============================================================================${NC}\n"
 
     echo -e "${BOLD}1. Keybinding Cheat Sheet:${NC}"
-    echo -e "   ${CYAN}${BOLD}SUPER + SPACE${NC}    →  App Launcher (Fuzzy search, Calculator, App grid)"
-    echo -e "   ${CYAN}${BOLD}SUPER + V${NC}        →  Clipboard History (Search, Pin items, Delete)"
-    echo -e "   ${CYAN}${BOLD}SUPER + P${NC}        →  Power Menu (Lock, Suspend, Reboot, Shutdown)"
-    echo -e "   ${CYAN}${BOLD}SUPER + ALT + L${NC}  →  Lockscreen (PAM auth, Live Media, Custom wallpaper)"
-    echo -e "   ${CYAN}${BOLD}SUPER + D${NC}        →  Dashboard (System stats, Hardware monitor, Notes)"
-    echo -e "   ${CYAN}${BOLD}SUPER + N${NC}        →  Notification Center (History, DND mode, Actions)"
-    echo -e "   ${CYAN}${BOLD}SUPER + C${NC}        →  Control Center (WiFi, Bluetooth, Audio, Power profiles)"
-    echo -e "   ${CYAN}${BOLD}SUPER + B${NC}        →  Battery & Power Panel"
-    echo -e "   ${CYAN}${BOLD}SUPER + ,${NC}        →  Quickshell Settings GUI"
-    echo -e "   ${CYAN}${BOLD}PRINT${NC}            →  Fullscreen Screenshot (Grim + Slurp + Swappy)"
-    echo -e "   ${CYAN}${BOLD}SHIFT + PRINT${NC}    →  Area Selection Screenshot"
-    echo -e "   ${CYAN}${BOLD}SUPER + PRINT${NC}    →  Active Window Screenshot"
+    echo -e "   ${CYAN}${BOLD}SUPER + SPACE${NC}        →  App Launcher (Fuzzy search, Calculator, App grid)"
+    echo -e "   ${CYAN}${BOLD}SUPER + SHIFT + W${NC}    →  Wallpaper Selector (Select, preview, manage wallpapers)"
+    echo -e "   ${CYAN}${BOLD}SUPER + SHIFT + E${NC}    →  Emoji Picker (Search & copy 1,800+ emojis)"
+    echo -e "   ${CYAN}${BOLD}SUPER + V${NC}            →  Clipboard History (Search, Pin items, Delete)"
+    echo -e "   ${CYAN}${BOLD}SUPER + P${NC}            →  Power Menu (Lock, Suspend, Reboot, Shutdown)"
+    echo -e "   ${CYAN}${BOLD}SUPER + ALT + L${NC}      →  Lockscreen (PAM auth, Live Media, Custom wallpaper)"
+    echo -e "   ${CYAN}${BOLD}SUPER + D${NC}            →  Dashboard (System stats, Hardware monitor, Notes)"
+    echo -e "   ${CYAN}${BOLD}SUPER + N${NC}            →  Notification Center (History, DND mode, Actions)"
+    echo -e "   ${CYAN}${BOLD}SUPER + C${NC}            →  Control Center (WiFi, Bluetooth, Audio, Power profiles)"
+    echo -e "   ${CYAN}${BOLD}SUPER + B${NC}            →  Battery & Power Panel"
+    echo -e "   ${CYAN}${BOLD}PRINT${NC}                →  Fullscreen Screenshot (Grim + Slurp + Swappy)"
+    echo -e "   ${CYAN}${BOLD}SHIFT + PRINT${NC}        →  Area Selection Screenshot"
+    echo -e "   ${CYAN}${BOLD}SUPER + PRINT${NC}        →  Active Window Screenshot"
     echo ""
 
     echo -e "${BOLD}2. IPC Command Reference (for terminal or custom binds):${NC}"
     echo -e "   Launch Quickshell:    ${GREEN}qs${NC}  or  ${GREEN}quickshell${NC}"
     echo -e "   Live Logs Stream:     ${GREEN}qs log${NC}"
     echo -e "   Toggle Launcher:      ${GREEN}qs ipc call launcher toggle${NC}"
+    echo -e "   Toggle Wallpaper:     ${GREEN}qs ipc call wallpaper toggle${NC}"
+    echo -e "   Toggle Emoji Picker:  ${GREEN}qs ipc call emoji toggle${NC}"
     echo -e "   Toggle Clipboard:     ${GREEN}qs ipc call clipboard toggle${NC}"
     echo -e "   Toggle Control Ctr:   ${GREEN}qs ipc call controlCenter toggle${NC}"
     echo -e "   Toggle Notifications: ${GREEN}qs ipc call notifCenter toggle${NC}"

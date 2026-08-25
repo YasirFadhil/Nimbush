@@ -977,6 +977,738 @@ def main():
             print(json.dumps({"ok": False, "error": "Usage: save-b64 <target_path> <b64_str>"}))
             sys.exit(1)
         target = sys.argv[2]
+def modularize_hypr_lua():
+    hypr_dir = os.path.join(HOME, ".config/hypr")
+    conf_dir = os.path.join(hypr_dir, "conf")
+    lua_path = os.path.join(hypr_dir, "hyprland.lua")
+    os.makedirs(conf_dir, exist_ok=True)
+
+    # 1. Quickshell Integration File
+    qs_lua_path = os.path.join(conf_dir, "quickshell.lua")
+    qs_lua_compat_path = os.path.join(hypr_dir, "quickshell.lua")
+    qs_lua_content = """-- ══════════════════════════════════════════════════════════════════════════════
+--  Quickshell Desktop Environment Integration (~/.config/hypr/conf/quickshell.lua)
+-- ══════════════════════════════════════════════════════════════════════════════
+
+local mainMod = "SUPER"
+
+-- ── 1. Autostart Quickshell Desktop Environment ──────────────────────────────
+hl.on("hyprland.start", function ()
+    hl.exec_cmd("qs")
+end)
+
+-- ── 2. Quickshell IPC Keybindings ─────────────────────────────────────────────
+hl.bind(mainMod .. " + SPACE",         hl.dsp.exec_cmd("qs ipc call launcher toggle"))
+hl.bind(mainMod .. " + SHIFT + W",     hl.dsp.exec_cmd("qs ipc call wallpaper toggle"))
+hl.bind(mainMod .. " + SHIFT + E",     hl.dsp.exec_cmd("qs ipc call emoji toggle"))
+hl.bind(mainMod .. " + V",             hl.dsp.exec_cmd("qs ipc call clipboard toggle"))
+hl.bind(mainMod .. " + P",             hl.dsp.exec_cmd("qs ipc call powermenu toggle"))
+hl.bind(mainMod .. " + ALT + L",       hl.dsp.exec_cmd("qs ipc call lockscreen toggle"))
+hl.bind(mainMod .. " + D",             hl.dsp.exec_cmd("qs ipc call dashboard toggle"))
+hl.bind(mainMod .. " + N",             hl.dsp.exec_cmd("qs ipc call notifCenter toggle"))
+hl.bind(mainMod .. " + C",             hl.dsp.exec_cmd("qs ipc call controlCenter toggle"))
+hl.bind(mainMod .. " + B",             hl.dsp.exec_cmd("qs ipc call battery toggle"))
+
+-- ── 3. Quickshell Layer Rules (Blur & Transparency) ───────────────────────────
+hl.layer_rule({ match = { namespace = "quickshell:bar" },               blur = true })
+hl.layer_rule({ match = { namespace = "quickshell:launcher" },          blur = true, ignore_alpha = 0 })
+hl.layer_rule({ match = { namespace = "quickshell:wallpaperselector" }, blur = true, ignore_alpha = 0 })
+hl.layer_rule({ match = { namespace = "quickshell:emojipicker" },       blur = true, ignore_alpha = 0 })
+hl.layer_rule({ match = { namespace = "quickshell:clipboard" },         blur = true, ignore_alpha = 0 })
+hl.layer_rule({ match = { namespace = "quickshell:controlcenter" },     blur = true, ignore_alpha = 0 })
+hl.layer_rule({ match = { namespace = "quickshell:notifcenter" },       blur = true, ignore_alpha = 0 })
+hl.layer_rule({ match = { namespace = "quickshell:dashboard" },         blur = true, ignore_alpha = 0 })
+hl.layer_rule({ match = { namespace = "quickshell:calendar" },          blur = true, ignore_alpha = 0 })
+hl.layer_rule({ match = { namespace = "quickshell:hud" },               blur = true, ignore_alpha = 0 })
+hl.layer_rule({ match = { namespace = "quickshell:traymenu" },          blur = true, ignore_alpha = 0 })
+hl.layer_rule({ match = { namespace = "quickshell:trayoverflow" },      blur = true, ignore_alpha = 0 })
+hl.layer_rule({ match = { namespace = "quickshell:settings" },          blur = true, ignore_alpha = 0 })
+hl.layer_rule({ match = { namespace = "quickshell:battery" },           blur = true, ignore_alpha = 0 })
+hl.layer_rule({ match = { namespace = "quickshell:volume" },            blur = true, ignore_alpha = 0 })
+hl.layer_rule({ match = { namespace = "quickshell:welcome" },           blur = true, ignore_alpha = 0 })
+hl.layer_rule({ match = { namespace = "quickshell:powermenu" },         blur = true, ignore_alpha = 0 })
+hl.layer_rule({ match = { namespace = "^quickshell:.*$" },              blur = true, ignore_alpha = 0 })
+"""
+    with open(qs_lua_path, "w", encoding="utf-8") as f:
+        f.write(qs_lua_content)
+    with open(qs_lua_compat_path, "w", encoding="utf-8") as f:
+        f.write(qs_lua_content)
+
+    if not os.path.exists(lua_path):
+        with open(lua_path, "w", encoding="utf-8") as f:
+            f.write("""-- Hyprland Main Configuration (~/.config/hypr/hyprland.lua)
+local home = os.getenv("HOME") or ""
+local confDir = home .. "/.config/hypr/conf"
+
+local function load_conf(module_name)
+    local module_path = confDir .. "/" .. module_name .. ".lua"
+    if io.open(module_path, "r") then
+        dofile(module_path)
+    end
+end
+
+load_conf("autostart")
+load_conf("keybinds")
+load_conf("rules")
+load_conf("quickshell")
+""")
+        return {"ok": True, "created_main": True, "conf_dir": conf_dir}
+
+    backup_path = f"{lua_path}.bak.{int(time.time())}"
+    shutil.copy2(lua_path, backup_path)
+
+    with open(lua_path, "r", encoding="utf-8") as f:
+        lines = f.readlines()
+
+    autostart_lines = []
+    keybind_lines = []
+    rule_lines = []
+    main_lines = []
+
+    current_section = 'main'
+    section_keywords = {
+        'autostart': ['AUTOSTART'],
+        'keybinds': ['KEYBINDINGS'],
+        'rules': ['WINDOW / LAYER RULES', 'WINDOW RULES', 'LAYER RULES'],
+        'main': ['MONITORS', 'PROGRAMS / VARIABLES', 'ENVIRONMENT VARIABLES', 'PERMISSIONS', 'LOOK AND FEEL', 'ANIMATIONS', 'WORKSPACE RULES', 'LAYOUTS', 'MISC', 'INPUT']
+    }
+
+    # Extract user-defined variables from PROGRAMS / VARIABLES section
+    var_defs = []
+    qs_vars = set([
+        'menu', 'clipboard', 'lockscreen', 'lockScreen', 'notifcenter', 'notifCenter',
+        'powermenu', 'powerMenu', 'dashboard', 'controlcenter', 'controlCenter',
+        'batterypanel', 'batteryPanel', 'settingsgui', 'settingsGui',
+        'wallpaperselector', 'wallpaperSelector', 'emojipicker', 'emojiPicker'
+    ])
+    for line in lines:
+        m = re.match(r'^\s*local\s+([A-Za-z0-9_]+)\s*=\s*(.*)', line)
+        if m:
+            vname = m.group(1).strip()
+            val = m.group(2).strip()
+            if 'qs ' in val or 'qs"' in val or "qs'" in val or 'quickshell' in val:
+                qs_vars.add(vname)
+            elif vname in ['mainMod', 'terminal', 'fileManager', 'browser', 'editor']:
+                var_defs.append(line.strip())
+
+    for line in lines:
+        stripped = line.strip()
+
+        # Check for section headers
+        for sec, kws in section_keywords.items():
+            if any(re.search(rf'--\s*{re.escape(kw)}\b', stripped, re.IGNORECASE) for kw in kws):
+                current_section = sec
+                break
+
+        # Ignore loader artifacts or previous quickshell integration headers
+        if any(marker in stripped for marker in [
+            'Load Modular Configuration Files',
+            'Quickshell Desktop Environment Integration',
+            'Quickshell Integration',
+            'load_conf',
+            'confDir',
+            'module_name',
+            'module_path',
+        ]):
+            continue
+        if stripped in ['end', 'end)', 'end);'] and current_section == 'rules':
+            # Check if this end belongs to a function or loader
+            continue
+        if ('dofile(' in stripped and ('quickshell' in stripped or 'conf/' in stripped or 'module_path' in stripped)):
+            continue
+        if 'local home = os.getenv("HOME")' in stripped or 'io.open(module_path' in stripped:
+            continue
+
+        # Filter out quickshell items from general sections
+        if 'qs ipc call' in stripped or 'quickshell:' in stripped:
+            continue
+        if current_section == 'keybinds' and any(re.search(rf'\b{re.escape(v)}\b', stripped) for v in qs_vars):
+            continue
+        if current_section == 'autostart' and re.search(r'hl\.exec_cmd\(\s*[\"\']\s*qs(?:\s+-[a-zA-Z0-9_/~\.]+)?\s*[\"\']\s*\)', stripped):
+            continue
+
+        if current_section == 'autostart':
+            autostart_lines.append(line)
+        elif current_section == 'keybinds':
+            keybind_lines.append(line)
+        elif current_section == 'rules':
+            rule_lines.append(line)
+        else:
+            main_lines.append(line)
+
+    # 2. Write conf/autostart.lua
+    autostart_path = os.path.join(conf_dir, "autostart.lua")
+    autostart_content = "".join(autostart_lines).strip()
+    if not autostart_content:
+        autostart_content = """hl.on("hyprland.start", function ()
+    hl.exec_cmd("systemctl enable --now --user hyprpolkitagent")
+    hl.exec_cmd("wl-paste --type text --watch cliphist store")
+    hl.exec_cmd("wl-paste --type image --watch cliphist store")
+end)"""
+    with open(autostart_path, "w", encoding="utf-8") as f:
+        f.write(f"""-- ══════════════════════════════════════════════════════════════════════════════
+--  Autostart Daemons & Background Services (~/.config/hypr/conf/autostart.lua)
+-- ══════════════════════════════════════════════════════════════════════════════
+
+{autostart_content}
+""")
+
+    # 3. Write conf/keybinds.lua
+    keybinds_path = os.path.join(conf_dir, "keybinds.lua")
+    keybind_content = "".join(keybind_lines).strip()
+    vars_prefix = "\n".join(var_defs) if var_defs else 'local mainMod = "SUPER"\nlocal terminal = "kitty"\nlocal fileManager = "nautilus"'
+    if not keybind_content:
+        keybind_content = """hl.bind(mainMod .. " + T", hl.dsp.exec_cmd(terminal), { repeating = true })
+hl.bind(mainMod .. " + E", hl.dsp.exec_cmd(fileManager))
+hl.bind(mainMod .. " + Q", hl.dsp.window.close(), { repeating = true })
+hl.bind(mainMod .. " + ALT + F", hl.dsp.window.float({ action = "toggle" }))
+hl.bind(mainMod .. " + SHIFT + F", hl.dsp.window.fullscreen({ mode = "fullscreen", action = "toggle" }))
+hl.bind(mainMod .. " + J", hl.dsp.layout("togglesplit"))
+
+for i = 1, 10 do
+    local key = i % 10
+    hl.bind(mainMod .. " + " .. key, hl.dsp.focus({ workspace = i }))
+    hl.bind(mainMod .. " + SHIFT + " .. key, hl.dsp.window.move({ workspace = i }))
+end
+
+hl.bind("print", hl.dsp.exec_cmd("~/.config/quickshell/scripts/screenshot.sh full"), { locked = true })
+hl.bind("SHIFT + print", hl.dsp.exec_cmd("~/.config/quickshell/scripts/screenshot.sh region"), { locked = true })
+hl.bind(mainMod .. " + print", hl.dsp.exec_cmd("~/.config/quickshell/scripts/screenshot.sh window"), { locked = true })"""
+
+    with open(keybinds_path, "w", encoding="utf-8") as f:
+        f.write(f"""-- ══════════════════════════════════════════════════════════════════════════════
+--  Keybindings & Shortcuts (~/.config/hypr/conf/keybinds.lua)
+-- ══════════════════════════════════════════════════════════════════════════════
+
+{vars_prefix}
+
+{keybind_content}
+""")
+
+    # 4. Write conf/rules.lua
+    rules_path = os.path.join(conf_dir, "rules.lua")
+    rules_content = "".join(rule_lines).strip()
+    if not rules_content:
+        rules_content = """hl.window_rule({
+    name  = "suppress-maximize",
+    match = { class = ".*" },
+    suppress_event = "maximize",
+})
+
+hl.window_rule({
+    name  = "pip-float",
+    match = { title = "^(Picture-in-Picture|Picture in picture)$" },
+    float = true,
+    pin   = true,
+})
+
+hl.window_rule({
+    name  = "dialog-float",
+    match = { class = "(pavucontrol|nm-connection-editor|blueman-manager|swappy)" },
+    float = true,
+})"""
+    with open(rules_path, "w", encoding="utf-8") as f:
+        f.write(f"""-- ══════════════════════════════════════════════════════════════════════════════
+--  Window & Workspace Rules (~/.config/hypr/conf/rules.lua)
+-- ══════════════════════════════════════════════════════════════════════════════
+
+{rules_content}
+""")
+
+    # 5. Clean up main hyprland.lua
+    while main_lines and (not main_lines[-1].strip() or main_lines[-1].strip() in ['end', 'end)', 'end);', 'end}']):
+        main_lines.pop()
+
+    cleaned_main = "".join(main_lines).strip()
+    final_main = f"""{cleaned_main}
+
+-- ── Load Modular Configuration Files ────────────────────────────────────────
+local home = os.getenv("HOME") or ""
+local confDir = home .. "/.config/hypr/conf"
+
+local function load_conf(module_name)
+    local module_path = confDir .. "/" .. module_name .. ".lua"
+    if io.open(module_path, "r") then
+        dofile(module_path)
+    end
+end
+
+load_conf("autostart")
+load_conf("keybinds")
+load_conf("rules")
+load_conf("quickshell")
+"""
+    with open(lua_path, "w", encoding="utf-8") as f:
+        f.write(final_main)
+
+    return {
+        "ok": True,
+        "backup": backup_path,
+        "conf_dir": conf_dir,
+        "extracted_autostart": len(autostart_lines),
+        "extracted_keybinds": len(keybind_lines),
+        "extracted_rules": len(rule_lines)
+    }
+
+def modularize_hypr_conf():
+    hypr_dir = os.path.join(HOME, ".config/hypr")
+    conf_dir = os.path.join(hypr_dir, "conf")
+    conf_path = os.path.join(hypr_dir, "hyprland.conf")
+    os.makedirs(conf_dir, exist_ok=True)
+
+    # 1. Quickshell conf
+    qs_conf_path = os.path.join(conf_dir, "quickshell.conf")
+    qs_conf_compat_path = os.path.join(hypr_dir, "quickshell.conf")
+    qs_conf_content = """# ══════════════════════════════════════════════════════════════════════════════
+#  Quickshell Desktop Environment Integration (~/.config/hypr/conf/quickshell.conf)
+# ══════════════════════════════════════════════════════════════════════════════
+
+# ── 1. Autostart Quickshell Desktop Environment ──────────────────────────────
+exec-once = qs
+
+# ── 2. Quickshell IPC Keybindings ─────────────────────────────────────────────
+bind = SUPER, SPACE,         exec, qs ipc call launcher toggle
+bind = SUPER SHIFT, W,       exec, qs ipc call wallpaper toggle
+bind = SUPER SHIFT, E,       exec, qs ipc call emoji toggle
+bind = SUPER, V,             exec, qs ipc call clipboard toggle
+bind = SUPER, P,             exec, qs ipc call powermenu toggle
+bind = SUPER ALT, L,         exec, qs ipc call lockscreen toggle
+bind = SUPER, D,             exec, qs ipc call dashboard toggle
+bind = SUPER, N,             exec, qs ipc call notifCenter toggle
+bind = SUPER, C,             exec, qs ipc call controlCenter toggle
+bind = SUPER, B,             exec, qs ipc call battery toggle
+
+# ── 3. Quickshell Layer Rules (Blur & Transparency) ───────────────────────────
+layerrule = blur, quickshell:bar
+layerrule = blur, quickshell:launcher
+layerrule = ignorezero, quickshell:launcher
+layerrule = blur, quickshell:wallpaperselector
+layerrule = ignorezero, quickshell:wallpaperselector
+layerrule = blur, quickshell:emojipicker
+layerrule = ignorezero, quickshell:emojipicker
+layerrule = blur, quickshell:clipboard
+layerrule = ignorezero, quickshell:clipboard
+layerrule = blur, quickshell:controlcenter
+layerrule = ignorezero, quickshell:controlcenter
+layerrule = blur, quickshell:notifcenter
+layerrule = ignorezero, quickshell:notifcenter
+layerrule = blur, quickshell:dashboard
+layerrule = ignorezero, quickshell:dashboard
+layerrule = blur, quickshell:calendar
+layerrule = ignorezero, quickshell:calendar
+layerrule = blur, quickshell:hud
+layerrule = ignorezero, quickshell:hud
+layerrule = blur, quickshell:traymenu
+layerrule = ignorezero, quickshell:traymenu
+layerrule = blur, quickshell:trayoverflow
+layerrule = ignorezero, quickshell:trayoverflow
+layerrule = blur, quickshell:settings
+layerrule = ignorezero, quickshell:settings
+layerrule = blur, quickshell:battery
+layerrule = ignorezero, quickshell:battery
+layerrule = blur, quickshell:volume
+layerrule = ignorezero, quickshell:volume
+layerrule = blur, quickshell:welcome
+layerrule = ignorezero, quickshell:welcome
+layerrule = blur, quickshell:powermenu
+layerrule = ignorezero, quickshell:powermenu
+layerrule = blur, quickshell:lockscreen
+layerrule = blur, quickshell:osd
+layerrule = ignorezero, quickshell:osd
+layerrule = blur, quickshell:volumeosd
+layerrule = ignorezero, quickshell:volumeosd
+layerrule = blur, quickshell:brightnessosd
+layerrule = ignorezero, quickshell:brightnessosd
+layerrule = blur, ^quickshell:.*$
+layerrule = ignorezero, ^quickshell:.*$
+"""
+    with open(qs_conf_path, "w", encoding="utf-8") as f:
+        f.write(qs_conf_content)
+    with open(qs_conf_compat_path, "w", encoding="utf-8") as f:
+        f.write(qs_conf_content)
+
+    if not os.path.exists(conf_path):
+        with open(conf_path, "w", encoding="utf-8") as f:
+            f.write("""# Hyprland Main Configuration (~/.config/hypr/hyprland.conf)
+source = ~/.config/hypr/conf/autostart.conf
+source = ~/.config/hypr/conf/keybinds.conf
+source = ~/.config/hypr/conf/rules.conf
+source = ~/.config/hypr/conf/quickshell.conf
+""")
+        return {"ok": True, "created_main": True, "conf_dir": conf_dir}
+
+    backup_path = f"{conf_path}.bak.{int(time.time())}"
+    shutil.copy2(conf_path, backup_path)
+
+    with open(conf_path, "r", encoding="utf-8") as f:
+        lines = f.readlines()
+
+    autostart_lines = []
+    keybind_lines = []
+    rule_lines = []
+    main_lines = []
+
+    for line in lines:
+        stripped = line.strip()
+
+        if not stripped or stripped.startswith("#"):
+            if "source = ~/.config/hypr/" in stripped or "quickshell" in stripped:
+                continue
+            main_lines.append(line)
+            continue
+
+        if "qs ipc call" in stripped or "quickshell:" in stripped or stripped.startswith("source = ~/.config/hypr/"):
+            continue
+
+        if stripped.startswith("exec-once") or stripped.startswith("exec "):
+            if re.match(r'^exec-once\s*=\s*qs\b', stripped):
+                continue
+            autostart_lines.append(line)
+        elif stripped.startswith("bind") or stripped.startswith("bindm") or stripped.startswith("bindl") or stripped.startswith("binde"):
+            keybind_lines.append(line)
+        elif stripped.startswith("windowrule") or stripped.startswith("windowrulev2") or stripped.startswith("layerrule") or stripped.startswith("workspacerule"):
+            rule_lines.append(line)
+        else:
+            main_lines.append(line)
+
+    # 2. conf/autostart.conf
+    autostart_path = os.path.join(conf_dir, "autostart.conf")
+    autostart_content = "".join(autostart_lines).strip()
+    if not autostart_content:
+        autostart_content = """exec-once = systemctl enable --now --user hyprpolkitagent
+exec-once = wl-paste --type text --watch cliphist store
+exec-once = wl-paste --type image --watch cliphist store"""
+    with open(autostart_path, "w", encoding="utf-8") as f:
+        f.write(f"""# ══════════════════════════════════════════════════════════════════════════════
+#  Autostart Daemons & Background Services (~/.config/hypr/conf/autostart.conf)
+# ══════════════════════════════════════════════════════════════════════════════
+
+{autostart_content}
+""")
+
+    # 3. conf/keybinds.conf
+    keybinds_path = os.path.join(conf_dir, "keybinds.conf")
+    keybind_content = "".join(keybind_lines).strip()
+    if not keybind_content:
+        keybind_content = """$mainMod = SUPER
+$terminal = kitty
+$fileManager = nautilus
+
+bind = $mainMod, T, exec, $terminal
+bind = $mainMod, E, exec, $fileManager
+bind = $mainMod, Q, killactive,
+bind = $mainMod ALT, F, togglefloating,
+bind = $mainMod SHIFT, F, fullscreen, 0
+bind = $mainMod, J, togglesplit,
+
+bind = $mainMod, 1, workspace, 1
+bind = $mainMod, 2, workspace, 2
+bind = $mainMod, 3, workspace, 3
+bind = $mainMod, 4, workspace, 4
+bind = $mainMod, 5, workspace, 5
+bind = $mainMod, 6, workspace, 6
+bind = $mainMod, 7, workspace, 7
+bind = $mainMod, 8, workspace, 8
+bind = $mainMod, 9, workspace, 9
+bind = $mainMod, 0, workspace, 10
+
+bind = , PRINT, exec, ~/.config/quickshell/scripts/screenshot.sh full
+bind = SHIFT, PRINT, exec, ~/.config/quickshell/scripts/screenshot.sh region
+bind = $mainMod, PRINT, exec, ~/.config/quickshell/scripts/screenshot.sh window"""
+    with open(keybinds_path, "w", encoding="utf-8") as f:
+        f.write(f"""# ══════════════════════════════════════════════════════════════════════════════
+#  Keybindings & Shortcuts (~/.config/hypr/conf/keybinds.conf)
+# ══════════════════════════════════════════════════════════════════════════════
+
+{keybind_content}
+""")
+
+    # 4. conf/rules.conf
+    rules_path = os.path.join(conf_dir, "rules.conf")
+    rules_content = "".join(rule_lines).strip()
+    if not rules_content:
+        rules_content = """windowrulev2 = suppressevent maximize, class:.*
+windowrulev2 = float, title:^(Picture-in-Picture|Picture in picture)$
+windowrulev2 = pin, title:^(Picture-in-Picture|Picture in picture)$
+windowrulev2 = float, class:^(pavucontrol|nm-connection-editor|blueman-manager|swappy)$"""
+    with open(rules_path, "w", encoding="utf-8") as f:
+        f.write(f"""# ══════════════════════════════════════════════════════════════════════════════
+#  Window Rules (~/.config/hypr/conf/rules.conf)
+# ══════════════════════════════════════════════════════════════════════════════
+
+{rules_content}
+""")
+
+    # 5. Clean main hyprland.conf
+    while main_lines and not main_lines[-1].strip():
+        main_lines.pop()
+
+    cleaned_main = "".join(main_lines).strip()
+    final_main = f"""{cleaned_main}
+
+# ── Modular Configuration Sources ────────────────────────────────────────────
+source = ~/.config/hypr/conf/autostart.conf
+source = ~/.config/hypr/conf/keybinds.conf
+source = ~/.config/hypr/conf/rules.conf
+source = ~/.config/hypr/conf/quickshell.conf
+"""
+    with open(conf_path, "w", encoding="utf-8") as f:
+        f.write(final_main)
+
+    return {
+        "ok": True,
+        "backup": backup_path,
+        "conf_dir": conf_dir,
+        "extracted_autostart": len(autostart_lines),
+        "extracted_keybinds": len(keybind_lines),
+        "extracted_rules": len(rule_lines)
+    }
+
+def modularize_niri_kdl():
+    niri_dir = os.path.join(HOME, ".config/niri")
+    conf_dir = os.path.join(niri_dir, "conf")
+    niri_path = os.path.join(niri_dir, "config.kdl")
+    os.makedirs(conf_dir, exist_ok=True)
+
+    qs_kdl_path = os.path.join(conf_dir, "quickshell.kdl")
+    qs_kdl_compat_path = os.path.join(niri_dir, "quickshell.kdl")
+    qs_kdl_content = """// ══════════════════════════════════════════════════════════════════════════════
+//  Quickshell Desktop Environment Integration (~/.config/niri/conf/quickshell.kdl)
+// ══════════════════════════════════════════════════════════════════════════════
+
+// ── 1. Autostart Quickshell Desktop Environment ──────────────────────────────
+spawn-at-startup "qs"
+
+// ── 2. Quickshell IPC Keybindings ─────────────────────────────────────────────
+binds {
+    Mod+Space       { spawn "qs" "ipc" "call" "launcher" "toggle"; }
+    Mod+Shift+W     { spawn "qs" "ipc" "call" "wallpaper" "toggle"; }
+    Mod+Shift+E     { spawn "qs" "ipc" "call" "emoji" "toggle"; }
+    Mod+V           { spawn "qs" "ipc" "call" "clipboard" "toggle"; }
+    Mod+P           { spawn "qs" "ipc" "call" "powermenu" "toggle"; }
+    Mod+Alt+L       { spawn "qs" "ipc" "call" "lockscreen" "toggle"; }
+    Mod+D           { spawn "qs" "ipc" "call" "dashboard" "toggle"; }
+    Mod+N           { spawn "qs" "ipc" "call" "notifCenter" "toggle"; }
+    Mod+C           { spawn "qs" "ipc" "call" "controlCenter" "toggle"; }
+    Mod+B           { spawn "qs" "ipc" "call" "battery" "toggle"; }
+}
+"""
+    with open(qs_kdl_path, "w", encoding="utf-8") as f:
+        f.write(qs_kdl_content)
+    with open(qs_kdl_compat_path, "w", encoding="utf-8") as f:
+        f.write(qs_kdl_content)
+
+    if not os.path.exists(niri_path):
+        with open(niri_path, "w", encoding="utf-8") as f:
+            f.write("""// Niri Main Configuration (~/.config/niri/config.kdl)
+include "conf/autostart.kdl"
+include "conf/keybinds.kdl"
+include "conf/rules.kdl"
+include "conf/quickshell.kdl"
+""")
+        return {"ok": True, "created_main": True, "conf_dir": conf_dir}
+
+    backup_path = f"{niri_path}.bak.{int(time.time())}"
+    shutil.copy2(niri_path, backup_path)
+
+    with open(niri_path, "r", encoding="utf-8") as f:
+        content = f.read()
+
+    # Extract spawn-at-startup
+    spawn_matches = re.findall(r'spawn-at-startup\s+([^\n;]+);?', content)
+    clean_spawns = []
+    for sp in spawn_matches:
+        if '"qs"' in sp or "'qs'" in sp:
+            continue
+        clean_spawns.append(f'spawn-at-startup {sp}')
+
+    # Extract binds
+    binds_match = re.search(r'binds\s*\{([\s\S]*?)\n\}', content)
+    binds_body = binds_match.group(1) if binds_match else ""
+    clean_binds_lines = []
+    if binds_body:
+        for bl in binds_body.splitlines():
+            if "qs ipc call" in bl or '"qs" "ipc" "call"' in bl:
+                continue
+            clean_binds_lines.append(bl)
+
+    # Extract window-rule
+    rule_matches = re.findall(r'window-rule\s*\{([\s\S]*?)\n\}', content)
+
+    # Write conf/autostart.kdl
+    autostart_path = os.path.join(conf_dir, "autostart.kdl")
+    autostart_content = "\n".join(clean_spawns).strip()
+    if not autostart_content:
+        autostart_content = """spawn-at-startup "wl-paste" "--type" "text" "--watch" "cliphist" "store"
+spawn-at-startup "wl-paste" "--type" "image" "--watch" "cliphist" "store\""""
+    with open(autostart_path, "w", encoding="utf-8") as f:
+        f.write(f"""// ══════════════════════════════════════════════════════════════════════════════
+//  Autostart Daemons & Services (~/.config/niri/conf/autostart.kdl)
+// ══════════════════════════════════════════════════════════════════════════════
+
+{autostart_content}
+""")
+
+    # Write conf/keybinds.kdl
+    keybinds_path = os.path.join(conf_dir, "keybinds.kdl")
+    keybinds_content = "\n".join(clean_binds_lines).strip()
+    if not keybinds_content:
+        keybinds_content = """    Mod+Return { spawn "kitty"; }
+    Mod+E      { spawn "nautilus"; }
+    Mod+Q      { close-window; }
+    Mod+F      { fullscreen-window; }
+
+    Mod+Left   { focus-column-left; }
+    Mod+Right  { focus-column-right; }
+    Mod+Up     { focus-window-up; }
+    Mod+Down   { focus-window-down; }
+
+    Mod+1 { focus-workspace 1; }
+    Mod+2 { focus-workspace 2; }
+    Mod+3 { focus-workspace 3; }
+    Mod+4 { focus-workspace 4; }
+    Mod+5 { focus-workspace 5; }
+    Mod+6 { focus-workspace 6; }
+    Mod+7 { focus-workspace 7; }
+    Mod+8 { focus-workspace 8; }
+    Mod+9 { focus-workspace 9; }
+
+    Print       { spawn "sh" "-c" "~/.config/quickshell/scripts/screenshot.sh full"; }
+    Shift+Print { spawn "sh" "-c" "~/.config/quickshell/scripts/screenshot.sh region"; }
+    Mod+Print   { spawn "sh" "-c" "~/.config/quickshell/scripts/screenshot.sh window"; }"""
+    with open(keybinds_path, "w", encoding="utf-8") as f:
+        f.write(f"""// ══════════════════════════════════════════════════════════════════════════════
+//  Keybindings & Shortcuts (~/.config/niri/conf/keybinds.kdl)
+// ══════════════════════════════════════════════════════════════════════════════
+
+binds {{
+{keybinds_content}
+}}
+""")
+
+    # Write conf/rules.kdl
+    rules_path = os.path.join(conf_dir, "rules.kdl")
+    rules_content = "\n\n".join([f"window-rule {{\n{rm.strip()}\n}}" for rm in rule_matches]).strip()
+    if not rules_content:
+        rules_content = """window-rule {
+    match app-id=r#"^(pavucontrol|nm-connection-editor|blueman-manager|swappy)$"#
+    open-floating true
+}
+
+window-rule {
+    match title=r#"^(Picture-in-Picture|Picture in picture)$"#
+    open-floating true
+}"""
+    with open(rules_path, "w", encoding="utf-8") as f:
+        f.write(f"""// ══════════════════════════════════════════════════════════════════════════════
+//  Window & Layout Rules (~/.config/niri/conf/rules.kdl)
+// ══════════════════════════════════════════════════════════════════════════════
+
+{rules_content}
+""")
+
+    # Clean main config.kdl
+    cleaned = content
+    cleaned = re.sub(r'//\s*──\s*Quickshell.*', '', cleaned)
+    cleaned = re.sub(r'include\s+["\'][^"\']*quickshell[^"\']*["\'];?', '', cleaned)
+    cleaned = re.sub(r'include\s+["\']conf/[^"\']*["\'];?', '', cleaned)
+    cleaned = re.sub(r'spawn-at-startup\s+[^\n;]+;?', '', cleaned)
+    cleaned = re.sub(r'binds\s*\{[\s\S]*?\n\}', '', cleaned)
+    cleaned = re.sub(r'window-rule\s*\{[\s\S]*?\n\}', '', cleaned)
+    cleaned = re.sub(r'\n{3,}', '\n\n', cleaned).strip()
+
+    final_kdl = f"""{cleaned}
+
+// ── Modular Configurations ───────────────────────────────────────────────────
+include "conf/autostart.kdl"
+include "conf/keybinds.kdl"
+include "conf/rules.kdl"
+include "conf/quickshell.kdl"
+"""
+    with open(niri_path, "w", encoding="utf-8") as f:
+        f.write(final_kdl)
+
+    return {
+        "ok": True,
+        "backup": backup_path,
+        "conf_dir": conf_dir
+    }
+
+def modularize_compositor(comp_type="auto"):
+    results = {}
+    if comp_type in ["auto", "hypr_lua", "all"]:
+        if comp_type != "auto" or os.path.exists(os.path.join(HOME, ".config/hypr/hyprland.lua")):
+            results["hypr_lua"] = modularize_hypr_lua()
+    if comp_type in ["auto", "hypr_conf", "all"]:
+        if comp_type != "auto" or os.path.exists(os.path.join(HOME, ".config/hypr/hyprland.conf")):
+            results["hypr_conf"] = modularize_hypr_conf()
+    if comp_type in ["auto", "niri", "all"]:
+        if comp_type != "auto" or os.path.exists(os.path.join(HOME, ".config/niri/config.kdl")):
+            results["niri"] = modularize_niri_kdl()
+    return {"ok": True, "results": results}
+
+def main():
+    if len(sys.argv) < 2:
+        print(json.dumps({"ok": False, "error": "Missing command argument"}))
+        sys.exit(1)
+
+    cmd = sys.argv[1]
+    if cmd == "query":
+        data = query_all()
+        print(json.dumps(data))
+    elif cmd == "modularize":
+        target = sys.argv[2] if len(sys.argv) > 2 else "auto"
+        res = modularize_compositor(target)
+        print(json.dumps(res))
+    elif cmd == "binds-list":
+        data = list_keybinds()
+        print(json.dumps(data))
+    elif cmd == "binds-add":
+        import argparse
+        parser = argparse.ArgumentParser()
+        parser.add_argument("--keys", required=True)
+        parser.add_argument("--action", required=True)
+        parser.add_argument("--desc", default="")
+        args = parser.parse_args(sys.argv[2:])
+        res = add_keybind(args.keys, args.action, args.desc)
+        print(json.dumps(res))
+    elif cmd == "binds-update":
+        import argparse
+        parser = argparse.ArgumentParser()
+        parser.add_argument("--line", required=True)
+        parser.add_argument("--keys", required=True)
+        parser.add_argument("--action", required=True)
+        parser.add_argument("--desc", default="")
+        args = parser.parse_args(sys.argv[2:])
+        res = update_keybind(args.line, args.keys, args.action, args.desc)
+        print(json.dumps(res))
+    elif cmd == "binds-delete":
+        import argparse
+        parser = argparse.ArgumentParser()
+        parser.add_argument("--line", required=True)
+        args = parser.parse_args(sys.argv[2:])
+        res = delete_keybind(args.line)
+        print(json.dumps(res))
+    elif cmd == "set":
+        if len(sys.argv) < 4:
+            print(json.dumps({"ok": False, "error": "Usage: set <option> <value>"}))
+            sys.exit(1)
+        opt_name = sys.argv[2]
+        opt_val = sys.argv[3]
+        res = set_option(opt_name, opt_val)
+        print(json.dumps(res))
+    elif cmd == "save":
+        if len(sys.argv) < 3:
+            print(json.dumps({"ok": False, "error": "Usage: save <target_path>"}))
+            sys.exit(1)
+        target = sys.argv[2]
+        res = save_config(target)
+        print(json.dumps(res))
+    elif cmd == "save-b64":
+        if len(sys.argv) < 4:
+            print(json.dumps({"ok": False, "error": "Usage: save-b64 <target_path> <b64_str>"}))
+            sys.exit(1)
+        target = sys.argv[2]
         b64_str = sys.argv[3]
         res = save_config_b64(target, b64_str)
         print(json.dumps(res))
@@ -989,3 +1721,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

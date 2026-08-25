@@ -1,0 +1,6 @@
+// ══════════════════════════════════════════════════════════════════════════════
+//  Autostart Daemons & Services (~/.config/niri/conf/autostart.kdl)
+// ══════════════════════════════════════════════════════════════════════════════
+
+spawn-at-startup "wl-paste" "--type" "text" "--watch" "cliphist" "store"
+spawn-at-startup "wl-paste" "--type" "image" "--watch" "cliphist" "store"

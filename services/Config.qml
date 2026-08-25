@@ -47,6 +47,17 @@ Singleton {
     property string workspaceStyle: "pills"       // "pills" | "numbers" | "dots" | "icons"
     property bool workspaceShowAll: true
 
+    // ── Dashboard & Weather ──────────────────────────────────────────────────
+    property string dashboardWidget: "weather"    // "weather" | "wallpaper" | "both"
+    property string weatherLocationMode: "auto"   // "auto" | "custom"
+    property string weatherCustomCity: ""
+    property string weatherUnit: "celsius"        // "celsius" | "fahrenheit"
+    property bool weatherAutoRefresh: true
+    property bool dashboardShowMetrics: true
+    property bool dashboardShowSpecs: true
+    property bool dashboardShowActions: true
+    property string dashboardMetricsStyle: "cards" // "cards" | "minimal"
+
     // ── Sound & Feedback ─────────────────────────────────────────────────────
     property bool soundFeedback: true
     property bool soundVolumeFeedback: true
@@ -250,6 +261,16 @@ Singleton {
         if (data.clipboardLimit !== undefined) clipboardLimit = Number(data.clipboardLimit)
         if (data.launcherMaxResults !== undefined) launcherMaxResults = Number(data.launcherMaxResults)
 
+        if (data.dashboardWidget !== undefined) dashboardWidget = data.dashboardWidget
+        if (data.weatherLocationMode !== undefined) weatherLocationMode = data.weatherLocationMode
+        if (data.weatherCustomCity !== undefined) weatherCustomCity = String(data.weatherCustomCity)
+        if (data.weatherUnit !== undefined) weatherUnit = data.weatherUnit
+        if (data.weatherAutoRefresh !== undefined) weatherAutoRefresh = Boolean(data.weatherAutoRefresh)
+        if (data.dashboardShowMetrics !== undefined) dashboardShowMetrics = Boolean(data.dashboardShowMetrics)
+        if (data.dashboardShowSpecs !== undefined) dashboardShowSpecs = Boolean(data.dashboardShowSpecs)
+        if (data.dashboardShowActions !== undefined) dashboardShowActions = Boolean(data.dashboardShowActions)
+        if (data.dashboardMetricsStyle !== undefined) dashboardMetricsStyle = data.dashboardMetricsStyle
+
         if (data.firstRunCompleted !== undefined) firstRunCompleted = Boolean(data.firstRunCompleted)
         if (data.lastSettingsTab !== undefined) lastSettingsTab = Number(data.lastSettingsTab)
         if (data.lastSettingsCompSubTab !== undefined) lastSettingsCompSubTab = Number(data.lastSettingsCompSubTab)
@@ -338,6 +359,16 @@ Singleton {
             clipboardLimit: clipboardLimit,
             launcherMaxResults: launcherMaxResults,
 
+            dashboardWidget: dashboardWidget,
+            weatherLocationMode: weatherLocationMode,
+            weatherCustomCity: weatherCustomCity,
+            weatherUnit: weatherUnit,
+            weatherAutoRefresh: weatherAutoRefresh,
+            dashboardShowMetrics: dashboardShowMetrics,
+            dashboardShowSpecs: dashboardShowSpecs,
+            dashboardShowActions: dashboardShowActions,
+            dashboardMetricsStyle: dashboardMetricsStyle,
+
             firstRunCompleted: firstRunCompleted,
             customSettingsVersion: customSettingsVersion
         }
@@ -411,6 +442,16 @@ Singleton {
         batteryLowThreshold = 20
         clipboardLimit = 50
         launcherMaxResults = 8
+
+        dashboardWidget = "weather"
+        weatherLocationMode = "auto"
+        weatherCustomCity = ""
+        weatherUnit = "celsius"
+        weatherAutoRefresh = true
+        dashboardShowMetrics = true
+        dashboardShowSpecs = true
+        dashboardShowActions = true
+        dashboardMetricsStyle = "cards"
 
         firstRunCompleted = true
         saveConfig()
@@ -567,6 +608,28 @@ Singleton {
     function setBatteryLowThreshold(val) { batteryLowThreshold = val; saveConfig() }
     function setClipboardLimit(val) { clipboardLimit = val; saveConfig() }
     function setLauncherMaxResults(val) { launcherMaxResults = val; saveConfig() }
+
+    function setDashboardWidget(val) { dashboardWidget = val; saveConfig() }
+    function setWeatherLocationMode(val) {
+        weatherLocationMode = val
+        saveConfig()
+        if (Services.Weather) Services.Weather.refresh()
+    }
+    function setWeatherCustomCity(val) {
+        weatherCustomCity = val
+        saveConfig()
+        if (Services.Weather) Services.Weather.refresh()
+    }
+    function setWeatherUnit(val) {
+        weatherUnit = val
+        saveConfig()
+        if (Services.Weather) Services.Weather.refresh()
+    }
+    function setWeatherAutoRefresh(val) { weatherAutoRefresh = val; saveConfig() }
+    function setDashboardShowMetrics(val) { dashboardShowMetrics = val; saveConfig() }
+    function setDashboardShowSpecs(val) { dashboardShowSpecs = val; saveConfig() }
+    function setDashboardShowActions(val) { dashboardShowActions = val; saveConfig() }
+    function setDashboardMetricsStyle(val) { dashboardMetricsStyle = val; saveConfig() }
 
     function setFirstRunCompleted(val) { firstRunCompleted = val; saveConfig() }
     function setCornerRadius(radius) {

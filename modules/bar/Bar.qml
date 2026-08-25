@@ -32,10 +32,10 @@ PanelWindow {
     color: "transparent"
     WlrLayershell.layer: WlrLayer.Top
     WlrLayershell.namespace: "quickshell:bar"
-    WlrLayershell.keyboardFocus: (root.showDynamicIsland && dynamicIsland.replyMode) ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
+    WlrLayershell.keyboardFocus: (root.showDynamicIsland && (dynamicIsland.replyMode || dynamicIsland.wallpaperMode)) ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
 
     exclusiveZone: isMinimal ? 30 : (isUnified ? 38 : (isFloating ? 46 : 36))
-    implicitHeight: 160
+    implicitHeight: 220
 
     mask: Region {
         // Base bar clickable region
@@ -48,10 +48,10 @@ PanelWindow {
         // Dynamic Island expanded region (only in islands mode)
         Region {
             readonly property bool isIslandActive: root.showDynamicIsland
-            x: isIslandActive ? ((root.width - (dynamicIsland.expanded ? 400 : Math.max(160, dynamicIsland.calculatedCollapsedWidth + 20))) / 2) : 0
-            y: isIslandActive ? (root.isBottom ? (root.height - (dynamicIsland.expanded ? 160 : root.barHeight)) : 0) : 0
-            width: isIslandActive ? (dynamicIsland.expanded ? 400 : Math.max(160, dynamicIsland.calculatedCollapsedWidth + 20)) : 0
-            height: isIslandActive ? (dynamicIsland.expanded ? 160 : root.barHeight) : 0
+            x: isIslandActive ? ((root.width - (dynamicIsland.expanded ? Math.max(480, dynamicIsland.islandWidth) : Math.max(160, dynamicIsland.calculatedCollapsedWidth + 20))) / 2) : 0
+            y: isIslandActive ? (root.isBottom ? (root.height - (dynamicIsland.expanded ? Math.max(140, dynamicIsland.islandHeight) : root.barHeight)) : 0) : 0
+            width: isIslandActive ? (dynamicIsland.expanded ? Math.max(480, dynamicIsland.islandWidth) : Math.max(160, dynamicIsland.calculatedCollapsedWidth + 20)) : 0
+            height: isIslandActive ? (dynamicIsland.expanded ? Math.max(140, dynamicIsland.islandHeight) : root.barHeight) : 0
         }
     }
 
@@ -158,13 +158,13 @@ PanelWindow {
                     id: statusTray
                     Layout.alignment: Qt.AlignVCenter
 
-                    readonly property real islandRightEdge: (root.width + (root.showDynamicIsland ? dynamicIsland.calculatedCollapsedWidth : 0)) / 2
+                    readonly property real islandRightEdge: (root.width + (root.showDynamicIsland ? (dynamicIsland.expanded ? dynamicIsland.calculatedExpandedWidth : dynamicIsland.calculatedCollapsedWidth) : 0)) / 2
                     readonly property real trayFullLeftEdge: root.width - 12 - statusTray.fullUncollapsedWidth
 
                     collapseNear: root.showDynamicIsland && (dynamicIsland.expanded
                                  || (dynamicIsland.calculatedCollapsedWidth > 180)
                                  || (trayFullLeftEdge <= islandRightEdge + 24))
-                    collapseMore: root.showDynamicIsland && dynamicIsland.expanded && (dynamicIsland.calculatedExpandedWidth >= 320 || dynamicIsland.notifActive || dynamicIsland.replyMode)
+                    collapseMore: root.showDynamicIsland && dynamicIsland.expanded && (dynamicIsland.calculatedExpandedWidth >= 320 || dynamicIsland.notifActive || dynamicIsland.replyMode || dynamicIsland.wallpaperMode)
                 }
             }
         }

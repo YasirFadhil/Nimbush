@@ -92,17 +92,17 @@ RowLayout {
         color: root.getPillBg(volMouse.containsMouse || Services.OverlayManager.volumePanelVisible)
         border.color: root.getPillBorder(volMouse.containsMouse || Services.OverlayManager.volumePanelVisible)
         border.width: root.isMinimal ? 0 : 1
-        opacity: Services.OverlayManager.isLocked ? 0.0 : 1.0
+        opacity: (Services.OverlayManager.isLocked || root.collapseMore) ? 0.0 : 1.0
         visible: (Services.Config ? Services.Config.showVolumeTray : true) && opacity > 0
 
         Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
         Behavior on border.color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
         transform: Translate {
-            x: Services.OverlayManager.isLocked ? 35 : 0
-            Behavior on x { NumberAnimation { duration: 350; easing.type: Services.OverlayManager.isLocked ? Easing.OutCubic : Easing.InCubic } }
+            x: (Services.OverlayManager.isLocked || root.collapseMore) ? 35 : 0
+            Behavior on x { NumberAnimation { duration: 350; easing.type: (Services.OverlayManager.isLocked || root.collapseMore) ? Easing.OutCubic : Easing.InCubic } }
         }
-        Behavior on opacity { NumberAnimation { duration: 350; easing.type: Services.OverlayManager.isLocked ? Easing.OutCubic : Easing.InCubic } }
+        Behavior on opacity { NumberAnimation { duration: 350; easing.type: (Services.OverlayManager.isLocked || root.collapseMore) ? Easing.OutCubic : Easing.InCubic } }
 
         RowLayout {
             id: volLayout

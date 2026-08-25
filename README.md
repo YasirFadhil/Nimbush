@@ -9,8 +9,9 @@ This is a Wayland UI shell built with **Quickshell**, providing status bars, das
 ## Features & Highlights
 
 - **Universal Linux OS Support**: Distro detection for Arch Linux, Debian, Ubuntu, Fedora, NixOS, openSUSE, Gentoo, Void Linux, Alpine Linux, Solus, Manjaro, Pop!_OS, Linux Mint, EndeavourOS, Artix, Kali, SteamOS, and more.
-- **Interactive Emoji Picker**: Integrated directly into the app launcher — type `>E` (or `>E query`) to search, browse, and copy emojis to clipboard with full keyboard navigation and recent usage caching.
-- **Default Wallpaper System**: Ships with **1 clean default wallpaper** (`Wallbler`), plus interactive **Custom Wallpaper** selection via XDG file picker with persistent JSON configuration.
+- **Standalone Wallpaper Selector**: Interactive visual wallpaper selector with live search, custom wallpaper adding, and dynamic theming via `qs ipc call wallpaper toggle` (Super + Shift + W).
+- **Standalone Emoji Picker**: High-performance Unicode emoji search and clipboard inserter with recent usage caching via `qs ipc call emoji toggle` (Super + Shift + E).
+- **Pure App Launcher**: Fast, focused application launcher with instant fuzzy searching via `qs ipc call launcher toggle` (Super + Space).
 - **Dual Compositor Compatibility**: First-class support for **Hyprland** (Lua & Classic `.conf` format) and **Niri** compositors.
 
 ## Supported Linux Distributions
@@ -167,26 +168,29 @@ hl.on("hyprland.start", function ()
 end)
 
 -- Keybindings
-hl.bind(mainMod .. " + SPACE",     hl.dsp.exec_cmd("qs ipc call launcher toggle"))
-hl.bind(mainMod .. " + V",         hl.dsp.exec_cmd("qs ipc call clipboard toggle"))
-hl.bind(mainMod .. " + P",         hl.dsp.exec_cmd("qs ipc call powermenu toggle"))
-hl.bind(mainMod .. " + ALT + L",   hl.dsp.exec_cmd("qs ipc call lockscreen toggle"))
-hl.bind(mainMod .. " + D",         hl.dsp.exec_cmd("qs ipc call dashboard toggle"))
-hl.bind(mainMod .. " + N",         hl.dsp.exec_cmd("qs ipc call notifCenter toggle"))
-hl.bind(mainMod .. " + C",         hl.dsp.exec_cmd("qs ipc call controlCenter toggle"))
-hl.bind(mainMod .. " + B",         hl.dsp.exec_cmd("qs ipc call battery toggle"))
-hl.bind(mainMod .. " + COMMA",     hl.dsp.exec_cmd("qs ipc call settings toggle"))
+hl.bind(mainMod .. " + SPACE",         hl.dsp.exec_cmd("qs ipc call launcher toggle"))
+hl.bind(mainMod .. " + SHIFT + W",     hl.dsp.exec_cmd("qs ipc call wallpaper toggle"))
+hl.bind(mainMod .. " + SHIFT + E",     hl.dsp.exec_cmd("qs ipc call emoji toggle"))
+hl.bind(mainMod .. " + V",             hl.dsp.exec_cmd("qs ipc call clipboard toggle"))
+hl.bind(mainMod .. " + P",             hl.dsp.exec_cmd("qs ipc call powermenu toggle"))
+hl.bind(mainMod .. " + ALT + L",       hl.dsp.exec_cmd("qs ipc call lockscreen toggle"))
+hl.bind(mainMod .. " + D",             hl.dsp.exec_cmd("qs ipc call dashboard toggle"))
+hl.bind(mainMod .. " + N",             hl.dsp.exec_cmd("qs ipc call notifCenter toggle"))
+hl.bind(mainMod .. " + C",             hl.dsp.exec_cmd("qs ipc call controlCenter toggle"))
+hl.bind(mainMod .. " + B",             hl.dsp.exec_cmd("qs ipc call battery toggle"))
 
 -- Layer Rules (Blur & Transparency)
-hl.layer_rule({ match = { namespace = "quickshell:bar" },           blur = true })
-hl.layer_rule({ match = { namespace = "quickshell:launcher" },      blur = true, ignore_alpha = 0 })
-hl.layer_rule({ match = { namespace = "quickshell:clipboard" },     blur = true, ignore_alpha = 0 })
-hl.layer_rule({ match = { namespace = "quickshell:controlcenter" }, blur = true, ignore_alpha = 0 })
-hl.layer_rule({ match = { namespace = "quickshell:notifcenter" },   blur = true, ignore_alpha = 0 })
-hl.layer_rule({ match = { namespace = "quickshell:dashboard" },     blur = true, ignore_alpha = 0 })
-hl.layer_rule({ match = { namespace = "quickshell:calendar" },      blur = true, ignore_alpha = 0 })
-hl.layer_rule({ match = { namespace = "quickshell:hud" },           blur = true, ignore_alpha = 0 })
-hl.layer_rule({ match = { namespace = "^quickshell:.*$" },          blur = true, ignore_alpha = 0 })
+hl.layer_rule({ match = { namespace = "quickshell:bar" },               blur = true })
+hl.layer_rule({ match = { namespace = "quickshell:launcher" },          blur = true, ignore_alpha = 0 })
+hl.layer_rule({ match = { namespace = "quickshell:wallpaperselector" }, blur = true, ignore_alpha = 0 })
+hl.layer_rule({ match = { namespace = "quickshell:emojipicker" },       blur = true, ignore_alpha = 0 })
+hl.layer_rule({ match = { namespace = "quickshell:clipboard" },         blur = true, ignore_alpha = 0 })
+hl.layer_rule({ match = { namespace = "quickshell:controlcenter" },     blur = true, ignore_alpha = 0 })
+hl.layer_rule({ match = { namespace = "quickshell:notifcenter" },       blur = true, ignore_alpha = 0 })
+hl.layer_rule({ match = { namespace = "quickshell:dashboard" },         blur = true, ignore_alpha = 0 })
+hl.layer_rule({ match = { namespace = "quickshell:calendar" },          blur = true, ignore_alpha = 0 })
+hl.layer_rule({ match = { namespace = "quickshell:hud" },               blur = true, ignore_alpha = 0 })
+hl.layer_rule({ match = { namespace = "^quickshell:.*$" },              blur = true, ignore_alpha = 0 })
 ```
 
 #### Option B: Hyprland Classic Configuration (`~/.config/hypr/hyprland.conf`)
@@ -200,20 +204,25 @@ exec-once = wl-paste --type text --watch cliphist store
 exec-once = wl-paste --type image --watch cliphist store
 
 # Keybindings
-bind = $mainMod, SPACE,     exec, qs ipc call launcher toggle
-bind = $mainMod, V,         exec, qs ipc call clipboard toggle
-bind = $mainMod, P,         exec, qs ipc call powermenu toggle
-bind = $mainMod ALT, L,     exec, qs ipc call lockscreen toggle
-bind = $mainMod, D,         exec, qs ipc call dashboard toggle
-bind = $mainMod, N,         exec, qs ipc call notifCenter toggle
-bind = $mainMod, C,         exec, qs ipc call controlCenter toggle
-bind = $mainMod, B,         exec, qs ipc call battery toggle
-bind = $mainMod, COMMA,     exec, qs ipc call settings toggle
+bind = $mainMod, SPACE,         exec, qs ipc call launcher toggle
+bind = $mainMod SHIFT, W,       exec, qs ipc call wallpaper toggle
+bind = $mainMod SHIFT, E,       exec, qs ipc call emoji toggle
+bind = $mainMod, V,             exec, qs ipc call clipboard toggle
+bind = $mainMod, P,             exec, qs ipc call powermenu toggle
+bind = $mainMod ALT, L,         exec, qs ipc call lockscreen toggle
+bind = $mainMod, D,             exec, qs ipc call dashboard toggle
+bind = $mainMod, N,             exec, qs ipc call notifCenter toggle
+bind = $mainMod, C,             exec, qs ipc call controlCenter toggle
+bind = $mainMod, B,             exec, qs ipc call battery toggle
 
 # Layer Rules
 layerrule = blur, quickshell:bar
 layerrule = blur, quickshell:launcher
 layerrule = ignorezero, quickshell:launcher
+layerrule = blur, quickshell:wallpaperselector
+layerrule = ignorezero, quickshell:wallpaperselector
+layerrule = blur, quickshell:emojipicker
+layerrule = ignorezero, quickshell:emojipicker
 layerrule = blur, quickshell:clipboard
 layerrule = ignorezero, quickshell:clipboard
 layerrule = blur, quickshell:controlcenter
@@ -230,20 +239,66 @@ layerrule = ignorezero, quickshell:hud
 
 ---
 
-### 2. Niri Configuration (`~/.config/niri/config.kdl`)
+### 1. Hyprland Modular Configuration Layout
 
+Quickshell includes a fully modular structure that separates autostart, keybinds, rules, and shell integration into dedicated files inside `~/.config/hypr/conf/`:
+
+```text
+~/.config/hypr/
+├── hyprland.lua (or hyprland.conf)  # Main entry point (monitors, animations, look & feel)
+└── conf/
+    ├── autostart.lua               # Background daemons & services
+    ├── keybinds.lua                # General apps, window management & navigation binds
+    ├── rules.lua                   # Window & workspace rules
+    └── quickshell.lua              # Quickshell autostart, IPC shortcuts & layer blur rules
+```
+
+**Loading in `hyprland.lua`:**
+```lua
+local home = os.getenv("HOME") or ""
+local confDir = home .. "/.config/hypr/conf"
+
+local function load_conf(module_name)
+    local module_path = confDir .. "/" .. module_name .. ".lua"
+    if io.open(module_path, "r") then
+        dofile(module_path)
+    end
+end
+
+load_conf("autostart")
+load_conf("keybinds")
+load_conf("rules")
+load_conf("quickshell")
+```
+
+**Loading in `hyprland.conf`:**
+```ini
+source = ~/.config/hypr/conf/autostart.conf
+source = ~/.config/hypr/conf/keybinds.conf
+source = ~/.config/hypr/conf/rules.conf
+source = ~/.config/hypr/conf/quickshell.conf
+```
+
+---
+
+### 2. Niri Modular Configuration Layout (`~/.config/niri/`)
+
+```text
+~/.config/niri/
+├── config.kdl                      # Main entry point (layout, output, input)
+└── conf/
+    ├── autostart.kdl               # Background daemons
+    ├── keybinds.kdl                # Window & workspace shortcuts
+    ├── rules.kdl                   # Window rules
+    └── quickshell.kdl              # Quickshell autostart & IPC keybindings
+```
+
+**Loading in `config.kdl`:**
 ```kdl
-binds {
-    Mod+Space     { spawn "qs" "ipc" "call" "launcher" "toggle"; }
-    Mod+V         { spawn "qs" "ipc" "call" "clipboard" "toggle"; }
-    Mod+P         { spawn "qs" "ipc" "call" "powermenu" "toggle"; }
-    Mod+Alt+L     { spawn "qs" "ipc" "call" "lockscreen" "toggle"; }
-    Mod+D         { spawn "qs" "ipc" "call" "dashboard" "toggle"; }
-    Mod+N         { spawn "qs" "ipc" "call" "notifCenter" "toggle"; }
-    Mod+C         { spawn "qs" "ipc" "call" "controlCenter" "toggle"; }
-    Mod+B         { spawn "qs" "ipc" "call" "battery" "toggle"; }
-    Mod+Comma     { spawn "qs" "ipc" "call" "settings" "toggle"; }
-}
+include "conf/autostart.kdl"
+include "conf/keybinds.kdl"
+include "conf/rules.kdl"
+include "conf/quickshell.kdl"
 ```
 
 ---
@@ -255,12 +310,15 @@ You can trigger shell actions from the terminal or compositor keybindings using 
 | Component | Command |
 |---|---|
 | **App Launcher** | `qs ipc call launcher toggle` |
+| **Wallpaper Selector** | `qs ipc call wallpaper toggle` |
+| **Emoji Picker** | `qs ipc call emoji toggle` |
 | **Clipboard History** | `qs ipc call clipboard toggle` |
 | **Power Menu** | `qs ipc call powermenu toggle` |
 | **Lock Screen** | `qs ipc call lockscreen lock` |
 | **Dashboard** | `qs ipc call dashboard toggle` |
 | **Notification Center** | `qs ipc call notifCenter toggle` |
 | **Control Center** | `qs ipc call controlCenter toggle` |
+| **Settings GUI** | `qs ipc call settings toggle` |
 
 ---
 

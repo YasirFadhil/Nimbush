@@ -7,13 +7,15 @@ spawn-at-startup "wl-paste" "--type" "image" "--watch" "cliphist" "store"
 
 // ── Keybindings ────────────────────────────────────────────────────────────
 binds {
-    Mod+Space { spawn "qs" "ipc" "call" "launcher" "toggle"; }
-    Mod+V     { spawn "qs" "ipc" "call" "clipboard" "toggle"; }
-    Mod+P     { spawn "qs" "ipc" "call" "powermenu" "toggle"; }
-    Mod+L     { spawn "qs" "ipc" "call" "lockscreen" "toggle"; }
-    Mod+D     { spawn "qs" "ipc" "call" "dashboard" "toggle"; }
-    Mod+N     { spawn "qs" "ipc" "call" "notifCenter" "toggle"; }
-    Mod+C     { spawn "qs" "ipc" "call" "controlCenter" "toggle"; }
+    Mod+Space       { spawn "qs" "ipc" "call" "launcher" "toggle"; }
+    Mod+Shift+W     { spawn "qs" "ipc" "call" "wallpaper" "toggle"; }
+    Mod+Shift+E     { spawn "qs" "ipc" "call" "emoji" "toggle"; }
+    Mod+V           { spawn "qs" "ipc" "call" "clipboard" "toggle"; }
+    Mod+P           { spawn "qs" "ipc" "call" "powermenu" "toggle"; }
+    Mod+L           { spawn "qs" "ipc" "call" "lockscreen" "toggle"; }
+    Mod+D           { spawn "qs" "ipc" "call" "dashboard" "toggle"; }
+    Mod+N           { spawn "qs" "ipc" "call" "notifCenter" "toggle"; }
+    Mod+C           { spawn "qs" "ipc" "call" "controlCenter" "toggle"; }
 
     // ── Screenshot Keybindings (Grim + Slurp + Swappy + Quickshell Notification) ─
     Print       { spawn "sh" "-c" "~/.config/quickshell/scripts/screenshot.sh full"; }

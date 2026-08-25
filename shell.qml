@@ -18,6 +18,7 @@ import "modules/settings" as SettingsModule
 import "modules/welcome" as WelcomeModule
 import "modules/battery" as BatteryModule
 import "modules/volume" as VolumeModule
+import "modules/emoji" as EmojiModule
 
 ShellRoot {
     // Native QML wallpaper layer (serves as wallpaper renderer and fallback for swww)
@@ -28,6 +29,8 @@ ShellRoot {
     Notif.Popup {}
     // Osd.PowerOsd {} // Disabled — charging status is now shown in DynamicIsland
     Launcher.Launcher  { id: launcherWindow }
+    // Wallpaper is integrated into Dynamic Island in Bar.qml
+    EmojiModule.EmojiPicker { id: emojiPickerWindow }
     DashboardModule.Dashboard { id: dashboardWindow }
     Clipboard.ClipboardHistory { id: clipboardWindow }
     PowerMenu.PowerMenu { id: powerMenu }
@@ -82,6 +85,8 @@ ShellRoot {
     Connections {
         target: Services.OverlayManager
         function onLauncherToggleRequested() { launcherWindow.toggle() }
+        function onEmojiToggleRequested() { emojiPickerWindow.toggle() }
+        function onEmojiShowRequested() { emojiPickerWindow.show() }
         function onDashboardToggleRequested() { dashboardWindow.toggle() }
         function onSettingsToggleRequested() { settingsWindow.toggle() }
         function onSettingsShowRequested(tabIndex) { settingsWindow.show(tabIndex) }
@@ -154,6 +159,36 @@ ShellRoot {
         function toggle(): void { if (!Services.OverlayManager.isLocked) launcherWindow.toggle() }
         function show():   void { if (!Services.OverlayManager.isLocked) launcherWindow.show() }
         function hide():   void { launcherWindow.hide() }
+    }
+
+    // ── Wallpaper Selector (Integrated in Dynamic Island) ───────────────────
+    IpcHandler {
+        target: "wallpaper"
+        function toggle(): void { if (!Services.OverlayManager.isLocked) Services.OverlayManager.wallpaperToggleRequested() }
+        function show():   void { if (!Services.OverlayManager.isLocked) Services.OverlayManager.wallpaperShowRequested() }
+        function hide():   void { if (!Services.OverlayManager.isLocked) Services.OverlayManager.wallpaperToggleRequested() }
+    }
+
+    IpcHandler {
+        target: "wallpaperSelector"
+        function toggle(): void { if (!Services.OverlayManager.isLocked) Services.OverlayManager.wallpaperToggleRequested() }
+        function show():   void { if (!Services.OverlayManager.isLocked) Services.OverlayManager.wallpaperShowRequested() }
+        function hide():   void { if (!Services.OverlayManager.isLocked) Services.OverlayManager.wallpaperToggleRequested() }
+    }
+
+    // ── Emoji Picker ─────────────────────────────────────────────────────────
+    IpcHandler {
+        target: "emoji"
+        function toggle(): void { if (!Services.OverlayManager.isLocked) emojiPickerWindow.toggle() }
+        function show():   void { if (!Services.OverlayManager.isLocked) emojiPickerWindow.show() }
+        function hide():   void { emojiPickerWindow.hide() }
+    }
+
+    IpcHandler {
+        target: "emojiPicker"
+        function toggle(): void { if (!Services.OverlayManager.isLocked) emojiPickerWindow.toggle() }
+        function show():   void { if (!Services.OverlayManager.isLocked) emojiPickerWindow.show() }
+        function hide():   void { emojiPickerWindow.hide() }
     }
 
     // ── Clipboard ────────────────────────────────────────────────────────────

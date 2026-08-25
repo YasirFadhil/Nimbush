@@ -1,0 +1,13 @@
+// ══════════════════════════════════════════════════════════════════════════════
+//  Window & Layout Rules (~/.config/niri/conf/rules.kdl)
+// ══════════════════════════════════════════════════════════════════════════════
+
+window-rule {
+    match app-id=r#"^(pavucontrol|nm-connection-editor|blueman-manager|swappy)$"#
+    open-floating true
+}
+
+window-rule {
+    match title=r#"^(Picture-in-Picture|Picture in picture)$"#
+    open-floating true
+}

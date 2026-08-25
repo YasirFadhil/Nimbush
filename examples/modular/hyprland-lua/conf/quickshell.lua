@@ -1,20 +1,15 @@
--- Hyprland Lua Configuration (Hyprland 0.55+)
--- Place in ~/.config/hypr/hyprland.lua
+-- ══════════════════════════════════════════════════════════════════════════════
+--  Quickshell Desktop Environment Integration (~/.config/hypr/conf/quickshell.lua)
+-- ══════════════════════════════════════════════════════════════════════════════
 
 local mainMod = "SUPER"
 
--- ── Autostart Quickshell ───────────────────────────────────────────────────
+-- ── 1. Autostart Quickshell Desktop Environment ──────────────────────────────
 hl.on("hyprland.start", function ()
     hl.exec_cmd("qs")
 end)
 
--- ── Clipboard History Daemons ──────────────────────────────────────────────
-hl.on("hyprland.start", function ()
-    hl.exec_cmd("wl-paste --type text --watch cliphist store")
-    hl.exec_cmd("wl-paste --type image --watch cliphist store")
-end)
-
--- ── Quickshell IPC Keybindings ─────────────────────────────────────────────
+-- ── 2. Quickshell IPC Keybindings ─────────────────────────────────────────────
 hl.bind(mainMod .. " + SPACE",         hl.dsp.exec_cmd("qs ipc call launcher toggle"))
 hl.bind(mainMod .. " + SHIFT + W",     hl.dsp.exec_cmd("qs ipc call wallpaper toggle"))
 hl.bind(mainMod .. " + SHIFT + E",     hl.dsp.exec_cmd("qs ipc call emoji toggle"))
@@ -26,12 +21,7 @@ hl.bind(mainMod .. " + N",             hl.dsp.exec_cmd("qs ipc call notifCenter 
 hl.bind(mainMod .. " + C",             hl.dsp.exec_cmd("qs ipc call controlCenter toggle"))
 hl.bind(mainMod .. " + B",             hl.dsp.exec_cmd("qs ipc call battery toggle"))
 
--- ── Screenshot Keybindings (Grim + Slurp + Swappy + Quickshell Notification) ─
-hl.bind("print",               hl.dsp.exec_cmd("~/.config/quickshell/scripts/screenshot.sh full"),   { locked = true })
-hl.bind("SHIFT + print",       hl.dsp.exec_cmd("~/.config/quickshell/scripts/screenshot.sh region"), { locked = true })
-hl.bind(mainMod .. " + print", hl.dsp.exec_cmd("~/.config/quickshell/scripts/screenshot.sh window"), { locked = true })
-
--- ── Layer Rules (Blur & Transparency) ──────────────────────────────────────
+-- ── 3. Quickshell Layer Rules (Blur & Transparency) ───────────────────────────
 hl.layer_rule({ match = { namespace = "quickshell:bar" },               blur = true })
 hl.layer_rule({ match = { namespace = "quickshell:launcher" },          blur = true, ignore_alpha = 0 })
 hl.layer_rule({ match = { namespace = "quickshell:wallpaperselector" }, blur = true, ignore_alpha = 0 })
@@ -44,4 +34,9 @@ hl.layer_rule({ match = { namespace = "quickshell:calendar" },          blur = t
 hl.layer_rule({ match = { namespace = "quickshell:hud" },               blur = true, ignore_alpha = 0 })
 hl.layer_rule({ match = { namespace = "quickshell:traymenu" },          blur = true, ignore_alpha = 0 })
 hl.layer_rule({ match = { namespace = "quickshell:trayoverflow" },      blur = true, ignore_alpha = 0 })
+hl.layer_rule({ match = { namespace = "quickshell:settings" },          blur = true, ignore_alpha = 0 })
+hl.layer_rule({ match = { namespace = "quickshell:battery" },           blur = true, ignore_alpha = 0 })
+hl.layer_rule({ match = { namespace = "quickshell:volume" },            blur = true, ignore_alpha = 0 })
+hl.layer_rule({ match = { namespace = "quickshell:welcome" },           blur = true, ignore_alpha = 0 })
+hl.layer_rule({ match = { namespace = "quickshell:powermenu" },         blur = true, ignore_alpha = 0 })
 hl.layer_rule({ match = { namespace = "^quickshell:.*$" },              blur = true, ignore_alpha = 0 })

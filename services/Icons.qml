@@ -240,4 +240,14 @@ Singleton {
         if (id.includes("youtube") || id.includes("ytm")) return "󰗃"
         return "󰎈"
     }
+
+    // ── Weather & Location ──────────────────────────────────────────────────────
+    readonly property string location:     "\uf041"  // nf-fa-map_marker
+    readonly property string cloud:        "󰖐"       // md-weather_cloudy
+    readonly property string cloudSun:     "󰖕"       // md-weather_partly_cloudy
+    readonly property string cloudRain:    "󰖗"       // md-weather_rainy
+    readonly property string droplet:      "\uf043"  // nf-fa-tint
+    readonly property string wind:         "󰖝"       // md-weather_windy
+    readonly property string snowflake:    "󰖜"       // md-weather_snowy
+    readonly property string thermometer: "\uf2c9"  // nf-fa-thermometer
 }

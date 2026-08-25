@@ -1753,7 +1753,7 @@ FloatingWindow {
 
                         readonly property var allNavTabs: [
                             { id: 0, title: "Appearance",    icon: Services.Icons.palette,       color: "#3b82f6", cat: "Personalization", kw: "appearance theme dark light wallpaper accent color font gtk icon cursor scale radius matugen compositor typography hinting antialiasing" },
-                            { id: 1, title: "Bar & Island",   icon: Services.Icons.controlcenter, color: "#8b5cf6", cat: "Personalization", kw: "bar dynamic island notch workspaces clock date format pills" },
+                            { id: 1, title: "Bar & Island",   icon: Services.Icons.controlcenter, color: "#8b5cf6", cat: "Personalization", kw: "bar dynamic island notch workspaces clock date format pills dashboard weather cuaca widgets metrics hardware" },
                             { id: 2, title: "Notifications",  icon: Services.Icons.bell,          color: "#f97316", cat: "Personalization", kw: "notifications dnd do not disturb timeout retention banner history" },
                             { id: 3, title: "Sound & Audio",  icon: Services.Icons.speaker,       color: "#ec4899", cat: "Personalization", kw: "sound audio volume feedback clicks effects mute" },
                             { id: 4, title: "Lock & Power",   icon: Services.Icons.power,         color: "#ef4444", cat: "System",          kw: "lock screen power battery sleep timeout auth media clock blur" },
@@ -2914,6 +2914,162 @@ FloatingWindow {
                                     title: "Clock & Calendar Pill"
                                     checked: Services.Config ? Services.Config.showClockTray : true
                                     onToggled: (st) => { if (Services.Config) Services.Config.setShowClockTray(st) }
+                                }
+                            }
+
+                            SettingsSection {
+                                title: "Dashboard & Weather Widgets"
+                                icon: Services.Icons.dashboard || Services.Icons.cloud
+
+                                SettingsRow {
+                                    title: "Dashboard Main Widget"
+                                    subtitle: "Primary module displayed in the dashboard panel"
+
+                                    SettingsDropdown {
+                                        currentValue: Services.Config ? Services.Config.dashboardWidget : "weather"
+                                        model: [
+                                            { id: "weather",   label: "Live Weather Card" },
+                                            { id: "wallpaper", label: "Wallpaper Strip" },
+                                            { id: "both",      label: "Both (Tabbed Switcher)" }
+                                        ]
+                                        onSelected: (val) => { if (Services.Config) Services.Config.setDashboardWidget(val) }
+                                    }
+                                }
+
+                                SettingsDivider {}
+
+                                SettingsRow {
+                                    title: "Weather Location Mode"
+                                    subtitle: "Auto-detect location or enter custom city / coordinates"
+
+                                    SettingsDropdown {
+                                        currentValue: Services.Config ? Services.Config.weatherLocationMode : "auto"
+                                        model: [
+                                            { id: "auto",   label: "Auto (IP Geolocation)" },
+                                            { id: "custom", label: "Custom City / Coordinates" }
+                                        ]
+                                        onSelected: (val) => { if (Services.Config) Services.Config.setWeatherLocationMode(val) }
+                                    }
+                                }
+
+                                SettingsDivider {
+                                    visible: Services.Config && Services.Config.weatherLocationMode === "custom"
+                                }
+
+                                SettingsRow {
+                                    visible: Services.Config && Services.Config.weatherLocationMode === "custom"
+                                    title: "Custom City or Coordinates"
+                                    subtitle: "City name (e.g. Jakarta) or GPS coordinates (e.g. -7.55, 110.82)"
+
+                                    RowLayout {
+                                        spacing: 6
+
+                                        Rectangle {
+                                            width: 195
+                                            height: 30
+                                            radius: 6
+                                            color: Services.Theme.isDark ? "#121216" : "#f1f5f9"
+                                            border.color: cityInput.activeFocus ? Services.Theme.accent : (Services.Theme.isDark ? "#2a2a34" : "#cbd5e1")
+                                            border.width: 1
+
+                                            RowLayout {
+                                                anchors.fill: parent
+                                                anchors.margins: 6
+                                                spacing: 4
+
+                                                TextInput {
+                                                    id: cityInput
+                                                    Layout.fillWidth: true
+                                                    text: Services.Config ? Services.Config.weatherCustomCity : ""
+                                                    font.pixelSize: 11
+                                                    color: Services.Theme.textPrimary
+                                                    selectByMouse: true
+                                                    clip: true
+                                                    onAccepted: {
+                                                        if (Services.Config) Services.Config.setWeatherCustomCity(cityInput.text)
+                                                    }
+
+                                                    Text {
+                                                        visible: cityInput.text.length === 0
+                                                        text: "City or lat, lon..."
+                                                        font.pixelSize: 11
+                                                        color: Services.Theme.textDisabled
+                                                        anchors.verticalCenter: parent.verticalCenter
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        Rectangle {
+                                            width: 52
+                                            height: 30
+                                            radius: 6
+                                            color: applyCityMouse.containsMouse ? Services.Theme.bgHover : Services.Theme.surfaceVariant
+                                            border.color: Services.Theme.border
+                                            border.width: 1
+
+                                            Text {
+                                                anchors.centerIn: parent
+                                                text: "Apply"
+                                                font.pixelSize: 10
+                                                font.weight: Font.Medium
+                                                color: Services.Theme.accent
+                                            }
+
+                                            MouseArea {
+                                                id: applyCityMouse
+                                                anchors.fill: parent
+                                                hoverEnabled: true
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: {
+                                                    if (Services.Config) Services.Config.setWeatherCustomCity(cityInput.text)
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                SettingsDivider {}
+
+                                SettingsRow {
+                                    title: "Temperature Unit"
+                                    subtitle: "Unit scale for weather readings"
+
+                                    SettingsDropdown {
+                                        currentValue: Services.Config ? Services.Config.weatherUnit : "celsius"
+                                        model: [
+                                            { id: "celsius",    label: "Celsius (°C)" },
+                                            { id: "fahrenheit", label: "Fahrenheit (°F)" }
+                                        ]
+                                        onSelected: (val) => { if (Services.Config) Services.Config.setWeatherUnit(val) }
+                                    }
+                                }
+
+                                SettingsDivider {}
+
+                                SettingsSwitch {
+                                    title: "Hardware Resource Monitors"
+                                    subtitle: "Show CPU, RAM, Disk & Temperature meters in Dashboard"
+                                    checked: Services.Config ? Services.Config.dashboardShowMetrics : true
+                                    onToggled: (st) => { if (Services.Config) Services.Config.setDashboardShowMetrics(st) }
+                                }
+
+                                SettingsDivider {}
+
+                                SettingsSwitch {
+                                    title: "System Specifications Bar"
+                                    subtitle: "Show Uptime, Kernel, Shell & Battery capsule bar"
+                                    checked: Services.Config ? Services.Config.dashboardShowSpecs : true
+                                    onToggled: (st) => { if (Services.Config) Services.Config.setDashboardShowSpecs(st) }
+                                }
+
+                                SettingsDivider {}
+
+                                SettingsSwitch {
+                                    title: "Quick Session Actions"
+                                    subtitle: "Show Lock, Reload, and Power buttons in Dashboard"
+                                    checked: Services.Config ? Services.Config.dashboardShowActions : true
+                                    onToggled: (st) => { if (Services.Config) Services.Config.setDashboardShowActions(st) }
                                 }
                             }
                         }
@@ -5607,111 +5763,84 @@ FloatingWindow {
                         }
 
                         // ═════════════════════════════════════════════
-                        // TAB 8: ABOUT & SYSTEM INFORMATION (Rich Branded Glass)
+                        // ═════════════════════════════════════════════
+                        // TAB 8: ABOUT & SYSTEM INFORMATION (Calm, Subtle & Minimalist)
                         // ═════════════════════════════════════════════
                         ColumnLayout {
                             id: tab8
                             Layout.fillWidth: true
-                            spacing: 16
+                            spacing: 12
 
-                            // ── Hero Branding Glass Card ──────────────────────────
+                            // ── Hero Branding Card (Subtle & Calm) ────────────────
                             Rectangle {
                                 Layout.fillWidth: true
-                                height: 160
-                                radius: Services.Theme.radiusLg || 14
+                                height: 88
+                                radius: Services.Theme.radiusSm || 8
                                 color: Services.Theme.surfaceVariant
-                                border.color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.40)
+                                border.color: Services.Theme.border
                                 border.width: 1
-
-                                // Radial / Linear Glass Sheen
-                                Rectangle {
-                                    anchors.fill: parent
-                                    radius: parent.radius
-                                    gradient: Gradient {
-                                        orientation: Gradient.Horizontal
-                                        GradientStop { position: 0.0; color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.18) }
-                                        GradientStop { position: 0.45; color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.04) }
-                                        GradientStop { position: 1.0; color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.12) }
-                                    }
-                                }
-
-                                // Top Specular Shine Line
-                                Rectangle {
-                                    anchors.top: parent.top; anchors.left: parent.left; anchors.right: parent.right
-                                    anchors.leftMargin: 12; anchors.rightMargin: 12; anchors.topMargin: 1
-                                    height: 1; radius: 0.5
-                                    color: Qt.rgba(1, 1, 1, 0.35)
-                                }
 
                                 RowLayout {
                                     anchors.fill: parent
-                                    anchors.margins: 20
-                                    spacing: 18
+                                    anchors.leftMargin: 16
+                                    anchors.rightMargin: 16
+                                    anchors.topMargin: 12
+                                    anchors.bottomMargin: 12
+                                    spacing: 14
 
-                                    // Grand Glowing Logo Container
+                                    // Subtle Logo Container
                                     Rectangle {
-                                        Layout.preferredWidth: 80
-                                        Layout.preferredHeight: 80
+                                        Layout.preferredWidth: 46
+                                        Layout.preferredHeight: 46
                                         Layout.alignment: Qt.AlignVCenter
-                                        radius: 20
-                                        color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.22)
-                                        border.color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.55)
-                                        border.width: 1.5
-
-                                        // Ambient Logo Glow
-                                        Rectangle {
-                                            anchors.centerIn: parent
-                                            width: parent.width + 12
-                                            height: parent.height + 12
-                                            radius: 26
-                                            color: "transparent"
-                                            border.color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.18)
-                                            border.width: 1
-                                        }
+                                        radius: 10
+                                        color: Services.Theme.bgElevated
+                                        border.color: Services.Theme.border
+                                        border.width: 1
 
                                         Text {
                                             anchors.centerIn: parent
                                             text: (Services.OsInfo && Services.OsInfo.logoGlyph) ? Services.OsInfo.logoGlyph : (Services.Icons.sparkle || "󰀉")
                                             font.family: Services.Theme.fontSymbols
-                                            font.pixelSize: 42
+                                            font.pixelSize: 22
                                             color: Services.Theme.accent
                                         }
                                     }
 
                                     // Suite Information
                                     ColumnLayout {
-                                        spacing: 4
+                                        spacing: 2
                                         Layout.alignment: Qt.AlignVCenter
 
                                         RowLayout {
-                                            spacing: 8
+                                            spacing: 6
                                             Text {
                                                 text: "Quickshell Desktop"
-                                                font.pixelSize: 18
-                                                font.weight: Font.Bold
+                                                font.pixelSize: 14
+                                                font.weight: Font.DemiBold
                                                 color: Services.Theme.textPrimary
                                             }
                                             Rectangle {
-                                                height: 20
-                                                implicitWidth: qsVerTxt.implicitWidth + 10
-                                                radius: 10
-                                                color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.20)
-                                                border.color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.50)
+                                                height: 18
+                                                implicitWidth: qsVerTxt.implicitWidth + 8
+                                                radius: 4
+                                                color: Services.Theme.bgElevated
+                                                border.color: Services.Theme.border
                                                 border.width: 1
                                                 Text {
                                                     id: qsVerTxt
                                                     anchors.centerIn: parent
-                                                    text: "v1.2 Liquid Glass"
-                                                    font.pixelSize: 8
-                                                    font.weight: Font.Bold
-                                                    color: Services.Theme.accent
+                                                    text: "v1.2"
+                                                    font.pixelSize: 9
+                                                    font.weight: Font.Medium
+                                                    color: Services.Theme.textSecondary
                                                 }
                                             }
                                         }
 
                                         Text {
                                             text: "Crafted with Qt 6, QML & Wayland LayerShell protocols."
-                                            font.pixelSize: 11
+                                            font.pixelSize: 10
                                             color: Services.Theme.textSecondary
                                         }
 
@@ -5731,30 +5860,31 @@ FloatingWindow {
                             GridLayout {
                                 Layout.fillWidth: true
                                 columns: 2
-                                rowSpacing: 10
-                                columnSpacing: 10
+                                rowSpacing: 8
+                                columnSpacing: 8
 
                                 // Tile 1: OS Distro
                                 Rectangle {
                                     Layout.fillWidth: true
-                                    height: 68
-                                    radius: 10
+                                    height: 50
+                                    radius: 6
                                     color: Services.Theme.surfaceVariant
-                                    border.color: Services.Theme.border; border.width: 1
+                                    border.color: Services.Theme.border
+                                    border.width: 1
 
                                     RowLayout {
-                                        anchors.fill: parent; anchors.margins: 12; spacing: 12
+                                        anchors.fill: parent; anchors.leftMargin: 10; anchors.rightMargin: 10; spacing: 10
                                         Rectangle {
-                                            Layout.preferredWidth: 36; Layout.preferredHeight: 36; radius: 8
-                                            color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.12)
-                                            border.color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.3)
+                                            Layout.preferredWidth: 28; Layout.preferredHeight: 28; radius: 5
+                                            color: Services.Theme.bgElevated
+                                            border.color: Services.Theme.border
                                             border.width: 1
-                                            Text { anchors.centerIn: parent; text: (Services.OsInfo && Services.OsInfo.logoGlyph) ? Services.OsInfo.logoGlyph : "󰌽"; font.family: Services.Theme.fontSymbols; font.pixelSize: 18; color: Services.Theme.accent }
+                                            Text { anchors.centerIn: parent; text: (Services.OsInfo && Services.OsInfo.logoGlyph) ? Services.OsInfo.logoGlyph : "󰌽"; font.family: Services.Theme.fontSymbols; font.pixelSize: 13; color: Services.Theme.textSecondary }
                                         }
                                         ColumnLayout {
-                                            spacing: 2; Layout.fillWidth: true
-                                            Text { text: "Distribution"; font.pixelSize: 9; color: Services.Theme.textDisabled }
-                                            Text { text: Services.OsInfo.distroName || "Linux"; font.pixelSize: 12; font.weight: Font.DemiBold; color: Services.Theme.textPrimary; elide: Text.ElideRight; Layout.fillWidth: true }
+                                            spacing: 1; Layout.fillWidth: true
+                                            Text { text: "Distribution"; font.pixelSize: 8; font.weight: Font.Bold; color: Services.Theme.textDisabled }
+                                            Text { text: Services.OsInfo.distroName || "Linux"; font.pixelSize: 11; font.weight: Font.Medium; color: Services.Theme.textPrimary; elide: Text.ElideRight; Layout.fillWidth: true }
                                         }
                                     }
                                 }
@@ -5762,24 +5892,25 @@ FloatingWindow {
                                 // Tile 2: Kernel
                                 Rectangle {
                                     Layout.fillWidth: true
-                                    height: 68
-                                    radius: 10
+                                    height: 50
+                                    radius: 6
                                     color: Services.Theme.surfaceVariant
-                                    border.color: Services.Theme.border; border.width: 1
+                                    border.color: Services.Theme.border
+                                    border.width: 1
 
                                     RowLayout {
-                                        anchors.fill: parent; anchors.margins: 12; spacing: 12
+                                        anchors.fill: parent; anchors.leftMargin: 10; anchors.rightMargin: 10; spacing: 10
                                         Rectangle {
-                                            Layout.preferredWidth: 36; Layout.preferredHeight: 36; radius: 8
-                                            color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.12)
-                                            border.color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.3)
+                                            Layout.preferredWidth: 28; Layout.preferredHeight: 28; radius: 5
+                                            color: Services.Theme.bgElevated
+                                            border.color: Services.Theme.border
                                             border.width: 1
-                                            Text { anchors.centerIn: parent; text: "󰌽"; font.family: Services.Theme.fontSymbols; font.pixelSize: 18; color: Services.Theme.accent }
+                                            Text { anchors.centerIn: parent; text: "󰌽"; font.family: Services.Theme.fontSymbols; font.pixelSize: 13; color: Services.Theme.textSecondary }
                                         }
                                         ColumnLayout {
-                                            spacing: 2; Layout.fillWidth: true
-                                            Text { text: "Linux Kernel"; font.pixelSize: 9; color: Services.Theme.textDisabled }
-                                            Text { text: Services.OsInfo.kernel || "-"; font.family: Services.Theme.fontMono; font.pixelSize: 11; font.weight: Font.Medium; color: Services.Theme.textPrimary; elide: Text.ElideRight; Layout.fillWidth: true }
+                                            spacing: 1; Layout.fillWidth: true
+                                            Text { text: "Linux Kernel"; font.pixelSize: 8; font.weight: Font.Bold; color: Services.Theme.textDisabled }
+                                            Text { text: Services.OsInfo.kernel || "-"; font.family: Services.Theme.fontMono; font.pixelSize: 10.5 ? 10 : 10; font.weight: Font.Medium; color: Services.Theme.textPrimary; elide: Text.ElideRight; Layout.fillWidth: true }
                                         }
                                     }
                                 }
@@ -5787,31 +5918,25 @@ FloatingWindow {
                                 // Tile 3: Compositor
                                 Rectangle {
                                     Layout.fillWidth: true
-                                    height: 68
-                                    radius: 10
+                                    height: 50
+                                    radius: 6
                                     color: Services.Theme.surfaceVariant
-                                    border.color: Services.Theme.border; border.width: 1
+                                    border.color: Services.Theme.border
+                                    border.width: 1
 
                                     RowLayout {
-                                        anchors.fill: parent; anchors.margins: 12; spacing: 12
+                                        anchors.fill: parent; anchors.leftMargin: 10; anchors.rightMargin: 10; spacing: 10
                                         Rectangle {
-                                            Layout.preferredWidth: 36; Layout.preferredHeight: 36; radius: 8
-                                            color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.12)
-                                            border.color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.3)
+                                            Layout.preferredWidth: 28; Layout.preferredHeight: 28; radius: 5
+                                            color: Services.Theme.bgElevated
+                                            border.color: Services.Theme.border
                                             border.width: 1
-
-                                            Text {
-                                                anchors.centerIn: parent
-                                                text: Services.Icons.display
-                                                font.family: Services.Theme.fontSymbols
-                                                font.pixelSize: 18
-                                                color: Services.Theme.accent
-                                            }
+                                            Text { anchors.centerIn: parent; text: Services.Icons.display; font.family: Services.Theme.fontSymbols; font.pixelSize: 13; color: Services.Theme.textSecondary }
                                         }
                                         ColumnLayout {
-                                            spacing: 2; Layout.fillWidth: true
-                                            Text { text: "Window Compositor"; font.pixelSize: 9; color: Services.Theme.textDisabled }
-                                            Text { text: (Services.Compositor ? Services.Compositor.activeDisplayName : "Wayland") + " (" + (Services.Compositor && Services.Compositor.configType ? Services.Compositor.configType.toUpperCase() : "CONF") + ")"; font.pixelSize: 12; font.weight: Font.DemiBold; color: Services.Theme.textPrimary; elide: Text.ElideRight; Layout.fillWidth: true }
+                                            spacing: 1; Layout.fillWidth: true
+                                            Text { text: "Window Compositor"; font.pixelSize: 8; font.weight: Font.Bold; color: Services.Theme.textDisabled }
+                                            Text { text: (Services.Compositor ? Services.Compositor.activeDisplayName : "Wayland") + " (" + (Services.Compositor && Services.Compositor.configType ? Services.Compositor.configType.toUpperCase() : "CONF") + ")"; font.pixelSize: 11; font.weight: Font.Medium; color: Services.Theme.textPrimary; elide: Text.ElideRight; Layout.fillWidth: true }
                                         }
                                     }
                                 }
@@ -5819,24 +5944,25 @@ FloatingWindow {
                                 // Tile 4: Host & User
                                 Rectangle {
                                     Layout.fillWidth: true
-                                    height: 68
-                                    radius: 10
+                                    height: 50
+                                    radius: 6
                                     color: Services.Theme.surfaceVariant
-                                    border.color: Services.Theme.border; border.width: 1
+                                    border.color: Services.Theme.border
+                                    border.width: 1
 
                                     RowLayout {
-                                        anchors.fill: parent; anchors.margins: 12; spacing: 12
+                                        anchors.fill: parent; anchors.leftMargin: 10; anchors.rightMargin: 10; spacing: 10
                                         Rectangle {
-                                            Layout.preferredWidth: 36; Layout.preferredHeight: 36; radius: 8
-                                            color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.12)
-                                            border.color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.3)
+                                            Layout.preferredWidth: 28; Layout.preferredHeight: 28; radius: 5
+                                            color: Services.Theme.bgElevated
+                                            border.color: Services.Theme.border
                                             border.width: 1
-                                            Text { anchors.centerIn: parent; text: Services.Icons.user || "󰀉"; font.family: Services.Theme.fontSymbols; font.pixelSize: 18; color: Services.Theme.accent }
+                                            Text { anchors.centerIn: parent; text: Services.Icons.user || "󰀉"; font.family: Services.Theme.fontSymbols; font.pixelSize: 13; color: Services.Theme.textSecondary }
                                         }
                                         ColumnLayout {
-                                            spacing: 2; Layout.fillWidth: true
-                                            Text { text: "Host & Shell"; font.pixelSize: 9; color: Services.Theme.textDisabled }
-                                            Text { text: (Services.OsInfo.username || "user") + "@" + (Services.OsInfo.hostname || "local") + " · " + (Services.OsInfo.shellName || "sh"); font.pixelSize: 12; font.weight: Font.DemiBold; color: Services.Theme.textPrimary; elide: Text.ElideRight; Layout.fillWidth: true }
+                                            spacing: 1; Layout.fillWidth: true
+                                            Text { text: "Host & Shell"; font.pixelSize: 8; font.weight: Font.Bold; color: Services.Theme.textDisabled }
+                                            Text { text: (Services.OsInfo.username || "user") + "@" + (Services.OsInfo.hostname || "local") + " · " + (Services.OsInfo.shellName || "sh"); font.pixelSize: 11; font.weight: Font.Medium; color: Services.Theme.textPrimary; elide: Text.ElideRight; Layout.fillWidth: true }
                                         }
                                     }
                                 }
@@ -5856,15 +5982,15 @@ FloatingWindow {
                                     Rectangle {
                                         property bool justCopied: false
                                         Layout.fillWidth: true
-                                        height: 36
-                                        radius: 6
-                                        color: justCopied ? Qt.rgba(0.2, 0.8, 0.3, 0.2) : (copyMouse.containsMouse ? Qt.rgba(1, 1, 1, 0.08) : Services.Theme.bgElevated)
+                                        height: 32
+                                        radius: 5
+                                        color: justCopied ? Qt.rgba(0.2, 0.8, 0.3, 0.15) : (copyMouse.containsMouse ? Services.Theme.bgHover : Services.Theme.bgElevated)
                                         border.color: justCopied ? (Services.Theme.success || "#10b981") : Services.Theme.border
                                         border.width: 1
 
                                         RowLayout {
                                             anchors.centerIn: parent; spacing: 6
-                                            Text { text: parent.parent.justCopied ? (Services.Icons.check || "✓") : (Services.Icons.clipboard || "󰅌"); font.family: Services.Theme.fontSymbols; font.pixelSize: 11; color: parent.parent.justCopied ? (Services.Theme.success || "#10b981") : Services.Theme.accent }
+                                            Text { text: parent.parent.justCopied ? (Services.Icons.check || "✓") : (Services.Icons.clipboard || "󰅌"); font.family: Services.Theme.fontSymbols; font.pixelSize: 10; color: parent.parent.justCopied ? (Services.Theme.success || "#10b981") : Services.Theme.textSecondary }
                                             Text { text: parent.parent.justCopied ? "Copied to Clipboard!" : "Copy System Specs"; font.pixelSize: 10; font.weight: Font.Medium; color: parent.parent.justCopied ? (Services.Theme.success || "#10b981") : Services.Theme.textPrimary }
                                         }
 
@@ -5877,7 +6003,7 @@ FloatingWindow {
                                         MouseArea {
                                             id: copyMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
                                             onClicked: {
-                                                const specs = `OS: ${Services.OsInfo.distroName || "Linux"}\nKernel: ${Services.OsInfo.kernel || "-"}\nHost: ${Services.OsInfo.hostname || "local"}\nCompositor: ${Services.Compositor ? Services.Compositor.activeDisplayName : "Wayland"}\nShell: ${Services.OsInfo.shellName || "sh"}\nDesktop: Quickshell v1.2 Liquid Glass`
+                                                const specs = `OS: ${Services.OsInfo.distroName || "Linux"}\nKernel: ${Services.OsInfo.kernel || "-"}\nHost: ${Services.OsInfo.hostname || "local"}\nCompositor: ${Services.Compositor ? Services.Compositor.activeDisplayName : "Wayland"}\nShell: ${Services.OsInfo.shellName || "sh"}\nDesktop: Quickshell v1.2`
                                                 if (Services.Clipboard) Services.Clipboard.copyText(specs)
                                                 parent.justCopied = true
                                                 copySpecsTimer.restart()
@@ -5888,16 +6014,16 @@ FloatingWindow {
                                     // Open Terminal Button
                                     Rectangle {
                                         Layout.fillWidth: true
-                                        height: 36
-                                        radius: 6
-                                        color: termMouse.containsMouse ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.22) : Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.10)
-                                        border.color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.40)
+                                        height: 32
+                                        radius: 5
+                                        color: termMouse.containsMouse ? Services.Theme.bgHover : Services.Theme.bgElevated
+                                        border.color: Services.Theme.border
                                         border.width: 1
 
                                         RowLayout {
                                             anchors.centerIn: parent; spacing: 6
-                                            Text { text: Services.Icons.terminal || "󰞷"; font.family: Services.Theme.fontSymbols; font.pixelSize: 11; color: Services.Theme.accent }
-                                            Text { text: "Open Terminal"; font.pixelSize: 10; font.weight: Font.Bold; color: Services.Theme.accent }
+                                            Text { text: Services.Icons.terminal || "󰞷"; font.family: Services.Theme.fontSymbols; font.pixelSize: 10; color: Services.Theme.textSecondary }
+                                            Text { text: "Open Terminal"; font.pixelSize: 10; font.weight: Font.Medium; color: Services.Theme.textPrimary }
                                         }
 
                                         MouseArea {

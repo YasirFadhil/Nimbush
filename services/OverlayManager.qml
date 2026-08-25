@@ -23,6 +23,30 @@ Singleton {
     signal settingsShowRequested(var tabIndex)
     signal welcomeToggleRequested()
     signal welcomeShowRequested()
+    signal wallpaperToggleRequested()
+    signal wallpaperShowRequested()
+    signal emojiToggleRequested()
+    signal emojiShowRequested()
+
+    function openWallpaper() {
+        closeAllExcept("wallpaper")
+        wallpaperShowRequested()
+    }
+
+    function toggleWallpaper() {
+        if (isLocked) return
+        wallpaperToggleRequested()
+    }
+
+    function openEmoji() {
+        closeAllExcept("emoji")
+        emojiShowRequested()
+    }
+
+    function toggleEmoji() {
+        if (isLocked) return
+        emojiToggleRequested()
+    }
 
     function openSettings(tabIndex) {
         closeAllExcept("settings")

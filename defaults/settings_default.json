@@ -42,6 +42,15 @@
   "lockscreenShowUptime": true,
   "clipboardLimit": 50,
   "launcherMaxResults": 8,
+  "dashboardWidget": "weather",
+  "weatherLocationMode": "auto",
+  "weatherCustomCity": "",
+  "weatherUnit": "celsius",
+  "weatherAutoRefresh": true,
+  "dashboardShowMetrics": true,
+  "dashboardShowSpecs": true,
+  "dashboardShowActions": true,
+  "dashboardMetricsStyle": "cards",
   "firstRunCompleted": false,
   "customSettingsVersion": 2
 }
