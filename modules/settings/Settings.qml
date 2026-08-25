@@ -31,6 +31,7 @@ FloatingWindow {
     property string keyCategory: "all"
     property string sidebarSearchQuery: ""
     property bool isAddingKeybind: false
+    property var editingBindId: ""
     property int editingBindLine: -1
     property string formKeys: ""
     property string formAction: ""
@@ -5273,7 +5274,7 @@ FloatingWindow {
                                             ? Services.Theme.bgDeep
                                             : (itemMouse.containsMouse ? Qt.rgba(1, 1, 1, 0.035) : "transparent")
 
-                                        readonly property bool isEditingThis: rootWindow.editingBindLine === modelData.startLine
+                                        readonly property bool isEditingThis: rootWindow.editingBindId === (modelData.id || modelData.startLine)
                                         property bool isConfirmingDelete: false
                                         property bool justCopied: false
 
@@ -5371,7 +5372,7 @@ FloatingWindow {
                                                 }
 
                                                 Text {
-                                                    text: (bindItemRoot.modelData.action || "No action") + "  •  Line " + bindItemRoot.modelData.startLine + (bindItemRoot.modelData.opts ? " (" + bindItemRoot.modelData.opts + ")" : "")
+                                                    text: (bindItemRoot.modelData.action || "No action") + "  •  " + (bindItemRoot.modelData.fileName ? bindItemRoot.modelData.fileName + " · Line " + bindItemRoot.modelData.startLine : "Line " + bindItemRoot.modelData.startLine) + (bindItemRoot.modelData.opts ? " (" + bindItemRoot.modelData.opts + ")" : "")
                                                     font.family: Services.Theme.fontMono
                                                     font.pixelSize: 9
                                                     color: Services.Theme.textDisabled
@@ -5498,6 +5499,7 @@ FloatingWindow {
                                                     MouseArea {
                                                         id: edMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
                                                         onClicked: {
+                                                            rootWindow.editingBindId = (bindItemRoot.modelData.id || bindItemRoot.modelData.startLine)
                                                             rootWindow.editingBindLine = bindItemRoot.modelData.startLine
                                                             rootWindow.formKeys = bindItemRoot.modelData.keys
                                                             rootWindow.formAction = bindItemRoot.modelData.action
@@ -5575,7 +5577,7 @@ FloatingWindow {
                                             RowLayout {
                                                 Layout.fillWidth: true
                                                 spacing: 6
-                                                Text { text: "Edit Shortcut  ·  Line " + bindItemRoot.modelData.startLine; font.pixelSize: 11; font.weight: Font.Bold; color: Services.Theme.accent }
+                                                Text { text: "Edit Shortcut  ·  " + (bindItemRoot.modelData.fileName ? bindItemRoot.modelData.fileName + " : Line " : "Line ") + bindItemRoot.modelData.startLine; font.pixelSize: 11; font.weight: Font.Bold; color: Services.Theme.accent }
                                                 Item { Layout.fillWidth: true }
                                             }
 
@@ -5662,7 +5664,10 @@ FloatingWindow {
                                                     Text { id: cnEdTxt; anchors.centerIn: parent; text: "Cancel"; font.pixelSize: 10; color: Services.Theme.textSecondary }
                                                     MouseArea {
                                                         anchors.fill: parent; cursorShape: Qt.PointingHandCursor
-                                                        onClicked: rootWindow.editingBindLine = -1
+                                                        onClicked: {
+                                                            rootWindow.editingBindId = ""
+                                                            rootWindow.editingBindLine = -1
+                                                        }
                                                     }
                                                 }
 
@@ -5677,7 +5682,8 @@ FloatingWindow {
                                                         anchors.fill: parent; cursorShape: Qt.PointingHandCursor
                                                         onClicked: {
                                                             if (Services.Compositor && rootWindow.formKeys && rootWindow.formAction) {
-                                                                Services.Compositor.updateKeybind(bindItemRoot.modelData.startLine, rootWindow.formKeys.trim(), rootWindow.formAction.trim(), "")
+                                                                Services.Compositor.updateKeybind(bindItemRoot.modelData.startLine, rootWindow.formKeys.trim(), rootWindow.formAction.trim(), "", bindItemRoot.modelData.file)
+                                                                rootWindow.editingBindId = ""
                                                                 rootWindow.editingBindLine = -1
                                                             }
                                                         }

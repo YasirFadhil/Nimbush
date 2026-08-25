@@ -286,6 +286,7 @@ Singleton {
 
     Component.onCompleted: {
         refreshState()
+        loadKeybinds()
     }
 
     function refreshState() {
@@ -619,27 +620,33 @@ Singleton {
         bindsListProc.running = true
     }
 
-    function addKeybind(keys, action, desc) {
+    function addKeybind(keys, action, desc, file) {
         if (!keys || !action) return
         keybindStatus = "Adding keybind..."
         bindsAddProc.qOutput = ""
-        bindsAddProc.command = [root.helperScript, "binds-add", "--keys", keys, "--action", action, "--desc", desc || ""]
+        var cmd = [root.helperScript, "binds-add", "--keys", keys, "--action", action, "--desc", desc || ""]
+        if (file) { cmd.push("--file", file) }
+        bindsAddProc.command = cmd
         bindsAddProc.running = true
     }
 
-    function updateKeybind(lineNum, keys, action, desc) {
+    function updateKeybind(lineNum, keys, action, desc, file) {
         if (!lineNum || !keys || !action) return
         keybindStatus = "Updating keybind..."
         bindsUpdateProc.qOutput = ""
-        bindsUpdateProc.command = [root.helperScript, "binds-update", "--line", String(lineNum), "--keys", keys, "--action", action, "--desc", desc || ""]
+        var cmd = [root.helperScript, "binds-update", "--line", String(lineNum), "--keys", keys, "--action", action, "--desc", desc || ""]
+        if (file) { cmd.push("--file", file) }
+        bindsUpdateProc.command = cmd
         bindsUpdateProc.running = true
     }
 
-    function deleteKeybind(lineNum) {
+    function deleteKeybind(lineNum, file) {
         if (!lineNum) return
         keybindStatus = "Deleting keybind..."
         bindsDeleteProc.qOutput = ""
-        bindsDeleteProc.command = [root.helperScript, "binds-delete", "--line", String(lineNum)]
+        var cmd = [root.helperScript, "binds-delete", "--line", String(lineNum)]
+        if (file) { cmd.push("--file", file) }
+        bindsDeleteProc.command = cmd
         bindsDeleteProc.running = true
     }
 

@@ -141,10 +141,10 @@ PanelWindow {
 
                 Components.WorkspaceIndicator {
                     Layout.alignment: Qt.AlignVCenter
-                    visible: (Services.Config ? Services.Config.showWorkspaces : true) && opacity > 0
+                    visible: Services.Config ? Services.Config.showWorkspaces : true
                     opacity: Services.OverlayManager.isLocked ? 0.0 : 1.0
                     transform: Translate {
-                        x: Services.OverlayManager.isLocked ? -40 : 0
+                        x: Services.OverlayManager.isLocked ? -35 : 0
                         Behavior on x { NumberAnimation { duration: 350; easing.type: Services.OverlayManager.isLocked ? Easing.OutCubic : Easing.InCubic } }
                     }
                     Behavior on opacity { NumberAnimation { duration: 350; easing.type: Services.OverlayManager.isLocked ? Easing.OutCubic : Easing.InCubic } }
@@ -157,14 +157,9 @@ PanelWindow {
                 Components.StatusTray {
                     id: statusTray
                     Layout.alignment: Qt.AlignVCenter
-
-                    readonly property real islandRightEdge: (root.width + (root.showDynamicIsland ? (dynamicIsland.expanded ? dynamicIsland.calculatedExpandedWidth : dynamicIsland.calculatedCollapsedWidth) : 0)) / 2
-                    readonly property real trayFullLeftEdge: root.width - 12 - statusTray.fullUncollapsedWidth
-
-                    collapseNear: root.showDynamicIsland && (dynamicIsland.expanded
-                                 || (dynamicIsland.calculatedCollapsedWidth > 180)
-                                 || (trayFullLeftEdge <= islandRightEdge + 24))
-                    collapseMore: root.showDynamicIsland && dynamicIsland.expanded && (dynamicIsland.calculatedExpandedWidth >= 320 || dynamicIsland.notifActive || dynamicIsland.replyMode || dynamicIsland.wallpaperMode)
+                    barWidth: root.width
+                    islandRightEdge: root.showDynamicIsland ? ((root.width + (dynamicIsland.expanded ? dynamicIsland.calculatedExpandedWidth : dynamicIsland.calculatedCollapsedWidth)) / 2) : 0
+                    isIslandExpanded: root.showDynamicIsland && dynamicIsland.expanded
                 }
             }
         }

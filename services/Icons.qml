@@ -4,10 +4,14 @@ import Quickshell
 
 Singleton {
     // ── Volume / Speaker ────────────────────────────────────────────────────────
-    readonly property string volOff:  "\uf026"   // nf-fa-volume_off
-    readonly property string volLow:  "\uf027"   // nf-fa-volume_down
-    readonly property string volMed:  "\uf028"   // nf-fa-volume_up
-    readonly property string volHigh: "\uf028"   // nf-fa-volume_up
+    readonly property string volMute: "\uf026"   // nf-fa-volume_off (0% or muted)
+    readonly property string volOff:  "\uf026"   // nf-fa-volume_off (0% or muted)
+    readonly property string volLow:  "\uf027"   // nf-fa-volume_down (1% - 50%)
+    readonly property string volMed:  "\uf028"   // nf-fa-volume_up (50% - 100%)
+    readonly property string volHigh: "\uf028"   // nf-fa-volume_up (50% - 100%)
+    readonly property string volumeUp:   volHigh
+    readonly property string volumeDown: volLow
+    readonly property string volumeMute: volMute
 
     // Headphone/jack icons
     readonly property string hpOff:  "\uf025"   // nf-fa-headphones
@@ -18,11 +22,11 @@ Singleton {
     readonly property string twsOff: "\uf026"   // muted
 
     // ── Brightness / Sun ────────────────────────────────────────────────────────
-    readonly property string brigLow:   "\uf185"   // nf-fa-sun_o
-    readonly property string brigMed:   "\uf185"
-    readonly property string brigMedUp: "\uf185"
-    readonly property string brigFull:  "\uf185"
-    readonly property string sun:       "\uf185"   // nf-fa-sun_o (100% universal)
+    readonly property string brigLow:   "\u{f00de}"  // nf-md-brightness_5 (low: 0% - 33%)
+    readonly property string brigMed:   "\u{f00df}"  // nf-md-brightness_6 (medium: 34% - 66%)
+    readonly property string brigMedUp: "\u{f00df}"  // nf-md-brightness_6
+    readonly property string brigFull:  "\u{f00e0}"  // nf-md-brightness_7 (high: 67% - 100%)
+    readonly property string sun:       "\u{f00e0}"  // default/high sun
 
     // ── System / Dashboard ──────────────────────────────────────────────────────
     readonly property string cpu:    "\uf2db"   // nf-fa-microchip
@@ -50,14 +54,36 @@ Singleton {
     readonly property string folder: "\uf07c"   // nf-fa-folder_open
     readonly property string plus:   "\uf067"   // nf-fa-plus
 
-    // ── Wifi ────────────────────────────────────────────────────────────────────
-    readonly property string wifi:     "\uf1eb"   // nf-fa-wifi
-    readonly property string wifiLock: "\uf023"   // secured network (lock)
-    readonly property string wifiOpen: "\uf09c"   // open/unlocked network
+    // ── Wifi & Signal ──────────────────────────────────────────────────────────
+    readonly property string wifi:         "\uf1eb"   // nf-fa-wifi (universal fallback)
+    readonly property string wifi0:        "󰤯"       // nf-md-wifi_strength_outline (0%)
+    readonly property string wifi1:        "󰤟"       // nf-md-wifi_strength_1 (1-25%)
+    readonly property string wifi2:        "󰤢"       // nf-md-wifi_strength_2 (26-50%)
+    readonly property string wifi3:        "󰤥"       // nf-md-wifi_strength_3 (51-75%)
+    readonly property string wifi4:        "󰤨"       // nf-md-wifi_strength_4 (76-100%)
+    readonly property string wifiOff:      "󰤮"       // nf-md-wifi_strength_off
+    readonly property string wifiAlert:    "󰤫"       // nf-md-wifi_strength_alert_outline
+    readonly property string wifiLock:     "\uf023"   // secured network (lock)
+    readonly property string wifiOpen:     "\uf09c"   // open/unlocked network
+
+    // Vertical upward signal bars (cellular / signal ladder)
+    readonly property string signal0:      "󰣾"       // nf-md-network_strength_outline (0%)
+    readonly property string signal1:      "󰣴"       // nf-md-network_strength_1 (1-25%)
+    readonly property string signal2:      "󰣶"       // nf-md-network_strength_2 (26-50%)
+    readonly property string signal3:      "󰣸"       // nf-md-network_strength_3 (51-75%)
+    readonly property string signal4:      "󰣺"       // nf-md-network_strength_4 (76-100%)
+    readonly property string signalOff:    "󰣽"       // nf-md-network_strength_off
 
     // ── Bluetooth ───────────────────────────────────────────────────────────────
     readonly property string bluetooth:    "\uf294"  // nf-fa-bluetooth
     readonly property string bluetoothOff: "\uf293"  // nf-fa-bluetooth_b
+    readonly property string btHeadset:    "󰋋"       // nf-md-headphones / tws
+    readonly property string btSpeaker:    "󰓃"       // nf-md-speaker
+    readonly property string btPhone:      "󰏲"       // nf-md-cellphone
+    readonly property string btKeyboard:   "󰌌"       // nf-md-keyboard
+    readonly property string btMouse:      "󰍽"       // nf-md-mouse
+    readonly property string btGamepad:    "󰊴"       // nf-md-gamepad
+    readonly property string btLaptop:     "󰌢"       // nf-md-laptop
 
     // ── Navigation / UI ─────────────────────────────────────────────────────────
     readonly property string chevDown:   "\uf078"  // nf-fa-chevron_down
@@ -74,7 +100,6 @@ Singleton {
     readonly property string moon:     "\uf186"   // nf-fa-moon_o
     readonly property string tree:     "\uf06c"   // nf-fa-leaf / tree
     readonly property string camera:   "\uf030"   // nf-fa-camera
-    readonly property string volMute:  "\uf026"   // nf-fa-volume_off
     readonly property string speaker:  "\uf028"   // nf-fa-volume_up
     readonly property string headphone:"\uf025"   // nf-fa-headphones
     readonly property string sliders:  "\uf1de"   // nf-fa-sliders
@@ -162,14 +187,17 @@ Singleton {
         if (isHeadphone) {
             return (muted || volume <= 0) ? hpOff : hpOn
         }
-        if (muted || volume <= 0) return volOff
-        if (volume < 0.33) return volLow
-        if (volume < 0.66) return volMed
+        if (muted || volume <= 0) return volMute
+        var v = (volume > 1.0 && volume <= 100) ? (volume / 100.0) : volume
+        if (v <= 0.50) return volLow
         return volHigh
     }
 
     function brightnessIcon(brightness) {
-        return sun
+        var b = (brightness > 1.0 && brightness <= 100) ? (brightness / 100.0) : brightness
+        if (b < 0.34) return brigLow
+        if (b < 0.67) return brigMed
+        return brigFull
     }
 
     function powerIconSimple(charging, percentage) {
@@ -193,6 +221,54 @@ Singleton {
 
     function btIcon(connected) {
         return connected ? bluetooth : bluetoothOff
+    }
+
+    function btDeviceIcon(iconType, name) {
+        const it = (iconType || "").toLowerCase()
+        const n = (name || "").toLowerCase()
+        if (it.includes("headset") || it.includes("headphone") || it.includes("audio") ||
+            n.includes("tws") || n.includes("buds") || n.includes("earbuds") || n.includes("airpod") ||
+            n.includes("headphone") || n.includes("headset") || n.includes("soundcore") || n.includes("t50i") || n.includes("super")) {
+            return btHeadset
+        }
+        if (it.includes("speaker") || n.includes("speaker") || n.includes("soundbar")) return btSpeaker
+        if (it.includes("phone") || it.includes("cellphone") || n.includes("phone") || n.includes("galaxy") || n.includes("iphone")) return btPhone
+        if (it.includes("keyboard") || n.includes("keyboard") || n.includes("keychron")) return btKeyboard
+        if (it.includes("mouse") || n.includes("mouse") || n.includes("trackpad") || n.includes("mx master")) return btMouse
+        if (it.includes("gamepad") || it.includes("gaming") || n.includes("controller") || n.includes("gamepad") || n.includes("xbox") || n.includes("dualsense")) return btGamepad
+        if (it.includes("computer") || it.includes("laptop") || n.includes("laptop") || n.includes("pc")) return btLaptop
+        return bluetooth
+    }
+
+    function btBatteryIcon(battery) {
+        var b = typeof battery === "number" ? battery : parseInt(battery) || 0
+        if (b >= 80) return batteryFull
+        if (b >= 60) return batteryThreeQtr
+        if (b >= 40) return batteryHalf
+        if (b >= 20) return batteryOneQtr
+        return batteryEmpty
+    }
+
+    function wifiIcon(signal, connected, enabled) {
+        if (enabled === false) return wifiOff
+        if (connected === false) return wifi0
+        var s = typeof signal === "number" ? signal : parseInt(signal) || 0
+        if (s >= 75) return wifi4
+        if (s >= 50) return wifi3
+        if (s >= 25) return wifi2
+        if (s > 0) return wifi1
+        return wifi0
+    }
+
+    function signalBarIcon(signal, connected, enabled) {
+        if (enabled === false) return signalOff
+        if (connected === false) return signal0
+        var s = typeof signal === "number" ? signal : parseInt(signal) || 0
+        if (s >= 75) return signal4
+        if (s >= 50) return signal3
+        if (s >= 25) return signal2
+        if (s > 0) return signal1
+        return signal0
     }
 
     function wifiSecurityIcon(hasPassword) {

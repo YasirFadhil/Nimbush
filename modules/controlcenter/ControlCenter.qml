@@ -109,13 +109,54 @@ PanelWindow {
             anchors.rightMargin: 12
             spacing: 8
 
-            Text {
-                id: iconText
-                text: sliderRoot.icon
-                font.family: Services.Theme.fontSymbols
-                font.pixelSize: 14
-                color: (fillBar.width > (iconText.x + sliderContentRow.x + iconText.width / 2)) ? Services.Theme.bgOnAccent : Services.Theme.textPrimary
-                Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+            Item {
+                id: sliderIconBox
+                property string icon: sliderRoot.icon
+                property string oldIcon: ""
+                property color iconColor: (fillBar.width > (sliderIconBox.x + sliderContentRow.x + sliderIconBox.width / 2)) ? Services.Theme.bgOnAccent : Services.Theme.textPrimary
+                Behavior on iconColor { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+
+                implicitWidth: mainIconText.implicitWidth
+                implicitHeight: mainIconText.implicitHeight
+                Layout.alignment: Qt.AlignVCenter
+
+                onIconChanged: {
+                    if (icon !== mainIconText.text) {
+                        oldIcon = mainIconText.text
+                        oldIconText.opacity = 1.0
+                        mainIconText.text = icon
+                        mainIconText.opacity = 0.0
+                        sliderCrossFade.restart()
+                    }
+                }
+
+                Component.onCompleted: mainIconText.text = icon
+
+                Text {
+                    id: oldIconText
+                    anchors.centerIn: parent
+                    text: sliderIconBox.oldIcon
+                    font.family: Services.Theme.fontSymbols
+                    font.pixelSize: 14
+                    color: sliderIconBox.iconColor
+                    opacity: 0.0
+                    visible: opacity > 0
+                }
+
+                Text {
+                    id: mainIconText
+                    anchors.centerIn: parent
+                    font.family: Services.Theme.fontSymbols
+                    font.pixelSize: 14
+                    color: sliderIconBox.iconColor
+                    opacity: 1.0
+                }
+
+                ParallelAnimation {
+                    id: sliderCrossFade
+                    NumberAnimation { target: oldIconText; property: "opacity"; to: 0.0; duration: 220; easing.type: Easing.OutCubic }
+                    NumberAnimation { target: mainIconText; property: "opacity"; to: 1.0; duration: 220; easing.type: Easing.OutCubic }
+                }
             }
 
             Item { Layout.fillWidth: true }
@@ -426,7 +467,7 @@ PanelWindow {
                                     Text {
                                         id: wifiIcon
                                         anchors.centerIn: parent
-                                        text: Services.Icons.wifi
+                                        text: Services.Icons.wifiIcon(Services.Wifi.signalStrength, Services.Wifi.connected, Services.Wifi.enabled)
                                         font.family: Services.Theme.fontSymbols
                                         font.pixelSize: 18
                                         scale: Services.Wifi.enabled ? 1.08 : 1.0
@@ -477,7 +518,7 @@ PanelWindow {
                                             Text {
                                                 text: Services.OverlayManager.wifiPanelVisible
                                                       ? (Services.Wifi.scanning ? "Scanning networks..." : (Services.Wifi.networks.length + " networks found"))
-                                                      : (Services.Wifi.enabled ? (Services.Wifi.connected ? "Connected" : "On") : "Off")
+                                                      : (Services.Wifi.enabled ? (Services.Wifi.connected ? ("Connected • " + Services.Wifi.signalStrength + "%") : "On") : "Off")
                                                 font.pixelSize: 10
                                                 color: Services.Wifi.enabled ? Services.Theme.bgOnAccent : Services.Theme.textDisabled
                                             }
@@ -607,9 +648,9 @@ PanelWindow {
                                                             spacing: 8
 
                                                             Text {
-                                                                text: Services.Icons.wifiSecurityIcon(netRow.modelData.security.length > 0)
+                                                                text: Services.Icons.wifiIcon(netRow.modelData.signal, true, true)
                                                                 font.family: Services.Theme.fontSymbols
-                                                                font.pixelSize: 11
+                                                                font.pixelSize: 12
                                                                 color: Services.Wifi.enabled ? Services.Theme.bgDeep : Services.Theme.textSecondary
                                                             }
 
@@ -617,14 +658,28 @@ PanelWindow {
                                                                 Layout.fillWidth: true
                                                                 spacing: 1
 
-                                                                Text {
-                                                                    text: netRow.modelData.ssid
-                                                                    font.pixelSize: 11
-                                                                    font.bold: netRow.modelData.inUse
-                                                                    color: Services.Wifi.enabled ? Services.Theme.bgDeep : Services.Theme.textPrimary
+                                                                RowLayout {
+                                                                    spacing: 4
                                                                     Layout.fillWidth: true
-                                                                    elide: Text.ElideRight
+
+                                                                    Text {
+                                                                        text: netRow.modelData.ssid
+                                                                        font.pixelSize: 11
+                                                                        font.bold: netRow.modelData.inUse
+                                                                        color: Services.Wifi.enabled ? Services.Theme.bgDeep : Services.Theme.textPrimary
+                                                                        Layout.fillWidth: true
+                                                                        elide: Text.ElideRight
+                                                                    }
+
+                                                                    Text {
+                                                                        visible: netRow.modelData.security.length > 0
+                                                                        text: Services.Icons.wifiLock
+                                                                        font.family: Services.Theme.fontSymbols
+                                                                        font.pixelSize: 9
+                                                                        color: Services.Wifi.enabled ? Qt.rgba(Services.Theme.bgDeep.r, Services.Theme.bgDeep.g, Services.Theme.bgDeep.b, 0.7) : Services.Theme.textDisabled
+                                                                    }
                                                                 }
+
                                                                 Text {
                                                                     visible: netRow.modelData.inUse || netRow.isSaved
                                                                     text: netRow.modelData.inUse ? "Connected" : "Saved"
@@ -742,7 +797,9 @@ PanelWindow {
                                     Text {
                                         id: btIcon
                                         anchors.centerIn: parent
-                                        text: Services.Icons.bluetooth
+                                        text: (Services.Bluetooth.enabled && Services.Bluetooth.hasConnectedDevice)
+                                              ? Services.Icons.btDeviceIcon(Services.Bluetooth.connectedDeviceIcon, Services.Bluetooth.connectedDeviceName)
+                                              : Services.Icons.bluetooth
                                         font.family: Services.Theme.fontSymbols
                                         font.pixelSize: 18
                                         scale: Services.Bluetooth.enabled ? 1.08 : 1.0
@@ -781,7 +838,11 @@ PanelWindow {
                                             spacing: 1
 
                                             Text {
-                                                text: Services.OverlayManager.btPanelVisible ? "Bluetooth Devices" : "Bluetooth"
+                                                text: Services.OverlayManager.btPanelVisible 
+                                                      ? "Bluetooth Devices" 
+                                                      : (Services.Bluetooth.enabled && Services.Bluetooth.hasConnectedDevice 
+                                                         ? Services.Bluetooth.connectedDeviceName 
+                                                         : "Bluetooth")
                                                 font.pixelSize: 12
                                                 font.bold: true
                                                 elide: Text.ElideRight
@@ -791,7 +852,13 @@ PanelWindow {
                                             Text {
                                                 text: Services.OverlayManager.btPanelVisible
                                                       ? (Services.Bluetooth.refreshing ? "Searching devices..." : (Services.Bluetooth.devices.length + " paired devices"))
-                                                      : (Services.Bluetooth.enabled ? (Services.Bluetooth.devices.some(d => d.connected) ? "Connected" : "On") : "Off")
+                                                      : (Services.Bluetooth.enabled 
+                                                         ? (Services.Bluetooth.hasConnectedDevice 
+                                                            ? (Services.Bluetooth.connectedDeviceBattery >= 0 
+                                                               ? ("Connected • " + Services.Bluetooth.connectedDeviceBattery + "%") 
+                                                               : "Connected") 
+                                                            : "On") 
+                                                         : "Off")
                                                 font.pixelSize: 10
                                                 color: Services.Bluetooth.enabled ? Services.Theme.bgOnAccent : Services.Theme.textDisabled
                                             }
@@ -904,14 +971,14 @@ PanelWindow {
                                                     spacing: 8
 
                                                     Text {
-                                                        text: Services.Icons.btIcon(btItem.modelData.connected)
+                                                        text: Services.Icons.btDeviceIcon(btItem.modelData.icon, btItem.modelData.name)
                                                         font.family: Services.Theme.fontSymbols
-                                                        font.pixelSize: 12
+                                                        font.pixelSize: 13
                                                         color: Services.Bluetooth.enabled ? Services.Theme.bgDeep : Services.Theme.textPrimary
                                                     }
 
                                                     Text {
-                                                        text: btItem.modelData.name
+                                                        text: btItem.modelData.name || btItem.modelData.mac
                                                         font.pixelSize: 11
                                                         font.bold: btItem.modelData.connected
                                                         color: Services.Bluetooth.enabled ? Services.Theme.bgDeep : Services.Theme.textPrimary
@@ -919,10 +986,40 @@ PanelWindow {
                                                         elide: Text.ElideRight
                                                     }
 
+                                                    // Battery Badge in list item
+                                                    Rectangle {
+                                                        visible: btItem.modelData.connected && (btItem.modelData.battery !== undefined && btItem.modelData.battery >= 0)
+                                                        Layout.preferredHeight: 18
+                                                        implicitWidth: devBatRow.implicitWidth + 8
+                                                        radius: 9
+                                                        color: Services.Bluetooth.enabled ? "#25000000" : Services.Theme.surfaceVariant
+
+                                                        RowLayout {
+                                                            id: devBatRow
+                                                            anchors.centerIn: parent
+                                                            spacing: 3
+
+                                                            Text {
+                                                                text: Services.Icons.btBatteryIcon(btItem.modelData.battery)
+                                                                font.family: Services.Theme.fontSymbols
+                                                                font.pixelSize: 9
+                                                                color: Services.Bluetooth.enabled ? Services.Theme.bgDeep : Services.Theme.textPrimary
+                                                            }
+
+                                                            Text {
+                                                                text: btItem.modelData.battery + "%"
+                                                                font.pixelSize: 9
+                                                                font.bold: true
+                                                                color: Services.Bluetooth.enabled ? Services.Theme.bgDeep : Services.Theme.textPrimary
+                                                            }
+                                                        }
+                                                    }
+
                                                     Text {
                                                         text: btItem.modelData.connected ? "Disconnect" : "Connect"
                                                         font.pixelSize: 10
-                                                        color: Services.Bluetooth.enabled ? "#333333" : Services.Theme.textDisabled
+                                                        font.bold: btItem.modelData.connected
+                                                        color: Services.Bluetooth.enabled ? (btItem.modelData.connected ? "#155724" : "#333333") : Services.Theme.textDisabled
                                                     }
 
                                                     // Unpair / Forget button
@@ -1021,7 +1118,7 @@ PanelWindow {
                                                     spacing: 8
 
                                                     Text {
-                                                        text: "󰂲"
+                                                        text: Services.Icons.btDeviceIcon("", unpItem.modelData.name)
                                                         font.family: Services.Theme.fontSymbols
                                                         font.pixelSize: 12
                                                         color: Services.Bluetooth.enabled ? Services.Theme.bgDeep : Services.Theme.textPrimary
@@ -1039,7 +1136,7 @@ PanelWindow {
                                                         text: Services.Bluetooth.pairingMac === unpItem.modelData.mac ? "Pairing..." : "Pair & Connect"
                                                         font.pixelSize: 10
                                                         font.bold: true
-                                                        color: Services.Bluetooth.enabled ? "#333333" : Services.Theme.textDisabled
+                                                        color: Services.Bluetooth.enabled ? (Services.Bluetooth.pairingMac === unpItem.modelData.mac ? "#1a365d" : "#333333") : Services.Theme.textDisabled
                                                     }
                                                 }
                                             }

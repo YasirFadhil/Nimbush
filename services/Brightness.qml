@@ -9,6 +9,7 @@ Singleton {
     property int maxBrightness: 1
     property int current: 0
     readonly property real percent: current / maxBrightness
+    readonly property real value: percent
 
     FileView {
         path: "/sys/class/backlight/" + root.device + "/max_brightness"
@@ -28,5 +29,9 @@ Singleton {
         const val = Math.round(Math.max(0, Math.min(1, p)) * maxBrightness)
         setProc.command = ["brightnessctl", "-d", root.device, "set", val.toString()]
         setProc.running = true
+    }
+
+    function setValue(v) {
+        setPercent(v)
     }
 }

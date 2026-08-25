@@ -461,224 +461,393 @@ def save_config_b64(target_path, b64_str):
 
 def get_primary_config():
     if is_lua_config():
+        if os.path.exists(os.path.join(HOME, ".config/hypr/conf/keybinds.lua")):
+            return os.path.join(HOME, ".config/hypr/conf/keybinds.lua"), "lua"
         return os.path.join(HOME, ".config/hypr/hyprland.lua"), "lua"
+    if os.path.exists(os.path.join(HOME, ".config/hypr/conf/keybinds.conf")):
+        return os.path.join(HOME, ".config/hypr/conf/keybinds.conf"), "hyprconf"
     if os.path.exists(os.path.join(HOME, ".config/hypr/hyprland.conf")):
         return os.path.join(HOME, ".config/hypr/hyprland.conf"), "hyprconf"
+    if os.path.exists(os.path.join(HOME, ".config/niri/conf/keybinds.kdl")):
+        return os.path.join(HOME, ".config/niri/conf/keybinds.kdl"), "niri"
     if os.path.exists(os.path.join(HOME, ".config/niri/config.kdl")):
         return os.path.join(HOME, ".config/niri/config.kdl"), "niri"
     return None, None
 
-def list_keybinds():
-    cfg_path, cfg_type = get_primary_config()
-    if not cfg_path or not os.path.exists(cfg_path):
-        return {"ok": False, "error": "No compositor config found", "binds": []}
+def get_keybind_files():
+    comp = "hyprland"
+    if is_niri():
+        comp = "niri"
 
+    files = []
+    if comp == "hyprland":
+        if is_lua_config():
+            candidates = [
+                os.path.join(HOME, ".config/hypr/conf/keybinds.lua"),
+                os.path.join(HOME, ".config/hypr/conf/quickshell.lua"),
+                os.path.join(HOME, ".config/hypr/hyprland.lua"),
+            ]
+            conf_dir = os.path.join(HOME, ".config/hypr/conf")
+            if os.path.isdir(conf_dir):
+                for fname in sorted(os.listdir(conf_dir)):
+                    if fname.endswith(".lua"):
+                        fpath = os.path.join(conf_dir, fname)
+                        if fpath not in candidates:
+                            candidates.append(fpath)
+            for p in candidates:
+                if os.path.isfile(p) and (p, "lua") not in files:
+                    files.append((p, "lua"))
+        else:
+            candidates = [
+                os.path.join(HOME, ".config/hypr/conf/keybinds.conf"),
+                os.path.join(HOME, ".config/hypr/conf/quickshell.conf"),
+                os.path.join(HOME, ".config/hypr/hyprland.conf"),
+            ]
+            conf_dir = os.path.join(HOME, ".config/hypr/conf")
+            if os.path.isdir(conf_dir):
+                for fname in sorted(os.listdir(conf_dir)):
+                    if fname.endswith(".conf") and fname not in ["hypridle.conf", "hyprlock.conf", "hyprpaper.conf"]:
+                        fpath = os.path.join(conf_dir, fname)
+                        if fpath not in candidates:
+                            candidates.append(fpath)
+            for p in candidates:
+                if os.path.isfile(p) and (p, "hyprconf") not in files:
+                    files.append((p, "hyprconf"))
+    elif comp == "niri":
+        candidates = [
+            os.path.join(HOME, ".config/niri/conf/keybinds.kdl"),
+            os.path.join(HOME, ".config/niri/conf/quickshell.kdl"),
+            os.path.join(HOME, ".config/niri/config.kdl"),
+        ]
+        conf_dir = os.path.join(HOME, ".config/niri/conf")
+        if os.path.isdir(conf_dir):
+            for fname in sorted(os.listdir(conf_dir)):
+                if fname.endswith(".kdl"):
+                    fpath = os.path.join(conf_dir, fname)
+                    if fpath not in candidates:
+                        candidates.append(fpath)
+        for p in candidates:
+            if os.path.isfile(p) and (p, "niri") not in files:
+                files.append((p, "niri"))
+
+    return files
+
+def parse_lua_binds(path):
+    if not os.path.exists(path):
+        return []
     try:
-        with open(cfg_path, "r", encoding="utf-8") as f:
-            full_text = f.read()
-    except Exception as e:
-        return {"ok": False, "error": str(e), "binds": []}
+        with open(path, "r", encoding="utf-8") as f:
+            text = f.read()
+    except Exception:
+        return []
 
-    lines = full_text.splitlines()
+    lines = text.splitlines()
+    vars_dict = {}
+    var_re = re.compile(r'^\s*local\s+([a-zA-Z0-9_]+)\s*=\s*["\']([^"\']+)["\']')
+    for l in lines:
+        m = var_re.match(l)
+        if m:
+            vars_dict[m.group(1)] = m.group(2)
+
+    line_starts = [0]
+    for pos, ch in enumerate(text):
+        if ch == '\n':
+            line_starts.append(pos + 1)
+
+    def get_line(idx):
+        return bisect.bisect_right(line_starts, idx)
+
     binds = []
+    n = len(text)
+    pattern = re.compile(r'(?:local\s+([a-zA-Z0-9_]+)\s*=\s*)?hl\.bind\s*\(')
 
-    if cfg_type == "lua":
-        vars_dict = {}
-        var_re = re.compile(r'^\s*local\s+([a-zA-Z0-9_]+)\s*=\s*["\']([^"\']+)["\']')
-        for l in lines:
-            m = var_re.match(l)
-            if m:
-                vars_dict[m.group(1)] = m.group(2)
+    for match in pattern.finditer(text):
+        start_char = match.start()
+        start_line = get_line(start_char)
+        line_str = lines[start_line - 1] if start_line <= len(lines) else ""
+        line_before = line_str[:line_str.find("hl.bind")].strip()
+        if line_before.startswith("--"):
+            continue
 
-        n = len(full_text)
-        line_starts = [0]
-        for pos, ch in enumerate(full_text):
-            if ch == '\n':
-                line_starts.append(pos + 1)
-
-        import bisect
-        def get_line_num(char_idx):
-            return bisect.bisect_right(line_starts, char_idx)
-
-        pattern = re.compile(r'(?:local\s+([a-zA-Z0-9_]+)\s*=\s*)?hl\.bind\s*\(')
-
-        for match in pattern.finditer(full_text):
-            start_char = match.start()
-            start_line = get_line_num(start_char)
-
-            line_str = lines[start_line - 1] if start_line <= len(lines) else ""
-            line_before_match = line_str[:line_str.find("hl.bind")].strip()
-            if line_before_match.startswith("--"):
-                continue
-
-            open_paren_idx = match.end() - 1
-            depth = 1
-            j = open_paren_idx + 1
-            in_str = False
-            str_char = ''
-            inner = ""
-            while j < n and depth > 0:
-                c = full_text[j]
-                if c in ('"', "'", '`') and not in_str:
-                    in_str = True
-                    str_char = c
+        open_paren_idx = match.end() - 1
+        depth = 1
+        j = open_paren_idx + 1
+        in_str = False
+        str_char = ''
+        inner = ""
+        while j < n and depth > 0:
+            c = text[j]
+            if c in ('"', "'", '`') and not in_str:
+                in_str = True
+                str_char = c
+                inner += c
+            elif in_str and c == str_char and text[j-1] != '\\':
+                in_str = False
+                inner += c
+            elif in_str:
+                inner += c
+            elif c == '(':
+                depth += 1
+                inner += c
+            elif c == ')':
+                depth -= 1
+                if depth > 0:
                     inner += c
-                elif in_str and c == str_char and full_text[j-1] != '\\':
-                    in_str = False
-                    inner += c
-                elif in_str:
-                    inner += c
-                elif c == '(':
-                    depth += 1
-                    inner += c
-                elif c == ')':
-                    depth -= 1
-                    if depth > 0:
-                        inner += c
-                else:
-                    inner += c
-                j += 1
+            else:
+                inner += c
+            j += 1
 
-            end_line = get_line_num(j)
-            raw_snippet = full_text[start_char:j]
+        end_line = get_line(j)
+        raw_snippet = text[start_char:j]
 
-            parts = []
-            cur = ""
-            depth_p = 0
-            depth_b = 0
-            in_s = False
-            s_char = ''
-            for c in inner:
-                if c in ('"', "'") and not in_s:
-                    in_s = True
-                    s_char = c
-                    cur += c
-                elif in_s and c == s_char:
-                    in_s = False
-                    cur += c
-                elif in_s:
-                    cur += c
-                elif c == '(':
-                    depth_p += 1
-                    cur += c
-                elif c == ')':
-                    depth_p -= 1
-                    cur += c
-                elif c == '{':
-                    depth_b += 1
-                    cur += c
-                elif c == '}':
-                    depth_b -= 1
-                    cur += c
-                elif c == ',' and depth_p == 0 and depth_b == 0:
-                    parts.append(cur.strip())
-                    cur = ""
-                else:
-                    cur += c
-            if cur.strip():
+        parts = []
+        cur = ""
+        depth_p = 0
+        depth_b = 0
+        in_s = False
+        s_char = ''
+        for c in inner:
+            if c in ('"', "'") and not in_s:
+                in_s = True
+                s_char = c
+                cur += c
+            elif in_s and c == s_char:
+                in_s = False
+                cur += c
+            elif in_s:
+                cur += c
+            elif c == '(':
+                depth_p += 1
+                cur += c
+            elif c == ')':
+                depth_p -= 1
+                cur += c
+            elif c == '{':
+                depth_b += 1
+                cur += c
+            elif c == '}':
+                depth_b -= 1
+                cur += c
+            elif c == ',' and depth_p == 0 and depth_b == 0:
                 parts.append(cur.strip())
+                cur = ""
+            else:
+                cur += c
+        if cur.strip():
+            parts.append(cur.strip())
 
-            if len(parts) >= 2:
-                raw_combo = parts[0]
-                raw_action = parts[1]
-                opts = parts[2] if len(parts) > 2 else ""
+        if len(parts) >= 2:
+            raw_combo = parts[0]
+            raw_action = parts[1]
+            opts = parts[2] if len(parts) > 2 else ""
 
-                combo = raw_combo
-                for vname, vval in vars_dict.items():
-                    combo = re.sub(r'\b' + vname + r'\b', f'"{vval}"', combo)
-                combo_parts = [p.strip().strip('"\'') for p in combo.split("..")]
-                clean_combo = " + ".join([p.strip().strip('+ ') for p in combo_parts if p.strip()])
-                clean_combo = clean_combo.replace(" + + ", " + ").replace("  ", " ")
+            # Check if this line is in a loop for workspaces (e.g. key or i)
+            if 'key' in raw_combo and 'workspace' in raw_action:
+                for ws in range(1, 11):
+                    k_str = str(ws % 10)
+                    combo = raw_combo
+                    for vn, vv in vars_dict.items():
+                        combo = re.sub(r'\b' + vn + r'\b', f'"{vv}"', combo)
+                    combo = combo.replace('key', f'"{k_str}"')
+                    combo_parts = [p.strip().strip('"\'') for p in combo.split("..")]
+                    clean_combo = " + ".join([p.strip().strip('+ ') for p in combo_parts if p.strip()])
 
-                action = raw_action
-                for vname, vval in vars_dict.items():
-                    action = re.sub(r'\b' + vname + r'\b', f'"{vval}"', action)
+                    action = raw_action
+                    for vn, vv in vars_dict.items():
+                        action = re.sub(r'\b' + vn + r'\b', f'"{vv}"', action)
+                    action = action.replace('workspace = i', f'workspace = {ws}')
 
-                clean_action = action
-                if "hl.dsp.exec_cmd(" in action:
-                    m_act = re.search(r'hl\.dsp\.exec_cmd\(\s*["\']?(.*?)["\']?\s*\)', action, re.DOTALL)
-                    if m_act:
-                        clean_action = m_act.group(1).strip('"\'').strip()
-                elif "hl.dsp.window.close" in action:
-                    clean_action = "close window"
-                elif "hl.dsp.window.float" in action:
-                    clean_action = "toggle floating"
-                elif "hl.dsp.window.fullscreen" in action:
-                    clean_action = "toggle fullscreen"
-                elif "hl.dsp.window.drag" in action:
-                    clean_action = "drag window (move)"
-                elif "hl.dsp.window.resize" in action:
-                    clean_action = "resize window"
-                elif "hl.dsp.layout" in action:
-                    m_l = re.search(r'hl\.dsp\.layout\(\s*["\']?(.*?)["\']?\s*\)', action)
-                    clean_action = f"layout {m_l.group(1)}" if m_l else "toggle layout"
-                elif "hl.dsp.focus" in action:
-                    m_f = re.search(r'direction\s*=\s*["\'](.*?)["\']', action)
-                    m_ws = re.search(r'workspace\s*=\s*["\']?(.*?)["\']?\}', action)
-                    if m_f:
-                        clean_action = f"focus window ({m_f.group(1)})"
-                    elif m_ws:
-                        clean_action = f"focus workspace {m_ws.group(1)}"
+                    if "hl.dsp.focus" in action:
+                        clean_action = f"focus workspace {ws}"
+                    elif "hl.dsp.window.move" in action:
+                        clean_action = f"move window to workspace {ws}"
                     else:
-                        clean_action = "focus"
-                elif "hl.dsp.window.move" in action:
-                    m_ws = re.search(r'workspace\s*=\s*["\']?(.*?)["\']?\}', action)
-                    clean_action = f"move window to workspace {m_ws.group(1)}" if m_ws else "move window"
+                        clean_action = action
 
-                cat = "other"
-                ca_low = clean_action.lower()
-                cb_low = clean_combo.lower()
-                if "qs ipc call" in ca_low or "quickshell" in ca_low:
-                    cat = "quickshell"
-                elif any(x in ca_low for x in ["kitty", "alacritty", "foot", "nautilus", "thunar", "dolphin", "browser", "firefox", "chrome", "code"]):
-                    cat = "apps"
-                elif any(x in ca_low for x in ["close", "fullscreen", "floating", "focus", "workspace", "swapcol", "togglesplit", "drag", "resize"]):
                     cat = "nav"
-                elif "screenshot" in ca_low or "grim" in ca_low or "print" in cb_low:
-                    cat = "screenshot"
-                elif any(x in ca_low for x in ["wpctl", "pactl", "volume", "brightnessctl", "playerctl", "mute", "audio"]):
-                    cat = "media"
-
-                key_tokens = [k.strip() for k in clean_combo.split("+") if k.strip()]
-
-                binds.append({
-                    "id": start_line,
-                    "startLine": start_line,
-                    "endLine": end_line,
-                    "keys": clean_combo,
-                    "keyTokens": key_tokens,
-                    "action": clean_action,
-                    "raw": raw_snippet.strip(),
-                    "category": cat,
-                    "opts": opts.strip()
-                })
-
-    elif cfg_type == "hyprconf":
-        bind_re = re.compile(r'^\s*bind[lrme]?\s*=\s*([^,]+),\s*([^,]+),\s*([^,]+)(?:,\s*(.*))?')
-        for idx, line in enumerate(lines):
-            line_str = line.strip()
-            if not line_str or line_str.startswith("#"):
+                    key_tokens = [k.strip() for k in clean_combo.split("+") if k.strip()]
+                    binds.append({
+                        "id": f"{os.path.basename(path)}:{start_line}:{ws}",
+                        "file": path,
+                        "fileName": os.path.basename(path),
+                        "startLine": start_line,
+                        "endLine": end_line,
+                        "keys": clean_combo,
+                        "keyTokens": key_tokens,
+                        "action": clean_action,
+                        "raw": raw_snippet.strip(),
+                        "category": cat,
+                        "opts": opts.strip()
+                    })
                 continue
-            m = bind_re.match(line_str)
-            if m:
-                mod = m.group(1).strip()
-                key = m.group(2).strip()
-                disp = m.group(3).strip()
-                arg = m.group(4).strip() if m.group(4) else ""
 
-                combo = f"{mod} + {key}" if mod else key
-                action = f"{disp} {arg}".strip() if arg else disp
-                if disp == "exec":
-                    action = arg
+            combo = raw_combo
+            for vn, vv in vars_dict.items():
+                combo = re.sub(r'\b' + vn + r'\b', f'"{vv}"', combo)
+            combo_parts = [p.strip().strip('"\'') for p in combo.split("..")]
+            clean_combo = " + ".join([p.strip().strip('+ ') for p in combo_parts if p.strip()])
+
+            action = raw_action
+            for vn, vv in vars_dict.items():
+                action = re.sub(r'\b' + vn + r'\b', f'"{vv}"', action)
+
+            clean_action = action
+            if "hl.dsp.exec_cmd(" in action:
+                m_act = re.search(r'hl\.dsp\.exec_cmd\(\s*["\']?(.*?)["\']?\s*\)', action, re.DOTALL)
+                if m_act:
+                    clean_action = m_act.group(1).strip('"\'').strip()
+            elif "hl.dsp.window.close" in action:
+                clean_action = "close window"
+            elif "hl.dsp.window.float" in action:
+                clean_action = "toggle floating"
+            elif "hl.dsp.window.fullscreen" in action:
+                clean_action = "toggle fullscreen"
+            elif "hl.dsp.window.drag" in action:
+                clean_action = "drag window (move)"
+            elif "hl.dsp.window.resize" in action:
+                clean_action = "resize window"
+            elif "hl.dsp.layout" in action:
+                m_l = re.search(r'hl\.dsp\.layout\(\s*["\']?(.*?)["\']?\s*\)', action)
+                clean_action = f"layout {m_l.group(1)}" if m_l else "toggle layout"
+            elif "hl.dsp.focus" in action:
+                m_f = re.search(r'direction\s*=\s*["\'](.*?)["\']', action)
+                m_ws = re.search(r'workspace\s*=\s*["\']?(.*?)["\']?\}', action)
+                if m_f:
+                    clean_action = f"focus window ({m_f.group(1)})"
+                elif m_ws:
+                    clean_action = f"focus workspace {m_ws.group(1)}"
+                else:
+                    clean_action = "focus"
+            elif "hl.dsp.window.move" in action:
+                m_ws = re.search(r'workspace\s*=\s*["\']?(.*?)["\']?\}', action)
+                clean_action = f"move window to workspace {m_ws.group(1)}" if m_ws else "move window"
+
+            cat = "other"
+            ca_low = clean_action.lower()
+            cb_low = clean_combo.lower()
+            if "qs ipc call" in ca_low or "quickshell" in ca_low:
+                cat = "quickshell"
+            elif any(x in ca_low for x in ["kitty", "alacritty", "foot", "ghostty", "nautilus", "thunar", "dolphin", "browser", "firefox", "chrome", "code"]):
+                cat = "apps"
+            elif any(x in ca_low for x in ["close", "fullscreen", "floating", "focus", "workspace", "swapcol", "togglesplit", "drag", "resize"]):
+                cat = "nav"
+            elif "screenshot" in ca_low or "grim" in ca_low or "print" in cb_low:
+                cat = "screenshot"
+            elif any(x in ca_low for x in ["wpctl", "pactl", "volume", "brightnessctl", "playerctl", "mute", "audio"]):
+                cat = "media"
+
+            key_tokens = [k.strip() for k in clean_combo.split("+") if k.strip()]
+            binds.append({
+                "id": f"{os.path.basename(path)}:{start_line}",
+                "file": path,
+                "fileName": os.path.basename(path),
+                "startLine": start_line,
+                "endLine": end_line,
+                "keys": clean_combo,
+                "keyTokens": key_tokens,
+                "action": clean_action,
+                "raw": raw_snippet.strip(),
+                "category": cat,
+                "opts": opts.strip()
+            })
+    return binds
+
+def parse_hyprconf_binds(path):
+    if not os.path.exists(path):
+        return []
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+    except Exception:
+        return []
+
+    binds = []
+    bind_re = re.compile(r'^\s*bind[lrme]?\s*=\s*([^,]+),\s*([^,]+),\s*([^,]+)(?:,\s*(.*))?')
+    for idx, line in enumerate(lines):
+        line_str = line.strip()
+        if not line_str or line_str.startswith("#"):
+            continue
+        m = bind_re.match(line_str)
+        if m:
+            mod = m.group(1).strip()
+            key = m.group(2).strip()
+            disp = m.group(3).strip()
+            arg = m.group(4).strip() if m.group(4) else ""
+
+            combo = f"{mod} + {key}" if mod else key
+            action = f"{disp} {arg}".strip() if arg else disp
+            if disp == "exec":
+                action = arg
+
+            cat = "other"
+            ca_low = action.lower()
+            cb_low = combo.lower()
+            if "qs ipc call" in ca_low or "quickshell" in ca_low:
+                cat = "quickshell"
+            elif any(x in ca_low for x in ["kitty", "alacritty", "foot", "ghostty", "nautilus", "thunar", "dolphin", "browser", "firefox"]):
+                cat = "apps"
+            elif any(x in ca_low for x in ["killactive", "fullscreen", "togglefloating", "workspace", "movetoworkspace", "splitratio"]):
+                cat = "nav"
+            elif "screenshot" in ca_low or "grim" in ca_low or "print" in cb_low:
+                cat = "screenshot"
+            elif any(x in ca_low for x in ["wpctl", "pactl", "volume", "brightnessctl", "playerctl"]):
+                cat = "media"
+
+            key_tokens = [k.strip() for k in combo.split("+") if k.strip()]
+            binds.append({
+                "id": f"{os.path.basename(path)}:{idx + 1}",
+                "file": path,
+                "fileName": os.path.basename(path),
+                "startLine": idx + 1,
+                "endLine": idx + 1,
+                "keys": combo,
+                "keyTokens": key_tokens,
+                "action": action,
+                "raw": line_str,
+                "category": cat,
+                "opts": ""
+            })
+    return binds
+
+def parse_niri_binds(path):
+    if not os.path.exists(path):
+        return []
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+    except Exception:
+        return []
+
+    binds = []
+    niri_bind_re = re.compile(r'^\s*([A-Za-z0-9_\+\-]+)(?:\s+[^\{]+)?\s*\{\s*([^;\}]+);?\s*\}')
+    in_binds_block = False
+    for idx, line in enumerate(lines):
+        line_str = line.strip()
+        if not line_str or line_str.startswith("//"):
+            continue
+        if "binds {" in line_str:
+            in_binds_block = True
+            continue
+        if in_binds_block and line_str == "}":
+            in_binds_block = False
+            continue
+        if in_binds_block or niri_bind_re.match(line_str):
+            m = niri_bind_re.match(line_str)
+            if m:
+                combo = m.group(1).replace("-", "+").replace("+", " + ")
+                action = m.group(2).strip()
+                if action.startswith('spawn "') and action.endswith('"'):
+                    parts = re.findall(r'"([^"]*)"', action)
+                    action = " ".join(parts) if parts else action
 
                 cat = "other"
                 ca_low = action.lower()
                 cb_low = combo.lower()
                 if "qs ipc call" in ca_low or "quickshell" in ca_low:
                     cat = "quickshell"
-                elif any(x in ca_low for x in ["kitty", "alacritty", "foot", "nautilus", "thunar", "dolphin", "browser", "firefox"]):
+                elif any(x in ca_low for x in ["kitty", "alacritty", "foot", "ghostty", "nautilus", "thunar", "dolphin", "browser", "firefox"]):
                     cat = "apps"
-                elif any(x in ca_low for x in ["killactive", "fullscreen", "togglefloating", "workspace", "movetoworkspace", "splitratio"]):
+                elif any(x in ca_low for x in ["close-window", "fullscreen", "focus-", "move-", "column", "workspace"]):
                     cat = "nav"
                 elif "screenshot" in ca_low or "grim" in ca_low or "print" in cb_low:
                     cat = "screenshot"
@@ -687,7 +856,9 @@ def list_keybinds():
 
                 key_tokens = [k.strip() for k in combo.split("+") if k.strip()]
                 binds.append({
-                    "id": idx + 1,
+                    "id": f"{os.path.basename(path)}:{idx + 1}",
+                    "file": path,
+                    "fileName": os.path.basename(path),
                     "startLine": idx + 1,
                     "endLine": idx + 1,
                     "keys": combo,
@@ -697,67 +868,48 @@ def list_keybinds():
                     "category": cat,
                     "opts": ""
                 })
+    return binds
 
-    elif cfg_type == "niri":
-        # Niri kdl binds format: Mod+Return { spawn "kitty"; }
-        niri_bind_re = re.compile(r'^\s*([A-Za-z0-9_\+\-]+)(?:\s+[^\{]+)?\s*\{\s*([^;\}]+);?\s*\}')
-        in_binds_block = False
-        for idx, line in enumerate(lines):
-            line_str = line.strip()
-            if not line_str or line_str.startswith("//"):
-                continue
-            if "binds {" in line_str:
-                in_binds_block = True
-                continue
-            if in_binds_block and line_str == "}":
-                in_binds_block = False
-                continue
-            if in_binds_block:
-                m = niri_bind_re.match(line_str)
-                if m:
-                    combo = m.group(1).replace("-", "+").replace("+", " + ")
-                    action = m.group(2).strip()
-                    if action.startswith('spawn "') and action.endswith('"'):
-                        parts = re.findall(r'"([^"]*)"', action)
-                        action = " ".join(parts) if parts else action
+def list_keybinds():
+    files = get_keybind_files()
+    if not files:
+        primary_path, primary_type = get_primary_config()
+        if primary_path and os.path.exists(primary_path):
+            files = [(primary_path, primary_type)]
 
-                    cat = "other"
-                    ca_low = action.lower()
-                    cb_low = combo.lower()
-                    if "qs ipc call" in ca_low or "quickshell" in ca_low:
-                        cat = "quickshell"
-                    elif any(x in ca_low for x in ["kitty", "alacritty", "foot", "nautilus", "thunar", "dolphin", "browser", "firefox"]):
-                        cat = "apps"
-                    elif any(x in ca_low for x in ["close-window", "fullscreen", "focus-", "move-", "column", "workspace"]):
-                        cat = "nav"
-                    elif "screenshot" in ca_low or "grim" in ca_low or "print" in cb_low:
-                        cat = "screenshot"
-                    elif any(x in ca_low for x in ["wpctl", "pactl", "volume", "brightnessctl", "playerctl"]):
-                        cat = "media"
+    all_binds = []
+    seen = set()
+    for fpath, ftype in files:
+        file_binds = []
+        if ftype == "lua":
+            file_binds = parse_lua_binds(fpath)
+        elif ftype == "hyprconf":
+            file_binds = parse_hyprconf_binds(fpath)
+        elif ftype == "niri":
+            file_binds = parse_niri_binds(fpath)
 
-                    key_tokens = [k.strip() for k in combo.split("+") if k.strip()]
-                    binds.append({
-                        "id": idx + 1,
-                        "startLine": idx + 1,
-                        "endLine": idx + 1,
-                        "keys": combo,
-                        "keyTokens": key_tokens,
-                        "action": action,
-                        "raw": line_str,
-                        "category": cat,
-                        "opts": ""
-                    })
+        for b in file_binds:
+            dedup_key = (b["keys"], b["action"])
+            if dedup_key not in seen:
+                seen.add(dedup_key)
+                all_binds.append(b)
 
+    primary_path, primary_type = get_primary_config()
     return {
         "ok": True,
-        "binds": binds,
-        "configPath": cfg_path,
-        "configType": cfg_type,
-        "total": len(binds)
+        "binds": all_binds,
+        "configPath": primary_path or (files[0][0] if files else ""),
+        "configType": primary_type or (files[0][1] if files else "lua"),
+        "total": len(all_binds)
     }
 
-def add_keybind(keys, action, desc=""):
-    cfg_path, cfg_type = get_primary_config()
+def add_keybind(keys, action, desc="", target_file=None):
+    if target_file and os.path.exists(target_file):
+        cfg_path = target_file
+        cfg_type = "lua" if target_file.endswith(".lua") else ("niri" if target_file.endswith(".kdl") else "hyprconf")
+    else:
+        cfg_path, cfg_type = get_primary_config()
+
     if not cfg_path or not os.path.exists(cfg_path):
         return {"ok": False, "error": "No compositor config found"}
 
@@ -821,8 +973,13 @@ def add_keybind(keys, action, desc=""):
         reload_compositor()
     return res
 
-def update_keybind(line_num, keys, action, desc=""):
-    cfg_path, cfg_type = get_primary_config()
+def update_keybind(line_num, keys, action, desc="", target_file=None):
+    if target_file and os.path.exists(target_file):
+        cfg_path = target_file
+        cfg_type = "lua" if target_file.endswith(".lua") else ("niri" if target_file.endswith(".kdl") else "hyprconf")
+    else:
+        cfg_path, cfg_type = get_primary_config()
+
     if not cfg_path or not os.path.exists(cfg_path):
         return {"ok": False, "error": "No compositor config found"}
 
@@ -873,8 +1030,12 @@ def update_keybind(line_num, keys, action, desc=""):
         reload_compositor()
     return res
 
-def delete_keybind(line_num):
-    cfg_path, cfg_type = get_primary_config()
+def delete_keybind(line_num, target_file=None):
+    if target_file and os.path.exists(target_file):
+        cfg_path = target_file
+    else:
+        cfg_path, cfg_type = get_primary_config()
+
     if not cfg_path or not os.path.exists(cfg_path):
         return {"ok": False, "error": "No compositor config found"}
 
@@ -919,64 +1080,6 @@ def reload_compositor():
             return {"ok": False, "error": str(e)}
     return {"ok": False, "error": "Unsupported compositor"}
 
-def main():
-    if len(sys.argv) < 2:
-        print(json.dumps({"ok": False, "error": "Missing command argument"}))
-        sys.exit(1)
-
-    cmd = sys.argv[1]
-    if cmd == "query":
-        data = query_all()
-        print(json.dumps(data))
-    elif cmd == "binds-list":
-        data = list_keybinds()
-        print(json.dumps(data))
-    elif cmd == "binds-add":
-        import argparse
-        parser = argparse.ArgumentParser()
-        parser.add_argument("--keys", required=True)
-        parser.add_argument("--action", required=True)
-        parser.add_argument("--desc", default="")
-        args = parser.parse_args(sys.argv[2:])
-        res = add_keybind(args.keys, args.action, args.desc)
-        print(json.dumps(res))
-    elif cmd == "binds-update":
-        import argparse
-        parser = argparse.ArgumentParser()
-        parser.add_argument("--line", required=True)
-        parser.add_argument("--keys", required=True)
-        parser.add_argument("--action", required=True)
-        parser.add_argument("--desc", default="")
-        args = parser.parse_args(sys.argv[2:])
-        res = update_keybind(args.line, args.keys, args.action, args.desc)
-        print(json.dumps(res))
-    elif cmd == "binds-delete":
-        import argparse
-        parser = argparse.ArgumentParser()
-        parser.add_argument("--line", required=True)
-        args = parser.parse_args(sys.argv[2:])
-        res = delete_keybind(args.line)
-        print(json.dumps(res))
-    elif cmd == "set":
-        if len(sys.argv) < 4:
-            print(json.dumps({"ok": False, "error": "Usage: set <option> <value>"}))
-            sys.exit(1)
-        opt_name = sys.argv[2]
-        opt_val = sys.argv[3]
-        res = set_option(opt_name, opt_val)
-        print(json.dumps(res))
-    elif cmd == "save":
-        if len(sys.argv) < 3:
-            print(json.dumps({"ok": False, "error": "Usage: save <target_path>"}))
-            sys.exit(1)
-        target = sys.argv[2]
-        res = save_config(target)
-        print(json.dumps(res))
-    elif cmd == "save-b64":
-        if len(sys.argv) < 4:
-            print(json.dumps({"ok": False, "error": "Usage: save-b64 <target_path> <b64_str>"}))
-            sys.exit(1)
-        target = sys.argv[2]
 def modularize_hypr_lua():
     hypr_dir = os.path.join(HOME, ".config/hypr")
     conf_dir = os.path.join(hypr_dir, "conf")
@@ -1669,8 +1772,9 @@ def main():
         parser.add_argument("--keys", required=True)
         parser.add_argument("--action", required=True)
         parser.add_argument("--desc", default="")
+        parser.add_argument("--file", default=None)
         args = parser.parse_args(sys.argv[2:])
-        res = add_keybind(args.keys, args.action, args.desc)
+        res = add_keybind(args.keys, args.action, args.desc, target_file=args.file)
         print(json.dumps(res))
     elif cmd == "binds-update":
         import argparse
@@ -1679,15 +1783,17 @@ def main():
         parser.add_argument("--keys", required=True)
         parser.add_argument("--action", required=True)
         parser.add_argument("--desc", default="")
+        parser.add_argument("--file", default=None)
         args = parser.parse_args(sys.argv[2:])
-        res = update_keybind(args.line, args.keys, args.action, args.desc)
+        res = update_keybind(args.line, args.keys, args.action, args.desc, target_file=args.file)
         print(json.dumps(res))
     elif cmd == "binds-delete":
         import argparse
         parser = argparse.ArgumentParser()
         parser.add_argument("--line", required=True)
+        parser.add_argument("--file", default=None)
         args = parser.parse_args(sys.argv[2:])
-        res = delete_keybind(args.line)
+        res = delete_keybind(args.line, target_file=args.file)
         print(json.dumps(res))
     elif cmd == "set":
         if len(sys.argv) < 4:

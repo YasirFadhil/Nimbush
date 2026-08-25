@@ -110,11 +110,54 @@ PanelWindow {
                     Layout.fillWidth: true
                     spacing: 8
 
-                    Text {
-                        text: Services.Icons.volumeIcon(Services.Audio.volume, Services.Audio.muted, Services.Audio.isHeadphone, Services.Audio.isTws)
-                        font.family: Services.Theme.fontSymbols
-                        font.pixelSize: 16
-                        color: Services.Audio.muted ? Services.Theme.textDisabled : Services.Theme.accent
+                    Item {
+                        id: headerVolBox
+                        property string icon: Services.Icons.volumeIcon(Services.Audio.volume, Services.Audio.muted, Services.Audio.isHeadphone, Services.Audio.isTws)
+                        property string oldIcon: ""
+                        property color iconColor: Services.Audio.muted ? Services.Theme.textDisabled : Services.Theme.accent
+                        Behavior on iconColor { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+
+                        implicitWidth: mainHeaderVolText.implicitWidth
+                        implicitHeight: mainHeaderVolText.implicitHeight
+                        Layout.alignment: Qt.AlignVCenter
+
+                        onIconChanged: {
+                            if (icon !== mainHeaderVolText.text) {
+                                oldIcon = mainHeaderVolText.text
+                                oldHeaderVolText.opacity = 1.0
+                                mainHeaderVolText.text = icon
+                                mainHeaderVolText.opacity = 0.0
+                                headerCrossFade.restart()
+                            }
+                        }
+
+                        Component.onCompleted: mainHeaderVolText.text = icon
+
+                        Text {
+                            id: oldHeaderVolText
+                            anchors.centerIn: parent
+                            text: headerVolBox.oldIcon
+                            font.family: Services.Theme.fontSymbols
+                            font.pixelSize: 16
+                            color: headerVolBox.iconColor
+                            opacity: 0.0
+                            visible: opacity > 0
+                        }
+
+                        Text {
+                            id: mainHeaderVolText
+                            anchors.centerIn: parent
+                            font.family: Services.Theme.fontSymbols
+                            font.pixelSize: 16
+                            color: headerVolBox.iconColor
+                            opacity: 1.0
+                        }
+
+                        ParallelAnimation {
+                            id: headerCrossFade
+                            NumberAnimation { target: oldHeaderVolText; property: "opacity"; to: 0.0; duration: 220; easing.type: Easing.OutCubic }
+                            NumberAnimation { target: mainHeaderVolText; property: "opacity"; to: 1.0; duration: 220; easing.type: Easing.OutCubic }
+                        }
                     }
 
                     Text {
@@ -282,13 +325,54 @@ PanelWindow {
                                 anchors.rightMargin: 12
                                 spacing: 8
 
-                                Text {
-                                    id: sinkIconText
-                                    text: Services.Icons.volumeIcon(Services.Audio.volume, Services.Audio.muted, Services.Audio.isHeadphone, Services.Audio.isTws)
-                                    font.family: Services.Theme.fontSymbols
-                                    font.pixelSize: 14
-                                    color: (sinkFillBar.width > (sinkIconText.x + 20)) ? Services.Theme.bgOnAccent : Services.Theme.textPrimary
-                                    Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                                Item {
+                                    id: sinkIconBox
+                                    property string icon: Services.Icons.volumeIcon(Services.Audio.volume, Services.Audio.muted, Services.Audio.isHeadphone, Services.Audio.isTws)
+                                    property string oldIcon: ""
+                                    property color iconColor: (sinkFillBar.width > (sinkIconBox.x + 20)) ? Services.Theme.bgOnAccent : Services.Theme.textPrimary
+                                    Behavior on iconColor { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+
+                                    implicitWidth: mainSinkIconText.implicitWidth
+                                    implicitHeight: mainSinkIconText.implicitHeight
+                                    Layout.alignment: Qt.AlignVCenter
+
+                                    onIconChanged: {
+                                        if (icon !== mainSinkIconText.text) {
+                                            oldIcon = mainSinkIconText.text
+                                            oldSinkIconText.opacity = 1.0
+                                            mainSinkIconText.text = icon
+                                            mainSinkIconText.opacity = 0.0
+                                            sinkCrossFade.restart()
+                                        }
+                                    }
+
+                                    Component.onCompleted: mainSinkIconText.text = icon
+
+                                    Text {
+                                        id: oldSinkIconText
+                                        anchors.centerIn: parent
+                                        text: sinkIconBox.oldIcon
+                                        font.family: Services.Theme.fontSymbols
+                                        font.pixelSize: 14
+                                        color: sinkIconBox.iconColor
+                                        opacity: 0.0
+                                        visible: opacity > 0
+                                    }
+
+                                    Text {
+                                        id: mainSinkIconText
+                                        anchors.centerIn: parent
+                                        font.family: Services.Theme.fontSymbols
+                                        font.pixelSize: 14
+                                        color: sinkIconBox.iconColor
+                                        opacity: 1.0
+                                    }
+
+                                    ParallelAnimation {
+                                        id: sinkCrossFade
+                                        NumberAnimation { target: oldSinkIconText; property: "opacity"; to: 0.0; duration: 220; easing.type: Easing.OutCubic }
+                                        NumberAnimation { target: mainSinkIconText; property: "opacity"; to: 1.0; duration: 220; easing.type: Easing.OutCubic }
+                                    }
                                 }
 
                                 Item { Layout.fillWidth: true }
@@ -329,7 +413,7 @@ PanelWindow {
 
                             Text {
                                 anchors.centerIn: parent
-                                text: Services.Audio.muted ? Services.Icons.volOff : Services.Icons.speaker
+                                text: Services.Audio.muted ? Services.Icons.volMute : Services.Icons.speaker
                                 font.family: Services.Theme.fontSymbols
                                 font.pixelSize: 14
                                 color: Services.Audio.muted ? Services.Theme.danger : Services.Theme.textPrimary
@@ -857,7 +941,7 @@ PanelWindow {
 
                                         Text {
                                             anchors.centerIn: parent
-                                            text: streamItem.modelData.muted ? Services.Icons.volOff : Services.Icons.speaker
+                                            text: streamItem.modelData.muted ? Services.Icons.volMute : Services.Icons.speaker
                                             font.family: Services.Theme.fontSymbols
                                             font.pixelSize: 11
                                             color: streamItem.modelData.muted ? Services.Theme.danger : Services.Theme.textSecondary

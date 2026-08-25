@@ -11,11 +11,34 @@ Singleton {
     property bool enabled: false
     property var devices: []
     property var unpairedDevices: []
-    property var tempDevices: []
     property bool refreshing: false
     property bool scanning: false
     property string pairingMac: ""
-    property int statusIndex: 0
+
+    readonly property string helperScript: Quickshell.env("HOME") 
+        ? (Quickshell.env("HOME") + "/.config/quickshell/scripts/bluetooth-helper.py") 
+        : "/home/yasirfadhil/.config/quickshell/scripts/bluetooth-helper.py"
+
+    // Computed properties for connected devices & battery
+    readonly property bool hasConnectedDevice: {
+        for (let i = 0; i < devices.length; i++) {
+            if (devices[i] && devices[i].connected) return true
+        }
+        return false
+    }
+
+    readonly property var connectedDevices: {
+        const list = []
+        for (let i = 0; i < devices.length; i++) {
+            if (devices[i] && devices[i].connected) list.push(devices[i])
+        }
+        return list
+    }
+
+    readonly property var primaryConnectedDevice: (connectedDevices.length > 0) ? connectedDevices[0] : null
+    readonly property string connectedDeviceName: primaryConnectedDevice ? (primaryConnectedDevice.name || primaryConnectedDevice.mac || "") : ""
+    readonly property int connectedDeviceBattery: (primaryConnectedDevice && primaryConnectedDevice.battery !== undefined) ? primaryConnectedDevice.battery : -1
+    readonly property string connectedDeviceIcon: primaryConnectedDevice ? (primaryConnectedDevice.icon || "") : ""
 
     function refresh() {
         if (!powerProc.running) powerProc.running = true
@@ -33,9 +56,10 @@ Singleton {
             refreshing = false
             return
         }
-        if (refreshing || pairedProc.running) return
+        if (refreshing || listProc.running) return
         refreshing = true
-        pairedProc.running = true
+        listProc.command = ["python3", root.helperScript, "list"]
+        listProc.running = true
     }
 
     function startScan() {
@@ -44,7 +68,7 @@ Singleton {
             toggleProc.running = true
         }
         scanning = true
-        scanProc.command = ["bluetoothctl", "--timeout", "15", "scan", "on"]
+        scanProc.command = ["bluetoothctl", "--timeout", "20", "scan", "on"]
         scanProc.running = true
     }
 
@@ -60,22 +84,22 @@ Singleton {
 
     function pairAndConnect(mac) {
         pairingMac = mac
-        pairProc.command = ["sh", "-c", "bluetoothctl pair \"$1\" && bluetoothctl trust \"$1\" && bluetoothctl connect \"$1\"", "sh", mac]
+        pairProc.command = ["python3", root.helperScript, "pair", mac]
         pairProc.running = true
     }
 
     function connectDevice(mac) {
-        connectProc.command = ["bluetoothctl", "connect", mac]
+        connectProc.command = ["python3", root.helperScript, "connect", mac]
         connectProc.running = true
     }
 
     function disconnectDevice(mac) {
-        disconnectProc.command = ["bluetoothctl", "disconnect", mac]
+        disconnectProc.command = ["python3", root.helperScript, "disconnect", mac]
         disconnectProc.running = true
     }
 
     function removeDevice(mac) {
-        removeProc.command = ["bluetoothctl", "remove", mac]
+        removeProc.command = ["python3", root.helperScript, "remove", mac]
         removeProc.running = true
     }
 
@@ -83,20 +107,19 @@ Singleton {
         removeDevice(mac)
     }
 
-    function checkNextStatus() {
-        if (root.statusIndex >= root.tempDevices.length) {
-            root.devices = root.tempDevices
-            root.refreshing = false
-            allDevicesProc.running = true
-            return
+    // Debounce timer for D-Bus live sync events
+    Timer {
+        id: debounceListTimer
+        interval: 350
+        repeat: false
+        onTriggered: {
+            if (root.enabled) root.listDevices()
         }
-        infoProc.command = ["bluetoothctl", "info", root.tempDevices[root.statusIndex].mac]
-        infoProc.running = true
     }
 
-    // Fallback sync timer (15s interval) - live events are already handled instantly by D-Bus monitor below
+    // Fallback sync timer (12s interval)
     Timer {
-        interval: 15000
+        interval: 12000
         running: true
         repeat: true
         triggeredOnStart: true
@@ -111,7 +134,7 @@ Singleton {
     Connections {
         target: Services.OverlayManager
         function onBtPanelVisibleChanged() {
-            if (Services.OverlayManager.btPanelVisible) {
+            if (Services.OverlayManager && Services.OverlayManager.btPanelVisible) {
                 root.refresh()
                 root.listDevices()
             }
@@ -122,110 +145,73 @@ Singleton {
         id: powerProc
         command: ["sh", "-c", "bluetoothctl show | grep Powered"]
         stdout: SplitParser {
-            onRead: data => root.enabled = data.trim().endsWith("yes")
+            onRead: data => {
+                const isPowered = data.trim().endsWith("yes")
+                root.enabled = isPowered
+                if (isPowered) {
+                    root.listDevices()
+                } else {
+                    root.devices = []
+                    root.unpairedDevices = []
+                }
+            }
         }
     }
 
-    // Live monitor: detect connect/disconnect events instantly via BlueZ D-Bus signals
+    // Live monitor: detect connect/disconnect/battery/pairing events instantly via BlueZ D-Bus signals
     Process {
         id: btEventMonitor
         command: ["sh", "-c",
             "dbus-monitor --system \"type='signal',interface='org.freedesktop.DBus.Properties'," +
             "member='PropertiesChanged',path_namespace='/org/bluez'\" 2>/dev/null" +
-            " | stdbuf -oL grep -o '\"Connected\"'"]
+            " | stdbuf -oL grep -E '\"(Connected|BatteryPercentage|Paired|ServicesResolved|Value|Connected:)\"'"]
         running: true
         stdout: SplitParser {
             onRead: data => {
-                root.listDevices()
+                debounceListTimer.restart()
             }
         }
     }
 
     Process {
-        id: pairedProc
-        command: ["bluetoothctl", "devices", "Paired"]
-        property var buffer: []
+        id: listProc
+        property string rawOutput: ""
         stdout: SplitParser {
             onRead: data => {
-                const line = data.trim()
-                const m = line.match(/^Device\s+([0-9A-Fa-f:]{17})\s+(.*)$/)
-                if (m) pairedProc.buffer.push({ mac: m[1], name: m[2], connected: false, paired: true })
-            }
-        }
-        onRunningChanged: { if (running) buffer = [] }
-        onExited: {
-            root.tempDevices = pairedProc.buffer
-            root.statusIndex = 0
-            root.checkNextStatus()
-        }
-    }
-
-    Process {
-        id: allDevicesProc
-        command: ["bluetoothctl", "devices"]
-        property var buffer: []
-        stdout: SplitParser {
-            onRead: data => {
-                const line = data.trim()
-                const m = line.match(/^Device\s+([0-9A-Fa-f:]{17})\s+(.*)$/)
-                if (m) {
-                    const mac = m[1]
-                    const name = m[2]
-                    const isPaired = root.devices.some(d => d.mac.toLowerCase() === mac.toLowerCase())
-                    if (!isPaired) {
-                        allDevicesProc.buffer.push({ mac: mac, name: name, connected: false, paired: false })
-                    }
-                }
-            }
-        }
-        onRunningChanged: { if (running) buffer = [] }
-        onExited: {
-            root.unpairedDevices = allDevicesProc.buffer
-        }
-    }
-
-    Process {
-        id: infoProc
-        property bool foundConnected: false
-        property int foundBattery: -1
-        property string foundIcon: ""
-        stdout: SplitParser {
-            onRead: data => {
-                const line = data.trim()
-                if (line.startsWith("Connected: yes")) infoProc.foundConnected = true
-
-                const batMatch = line.match(/Battery Percentage:\s*(?:0x[0-9a-fA-F]+\s*\()?(\d+)\)?%?/)
-                if (batMatch) {
-                    infoProc.foundBattery = parseInt(batMatch[1])
-                }
-
-                const iconMatch = line.match(/^Icon:\s*(.+)$/)
-                if (iconMatch) {
-                    infoProc.foundIcon = iconMatch[1].trim()
-                }
+                listProc.rawOutput += data
             }
         }
         onRunningChanged: {
-            if (running) {
-                foundConnected = false
-                foundBattery = -1
-                foundIcon = ""
-            }
+            if (running) rawOutput = ""
         }
         onExited: {
-            if (root.tempDevices[root.statusIndex]) {
-                root.tempDevices[root.statusIndex].connected = infoProc.foundConnected
-                root.tempDevices[root.statusIndex].battery = infoProc.foundBattery
-                root.tempDevices[root.statusIndex].icon = infoProc.foundIcon
+            root.refreshing = false
+            try {
+                const parsed = JSON.parse(listProc.rawOutput.trim())
+                if (parsed && Array.isArray(parsed.devices)) {
+                    root.devices = parsed.devices
+                }
+                if (parsed && Array.isArray(parsed.unpaired)) {
+                    const existingUnpaired = root.unpairedDevices.slice()
+                    const map = {}
+                    parsed.unpaired.forEach(d => { map[d.mac.toLowerCase()] = d })
+                    existingUnpaired.forEach(d => {
+                        const mac = d.mac.toLowerCase()
+                        if (!root.devices.some(dev => dev.mac.toLowerCase() === mac)) {
+                            if (!map[mac]) map[mac] = d
+                        }
+                    })
+                    root.unpairedDevices = Object.values(map)
+                }
+            } catch (e) {
+                // Ignore parse errors on empty output
             }
-            root.statusIndex++
-            root.checkNextStatus()
         }
     }
 
     Process {
         id: scanProc
-        command: ["bluetoothctl", "--timeout", "15", "scan", "on"]
+        command: ["bluetoothctl", "--timeout", "20", "scan", "on"]
         stdout: SplitParser {
             onRead: data => {
                 const line = data.trim()
@@ -235,10 +221,26 @@ Singleton {
                     const name = m[2]
                     const isPaired = root.devices.some(d => d.mac.toLowerCase() === mac.toLowerCase())
                     if (!isPaired) {
-                        const exists = root.unpairedDevices.some(d => d.mac.toLowerCase() === mac.toLowerCase())
-                        if (!exists) {
+                        const existingIdx = root.unpairedDevices.findIndex(d => d.mac.toLowerCase() === mac.toLowerCase())
+                        if (existingIdx === -1) {
                             const updated = root.unpairedDevices.slice()
-                            updated.push({ mac: mac, name: name, connected: false, paired: false })
+                            updated.push({ mac: mac, name: name, connected: false, paired: false, battery: -1, icon: "" })
+                            root.unpairedDevices = updated
+                        } else if (name && name !== mac && root.unpairedDevices[existingIdx].name !== name) {
+                            const updated = root.unpairedDevices.slice()
+                            updated[existingIdx].name = name
+                            root.unpairedDevices = updated
+                        }
+                    }
+                } else {
+                    const chgMatch = line.match(/\[CHG\]\s+Device\s+([0-9A-Fa-f:]{17})\s+(?:Name|Alias):\s+(.*)$/)
+                    if (chgMatch) {
+                        const mac = chgMatch[1]
+                        const name = chgMatch[2]
+                        const existingIdx = root.unpairedDevices.findIndex(d => d.mac.toLowerCase() === mac.toLowerCase())
+                        if (existingIdx !== -1 && name) {
+                            const updated = root.unpairedDevices.slice()
+                            updated[existingIdx].name = name
                             root.unpairedDevices = updated
                         }
                     }
