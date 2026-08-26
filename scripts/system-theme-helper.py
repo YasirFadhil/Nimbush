@@ -8,20 +8,71 @@ import re
 
 HOME = os.path.expanduser("~")
 
-def run_proc(args, timeout=1.5):
+def run_proc(args, timeout=2.5):
     try:
         r = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
         return r.stdout.strip()
     except Exception:
         return ""
 
+def get_data_dirs(subfolder=""):
+    """
+    Discovers all valid data directories following XDG specifications,
+    NixOS user/system profiles, and legacy home directories.
+    """
+    dirs = []
+    seen = set()
+
+    def add_dir(d):
+        if d and os.path.isdir(d) and d not in seen:
+            seen.add(d)
+            dirs.append(d)
+
+    # 1. User XDG_DATA_HOME or ~/.local/share
+    data_home = os.environ.get("XDG_DATA_HOME") or os.path.join(HOME, ".local/share")
+    if data_home:
+        add_dir(os.path.join(data_home, subfolder) if subfolder else data_home)
+
+    # 2. Legacy home directories (~/.themes, ~/.icons, ~/.fonts, etc.)
+    if subfolder in ["themes", "icons", "fonts", "pixmaps"]:
+        add_dir(os.path.join(HOME, f".{subfolder}"))
+
+    # 3. Directories from XDG_DATA_DIRS
+    xdg_dirs = [x.strip() for x in os.environ.get("XDG_DATA_DIRS", "").split(":") if x.strip()]
+    for d in xdg_dirs:
+        add_dir(os.path.join(d, subfolder) if subfolder else d)
+
+    # 4. Nix and System profiles
+    user = os.environ.get("USER") or os.path.basename(HOME)
+    standard_bases = [
+        os.path.join(HOME, ".nix-profile/share"),
+        os.path.join(HOME, ".local/state/nix/profile/share"),
+        f"/etc/profiles/per-user/{user}/share",
+        "/nix/profile/share",
+        "/nix/var/nix/profiles/default/share",
+        "/run/current-system/sw/share",
+        "/usr/local/share",
+        "/usr/share"
+    ]
+    for b in standard_bases:
+        add_dir(os.path.join(b, subfolder) if subfolder else b)
+
+    return dirs
+
 def get_gsettings(schema, key):
-    raw = run_proc(["gsettings", "get", schema, key], timeout=0.8)
-    if raw.startswith("'") and raw.endswith("'"):
-        return raw[1:-1]
-    if raw.startswith('"') and raw.endswith('"'):
-        return raw[1:-1]
-    return raw
+    raw = run_proc(["gsettings", "get", schema, key], timeout=1.5)
+    if raw and not raw.startswith("No such schema") and not raw.startswith("GLib-GIO-ERROR"):
+        if (raw.startswith("'") and raw.endswith("'")) or (raw.startswith('"') and raw.endswith('"')):
+            return raw[1:-1]
+        return raw
+    # Fallback to dconf read if gsettings schema query failed
+    dpath = "/" + schema.replace(".", "/") + "/" + key
+    raw_dconf = run_proc(["dconf", "read", dpath], timeout=1.0)
+    if raw_dconf:
+        if (raw_dconf.startswith("'") and raw_dconf.endswith("'")) or (raw_dconf.startswith('"') and raw_dconf.endswith('"')):
+            return raw_dconf[1:-1]
+        return raw_dconf
+    return ""
 
 def set_gsettings(schema, key, val):
     if isinstance(val, bool):
@@ -34,16 +85,34 @@ def set_gsettings(schema, key, val):
         clean = str(val).strip("'\"")
         val_str = clean
         dconf_val = f"'{clean}'"
-    run_proc(["gsettings", "set", schema, key, val_str], timeout=1.0)
+    run_proc(["gsettings", "set", schema, key, val_str], timeout=2.0)
     dpath = "/" + schema.replace(".", "/") + "/" + key
-    run_proc(["dconf", "write", dpath, dconf_val], timeout=1.0)
+    run_proc(["dconf", "write", dpath, dconf_val], timeout=2.0)
+
+def is_nix_store_managed(path):
+    """
+    Checks if a file or symlink is managed by Home Manager / Nix store.
+    """
+    if os.path.islink(path):
+        target = os.readlink(path)
+        if target.startswith("/nix/store") or "/nix/store" in os.path.realpath(path):
+            return True
+    if os.path.exists(path) and os.path.realpath(path).startswith("/nix/store"):
+        return True
+    return False
 
 def update_gtk_ini(file_path, key_values):
-    if not os.path.exists(os.path.dirname(file_path)):
+    # NEVER overwrite or unlink files managed by Nix store / Home Manager
+    if is_nix_store_managed(file_path):
+        return
+
+    parent_dir = os.path.dirname(file_path)
+    if not os.path.exists(parent_dir):
         try:
-            os.makedirs(os.path.dirname(file_path), exist_ok=True)
+            os.makedirs(parent_dir, exist_ok=True)
         except Exception:
             return
+
     lines = []
     if os.path.exists(file_path):
         try:
@@ -76,57 +145,93 @@ def update_gtk_ini(file_path, key_values):
             lines.insert(settings_idx + 1, f"{k}={v}\n")
             
     try:
+        if os.path.islink(file_path):
+            os.unlink(file_path)
         with open(file_path, "w", encoding="utf-8") as f:
             f.writelines(lines)
+    except Exception:
+        try:
+            if os.path.exists(file_path):
+                os.remove(file_path)
+            with open(file_path, "w", encoding="utf-8") as f:
+                f.writelines(lines)
+        except Exception:
+            pass
+
+def update_xsettingsd(key_values):
+    conf_path = os.path.join(HOME, ".config/xsettingsd/xsettingsd.conf")
+    if is_nix_store_managed(conf_path):
+        run_proc(["pkill", "-HUP", "xsettingsd"], timeout=0.5)
+        return
+
+    if not os.path.exists(os.path.dirname(conf_path)):
+        try:
+            os.makedirs(os.path.dirname(conf_path), exist_ok=True)
+        except Exception:
+            return
+    lines = []
+    if os.path.exists(conf_path):
+        try:
+            with open(conf_path, "r", encoding="utf-8") as f:
+                lines = f.readlines()
+        except Exception:
+            lines = []
+    for k, v in key_values.items():
+        found = False
+        prefix = f"{k} "
+        formatted_val = f'"{v}"' if isinstance(v, str) else str(v)
+        new_line = f"{k} {formatted_val}\n"
+        for i in range(len(lines)):
+            if lines[i].strip().startswith(prefix):
+                lines[i] = new_line
+                found = True
+                break
+        if not found:
+            lines.append(new_line)
+    try:
+        if os.path.islink(conf_path):
+            os.unlink(conf_path)
+        with open(conf_path, "w", encoding="utf-8") as f:
+            f.writelines(lines)
+        run_proc(["pkill", "-HUP", "xsettingsd"], timeout=0.5)
     except Exception:
         pass
 
 def get_gtk_themes():
-    paths = [
-        "/usr/share/themes",
-        os.path.join(HOME, ".themes"),
-        os.path.join(HOME, ".local/share/themes"),
-        os.path.join(HOME, ".nix-profile/share/themes"),
-        "/run/current-system/sw/share/themes"
-    ]
+    search_paths = get_data_dirs("themes")
     themes = set()
-    for p in paths:
-        if os.path.exists(p):
-            try:
-                for d in os.listdir(p):
-                    full = os.path.join(p, d)
-                    if os.path.isdir(full):
-                        if os.path.exists(os.path.join(full, "gtk-3.0")) or os.path.exists(os.path.join(full, "gtk-4.0")) or os.path.exists(os.path.join(full, "gtk-2.0")):
-                            themes.add(d)
-            except Exception:
-                pass
+    for p in search_paths:
+        try:
+            for d in os.listdir(p):
+                full = os.path.join(p, d)
+                if os.path.isdir(full):
+                    if (os.path.exists(os.path.join(full, "gtk-3.0")) or 
+                        os.path.exists(os.path.join(full, "gtk-4.0")) or 
+                        os.path.exists(os.path.join(full, "gtk-2.0")) or
+                        os.path.exists(os.path.join(full, "index.theme"))):
+                        themes.add(d)
+        except Exception:
+            pass
     theme_list = sorted(list(themes))
     if not theme_list:
         theme_list = ["Adwaita", "Tahoe-Dark", "Tahoe-Light", "Default"]
     return theme_list
 
 def get_icon_and_cursor_themes():
-    paths = [
-        "/usr/share/icons",
-        os.path.join(HOME, ".icons"),
-        os.path.join(HOME, ".local/share/icons"),
-        os.path.join(HOME, ".nix-profile/share/icons"),
-        "/run/current-system/sw/share/icons"
-    ]
+    search_paths = get_data_dirs("icons")
     icons = set()
     cursors = set()
-    for p in paths:
-        if os.path.exists(p):
-            try:
-                for d in os.listdir(p):
-                    full = os.path.join(p, d)
-                    if os.path.isdir(full):
-                        if os.path.exists(os.path.join(full, "cursors")):
-                            cursors.add(d)
-                        if os.path.exists(os.path.join(full, "index.theme")):
-                            icons.add(d)
-            except Exception:
-                pass
+    for p in search_paths:
+        try:
+            for d in os.listdir(p):
+                full = os.path.join(p, d)
+                if os.path.isdir(full):
+                    if os.path.exists(os.path.join(full, "cursors")):
+                        cursors.add(d)
+                    if os.path.exists(os.path.join(full, "index.theme")):
+                        icons.add(d)
+        except Exception:
+            pass
     icon_list = sorted(list(icons))
     cursor_list = sorted(list(cursors))
     if not icon_list:
@@ -137,7 +242,14 @@ def get_icon_and_cursor_themes():
 
 def get_fonts():
     try:
-        r = run_proc(["fc-list", ":", "family"], timeout=1.8)
+        r = run_proc(["fc-list", ":", "family"], timeout=4.0)
+        if not r:
+            for fc_bin in ["/run/current-system/sw/bin/fc-list", "/etc/profiles/per-user/" + (os.environ.get("USER") or "user") + "/bin/fc-list", "/usr/bin/fc-list"]:
+                if os.path.exists(fc_bin):
+                    r = run_proc([fc_bin, ":", "family"], timeout=4.0)
+                    if r:
+                        break
+
         if not r:
             return ["Liga SFMonoNerdFont", "SF Pro Display", "JetBrainsMono Nerd Font", "Adwaita Sans", "Inter", "Noto Sans"], ["Liga SFMonoNerdFont", "JetBrainsMono Nerd Font", "Adwaita Mono"]
         
@@ -147,7 +259,7 @@ def get_fonts():
                 name = part.strip()
                 if name and not name.startswith(".") and len(name) < 45:
                     # Clean out overly specific weights to keep family names clean
-                    clean_name = re.sub(r"\s+(ExtraLight|UltraLight|Light|Thin|Medium|SemiBold|DemiBold|Bold|ExtraBold|Black|Heavy|Italic|Book)$", "", name).strip()
+                    clean_name = re.sub(r"\s+(ExtraLight|UltraLight|Light|Thin|Medium|SemiBold|DemiBold|Bold|ExtraBold|Black|Heavy|Italic|Book|Regular)$", "", name).strip()
                     if clean_name:
                         all_fonts.add(clean_name)
         
@@ -184,7 +296,6 @@ def parse_font_spec(font_str, default_family="Liga SFMonoNerdFont", default_size
         try:
             size_val = int(float(parts[-1]))
             fam = " ".join(parts[:-1])
-            # Clean common font styles like Medium, Regular, Bold from family if needed
             clean_fam = re.sub(r"\s+(Regular|Medium|Light|Bold|SemiBold|DemiBold|Italic)$", "", fam)
             return clean_fam if clean_fam else fam, size_val
         except ValueError:
@@ -194,13 +305,15 @@ def parse_font_spec(font_str, default_family="Liga SFMonoNerdFont", default_size
 def get_theme_dirs_with_inheritance(theme_name):
     dirs = []
     seen = set()
+    search_bases = get_data_dirs("icons")
+    
     def add_theme(tname):
         if not tname or tname in seen:
             return
         seen.add(tname)
-        for base in [os.path.join(HOME, ".local/share/icons"), os.path.join(HOME, ".icons"), "/usr/share/icons"]:
+        for base in search_bases:
             tdir = os.path.join(base, tname)
-            if os.path.exists(tdir) and os.path.isdir(tdir):
+            if os.path.isdir(tdir):
                 dirs.append(tdir)
                 idx = os.path.join(tdir, "index.theme")
                 if os.path.exists(idx):
@@ -209,13 +322,15 @@ def get_theme_dirs_with_inheritance(theme_name):
                             for line in f:
                                 if line.strip().startswith("Inherits="):
                                     for inh in line.strip()[9:].split(","):
-                                        add_theme(inh.strip())
+                                        inh_clean = inh.strip()
+                                        if inh_clean:
+                                            add_theme(inh_clean)
                     except Exception:
                         pass
     add_theme(theme_name)
     add_theme("hicolor")
-    if os.path.exists("/usr/share/pixmaps"):
-        dirs.append("/usr/share/pixmaps")
+    for pix in get_data_dirs("pixmaps"):
+        dirs.append(pix)
     return dirs
 
 def get_icon_category_score(path):
@@ -378,9 +493,9 @@ def query_all():
 
 def apply_gtk_theme_links(theme_name):
     theme_path = ""
-    for base in [os.path.join(HOME, ".themes"), "/usr/share/themes", os.path.join(HOME, ".local/share/themes")]:
+    for base in get_data_dirs("themes"):
         p = os.path.join(base, theme_name)
-        if os.path.exists(p):
+        if os.path.isdir(p):
             theme_path = p
             break
 
@@ -389,11 +504,22 @@ def apply_gtk_theme_links(theme_name):
     os.makedirs(gtk4_dir, exist_ok=True)
     os.makedirs(gtk3_dir, exist_ok=True)
 
-    # 1. Update GTK4 links
     gtk4_theme_dir = os.path.join(theme_path, "gtk-4.0") if theme_path else ""
+    gtk3_theme_dir = os.path.join(theme_path, "gtk-3.0") if theme_path else ""
+
+    # 1. Update GTK4 links
     for f in ["gtk.css", "gtk-dark.css"]:
         target_link = os.path.join(gtk4_dir, f)
-        src_file = os.path.join(gtk4_theme_dir, f) if (gtk4_theme_dir and os.path.exists(gtk4_theme_dir)) else ""
+        if is_nix_store_managed(target_link):
+            continue
+        src_file = ""
+        if gtk4_theme_dir and os.path.exists(os.path.join(gtk4_theme_dir, f)):
+            src_file = os.path.join(gtk4_theme_dir, f)
+        elif gtk3_theme_dir and os.path.exists(os.path.join(gtk3_theme_dir, "libadwaita.css")):
+            src_file = os.path.join(gtk3_theme_dir, "libadwaita.css")
+        elif gtk3_theme_dir and os.path.exists(os.path.join(gtk3_theme_dir, f)):
+            src_file = os.path.join(gtk3_theme_dir, f)
+
         if os.path.islink(target_link) or os.path.exists(target_link):
             try:
                 os.remove(target_link)
@@ -406,10 +532,11 @@ def apply_gtk_theme_links(theme_name):
                 pass
 
     # 2. Update GTK3 links
-    gtk3_theme_dir = os.path.join(theme_path, "gtk-3.0") if theme_path else ""
     for f in ["assets", "libadwaita.css", "libadwaita-tweaks.css"]:
         target_link = os.path.join(gtk3_dir, f)
-        src_file = os.path.join(gtk3_theme_dir, f) if (gtk3_theme_dir and os.path.exists(gtk3_theme_dir)) else ""
+        if is_nix_store_managed(target_link):
+            continue
+        src_file = os.path.join(gtk3_theme_dir, f) if (gtk3_theme_dir and os.path.exists(os.path.join(gtk3_theme_dir, f))) else ""
         if os.path.islink(target_link) or os.path.exists(target_link):
             try:
                 if os.path.islink(target_link):
@@ -430,12 +557,15 @@ def set_gtk_theme(name):
     set_gsettings("org.gnome.desktop.interface", "gtk-theme", name)
     for p in [os.path.join(HOME, ".config/gtk-3.0/settings.ini"), os.path.join(HOME, ".config/gtk-4.0/settings.ini")]:
         update_gtk_ini(p, {"gtk-theme-name": name})
+    update_xsettingsd({"Net/ThemeName": name})
+    apply_gtk_theme_links(name)
     return {"status": "ok", "gtk_theme": name}
 
 def set_icon_theme(name):
     set_gsettings("org.gnome.desktop.interface", "icon-theme", name)
     for p in [os.path.join(HOME, ".config/gtk-3.0/settings.ini"), os.path.join(HOME, ".config/gtk-4.0/settings.ini")]:
         update_gtk_ini(p, {"gtk-icon-theme-name": name})
+    update_xsettingsd({"Net/IconThemeName": name})
     build_and_save_icon_cache(name)
     return {"status": "ok", "icon_theme": name}
 
@@ -446,12 +576,16 @@ def set_cursor(name, size):
         sz = 24
     set_gsettings("org.gnome.desktop.interface", "cursor-theme", name)
     set_gsettings("org.gnome.desktop.interface", "cursor-size", sz)
-    run_proc(["hyprctl", "setcursor", name, str(sz)], timeout=0.8)
+    run_proc(["hyprctl", "setcursor", name, str(sz)], timeout=1.0)
     for p in [os.path.join(HOME, ".config/gtk-3.0/settings.ini"), os.path.join(HOME, ".config/gtk-4.0/settings.ini")]:
         update_gtk_ini(p, {
             "gtk-cursor-theme-name": name,
             "gtk-cursor-theme-size": str(sz)
         })
+    update_xsettingsd({
+        "Gtk/CursorThemeName": name,
+        "Gtk/CursorThemeSize": sz
+    })
     return {"status": "ok", "cursor_theme": name, "cursor_size": sz}
 
 def set_color_scheme(scheme):
@@ -474,6 +608,7 @@ def set_font(kind, font_spec):
         set_gsettings(schema, "font-name", font_spec)
         for p in [os.path.join(HOME, ".config/gtk-3.0/settings.ini"), os.path.join(HOME, ".config/gtk-4.0/settings.ini")]:
             update_gtk_ini(p, {"gtk-font-name": font_spec})
+        update_xsettingsd({"Gtk/FontName": font_spec})
     elif kind == "document":
         set_gsettings(schema, "document-font-name", font_spec)
     elif kind == "monospace":
@@ -482,6 +617,7 @@ def set_font(kind, font_spec):
 
 def set_font_rendering(hinting, antialiasing, scaling):
     schema = "org.gnome.desktop.interface"
+    xsettings_updates = {}
     if hinting:
         set_gsettings(schema, "font-hinting", hinting)
         hint_style = f"hint{hinting}" if hinting in ["none", "slight", "medium", "full"] else "hintslight"
@@ -489,6 +625,8 @@ def set_font_rendering(hinting, antialiasing, scaling):
             "gtk-xft-hinting": "0" if hinting == "none" else "1",
             "gtk-xft-hintstyle": hint_style
         })
+        xsettings_updates["Xft/Hinting"] = 0 if hinting == "none" else 1
+        xsettings_updates["Xft/HintStyle"] = hint_style
     if antialiasing:
         set_gsettings(schema, "font-antialiasing", antialiasing)
         rgba_mode = "rgb" if antialiasing == "rgba" else "none"
@@ -496,12 +634,16 @@ def set_font_rendering(hinting, antialiasing, scaling):
             "gtk-xft-antialias": "0" if antialiasing == "none" else "1",
             "gtk-xft-rgba": rgba_mode
         })
+        xsettings_updates["Xft/Antialias"] = 0 if antialiasing == "none" else 1
+        xsettings_updates["Xft/RGBA"] = rgba_mode
     if scaling:
         try:
             sc = float(scaling)
             set_gsettings(schema, "text-scaling-factor", sc)
         except Exception:
             pass
+    if xsettings_updates:
+        update_xsettingsd(xsettings_updates)
     return {"status": "ok", "hinting": hinting, "antialiasing": antialiasing, "scaling": scaling}
 
 def main():
@@ -534,3 +676,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

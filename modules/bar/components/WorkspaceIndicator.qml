@@ -69,7 +69,7 @@ RowLayout {
                     id: logoText
                     anchors.centerIn: parent
                     text: Services.OsInfo.logoGlyph
-                    font.family: Services.Theme.fontMono
+                    font.family: Services.Theme.fontSymbols
                     font.pixelSize: wsRoot.isMinimal ? Services.Theme.fontSizeXl : Services.Theme.fontSize3xl
                     color: logoMouse.containsMouse ? Qt.lighter(Services.Theme.accent, 1.2) : Services.Theme.accent
                     scale: logoMouse.containsMouse ? 1.1 : 1.0

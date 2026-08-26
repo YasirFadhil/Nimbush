@@ -914,7 +914,7 @@ Item {
                     if (root.mediaPlaying || (root.mediaStopping && !root.mediaTextCollapsed)) return "󰎈"
                     return "●"
                 }
-                font.family: Services.Theme.fontMono
+                font.family: Services.Theme.fontSymbols
                 font.pixelSize: 13
                 color: {
                     if (Services.OverlayManager.isLocked) return Services.Theme.accent
@@ -1113,7 +1113,7 @@ Item {
                     Text {
                         anchors.centerIn: parent
                         text: "󰂚"
-                        font.family: Services.Theme.fontMono
+                        font.family: Services.Theme.fontSymbols
                         font.pixelSize: 14
                         color: Services.Theme.accent
                         visible: !appIconImg.visible
@@ -1537,7 +1537,7 @@ Item {
                 Text {
                     anchors.centerIn: parent
                     text: "󰎈"
-                    font.family: Services.Theme.fontMono
+                    font.family: Services.Theme.fontSymbols
                     font.pixelSize: 16
                     color: Services.Theme.accent
                     visible: !peekArtImg.visible
@@ -1577,7 +1577,7 @@ Item {
                 Text {
                     anchors.centerIn: parent
                     text: "󰎈"
-                    font.family: Services.Theme.fontMono
+                    font.family: Services.Theme.fontSymbols
                     font.pixelSize: 14
                     color: Services.Theme.success
 
@@ -1635,7 +1635,7 @@ Item {
                     Text {
                         anchors.centerIn: parent
                         text: "󰎈"
-                        font.family: Services.Theme.fontMono
+                        font.family: Services.Theme.fontSymbols
                         font.pixelSize: 22
                         color: Services.Theme.accent
                         visible: !albumArtImg.visible

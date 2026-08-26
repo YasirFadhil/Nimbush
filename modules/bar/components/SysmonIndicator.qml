@@ -11,16 +11,18 @@ Rectangle {
     readonly property bool isFloating: barStyle === "floating"
     readonly property bool isUnified: barStyle === "unified"
 
+    readonly property bool isActive: Services.OverlayManager ? Services.OverlayManager.sysmonPanelVisible : false
+
     implicitHeight: isMinimal ? 24 : 28
     implicitWidth: sysmonRow.implicitWidth + (isMinimal ? 12 : 20)
     radius: isMinimal ? 6 : (isIslands ? 14 : 10)
 
-    color: sysmonMouse.containsMouse ? Services.Theme.bgHover 
+    color: (sysmonMouse.containsMouse || isActive) ? Services.Theme.bgHover 
          : (isIslands ? Services.Theme.surface 
          : (isFloating ? Qt.rgba(Services.Theme.surface.r, Services.Theme.surface.g, Services.Theme.surface.b, 0.45) 
          : (isUnified ? Qt.rgba(Services.Theme.bgDeep.r, Services.Theme.bgDeep.g, Services.Theme.bgDeep.b, 0.4) : "transparent")))
 
-    border.color: sysmonMouse.containsMouse ? Services.Theme.borderHighlight 
+    border.color: (sysmonMouse.containsMouse || isActive) ? Services.Theme.borderHighlight 
          : (isIslands ? Services.Theme.border 
          : (isFloating ? Qt.rgba(Services.Theme.border.r, Services.Theme.border.g, Services.Theme.border.b, 0.4) 
          : (isUnified ? Qt.rgba(Services.Theme.border.r, Services.Theme.border.g, Services.Theme.border.b, 0.3) : "transparent")))
@@ -38,7 +40,7 @@ Rectangle {
             text: Services.Icons.cpu
             font.family: Services.Theme.fontSymbols
             font.pixelSize: isMinimal ? Services.Theme.fontSizeMd : Services.Theme.fontSizeXl
-            color: sysmonMouse.containsMouse ? Services.Theme.accent : Services.Theme.textPrimary
+            color: (sysmonMouse.containsMouse || sysmonPill.isActive) ? Services.Theme.accent : Services.Theme.textPrimary
             Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
         }
 
@@ -46,7 +48,8 @@ Rectangle {
             text: Math.round(Services.Sysmon.cpuUsage) + "%"
             font.family: Services.Theme.fontMono
             font.pixelSize: isMinimal ? Services.Theme.fontSizeSm : Services.Theme.fontSizeMd
-            color: Services.Theme.textSecondary
+            color: (sysmonMouse.containsMouse || sysmonPill.isActive) ? Services.Theme.accent : Services.Theme.textSecondary
+            Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
         }
     }
 
@@ -55,6 +58,12 @@ Rectangle {
         anchors.fill: parent
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
-        onClicked: Services.OverlayManager.dashboardToggleRequested()
+        onClicked: {
+            const centerX = sysmonPill.mapToItem(null, sysmonPill.width / 2, 0).x
+            Services.OverlayManager.sysmonTargetX = centerX
+            const newState = !Services.OverlayManager.sysmonPanelVisible
+            if (newState) Services.OverlayManager.closeAllExcept("sysmonPanel")
+            Services.OverlayManager.sysmonPanelVisible = newState
+        }
     }
 }

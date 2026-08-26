@@ -15,6 +15,8 @@ Singleton {
     property real uiScale: 1.0                    // 0.9 (compact) | 1.0 (normal) | 1.15 (large)
     property bool useMatugen: false
     property string fontFamily: "Liga SFMono Nerd Font, monospace"
+    property string fontMono: "Liga SFMono Nerd Font, monospace"
+    property string fontDisplay: "SF Pro Display, Inter, Sans-Serif"
     property real glassOpacity: 0.85              // 0.70 | 0.85 | 0.98
 
     // ── Matugen Extracted Colors ─────────────────────────────────────────────
@@ -197,6 +199,8 @@ Singleton {
         if (data.cornerRadius !== undefined) cornerRadius = Number(data.cornerRadius)
         if (data.uiScale !== undefined) uiScale = Number(data.uiScale)
         if (data.fontFamily !== undefined) fontFamily = data.fontFamily
+        if (data.fontMono !== undefined) fontMono = data.fontMono
+        if (data.fontDisplay !== undefined) fontDisplay = data.fontDisplay
         if (data.glassOpacity !== undefined) glassOpacity = Number(data.glassOpacity)
 
         if (data.barPosition !== undefined) barPosition = data.barPosition
@@ -298,6 +302,8 @@ Singleton {
             cornerRadius: cornerRadius,
             uiScale: uiScale,
             fontFamily: fontFamily,
+            fontMono: fontMono,
+            fontDisplay: fontDisplay,
             glassOpacity: glassOpacity,
 
             lastSettingsTab: lastSettingsTab,
@@ -387,6 +393,8 @@ Singleton {
         cornerRadius = 16
         uiScale = 1.0
         fontFamily = "Liga SFMono Nerd Font, monospace"
+        fontMono = "Liga SFMono Nerd Font, monospace"
+        fontDisplay = "SF Pro Display, Inter, Sans-Serif"
         glassOpacity = 0.85
 
         barPosition = "top"
@@ -641,6 +649,8 @@ Singleton {
     }
     function setUiScale(scale) { uiScale = scale; saveConfig() }
     function setFontFamily(family) { fontFamily = family; saveConfig() }
+    function setFontMono(family) { fontMono = family; saveConfig() }
+    function setFontDisplay(family) { fontDisplay = family; saveConfig() }
     function setGlassOpacity(op) { glassOpacity = op; saveConfig() }
 
     // ── Processes ────────────────────────────────────────────────────────────

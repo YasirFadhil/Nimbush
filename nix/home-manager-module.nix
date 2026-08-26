@@ -148,6 +148,9 @@ in
           ]))
           gobject-introspection
           gtk3
+          fontconfig
+          dconf
+          gsettings-desktop-schemas
         ]));
 
       # Automatically place files into ~/.config/quickshell if not using wrapped package

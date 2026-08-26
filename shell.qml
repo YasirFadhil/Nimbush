@@ -19,6 +19,7 @@ import "modules/welcome" as WelcomeModule
 import "modules/battery" as BatteryModule
 import "modules/volume" as VolumeModule
 import "modules/emoji" as EmojiModule
+import "modules/sysmon" as SysmonModule
 
 ShellRoot {
     // Native QML wallpaper layer (serves as wallpaper renderer and fallback for swww)
@@ -38,6 +39,7 @@ ShellRoot {
     ControlCenter.ControlCenter { id: controlCenter }
     BatteryModule.Battery { id: batteryWindow }
     VolumeModule.Volume { id: volumeWindow }
+    SysmonModule.Sysmon { id: sysmonWindow }
     CalendarModule.Calendar {}
     LockscreenModule.Lockscreen { id: lockscreenWindow }
     WelcomeModule.Welcome { id: welcomeWindow }
@@ -124,6 +126,14 @@ ShellRoot {
         function toggle(): void { if (!Services.OverlayManager.isLocked) volumeWindow.toggle() }
         function show():   void { if (!Services.OverlayManager.isLocked) volumeWindow.show() }
         function hide():   void { volumeWindow.hide() }
+    }
+
+    // ── System & Task Manager Panel ──────────────────────────────────────────
+    IpcHandler {
+        target: "sysmon"
+        function toggle(): void { if (!Services.OverlayManager.isLocked) sysmonWindow.toggle() }
+        function show():   void { if (!Services.OverlayManager.isLocked) sysmonWindow.show() }
+        function hide():   void { sysmonWindow.hide() }
     }
 
     // ── Calendar Panel ───────────────────────────────────────────────────────

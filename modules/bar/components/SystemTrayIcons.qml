@@ -89,7 +89,7 @@ Rectangle {
                     anchors.centerIn: parent
                     visible: !trayImg.visible
                     text: "󰍹"
-                    font.family: Services.Theme.fontMono
+                    font.family: Services.Theme.fontSymbols
                     font.pixelSize: Services.Theme.fontSizeLg
                     color: Services.Theme.textSecondary
                 }
@@ -164,7 +164,7 @@ Rectangle {
             Text {
                 anchors.centerIn: parent
                 text: "󰅀"
-                font.family: Services.Theme.fontMono
+                font.family: Services.Theme.fontSymbols
                 font.pixelSize: Services.Theme.fontSizeXl
                 color: overflowArea.containsMouse ? Services.Theme.accent : Services.Theme.textSecondary
                 rotation: trayPill.trayOverflowPopup && trayPill.trayOverflowPopup.visible ? 180 : 0

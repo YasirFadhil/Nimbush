@@ -89,7 +89,7 @@ PanelWindow {
 
                     Text {
                         text: "󰍹"
-                        font.family: Services.Theme.fontMono
+                        font.family: Services.Theme.fontSymbols
                         font.pixelSize: Services.Theme.fontSizeXl
                         color: Services.Theme.accent
                     }

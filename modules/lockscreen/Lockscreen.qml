@@ -437,7 +437,7 @@ Scope {
                             Text {
                                 anchors.centerIn: parent
                                 text: "󰌾"
-                                font.family: Services.Theme.fontMono
+                                font.family: Services.Theme.fontSymbols
                                 font.pixelSize: 13
                                 color: Services.Theme.accent
                             }
@@ -467,7 +467,7 @@ Scope {
                                 Text {
                                     anchors.centerIn: parent
                                     text: "󰌾"
-                                    font.family: Services.Theme.fontMono
+                                    font.family: Services.Theme.fontSymbols
                                     font.pixelSize: 15
                                     color: Services.Theme.accent
                                 }

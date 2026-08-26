@@ -445,7 +445,7 @@ PanelWindow {
 
                         ColumnLayout {
                             anchors.fill: parent
-                            anchors.margins: 12
+                            anchors.margins: 10
                             spacing: 10
 
                             // Dynamic Island Header Bar
@@ -456,7 +456,7 @@ PanelWindow {
                                 // Left Icon Circle (Click icon = Power Toggle On/Off)
                                 Rectangle {
                                     id: wifiIconCircle
-                                    width: 36; height: 36; radius: 18
+                                    width: 32; height: 32; radius: 16
                                     color: wifiIconMouse.containsMouse 
                                            ? (Services.Wifi.enabled ? "#35000000" : Services.Theme.bgHover) 
                                            : (Services.Wifi.enabled ? "#20000000" : "transparent")
@@ -469,7 +469,7 @@ PanelWindow {
                                         anchors.centerIn: parent
                                         text: Services.Icons.wifiIcon(Services.Wifi.signalStrength, Services.Wifi.connected, Services.Wifi.enabled)
                                         font.family: Services.Theme.fontSymbols
-                                        font.pixelSize: 18
+                                        font.pixelSize: 16
                                         scale: Services.Wifi.enabled ? 1.08 : 1.0
                                         color: Services.Wifi.enabled ? Services.Theme.bgOnAccent : Services.Theme.textPrimary
                                         Behavior on scale { NumberAnimation { duration: 200; easing.type: Easing.OutBack } }
@@ -499,7 +499,7 @@ PanelWindow {
 
                                     RowLayout {
                                         anchors.fill: parent
-                                        spacing: 6
+                                        spacing: 4
 
                                         ColumnLayout {
                                             Layout.fillWidth: true
@@ -521,6 +521,8 @@ PanelWindow {
                                                       : (Services.Wifi.enabled ? (Services.Wifi.connected ? ("Connected • " + Services.Wifi.signalStrength + "%") : "On") : "Off")
                                                 font.pixelSize: 10
                                                 color: Services.Wifi.enabled ? Services.Theme.bgOnAccent : Services.Theme.textDisabled
+                                                Layout.fillWidth: true
+                                                elide: Text.ElideRight
                                             }
                                         }
 
@@ -552,8 +554,9 @@ PanelWindow {
                                         Text {
                                             text: Services.Icons.chevDown
                                             font.family: Services.Theme.fontSymbols
-                                            font.pixelSize: 10
-                                            color: Services.Wifi.enabled ? Services.Theme.bgDeep : Services.Theme.textDisabled
+                                            font.pixelSize: 9
+                                            Layout.alignment: Qt.AlignVCenter
+                                            color: Services.Wifi.enabled ? Services.Theme.bgOnAccent : Services.Theme.textDisabled
                                             rotation: Services.OverlayManager.wifiPanelVisible ? 180 : 0
                                             Behavior on rotation { NumberAnimation { duration: 220; easing.type: Easing.OutBack } }
                                         }
@@ -775,7 +778,7 @@ PanelWindow {
 
                         ColumnLayout {
                             anchors.fill: parent
-                            anchors.margins: 12
+                            anchors.margins: 10
                             spacing: 10
 
                             // Dynamic Island Header Bar
@@ -786,7 +789,7 @@ PanelWindow {
                                 // Left Icon Circle (Click icon = Power Toggle On/Off)
                                 Rectangle {
                                     id: btIconCircle
-                                    width: 36; height: 36; radius: 18
+                                    width: 32; height: 32; radius: 16
                                     color: btIconMouse.containsMouse 
                                            ? (Services.Bluetooth.enabled ? "#35000000" : Services.Theme.bgHover) 
                                            : (Services.Bluetooth.enabled ? "#20000000" : "transparent")
@@ -801,7 +804,7 @@ PanelWindow {
                                               ? Services.Icons.btDeviceIcon(Services.Bluetooth.connectedDeviceIcon, Services.Bluetooth.connectedDeviceName)
                                               : Services.Icons.bluetooth
                                         font.family: Services.Theme.fontSymbols
-                                        font.pixelSize: 18
+                                        font.pixelSize: 16
                                         scale: Services.Bluetooth.enabled ? 1.08 : 1.0
                                         color: Services.Bluetooth.enabled ? Services.Theme.bgOnAccent : Services.Theme.textPrimary
                                         Behavior on scale { NumberAnimation { duration: 200; easing.type: Easing.OutBack } }
@@ -831,7 +834,7 @@ PanelWindow {
 
                                     RowLayout {
                                         anchors.fill: parent
-                                        spacing: 6
+                                        spacing: 4
 
                                         ColumnLayout {
                                             Layout.fillWidth: true
@@ -861,6 +864,8 @@ PanelWindow {
                                                          : "Off")
                                                 font.pixelSize: 10
                                                 color: Services.Bluetooth.enabled ? Services.Theme.bgOnAccent : Services.Theme.textDisabled
+                                                Layout.fillWidth: true
+                                                elide: Text.ElideRight
                                             }
                                         }
 
@@ -892,8 +897,9 @@ PanelWindow {
                                         Text {
                                             text: Services.Icons.chevDown
                                             font.family: Services.Theme.fontSymbols
-                                            font.pixelSize: 10
-                                            color: Services.Bluetooth.enabled ? Services.Theme.bgDeep : Services.Theme.textDisabled
+                                            font.pixelSize: 9
+                                            Layout.alignment: Qt.AlignVCenter
+                                            color: Services.Bluetooth.enabled ? Services.Theme.bgOnAccent : Services.Theme.textDisabled
                                             rotation: Services.OverlayManager.btPanelVisible ? 180 : 0
                                             Behavior on rotation { NumberAnimation { duration: 220; easing.type: Easing.OutBack } }
                                         }

@@ -14,8 +14,10 @@ Singleton {
     property bool calendarVisible: false
     property bool batteryPanelVisible: false
     property bool volumePanelVisible: false
+    property bool sysmonPanelVisible: false
     property real batteryTargetX: -1
     property real volumeTargetX: -1
+    property real sysmonTargetX: -1
 
     signal launcherToggleRequested()
     signal dashboardToggleRequested()
@@ -100,6 +102,9 @@ Singleton {
         }
         if (except !== "volumePanel") {
             volumePanelVisible = false
+        }
+        if (except !== "sysmonPanel") {
+            sysmonPanelVisible = false
         }
     }
 }

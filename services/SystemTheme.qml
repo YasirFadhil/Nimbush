@@ -62,14 +62,16 @@ Singleton {
     function setGtkTheme(name) {
         if (!name) return
         currentGtkTheme = name
-        execProc.command = [helperScript, "set_gtk_theme", name]
+        execProc.running = false
+        execProc.command = ["python3", helperScript, "set_gtk_theme", name]
         execProc.running = true
     }
 
     function setIconTheme(name) {
         if (!name) return
         currentIconTheme = name
-        execProc.command = [helperScript, "set_icon_theme", name]
+        execProc.running = false
+        execProc.command = ["python3", helperScript, "set_icon_theme", name]
         execProc.running = true
     }
 
@@ -78,14 +80,16 @@ Singleton {
         currentCursorTheme = name
         var sz = size !== undefined ? size : currentCursorSize
         currentCursorSize = sz
-        execProc.command = [helperScript, "set_cursor", name, String(sz)]
+        execProc.running = false
+        execProc.command = ["python3", helperScript, "set_cursor", name, String(sz)]
         execProc.running = true
     }
 
     function setCursorSize(size) {
         if (!size) return
         currentCursorSize = size
-        execProc.command = [helperScript, "set_cursor", currentCursorTheme, String(size)]
+        execProc.running = false
+        execProc.command = ["python3", helperScript, "set_cursor", currentCursorTheme, String(size)]
         execProc.running = true
     }
 
@@ -96,9 +100,6 @@ Singleton {
         if (kind === "interface") {
             currentFontFamily = family
             currentFontSize = sz
-            if (Services.Config) {
-                Services.Config.setFontFamily(family + ", monospace")
-            }
         } else if (kind === "document") {
             currentDocFontFamily = family
             currentDocFontSize = sz
@@ -106,28 +107,32 @@ Singleton {
             currentMonoFontFamily = family
             currentMonoFontSize = sz
         }
-        execProc.command = [helperScript, "set_font", kind, fontSpec]
+        execProc.running = false
+        execProc.command = ["python3", helperScript, "set_font", kind, fontSpec]
         execProc.running = true
     }
 
     function setFontHinting(hinting) {
         if (!hinting) return
         currentFontHinting = hinting
-        execProc.command = [helperScript, "set_font_rendering", hinting, currentFontAntialiasing, String(currentTextScaling)]
+        execProc.running = false
+        execProc.command = ["python3", helperScript, "set_font_rendering", hinting, currentFontAntialiasing, String(currentTextScaling)]
         execProc.running = true
     }
 
     function setFontAntialiasing(aa) {
         if (!aa) return
         currentFontAntialiasing = aa
-        execProc.command = [helperScript, "set_font_rendering", currentFontHinting, aa, String(currentTextScaling)]
+        execProc.running = false
+        execProc.command = ["python3", helperScript, "set_font_rendering", currentFontHinting, aa, String(currentTextScaling)]
         execProc.running = true
     }
 
     function setTextScaling(scaling) {
         if (scaling === undefined) return
         currentTextScaling = scaling
-        execProc.command = [helperScript, "set_font_rendering", currentFontHinting, currentFontAntialiasing, String(scaling)]
+        execProc.running = false
+        execProc.command = ["python3", helperScript, "set_font_rendering", currentFontHinting, currentFontAntialiasing, String(scaling)]
         execProc.running = true
     }
 
@@ -140,7 +145,7 @@ Singleton {
         }
         currentColorScheme = val
         execProc.running = false
-        execProc.command = [helperScript, "set_color_scheme", val]
+        execProc.command = ["python3", helperScript, "set_color_scheme", val]
         execProc.running = true
     }
 
@@ -223,7 +228,7 @@ Singleton {
 
     Process {
         id: queryProc
-        command: [root.helperScript, "query"]
+        command: ["python3", root.helperScript, "query"]
         property string rawOutput: ""
 
         stdout: SplitParser {
@@ -274,7 +279,7 @@ Singleton {
     Process {
         id: execProc
         onExited: (exitCode, exitStatus) => {
-            if (execProc.command && execProc.command.length > 1 && execProc.command[1] === "set_icon_theme") {
+            if (execProc.command && execProc.command.indexOf("set_icon_theme") !== -1) {
                 loadCacheProc.rawOutput = ""
                 loadCacheProc.running = true
                 iconCacheFileView.reload()

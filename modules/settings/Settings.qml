@@ -2545,10 +2545,65 @@ FloatingWindow {
                                 }
                             }
 
-                            // ── 4. Fonts & Typography (GNOME Fonts & Tweaks) ──
+                            // ── 4. Quickshell Desktop Typography ──
                             SettingsSection {
-                                title: "Fonts & Typography"
+                                title: "Quickshell Desktop Typography"
                                 icon: Services.Icons.font || "󰛄"
+
+                                SettingsRow {
+                                    title: "Primary Shell UI Font"
+                                    subtitle: "Typography for panel widgets, menus, launcher, and control center"
+
+                                    SettingsDropdown {
+                                        minButtonWidth: 210
+                                        searchable: true
+                                        currentValue: Services.Config ? Services.Config.fontFamily : "Liga SFMono Nerd Font, monospace"
+                                        model: Services.SystemTheme ? Services.SystemTheme.systemFonts : []
+                                        onSelected: (val) => {
+                                            if (Services.Config) Services.Config.setFontFamily(val)
+                                        }
+                                    }
+                                }
+
+                                SettingsDivider {}
+
+                                SettingsRow {
+                                    title: "Monospace & Metrics Font"
+                                    subtitle: "Fixed-width font for clock, hardware sysmon gauges, and battery"
+
+                                    SettingsDropdown {
+                                        minButtonWidth: 210
+                                        searchable: true
+                                        currentValue: Services.Config ? Services.Config.fontMono : "Liga SFMono Nerd Font, monospace"
+                                        model: Services.SystemTheme ? Services.SystemTheme.monospaceFonts : []
+                                        onSelected: (val) => {
+                                            if (Services.Config) Services.Config.setFontMono(val)
+                                        }
+                                    }
+                                }
+
+                                SettingsDivider {}
+
+                                SettingsRow {
+                                    title: "Display & Header Font"
+                                    subtitle: "Stylized font for hero lockscreen clocks, large widget titles, and card headers"
+
+                                    SettingsDropdown {
+                                        minButtonWidth: 210
+                                        searchable: true
+                                        currentValue: Services.Config ? Services.Config.fontDisplay : "SF Pro Display, Inter, Sans-Serif"
+                                        model: Services.SystemTheme ? Services.SystemTheme.systemFonts : []
+                                        onSelected: (val) => {
+                                            if (Services.Config) Services.Config.setFontDisplay(val)
+                                        }
+                                    }
+                                }
+                            }
+
+                            // ── 5. System & GTK Typography (GNOME & Applications) ──
+                            SettingsSection {
+                                title: "System & GTK Application Typography"
+                                icon: Services.Icons.sliders || "󰛄"
 
                                 SettingsRow {
                                     title: "Interface Font"
@@ -2695,7 +2750,7 @@ FloatingWindow {
                                 }
                             }
 
-                            // ── 5. Shell Geometry & Scaling ──
+                            // ── 6. Shell Geometry & Scaling ──
                             SettingsSection {
                                 title: "Shell Geometry & Scaling"
                                 icon: Services.Icons.sliders || "󰛄"

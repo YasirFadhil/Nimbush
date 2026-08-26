@@ -8,7 +8,7 @@ RowLayout {
 
     Text {
         text: Services.Mpris.activePlayer && Services.Mpris.activePlayer.isPlaying ? "󰎈" : "󰏤"
-        font.family: Services.Theme.fontMono
+        font.family: Services.Theme.fontSymbols
         font.pixelSize: Services.Theme.fontSize2xl
         color: Services.Theme.textPrimary
     }

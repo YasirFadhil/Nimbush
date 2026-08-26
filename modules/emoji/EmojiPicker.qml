@@ -111,7 +111,7 @@ PanelWindow {
                 Text {
                     text: "😀"
                     font.pixelSize: 22
-                    font.family: "Noto Color Emoji, Apple Color Emoji, Segoe UI Emoji, sans-serif"
+                    font.family: Services.Theme.fontEmoji
                     Layout.alignment: Qt.AlignVCenter
                 }
 
@@ -280,7 +280,7 @@ PanelWindow {
                                 anchors.centerIn: parent
                                 text: emojiCell.modelData.emoji || ""
                                 font.pixelSize: 22
-                                font.family: "Noto Color Emoji, Apple Color Emoji, Segoe UI Emoji, sans-serif"
+                                font.family: Services.Theme.fontEmoji
                                 renderType: Text.NativeRendering
                             }
                         }
@@ -358,7 +358,7 @@ PanelWindow {
                     Text {
                         text: parent.currentEmojiObj ? parent.currentEmojiObj.emoji : "-"
                         font.pixelSize: 18
-                        font.family: "Noto Color Emoji, Apple Color Emoji, Segoe UI Emoji, sans-serif"
+                        font.family: Services.Theme.fontEmoji
                         Layout.alignment: Qt.AlignVCenter
                     }
 
