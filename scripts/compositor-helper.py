@@ -150,12 +150,27 @@ def query_all():
                                         "id": m.get("id", 0),
                                         "name": m.get("name", "Display"),
                                         "description": m.get("description", ""),
-                                        "width": m.get("width", 1920),
-                                        "height": m.get("height", 1080),
+                                        "make": m.get("make", ""),
+                                        "model": m.get("model", ""),
+                                        "serial": m.get("serial", ""),
+                                        "width": int(m.get("width", 1920)),
+                                        "height": int(m.get("height", 1080)),
+                                        "physicalWidth": int(m.get("physicalWidth", 0)),
+                                        "physicalHeight": int(m.get("physicalHeight", 0)),
                                         "refreshRate": round(float(m.get("refreshRate", 60))),
+                                        "exactRefreshRate": round(float(m.get("refreshRate", 60)), 2),
+                                        "x": int(m.get("x", 0)),
+                                        "y": int(m.get("y", 0)),
                                         "scale": float(m.get("scale", 1.0)),
+                                        "transform": int(m.get("transform", 0)),
                                         "focused": bool(m.get("focused", False)),
                                         "vrr": bool(m.get("vrr", False)),
+                                        "dpmsStatus": bool(m.get("dpmsStatus", True)),
+                                        "disabled": bool(m.get("disabled", False)),
+                                        "mirrorOf": m.get("mirrorOf", "none") or "none",
+                                        "availableModes": m.get("availableModes", []),
+                                        "sdrBrightness": float(m.get("sdrBrightness", 1.0)),
+                                        "sdrSaturation": float(m.get("sdrSaturation", 1.0)),
                                         "activeWorkspace": m.get("activeWorkspace", {}).get("name", "1") if isinstance(m.get("activeWorkspace"), dict) else "1"
                                     })
                     except Exception:
@@ -210,11 +225,114 @@ def query_all():
         }
         res.update(raw_opts)
         return res
+    elif comp == "niri":
+        clean_monitors = []
+        workspaces_count = 1
+        windows_count = 0
+        ver = "Niri"
+        try:
+            ver_p = subprocess.run(["niri", "--version"], capture_output=True, text=True, timeout=0.8)
+            if ver_p.returncode == 0:
+                ver = ver_p.stdout.strip()
+        except Exception:
+            pass
+
+        try:
+            out_p = subprocess.run(["niri", "msg", "-j", "outputs"], capture_output=True, text=True, timeout=0.8)
+            if out_p.returncode == 0:
+                outs = json.loads(out_p.stdout)
+                if isinstance(outs, dict):
+                    for name, m in outs.items():
+                        modes = m.get("modes", [])
+                        cur_mode = m.get("current_mode", 0)
+                        mode_info = modes[cur_mode] if (isinstance(cur_mode, int) and cur_mode < len(modes)) else (modes[0] if modes else {})
+                        clean_monitors.append({
+                            "id": name,
+                            "name": name,
+                            "description": (m.get("make", "") + " " + m.get("model", "")).strip() or name,
+                            "make": m.get("make", ""),
+                            "model": m.get("model", ""),
+                            "serial": m.get("serial", ""),
+                            "width": int(mode_info.get("width", 1920)),
+                            "height": int(mode_info.get("height", 1080)),
+                            "physicalWidth": 0,
+                            "physicalHeight": 0,
+                            "refreshRate": round(float(mode_info.get("refresh_rate", 60000)) / 1000.0),
+                            "exactRefreshRate": round(float(mode_info.get("refresh_rate", 60000)) / 1000.0, 2),
+                            "x": int(m.get("position", {}).get("x", 0)) if isinstance(m.get("position"), dict) else 0,
+                            "y": int(m.get("position", {}).get("y", 0)) if isinstance(m.get("position"), dict) else 0,
+                            "scale": float(m.get("scale", 1.0)),
+                            "transform": 0,
+                            "focused": True,
+                            "vrr": bool(m.get("vrr", False)),
+                            "dpmsStatus": not bool(m.get("is_off", False)),
+                            "disabled": bool(m.get("is_off", False)),
+                            "mirrorOf": "none",
+                            "availableModes": [f"{mode.get('width')}x{mode.get('height')}@{round(mode.get('refresh_rate', 60000)/1000.0, 2)}Hz" for mode in modes if isinstance(mode, dict)],
+                            "sdrBrightness": 1.0,
+                            "sdrSaturation": 1.0,
+                            "activeWorkspace": "1"
+                        })
+        except Exception:
+            pass
+
+        try:
+            ws_p = subprocess.run(["niri", "msg", "-j", "workspaces"], capture_output=True, text=True, timeout=0.8)
+            if ws_p.returncode == 0:
+                ws_list = json.loads(ws_p.stdout)
+                if isinstance(ws_list, list):
+                    workspaces_count = max(1, len(ws_list))
+        except Exception:
+            pass
+
+        try:
+            win_p = subprocess.run(["niri", "msg", "-j", "windows"], capture_output=True, text=True, timeout=0.8)
+            if win_p.returncode == 0:
+                win_list = json.loads(win_p.stdout)
+                if isinstance(win_list, list):
+                    windows_count = len(win_list)
+        except Exception:
+            pass
+
+        return {
+            "activeCompositor": "niri",
+            "activeDisplayName": "Niri",
+            "configType": "kdl",
+            "version": ver,
+            "blur": True,
+            "blur_size": 4,
+            "blur_passes": 2,
+            "anim": True,
+            "shadow": True,
+            "shadow_range": 4,
+            "shadow_power": 3,
+            "rounding": 10,
+            "border_size": 1,
+            "gaps_in": 5,
+            "gaps_out": 10,
+            "active_opacity": 1.0,
+            "inactive_opacity": 1.0,
+            "dim_inactive": False,
+            "dim_strength": 0.5,
+            "layout": "scrolling",
+            "touchpad_natural": True,
+            "touchpad_tap": True,
+            "touchpad_dwt": False,
+            "sensitivity": 0.0,
+            "resize_border": False,
+            "disable_hyprland_logo": False,
+            "monitorsCount": max(1, len(clean_monitors)),
+            "monitors": clean_monitors,
+            "workspacesCount": max(1, workspaces_count),
+            "windowsCount": windows_count,
+            "installedCompositors": installed_compositors,
+            "discoveredConfigFiles": found_files
+        }
     else:
         return {
             "activeCompositor": comp,
             "activeDisplayName": comp.capitalize(),
-            "configType": "kdl" if comp == "niri" else "conf",
+            "configType": "conf",
             "version": comp.capitalize(),
             "blur": True,
             "blur_size": 4,
@@ -299,28 +417,182 @@ def set_option(opt_name, opt_val):
     }
 
     # If Lua mapper exists, try eval first
+    res = None
     if opt_name in lua_map:
         lua_code = lua_map[opt_name](opt_val)
         try:
             r = subprocess.run(["hyprctl", "eval", lua_code], capture_output=True, text=True, timeout=0.8)
             if r.returncode == 0 and "ok" in r.stdout.lower():
-                return {"ok": True, "method": "eval", "lua": lua_code}
+                res = {"ok": True, "method": "eval", "lua": lua_code}
         except Exception:
             pass
 
     # Fallback to keyword if eval not supported or returned error
-    if opt_name in keyword_map:
+    if res is None and opt_name in keyword_map:
         k_key, k_val = keyword_map[opt_name](opt_val)
         try:
             r = subprocess.run(["hyprctl", "keyword", k_key, str(k_val)], capture_output=True, text=True, timeout=0.8)
             if r.returncode == 0:
-                return {"ok": True, "method": "keyword", "key": k_key, "val": k_val}
+                res = {"ok": True, "method": "keyword", "key": k_key, "val": k_val}
             else:
-                return {"ok": False, "error": r.stderr.strip() or r.stdout.strip()}
+                res = {"ok": False, "error": r.stderr.strip() or r.stdout.strip()}
+        except Exception as e:
+            res = {"ok": False, "error": str(e)}
+
+    if res is None:
+        res = {"ok": False, "error": f"Unknown option {opt_name}"}
+
+    # Automatically persist option to config file
+    try:
+        save_general_options({opt_name: opt_val})
+    except Exception:
+        pass
+
+    return res
+
+def update_lua_option(content, opt_name, opt_val):
+    val_str = str(opt_val).lower() if isinstance(opt_val, bool) or str(opt_val).lower() in ("true", "false") else str(opt_val)
+
+    scalar_patterns = {
+        "gaps_in": r'(gaps_in\s*=\s*)[0-9]+',
+        "gaps_out": r'(gaps_out\s*=\s*)[0-9]+',
+        "border_size": r'(border_size\s*=\s*)[0-9]+',
+        "rounding": r'(rounding\s*=\s*)[0-9]+',
+        "active_opacity": r'(active_opacity\s*=\s*)[0-9.]+',
+        "inactive_opacity": r'(inactive_opacity\s*=\s*)[0-9.]+',
+        "dim_strength": r'(dim_strength\s*=\s*)[0-9.]+',
+        "sensitivity": r'(sensitivity\s*=\s*)[-0-9.]+',
+        "follow_mouse": r'(follow_mouse\s*=\s*)[0-9]+',
+        "dim_inactive": r'(dim_inactive\s*=\s*)(?:true|false)',
+        "resize_border": r'(resize_on_border\s*=\s*)(?:true|false)',
+        "allow_tearing": r'(allow_tearing\s*=\s*)(?:true|false)',
+        "disable_hyprland_logo": r'(disable_hyprland_logo\s*=\s*)(?:true|false)',
+        "vfr": r'(vfr\s*=\s*)(?:true|false)',
+        "smart_gaps": r'(no_gaps_when_only\s*=\s*)(?:true|false|[0-9]+)',
+    }
+
+    if opt_name in scalar_patterns:
+        pat = scalar_patterns[opt_name]
+        if re.search(pat, content):
+            return re.sub(pat, r'\g<1>' + val_str, content, count=1)
+
+    if opt_name == "layout":
+        pat = r'(layout\s*=\s*)"[^"]+"'
+        if re.search(pat, content):
+            return re.sub(pat, r'\g<1>"' + str(opt_val) + '"', content, count=1)
+
+    if opt_name == "anim":
+        pat = r'(animations\s*=\s*\{[\s\S]*?enabled\s*=\s*)(?:true|false)'
+        if re.search(pat, content):
+            return re.sub(pat, r'\g<1>' + val_str, content, count=1)
+
+    if opt_name == "blur":
+        pat = r'(blur\s*=\s*\{[\s\S]*?enabled\s*=\s*)(?:true|false)'
+        if re.search(pat, content):
+            return re.sub(pat, r'\g<1>' + val_str, content, count=1)
+
+    if opt_name == "blur_size":
+        pat = r'(blur\s*=\s*\{[\s\S]*?size\s*=\s*)[0-9]+'
+        if re.search(pat, content):
+            return re.sub(pat, r'\g<1>' + val_str, content, count=1)
+
+    if opt_name == "blur_passes":
+        pat = r'(blur\s*=\s*\{[\s\S]*?passes\s*=\s*)[0-9]+'
+        if re.search(pat, content):
+            return re.sub(pat, r'\g<1>' + val_str, content, count=1)
+
+    if opt_name == "shadow":
+        pat = r'(shadow\s*=\s*\{[\s\S]*?enabled\s*=\s*)(?:true|false)'
+        if re.search(pat, content):
+            return re.sub(pat, r'\g<1>' + val_str, content, count=1)
+
+    if opt_name == "shadow_range":
+        pat = r'(shadow\s*=\s*\{[\s\S]*?range\s*=\s*)[0-9]+'
+        if re.search(pat, content):
+            return re.sub(pat, r'\g<1>' + val_str, content, count=1)
+
+    if opt_name == "shadow_power":
+        pat = r'(shadow\s*=\s*\{[\s\S]*?render_power\s*=\s*)[0-9]+'
+        if re.search(pat, content):
+            return re.sub(pat, r'\g<1>' + val_str, content, count=1)
+
+    if opt_name == "touchpad_natural":
+        pat = r'(touchpad\s*=\s*\{[\s\S]*?natural_scroll\s*=\s*)(?:true|false)'
+        if re.search(pat, content):
+            return re.sub(pat, r'\g<1>' + val_str, content, count=1)
+
+    if opt_name == "touchpad_tap":
+        pat = r'(touchpad\s*=\s*\{[\s\S]*?tap_to_click\s*=\s*)(?:true|false)'
+        if re.search(pat, content):
+            return re.sub(pat, r'\g<1>' + val_str, content, count=1)
+
+    if opt_name == "touchpad_dwt":
+        pat = r'(touchpad\s*=\s*\{[\s\S]*?disable_while_typing\s*=\s*)(?:true|false)'
+        if re.search(pat, content):
+            return re.sub(pat, r'\g<1>' + val_str, content, count=1)
+
+    if opt_name == "workspace_swipe":
+        pat = r'(workspace_swipe\s*=\s*)(?:true|false)'
+        if re.search(pat, content):
+            return re.sub(pat, r'\g<1>' + val_str, content, count=1)
+
+    if opt_name == "workspace_swipe_invert":
+        pat = r'(workspace_swipe_invert\s*=\s*)(?:true|false)'
+        if re.search(pat, content):
+            return re.sub(pat, r'\g<1>' + val_str, content, count=1)
+
+    return content
+
+def save_general_options(changes):
+    if not isinstance(changes, dict) or not changes:
+        return {"ok": True, "saved": False}
+
+    if is_lua_config():
+        lua_path = os.path.join(HOME, ".config/hypr/hyprland.lua")
+        if not os.path.exists(lua_path):
+            return {"ok": False, "error": "hyprland.lua not found"}
+        try:
+            with open(lua_path, "r", encoding="utf-8") as f:
+                content = f.read()
+
+            modified = content
+            for k, v in changes.items():
+                modified = update_lua_option(modified, k, v)
+
+            if modified != content:
+                tmp_path = f"{lua_path}.tmp.{os.getpid()}"
+                with open(tmp_path, "w", encoding="utf-8") as f:
+                    f.write(modified)
+                os.replace(tmp_path, lua_path)
+                return {"ok": True, "file": lua_path}
+            return {"ok": True, "no_change": True}
         except Exception as e:
             return {"ok": False, "error": str(e)}
-
-    return {"ok": False, "error": f"Unknown option {opt_name}"}
+    else:
+        conf_path = os.path.join(HOME, ".config/hypr/hyprland.conf")
+        if os.path.exists(conf_path):
+            try:
+                with open(conf_path, "r", encoding="utf-8") as f:
+                    content = f.read()
+                modified = content
+                for k, v in changes.items():
+                    val_str = "1" if v is True else ("0" if v is False else str(v))
+                    if k in keyword_map:
+                        kw, _ = keyword_map[k](v)
+                        subkey = kw.split(":")[-1]
+                        pat = r'(?m)^(\s*' + re.escape(subkey) + r'\s*=\s*).*$'
+                        if re.search(pat, modified):
+                            modified = re.sub(pat, r'\g<1>' + val_str, modified, count=1)
+                if modified != content:
+                    tmp_path = f"{conf_path}.tmp.{os.getpid()}"
+                    with open(tmp_path, "w", encoding="utf-8") as f:
+                        f.write(modified)
+                    os.replace(tmp_path, conf_path)
+                    return {"ok": True, "file": conf_path}
+                return {"ok": True, "no_change": True}
+            except Exception as e:
+                return {"ok": False, "error": str(e)}
+        return {"ok": True, "saved": False}
 
 def _write_and_validate(target_path, content):
     if not target_path:
@@ -374,224 +646,393 @@ def save_config_b64(target_path, b64_str):
 
 def get_primary_config():
     if is_lua_config():
+        if os.path.exists(os.path.join(HOME, ".config/hypr/conf/keybinds.lua")):
+            return os.path.join(HOME, ".config/hypr/conf/keybinds.lua"), "lua"
         return os.path.join(HOME, ".config/hypr/hyprland.lua"), "lua"
+    if os.path.exists(os.path.join(HOME, ".config/hypr/conf/keybinds.conf")):
+        return os.path.join(HOME, ".config/hypr/conf/keybinds.conf"), "hyprconf"
     if os.path.exists(os.path.join(HOME, ".config/hypr/hyprland.conf")):
         return os.path.join(HOME, ".config/hypr/hyprland.conf"), "hyprconf"
+    if os.path.exists(os.path.join(HOME, ".config/niri/conf/keybinds.kdl")):
+        return os.path.join(HOME, ".config/niri/conf/keybinds.kdl"), "niri"
     if os.path.exists(os.path.join(HOME, ".config/niri/config.kdl")):
         return os.path.join(HOME, ".config/niri/config.kdl"), "niri"
     return None, None
 
-def list_keybinds():
-    cfg_path, cfg_type = get_primary_config()
-    if not cfg_path or not os.path.exists(cfg_path):
-        return {"ok": False, "error": "No compositor config found", "binds": []}
+def get_keybind_files():
+    comp = "hyprland"
+    if is_niri():
+        comp = "niri"
 
+    files = []
+    if comp == "hyprland":
+        if is_lua_config():
+            candidates = [
+                os.path.join(HOME, ".config/hypr/conf/keybinds.lua"),
+                os.path.join(HOME, ".config/hypr/conf/quickshell.lua"),
+                os.path.join(HOME, ".config/hypr/hyprland.lua"),
+            ]
+            conf_dir = os.path.join(HOME, ".config/hypr/conf")
+            if os.path.isdir(conf_dir):
+                for fname in sorted(os.listdir(conf_dir)):
+                    if fname.endswith(".lua"):
+                        fpath = os.path.join(conf_dir, fname)
+                        if fpath not in candidates:
+                            candidates.append(fpath)
+            for p in candidates:
+                if os.path.isfile(p) and (p, "lua") not in files:
+                    files.append((p, "lua"))
+        else:
+            candidates = [
+                os.path.join(HOME, ".config/hypr/conf/keybinds.conf"),
+                os.path.join(HOME, ".config/hypr/conf/quickshell.conf"),
+                os.path.join(HOME, ".config/hypr/hyprland.conf"),
+            ]
+            conf_dir = os.path.join(HOME, ".config/hypr/conf")
+            if os.path.isdir(conf_dir):
+                for fname in sorted(os.listdir(conf_dir)):
+                    if fname.endswith(".conf") and fname not in ["hypridle.conf", "hyprlock.conf", "hyprpaper.conf"]:
+                        fpath = os.path.join(conf_dir, fname)
+                        if fpath not in candidates:
+                            candidates.append(fpath)
+            for p in candidates:
+                if os.path.isfile(p) and (p, "hyprconf") not in files:
+                    files.append((p, "hyprconf"))
+    elif comp == "niri":
+        candidates = [
+            os.path.join(HOME, ".config/niri/conf/keybinds.kdl"),
+            os.path.join(HOME, ".config/niri/conf/quickshell.kdl"),
+            os.path.join(HOME, ".config/niri/config.kdl"),
+        ]
+        conf_dir = os.path.join(HOME, ".config/niri/conf")
+        if os.path.isdir(conf_dir):
+            for fname in sorted(os.listdir(conf_dir)):
+                if fname.endswith(".kdl"):
+                    fpath = os.path.join(conf_dir, fname)
+                    if fpath not in candidates:
+                        candidates.append(fpath)
+        for p in candidates:
+            if os.path.isfile(p) and (p, "niri") not in files:
+                files.append((p, "niri"))
+
+    return files
+
+def parse_lua_binds(path):
+    if not os.path.exists(path):
+        return []
     try:
-        with open(cfg_path, "r", encoding="utf-8") as f:
-            full_text = f.read()
-    except Exception as e:
-        return {"ok": False, "error": str(e), "binds": []}
+        with open(path, "r", encoding="utf-8") as f:
+            text = f.read()
+    except Exception:
+        return []
 
-    lines = full_text.splitlines()
+    lines = text.splitlines()
+    vars_dict = {}
+    var_re = re.compile(r'^\s*local\s+([a-zA-Z0-9_]+)\s*=\s*["\']([^"\']+)["\']')
+    for l in lines:
+        m = var_re.match(l)
+        if m:
+            vars_dict[m.group(1)] = m.group(2)
+
+    line_starts = [0]
+    for pos, ch in enumerate(text):
+        if ch == '\n':
+            line_starts.append(pos + 1)
+
+    def get_line(idx):
+        return bisect.bisect_right(line_starts, idx)
+
     binds = []
+    n = len(text)
+    pattern = re.compile(r'(?:local\s+([a-zA-Z0-9_]+)\s*=\s*)?hl\.bind\s*\(')
 
-    if cfg_type == "lua":
-        vars_dict = {}
-        var_re = re.compile(r'^\s*local\s+([a-zA-Z0-9_]+)\s*=\s*["\']([^"\']+)["\']')
-        for l in lines:
-            m = var_re.match(l)
-            if m:
-                vars_dict[m.group(1)] = m.group(2)
+    for match in pattern.finditer(text):
+        start_char = match.start()
+        start_line = get_line(start_char)
+        line_str = lines[start_line - 1] if start_line <= len(lines) else ""
+        line_before = line_str[:line_str.find("hl.bind")].strip()
+        if line_before.startswith("--"):
+            continue
 
-        n = len(full_text)
-        line_starts = [0]
-        for pos, ch in enumerate(full_text):
-            if ch == '\n':
-                line_starts.append(pos + 1)
-
-        import bisect
-        def get_line_num(char_idx):
-            return bisect.bisect_right(line_starts, char_idx)
-
-        pattern = re.compile(r'(?:local\s+([a-zA-Z0-9_]+)\s*=\s*)?hl\.bind\s*\(')
-
-        for match in pattern.finditer(full_text):
-            start_char = match.start()
-            start_line = get_line_num(start_char)
-
-            line_str = lines[start_line - 1] if start_line <= len(lines) else ""
-            line_before_match = line_str[:line_str.find("hl.bind")].strip()
-            if line_before_match.startswith("--"):
-                continue
-
-            open_paren_idx = match.end() - 1
-            depth = 1
-            j = open_paren_idx + 1
-            in_str = False
-            str_char = ''
-            inner = ""
-            while j < n and depth > 0:
-                c = full_text[j]
-                if c in ('"', "'", '`') and not in_str:
-                    in_str = True
-                    str_char = c
+        open_paren_idx = match.end() - 1
+        depth = 1
+        j = open_paren_idx + 1
+        in_str = False
+        str_char = ''
+        inner = ""
+        while j < n and depth > 0:
+            c = text[j]
+            if c in ('"', "'", '`') and not in_str:
+                in_str = True
+                str_char = c
+                inner += c
+            elif in_str and c == str_char and text[j-1] != '\\':
+                in_str = False
+                inner += c
+            elif in_str:
+                inner += c
+            elif c == '(':
+                depth += 1
+                inner += c
+            elif c == ')':
+                depth -= 1
+                if depth > 0:
                     inner += c
-                elif in_str and c == str_char and full_text[j-1] != '\\':
-                    in_str = False
-                    inner += c
-                elif in_str:
-                    inner += c
-                elif c == '(':
-                    depth += 1
-                    inner += c
-                elif c == ')':
-                    depth -= 1
-                    if depth > 0:
-                        inner += c
-                else:
-                    inner += c
-                j += 1
+            else:
+                inner += c
+            j += 1
 
-            end_line = get_line_num(j)
-            raw_snippet = full_text[start_char:j]
+        end_line = get_line(j)
+        raw_snippet = text[start_char:j]
 
-            parts = []
-            cur = ""
-            depth_p = 0
-            depth_b = 0
-            in_s = False
-            s_char = ''
-            for c in inner:
-                if c in ('"', "'") and not in_s:
-                    in_s = True
-                    s_char = c
-                    cur += c
-                elif in_s and c == s_char:
-                    in_s = False
-                    cur += c
-                elif in_s:
-                    cur += c
-                elif c == '(':
-                    depth_p += 1
-                    cur += c
-                elif c == ')':
-                    depth_p -= 1
-                    cur += c
-                elif c == '{':
-                    depth_b += 1
-                    cur += c
-                elif c == '}':
-                    depth_b -= 1
-                    cur += c
-                elif c == ',' and depth_p == 0 and depth_b == 0:
-                    parts.append(cur.strip())
-                    cur = ""
-                else:
-                    cur += c
-            if cur.strip():
+        parts = []
+        cur = ""
+        depth_p = 0
+        depth_b = 0
+        in_s = False
+        s_char = ''
+        for c in inner:
+            if c in ('"', "'") and not in_s:
+                in_s = True
+                s_char = c
+                cur += c
+            elif in_s and c == s_char:
+                in_s = False
+                cur += c
+            elif in_s:
+                cur += c
+            elif c == '(':
+                depth_p += 1
+                cur += c
+            elif c == ')':
+                depth_p -= 1
+                cur += c
+            elif c == '{':
+                depth_b += 1
+                cur += c
+            elif c == '}':
+                depth_b -= 1
+                cur += c
+            elif c == ',' and depth_p == 0 and depth_b == 0:
                 parts.append(cur.strip())
+                cur = ""
+            else:
+                cur += c
+        if cur.strip():
+            parts.append(cur.strip())
 
-            if len(parts) >= 2:
-                raw_combo = parts[0]
-                raw_action = parts[1]
-                opts = parts[2] if len(parts) > 2 else ""
+        if len(parts) >= 2:
+            raw_combo = parts[0]
+            raw_action = parts[1]
+            opts = parts[2] if len(parts) > 2 else ""
 
-                combo = raw_combo
-                for vname, vval in vars_dict.items():
-                    combo = re.sub(r'\b' + vname + r'\b', f'"{vval}"', combo)
-                combo_parts = [p.strip().strip('"\'') for p in combo.split("..")]
-                clean_combo = " + ".join([p.strip().strip('+ ') for p in combo_parts if p.strip()])
-                clean_combo = clean_combo.replace(" + + ", " + ").replace("  ", " ")
+            # Check if this line is in a loop for workspaces (e.g. key or i)
+            if 'key' in raw_combo and 'workspace' in raw_action:
+                for ws in range(1, 11):
+                    k_str = str(ws % 10)
+                    combo = raw_combo
+                    for vn, vv in vars_dict.items():
+                        combo = re.sub(r'\b' + vn + r'\b', f'"{vv}"', combo)
+                    combo = combo.replace('key', f'"{k_str}"')
+                    combo_parts = [p.strip().strip('"\'') for p in combo.split("..")]
+                    clean_combo = " + ".join([p.strip().strip('+ ') for p in combo_parts if p.strip()])
 
-                action = raw_action
-                for vname, vval in vars_dict.items():
-                    action = re.sub(r'\b' + vname + r'\b', f'"{vval}"', action)
+                    action = raw_action
+                    for vn, vv in vars_dict.items():
+                        action = re.sub(r'\b' + vn + r'\b', f'"{vv}"', action)
+                    action = action.replace('workspace = i', f'workspace = {ws}')
 
-                clean_action = action
-                if "hl.dsp.exec_cmd(" in action:
-                    m_act = re.search(r'hl\.dsp\.exec_cmd\(\s*["\']?(.*?)["\']?\s*\)', action, re.DOTALL)
-                    if m_act:
-                        clean_action = m_act.group(1).strip('"\'').strip()
-                elif "hl.dsp.window.close" in action:
-                    clean_action = "close window"
-                elif "hl.dsp.window.float" in action:
-                    clean_action = "toggle floating"
-                elif "hl.dsp.window.fullscreen" in action:
-                    clean_action = "toggle fullscreen"
-                elif "hl.dsp.window.drag" in action:
-                    clean_action = "drag window (move)"
-                elif "hl.dsp.window.resize" in action:
-                    clean_action = "resize window"
-                elif "hl.dsp.layout" in action:
-                    m_l = re.search(r'hl\.dsp\.layout\(\s*["\']?(.*?)["\']?\s*\)', action)
-                    clean_action = f"layout {m_l.group(1)}" if m_l else "toggle layout"
-                elif "hl.dsp.focus" in action:
-                    m_f = re.search(r'direction\s*=\s*["\'](.*?)["\']', action)
-                    m_ws = re.search(r'workspace\s*=\s*["\']?(.*?)["\']?\}', action)
-                    if m_f:
-                        clean_action = f"focus window ({m_f.group(1)})"
-                    elif m_ws:
-                        clean_action = f"focus workspace {m_ws.group(1)}"
+                    if "hl.dsp.focus" in action:
+                        clean_action = f"focus workspace {ws}"
+                    elif "hl.dsp.window.move" in action:
+                        clean_action = f"move window to workspace {ws}"
                     else:
-                        clean_action = "focus"
-                elif "hl.dsp.window.move" in action:
-                    m_ws = re.search(r'workspace\s*=\s*["\']?(.*?)["\']?\}', action)
-                    clean_action = f"move window to workspace {m_ws.group(1)}" if m_ws else "move window"
+                        clean_action = action
 
-                cat = "other"
-                ca_low = clean_action.lower()
-                cb_low = clean_combo.lower()
-                if "qs ipc call" in ca_low or "quickshell" in ca_low:
-                    cat = "quickshell"
-                elif any(x in ca_low for x in ["kitty", "alacritty", "foot", "nautilus", "thunar", "dolphin", "browser", "firefox", "chrome", "code"]):
-                    cat = "apps"
-                elif any(x in ca_low for x in ["close", "fullscreen", "floating", "focus", "workspace", "swapcol", "togglesplit", "drag", "resize"]):
                     cat = "nav"
-                elif "screenshot" in ca_low or "grim" in ca_low or "print" in cb_low:
-                    cat = "screenshot"
-                elif any(x in ca_low for x in ["wpctl", "pactl", "volume", "brightnessctl", "playerctl", "mute", "audio"]):
-                    cat = "media"
-
-                key_tokens = [k.strip() for k in clean_combo.split("+") if k.strip()]
-
-                binds.append({
-                    "id": start_line,
-                    "startLine": start_line,
-                    "endLine": end_line,
-                    "keys": clean_combo,
-                    "keyTokens": key_tokens,
-                    "action": clean_action,
-                    "raw": raw_snippet.strip(),
-                    "category": cat,
-                    "opts": opts.strip()
-                })
-
-    elif cfg_type == "hyprconf":
-        bind_re = re.compile(r'^\s*bind[lrme]?\s*=\s*([^,]+),\s*([^,]+),\s*([^,]+)(?:,\s*(.*))?')
-        for idx, line in enumerate(lines):
-            line_str = line.strip()
-            if not line_str or line_str.startswith("#"):
+                    key_tokens = [k.strip() for k in clean_combo.split("+") if k.strip()]
+                    binds.append({
+                        "id": f"{os.path.basename(path)}:{start_line}:{ws}",
+                        "file": path,
+                        "fileName": os.path.basename(path),
+                        "startLine": start_line,
+                        "endLine": end_line,
+                        "keys": clean_combo,
+                        "keyTokens": key_tokens,
+                        "action": clean_action,
+                        "raw": raw_snippet.strip(),
+                        "category": cat,
+                        "opts": opts.strip()
+                    })
                 continue
-            m = bind_re.match(line_str)
-            if m:
-                mod = m.group(1).strip()
-                key = m.group(2).strip()
-                disp = m.group(3).strip()
-                arg = m.group(4).strip() if m.group(4) else ""
 
-                combo = f"{mod} + {key}" if mod else key
-                action = f"{disp} {arg}".strip() if arg else disp
-                if disp == "exec":
-                    action = arg
+            combo = raw_combo
+            for vn, vv in vars_dict.items():
+                combo = re.sub(r'\b' + vn + r'\b', f'"{vv}"', combo)
+            combo_parts = [p.strip().strip('"\'') for p in combo.split("..")]
+            clean_combo = " + ".join([p.strip().strip('+ ') for p in combo_parts if p.strip()])
+
+            action = raw_action
+            for vn, vv in vars_dict.items():
+                action = re.sub(r'\b' + vn + r'\b', f'"{vv}"', action)
+
+            clean_action = action
+            if "hl.dsp.exec_cmd(" in action:
+                m_act = re.search(r'hl\.dsp\.exec_cmd\(\s*["\']?(.*?)["\']?\s*\)', action, re.DOTALL)
+                if m_act:
+                    clean_action = m_act.group(1).strip('"\'').strip()
+            elif "hl.dsp.window.close" in action:
+                clean_action = "close window"
+            elif "hl.dsp.window.float" in action:
+                clean_action = "toggle floating"
+            elif "hl.dsp.window.fullscreen" in action:
+                clean_action = "toggle fullscreen"
+            elif "hl.dsp.window.drag" in action:
+                clean_action = "drag window (move)"
+            elif "hl.dsp.window.resize" in action:
+                clean_action = "resize window"
+            elif "hl.dsp.layout" in action:
+                m_l = re.search(r'hl\.dsp\.layout\(\s*["\']?(.*?)["\']?\s*\)', action)
+                clean_action = f"layout {m_l.group(1)}" if m_l else "toggle layout"
+            elif "hl.dsp.focus" in action:
+                m_f = re.search(r'direction\s*=\s*["\'](.*?)["\']', action)
+                m_ws = re.search(r'workspace\s*=\s*["\']?(.*?)["\']?\}', action)
+                if m_f:
+                    clean_action = f"focus window ({m_f.group(1)})"
+                elif m_ws:
+                    clean_action = f"focus workspace {m_ws.group(1)}"
+                else:
+                    clean_action = "focus"
+            elif "hl.dsp.window.move" in action:
+                m_ws = re.search(r'workspace\s*=\s*["\']?(.*?)["\']?\}', action)
+                clean_action = f"move window to workspace {m_ws.group(1)}" if m_ws else "move window"
+
+            cat = "other"
+            ca_low = clean_action.lower()
+            cb_low = clean_combo.lower()
+            if "qs ipc call" in ca_low or "quickshell" in ca_low:
+                cat = "quickshell"
+            elif any(x in ca_low for x in ["kitty", "alacritty", "foot", "ghostty", "nautilus", "thunar", "dolphin", "browser", "firefox", "chrome", "code"]):
+                cat = "apps"
+            elif any(x in ca_low for x in ["close", "fullscreen", "floating", "focus", "workspace", "swapcol", "togglesplit", "drag", "resize"]):
+                cat = "nav"
+            elif "screenshot" in ca_low or "grim" in ca_low or "print" in cb_low:
+                cat = "screenshot"
+            elif any(x in ca_low for x in ["wpctl", "pactl", "volume", "brightnessctl", "playerctl", "mute", "audio"]):
+                cat = "media"
+
+            key_tokens = [k.strip() for k in clean_combo.split("+") if k.strip()]
+            binds.append({
+                "id": f"{os.path.basename(path)}:{start_line}",
+                "file": path,
+                "fileName": os.path.basename(path),
+                "startLine": start_line,
+                "endLine": end_line,
+                "keys": clean_combo,
+                "keyTokens": key_tokens,
+                "action": clean_action,
+                "raw": raw_snippet.strip(),
+                "category": cat,
+                "opts": opts.strip()
+            })
+    return binds
+
+def parse_hyprconf_binds(path):
+    if not os.path.exists(path):
+        return []
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+    except Exception:
+        return []
+
+    binds = []
+    bind_re = re.compile(r'^\s*bind[lrme]?\s*=\s*([^,]+),\s*([^,]+),\s*([^,]+)(?:,\s*(.*))?')
+    for idx, line in enumerate(lines):
+        line_str = line.strip()
+        if not line_str or line_str.startswith("#"):
+            continue
+        m = bind_re.match(line_str)
+        if m:
+            mod = m.group(1).strip()
+            key = m.group(2).strip()
+            disp = m.group(3).strip()
+            arg = m.group(4).strip() if m.group(4) else ""
+
+            combo = f"{mod} + {key}" if mod else key
+            action = f"{disp} {arg}".strip() if arg else disp
+            if disp == "exec":
+                action = arg
+
+            cat = "other"
+            ca_low = action.lower()
+            cb_low = combo.lower()
+            if "qs ipc call" in ca_low or "quickshell" in ca_low:
+                cat = "quickshell"
+            elif any(x in ca_low for x in ["kitty", "alacritty", "foot", "ghostty", "nautilus", "thunar", "dolphin", "browser", "firefox"]):
+                cat = "apps"
+            elif any(x in ca_low for x in ["killactive", "fullscreen", "togglefloating", "workspace", "movetoworkspace", "splitratio"]):
+                cat = "nav"
+            elif "screenshot" in ca_low or "grim" in ca_low or "print" in cb_low:
+                cat = "screenshot"
+            elif any(x in ca_low for x in ["wpctl", "pactl", "volume", "brightnessctl", "playerctl"]):
+                cat = "media"
+
+            key_tokens = [k.strip() for k in combo.split("+") if k.strip()]
+            binds.append({
+                "id": f"{os.path.basename(path)}:{idx + 1}",
+                "file": path,
+                "fileName": os.path.basename(path),
+                "startLine": idx + 1,
+                "endLine": idx + 1,
+                "keys": combo,
+                "keyTokens": key_tokens,
+                "action": action,
+                "raw": line_str,
+                "category": cat,
+                "opts": ""
+            })
+    return binds
+
+def parse_niri_binds(path):
+    if not os.path.exists(path):
+        return []
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+    except Exception:
+        return []
+
+    binds = []
+    niri_bind_re = re.compile(r'^\s*([A-Za-z0-9_\+\-]+)(?:\s+[^\{]+)?\s*\{\s*([^;\}]+);?\s*\}')
+    in_binds_block = False
+    for idx, line in enumerate(lines):
+        line_str = line.strip()
+        if not line_str or line_str.startswith("//"):
+            continue
+        if "binds {" in line_str:
+            in_binds_block = True
+            continue
+        if in_binds_block and line_str == "}":
+            in_binds_block = False
+            continue
+        if in_binds_block or niri_bind_re.match(line_str):
+            m = niri_bind_re.match(line_str)
+            if m:
+                combo = m.group(1).replace("-", "+").replace("+", " + ")
+                action = m.group(2).strip()
+                if action.startswith('spawn "') and action.endswith('"'):
+                    parts = re.findall(r'"([^"]*)"', action)
+                    action = " ".join(parts) if parts else action
 
                 cat = "other"
                 ca_low = action.lower()
                 cb_low = combo.lower()
                 if "qs ipc call" in ca_low or "quickshell" in ca_low:
                     cat = "quickshell"
-                elif any(x in ca_low for x in ["kitty", "alacritty", "foot", "nautilus", "thunar", "dolphin", "browser", "firefox"]):
+                elif any(x in ca_low for x in ["kitty", "alacritty", "foot", "ghostty", "nautilus", "thunar", "dolphin", "browser", "firefox"]):
                     cat = "apps"
-                elif any(x in ca_low for x in ["killactive", "fullscreen", "togglefloating", "workspace", "movetoworkspace", "splitratio"]):
+                elif any(x in ca_low for x in ["close-window", "fullscreen", "focus-", "move-", "column", "workspace"]):
                     cat = "nav"
                 elif "screenshot" in ca_low or "grim" in ca_low or "print" in cb_low:
                     cat = "screenshot"
@@ -600,7 +1041,9 @@ def list_keybinds():
 
                 key_tokens = [k.strip() for k in combo.split("+") if k.strip()]
                 binds.append({
-                    "id": idx + 1,
+                    "id": f"{os.path.basename(path)}:{idx + 1}",
+                    "file": path,
+                    "fileName": os.path.basename(path),
                     "startLine": idx + 1,
                     "endLine": idx + 1,
                     "keys": combo,
@@ -610,17 +1053,48 @@ def list_keybinds():
                     "category": cat,
                     "opts": ""
                 })
+    return binds
 
+def list_keybinds():
+    files = get_keybind_files()
+    if not files:
+        primary_path, primary_type = get_primary_config()
+        if primary_path and os.path.exists(primary_path):
+            files = [(primary_path, primary_type)]
+
+    all_binds = []
+    seen = set()
+    for fpath, ftype in files:
+        file_binds = []
+        if ftype == "lua":
+            file_binds = parse_lua_binds(fpath)
+        elif ftype == "hyprconf":
+            file_binds = parse_hyprconf_binds(fpath)
+        elif ftype == "niri":
+            file_binds = parse_niri_binds(fpath)
+
+        for b in file_binds:
+            dedup_key = (b["keys"], b["action"])
+            if dedup_key not in seen:
+                seen.add(dedup_key)
+                all_binds.append(b)
+
+    primary_path, primary_type = get_primary_config()
     return {
         "ok": True,
-        "binds": binds,
-        "configPath": cfg_path,
-        "configType": cfg_type,
-        "total": len(binds)
+        "binds": all_binds,
+        "configPath": primary_path or (files[0][0] if files else ""),
+        "configType": primary_type or (files[0][1] if files else "lua"),
+        "total": len(all_binds)
     }
 
-def add_keybind(keys, action, desc=""):
-    cfg_path, cfg_type = get_primary_config()
+def add_keybind(keys, action, desc="", target_file=None):
+    if target_file and os.path.exists(target_file):
+        cfg_path = target_file
+        cfg_type = "lua" if target_file.endswith(".lua") else ("niri" if target_file.endswith(".kdl") else "hyprconf")
+    else:
+        cfg_path, cfg_type = get_primary_config()
+
     if not cfg_path or not os.path.exists(cfg_path):
         return {"ok": False, "error": "No compositor config found"}
 
@@ -636,15 +1110,12 @@ def add_keybind(keys, action, desc=""):
         return {"ok": False, "error": str(e)}
 
     if cfg_type == "lua":
-        # Format hl.bind("COMBO", hl.dsp.exec_cmd("CMD"))
-        # Check if action is known dispatcher or exec
         if action.startswith("hl.dsp."):
             new_line = f'hl.bind("{keys}", {action})\n'
         else:
             escaped_action = action.replace('\\', '\\\\').replace('"', '\\"')
             new_line = f'hl.bind("{keys}", hl.dsp.exec_cmd("{escaped_action}"))\n'
 
-        # Find insertion position: right before "WINDOW / LAYER RULES" or end of file
         insert_idx = len(lines)
         for i, l in enumerate(lines):
             if "WINDOW / LAYER RULES" in l or "WINDOW RULES" in l or "LAYER RULES" in l:
@@ -654,7 +1125,6 @@ def add_keybind(keys, action, desc=""):
         lines.insert(insert_idx, new_line)
 
     elif cfg_type == "hyprconf":
-        # Parse keys into mod and key
         parts = [p.strip() for p in keys.split("+") if p.strip()]
         if len(parts) > 1:
             mod = " ".join(parts[:-1])
@@ -666,14 +1136,35 @@ def add_keybind(keys, action, desc=""):
         new_line = f"bind = {mod}, {k}, exec, {action}\n"
         lines.append(new_line)
 
+    elif cfg_type == "niri":
+        clean_combo = keys.replace(" ", "")
+        if action.startswith("niri:") or "(" in action or "-" in action:
+            new_line = f'    {clean_combo} {{ {action}; }}\n'
+        else:
+            parts = action.split()
+            quoted_parts = " ".join(f'"{p}"' for p in parts)
+            new_line = f'    {clean_combo} {{ spawn {quoted_parts}; }}\n'
+
+        insert_idx = len(lines)
+        for i, l in enumerate(lines):
+            if "binds {" in l:
+                insert_idx = i + 1
+                break
+        lines.insert(insert_idx, new_line)
+
     content = "".join(lines)
     res = _write_and_validate(cfg_path, content)
     if res.get("ok"):
         reload_compositor()
     return res
 
-def update_keybind(line_num, keys, action, desc=""):
-    cfg_path, cfg_type = get_primary_config()
+def update_keybind(line_num, keys, action, desc="", target_file=None):
+    if target_file and os.path.exists(target_file):
+        cfg_path = target_file
+        cfg_type = "lua" if target_file.endswith(".lua") else ("niri" if target_file.endswith(".kdl") else "hyprconf")
+    else:
+        cfg_path, cfg_type = get_primary_config()
+
     if not cfg_path or not os.path.exists(cfg_path):
         return {"ok": False, "error": "No compositor config found"}
 
@@ -709,6 +1200,14 @@ def update_keybind(line_num, keys, action, desc=""):
             mod = ""
             k = parts[0]
         lines[line_idx] = f"bind = {mod}, {k}, exec, {action}\n"
+    elif cfg_type == "niri":
+        clean_combo = keys.replace(" ", "")
+        if action.startswith("niri:") or "(" in action or "-" in action:
+            lines[line_idx] = f'    {clean_combo} {{ {action}; }}\n'
+        else:
+            parts = action.split()
+            quoted_parts = " ".join(f'"{p}"' for p in parts)
+            lines[line_idx] = f'    {clean_combo} {{ spawn {quoted_parts}; }}\n'
 
     content = "".join(lines)
     res = _write_and_validate(cfg_path, content)
@@ -716,8 +1215,12 @@ def update_keybind(line_num, keys, action, desc=""):
         reload_compositor()
     return res
 
-def delete_keybind(line_num):
-    cfg_path, cfg_type = get_primary_config()
+def delete_keybind(line_num, target_file=None):
+    if target_file and os.path.exists(target_file):
+        cfg_path = target_file
+    else:
+        cfg_path, cfg_type = get_primary_config()
+
     if not cfg_path or not os.path.exists(cfg_path):
         return {"ok": False, "error": "No compositor config found"}
 
@@ -762,6 +1265,913 @@ def reload_compositor():
             return {"ok": False, "error": str(e)}
     return {"ok": False, "error": "Unsupported compositor"}
 
+def modularize_hypr_lua():
+    hypr_dir = os.path.join(HOME, ".config/hypr")
+    conf_dir = os.path.join(hypr_dir, "conf")
+    lua_path = os.path.join(hypr_dir, "hyprland.lua")
+    os.makedirs(conf_dir, exist_ok=True)
+
+    # 1. Quickshell Integration File
+    qs_lua_path = os.path.join(conf_dir, "quickshell.lua")
+    qs_lua_compat_path = os.path.join(hypr_dir, "quickshell.lua")
+    qs_lua_content = """-- ══════════════════════════════════════════════════════════════════════════════
+--  Quickshell Desktop Environment Integration (~/.config/hypr/conf/quickshell.lua)
+-- ══════════════════════════════════════════════════════════════════════════════
+
+local mainMod = "SUPER"
+
+-- ── 1. Autostart Quickshell Desktop Environment ──────────────────────────────
+hl.on("hyprland.start", function ()
+    hl.exec_cmd("qs")
+end)
+
+-- ── 2. Quickshell IPC Keybindings ─────────────────────────────────────────────
+hl.bind(mainMod .. " + SPACE",         hl.dsp.exec_cmd("qs ipc call launcher toggle"))
+hl.bind(mainMod .. " + SHIFT + W",     hl.dsp.exec_cmd("qs ipc call wallpaper toggle"))
+hl.bind(mainMod .. " + SHIFT + E",     hl.dsp.exec_cmd("qs ipc call emoji toggle"))
+hl.bind(mainMod .. " + V",             hl.dsp.exec_cmd("qs ipc call clipboard toggle"))
+hl.bind(mainMod .. " + P",             hl.dsp.exec_cmd("qs ipc call powermenu toggle"))
+hl.bind(mainMod .. " + ALT + L",       hl.dsp.exec_cmd("qs ipc call lockscreen toggle"))
+hl.bind(mainMod .. " + D",             hl.dsp.exec_cmd("qs ipc call dashboard toggle"))
+hl.bind(mainMod .. " + N",             hl.dsp.exec_cmd("qs ipc call notifCenter toggle"))
+hl.bind(mainMod .. " + C",             hl.dsp.exec_cmd("qs ipc call controlCenter toggle"))
+hl.bind(mainMod .. " + B",             hl.dsp.exec_cmd("qs ipc call battery toggle"))
+
+-- ── 3. Quickshell Layer Rules (Blur & Transparency) ───────────────────────────
+hl.layer_rule({ match = { namespace = "quickshell:bar" },               blur = true })
+hl.layer_rule({ match = { namespace = "quickshell:launcher" },          blur = true, ignore_alpha = 0 })
+hl.layer_rule({ match = { namespace = "quickshell:wallpaperselector" }, blur = true, ignore_alpha = 0 })
+hl.layer_rule({ match = { namespace = "quickshell:emojipicker" },       blur = true, ignore_alpha = 0 })
+hl.layer_rule({ match = { namespace = "quickshell:clipboard" },         blur = true, ignore_alpha = 0 })
+hl.layer_rule({ match = { namespace = "quickshell:controlcenter" },     blur = true, ignore_alpha = 0 })
+hl.layer_rule({ match = { namespace = "quickshell:notifcenter" },       blur = true, ignore_alpha = 0 })
+hl.layer_rule({ match = { namespace = "quickshell:dashboard" },         blur = true, ignore_alpha = 0 })
+hl.layer_rule({ match = { namespace = "quickshell:calendar" },          blur = true, ignore_alpha = 0 })
+hl.layer_rule({ match = { namespace = "quickshell:hud" },               blur = true, ignore_alpha = 0 })
+hl.layer_rule({ match = { namespace = "quickshell:traymenu" },          blur = true, ignore_alpha = 0 })
+hl.layer_rule({ match = { namespace = "quickshell:trayoverflow" },      blur = true, ignore_alpha = 0 })
+hl.layer_rule({ match = { namespace = "quickshell:settings" },          blur = true, ignore_alpha = 0 })
+hl.layer_rule({ match = { namespace = "quickshell:battery" },           blur = true, ignore_alpha = 0 })
+hl.layer_rule({ match = { namespace = "quickshell:volume" },            blur = true, ignore_alpha = 0 })
+hl.layer_rule({ match = { namespace = "quickshell:welcome" },           blur = true, ignore_alpha = 0 })
+hl.layer_rule({ match = { namespace = "quickshell:powermenu" },         blur = true, ignore_alpha = 0 })
+hl.layer_rule({ match = { namespace = "^quickshell:.*$" },              blur = true, ignore_alpha = 0 })
+"""
+    with open(qs_lua_path, "w", encoding="utf-8") as f:
+        f.write(qs_lua_content)
+    with open(qs_lua_compat_path, "w", encoding="utf-8") as f:
+        f.write(qs_lua_content)
+
+    if not os.path.exists(lua_path):
+        with open(lua_path, "w", encoding="utf-8") as f:
+            f.write("""-- Hyprland Main Configuration (~/.config/hypr/hyprland.lua)
+local home = os.getenv("HOME") or ""
+local confDir = home .. "/.config/hypr/conf"
+
+local function load_conf(module_name)
+    local module_path = confDir .. "/" .. module_name .. ".lua"
+    if io.open(module_path, "r") then
+        dofile(module_path)
+    end
+end
+
+load_conf("autostart")
+load_conf("keybinds")
+load_conf("rules")
+load_conf("quickshell")
+""")
+        return {"ok": True, "created_main": True, "conf_dir": conf_dir}
+
+    backup_path = f"{lua_path}.bak.{int(time.time())}"
+    shutil.copy2(lua_path, backup_path)
+
+    with open(lua_path, "r", encoding="utf-8") as f:
+        lines = f.readlines()
+
+    autostart_lines = []
+    keybind_lines = []
+    rule_lines = []
+    main_lines = []
+
+    current_section = 'main'
+    section_keywords = {
+        'autostart': ['AUTOSTART'],
+        'keybinds': ['KEYBINDINGS'],
+        'rules': ['WINDOW / LAYER RULES', 'WINDOW RULES', 'LAYER RULES'],
+        'main': ['MONITORS', 'PROGRAMS / VARIABLES', 'ENVIRONMENT VARIABLES', 'PERMISSIONS', 'LOOK AND FEEL', 'ANIMATIONS', 'WORKSPACE RULES', 'LAYOUTS', 'MISC', 'INPUT']
+    }
+
+    # Extract user-defined variables from PROGRAMS / VARIABLES section
+    var_defs = []
+    qs_vars = set([
+        'menu', 'clipboard', 'lockscreen', 'lockScreen', 'notifcenter', 'notifCenter',
+        'powermenu', 'powerMenu', 'dashboard', 'controlcenter', 'controlCenter',
+        'batterypanel', 'batteryPanel', 'settingsgui', 'settingsGui',
+        'wallpaperselector', 'wallpaperSelector', 'emojipicker', 'emojiPicker'
+    ])
+    for line in lines:
+        m = re.match(r'^\s*local\s+([A-Za-z0-9_]+)\s*=\s*(.*)', line)
+        if m:
+            vname = m.group(1).strip()
+            val = m.group(2).strip()
+            if 'qs ' in val or 'qs"' in val or "qs'" in val or 'quickshell' in val:
+                qs_vars.add(vname)
+            elif vname in ['mainMod', 'terminal', 'fileManager', 'browser', 'editor']:
+                var_defs.append(line.strip())
+
+    for line in lines:
+        stripped = line.strip()
+
+        # Check for section headers
+        for sec, kws in section_keywords.items():
+            if any(re.search(rf'--\s*{re.escape(kw)}\b', stripped, re.IGNORECASE) for kw in kws):
+                current_section = sec
+                break
+
+        # Ignore loader artifacts or previous quickshell integration headers
+        if any(marker in stripped for marker in [
+            'Load Modular Configuration Files',
+            'Quickshell Desktop Environment Integration',
+            'Quickshell Integration',
+            'load_conf',
+            'confDir',
+            'module_name',
+            'module_path',
+        ]):
+            continue
+        if stripped in ['end', 'end)', 'end);'] and current_section == 'rules':
+            # Check if this end belongs to a function or loader
+            continue
+        if ('dofile(' in stripped and ('quickshell' in stripped or 'conf/' in stripped or 'module_path' in stripped)):
+            continue
+        if 'local home = os.getenv("HOME")' in stripped or 'io.open(module_path' in stripped:
+            continue
+
+        # Filter out quickshell items from general sections
+        if 'qs ipc call' in stripped or 'quickshell:' in stripped:
+            continue
+        if current_section == 'keybinds' and any(re.search(rf'\b{re.escape(v)}\b', stripped) for v in qs_vars):
+            continue
+        if current_section == 'autostart' and re.search(r'hl\.exec_cmd\(\s*[\"\']\s*qs(?:\s+-[a-zA-Z0-9_/~\.]+)?\s*[\"\']\s*\)', stripped):
+            continue
+
+        if current_section == 'autostart':
+            autostart_lines.append(line)
+        elif current_section == 'keybinds':
+            keybind_lines.append(line)
+        elif current_section == 'rules':
+            rule_lines.append(line)
+        else:
+            main_lines.append(line)
+
+    # 2. Write conf/autostart.lua
+    autostart_path = os.path.join(conf_dir, "autostart.lua")
+    autostart_content = "".join(autostart_lines).strip()
+    if not autostart_content:
+        autostart_content = """hl.on("hyprland.start", function ()
+    hl.exec_cmd("systemctl enable --now --user hyprpolkitagent")
+    hl.exec_cmd("wl-paste --type text --watch cliphist store")
+    hl.exec_cmd("wl-paste --type image --watch cliphist store")
+end)"""
+    with open(autostart_path, "w", encoding="utf-8") as f:
+        f.write(f"""-- ══════════════════════════════════════════════════════════════════════════════
+--  Autostart Daemons & Background Services (~/.config/hypr/conf/autostart.lua)
+-- ══════════════════════════════════════════════════════════════════════════════
+
+{autostart_content}
+""")
+
+    # 3. Write conf/keybinds.lua
+    keybinds_path = os.path.join(conf_dir, "keybinds.lua")
+    keybind_content = "".join(keybind_lines).strip()
+    vars_prefix = "\n".join(var_defs) if var_defs else 'local mainMod = "SUPER"\nlocal terminal = "kitty"\nlocal fileManager = "nautilus"'
+    if not keybind_content:
+        keybind_content = """hl.bind(mainMod .. " + T", hl.dsp.exec_cmd(terminal), { repeating = true })
+hl.bind(mainMod .. " + E", hl.dsp.exec_cmd(fileManager))
+hl.bind(mainMod .. " + Q", hl.dsp.window.close(), { repeating = true })
+hl.bind(mainMod .. " + ALT + F", hl.dsp.window.float({ action = "toggle" }))
+hl.bind(mainMod .. " + SHIFT + F", hl.dsp.window.fullscreen({ mode = "fullscreen", action = "toggle" }))
+hl.bind(mainMod .. " + J", hl.dsp.layout("togglesplit"))
+
+for i = 1, 10 do
+    local key = i % 10
+    hl.bind(mainMod .. " + " .. key, hl.dsp.focus({ workspace = i }))
+    hl.bind(mainMod .. " + SHIFT + " .. key, hl.dsp.window.move({ workspace = i }))
+end
+
+hl.bind("print", hl.dsp.exec_cmd("~/.config/quickshell/scripts/screenshot.sh full"), { locked = true })
+hl.bind("SHIFT + print", hl.dsp.exec_cmd("~/.config/quickshell/scripts/screenshot.sh region"), { locked = true })
+hl.bind(mainMod .. " + print", hl.dsp.exec_cmd("~/.config/quickshell/scripts/screenshot.sh window"), { locked = true })"""
+
+    with open(keybinds_path, "w", encoding="utf-8") as f:
+        f.write(f"""-- ══════════════════════════════════════════════════════════════════════════════
+--  Keybindings & Shortcuts (~/.config/hypr/conf/keybinds.lua)
+-- ══════════════════════════════════════════════════════════════════════════════
+
+{vars_prefix}
+
+{keybind_content}
+""")
+
+    # 4. Write conf/rules.lua
+    rules_path = os.path.join(conf_dir, "rules.lua")
+    rules_content = "".join(rule_lines).strip()
+    if not rules_content:
+        rules_content = """hl.window_rule({
+    name  = "suppress-maximize",
+    match = { class = ".*" },
+    suppress_event = "maximize",
+})
+
+hl.window_rule({
+    name  = "pip-float",
+    match = { title = "^(Picture-in-Picture|Picture in picture)$" },
+    float = true,
+    pin   = true,
+})
+
+hl.window_rule({
+    name  = "dialog-float",
+    match = { class = "(pavucontrol|nm-connection-editor|blueman-manager|swappy)" },
+    float = true,
+})"""
+    with open(rules_path, "w", encoding="utf-8") as f:
+        f.write(f"""-- ══════════════════════════════════════════════════════════════════════════════
+--  Window & Workspace Rules (~/.config/hypr/conf/rules.lua)
+-- ══════════════════════════════════════════════════════════════════════════════
+
+{rules_content}
+""")
+
+    # 5. Clean up main hyprland.lua
+    while main_lines and (not main_lines[-1].strip() or main_lines[-1].strip() in ['end', 'end)', 'end);', 'end}']):
+        main_lines.pop()
+
+    cleaned_main = "".join(main_lines).strip()
+    final_main = f"""{cleaned_main}
+
+-- ── Load Modular Configuration Files ────────────────────────────────────────
+local home = os.getenv("HOME") or ""
+local confDir = home .. "/.config/hypr/conf"
+
+local function load_conf(module_name)
+    local module_path = confDir .. "/" .. module_name .. ".lua"
+    if io.open(module_path, "r") then
+        dofile(module_path)
+    end
+end
+
+load_conf("autostart")
+load_conf("keybinds")
+load_conf("rules")
+load_conf("quickshell")
+"""
+    with open(lua_path, "w", encoding="utf-8") as f:
+        f.write(final_main)
+
+    return {
+        "ok": True,
+        "backup": backup_path,
+        "conf_dir": conf_dir,
+        "extracted_autostart": len(autostart_lines),
+        "extracted_keybinds": len(keybind_lines),
+        "extracted_rules": len(rule_lines)
+    }
+
+def modularize_hypr_conf():
+    hypr_dir = os.path.join(HOME, ".config/hypr")
+    conf_dir = os.path.join(hypr_dir, "conf")
+    conf_path = os.path.join(hypr_dir, "hyprland.conf")
+    os.makedirs(conf_dir, exist_ok=True)
+
+    # 1. Quickshell conf
+    qs_conf_path = os.path.join(conf_dir, "quickshell.conf")
+    qs_conf_compat_path = os.path.join(hypr_dir, "quickshell.conf")
+    qs_conf_content = """# ══════════════════════════════════════════════════════════════════════════════
+#  Quickshell Desktop Environment Integration (~/.config/hypr/conf/quickshell.conf)
+# ══════════════════════════════════════════════════════════════════════════════
+
+# ── 1. Autostart Quickshell Desktop Environment ──────────────────────────────
+exec-once = qs
+
+# ── 2. Quickshell IPC Keybindings ─────────────────────────────────────────────
+bind = SUPER, SPACE,         exec, qs ipc call launcher toggle
+bind = SUPER SHIFT, W,       exec, qs ipc call wallpaper toggle
+bind = SUPER SHIFT, E,       exec, qs ipc call emoji toggle
+bind = SUPER, V,             exec, qs ipc call clipboard toggle
+bind = SUPER, P,             exec, qs ipc call powermenu toggle
+bind = SUPER ALT, L,         exec, qs ipc call lockscreen toggle
+bind = SUPER, D,             exec, qs ipc call dashboard toggle
+bind = SUPER, N,             exec, qs ipc call notifCenter toggle
+bind = SUPER, C,             exec, qs ipc call controlCenter toggle
+bind = SUPER, B,             exec, qs ipc call battery toggle
+
+# ── 3. Quickshell Layer Rules (Blur & Transparency) ───────────────────────────
+layerrule = blur, quickshell:bar
+layerrule = blur, quickshell:launcher
+layerrule = ignorezero, quickshell:launcher
+layerrule = blur, quickshell:wallpaperselector
+layerrule = ignorezero, quickshell:wallpaperselector
+layerrule = blur, quickshell:emojipicker
+layerrule = ignorezero, quickshell:emojipicker
+layerrule = blur, quickshell:clipboard
+layerrule = ignorezero, quickshell:clipboard
+layerrule = blur, quickshell:controlcenter
+layerrule = ignorezero, quickshell:controlcenter
+layerrule = blur, quickshell:notifcenter
+layerrule = ignorezero, quickshell:notifcenter
+layerrule = blur, quickshell:dashboard
+layerrule = ignorezero, quickshell:dashboard
+layerrule = blur, quickshell:calendar
+layerrule = ignorezero, quickshell:calendar
+layerrule = blur, quickshell:hud
+layerrule = ignorezero, quickshell:hud
+layerrule = blur, quickshell:traymenu
+layerrule = ignorezero, quickshell:traymenu
+layerrule = blur, quickshell:trayoverflow
+layerrule = ignorezero, quickshell:trayoverflow
+layerrule = blur, quickshell:settings
+layerrule = ignorezero, quickshell:settings
+layerrule = blur, quickshell:battery
+layerrule = ignorezero, quickshell:battery
+layerrule = blur, quickshell:volume
+layerrule = ignorezero, quickshell:volume
+layerrule = blur, quickshell:welcome
+layerrule = ignorezero, quickshell:welcome
+layerrule = blur, quickshell:powermenu
+layerrule = ignorezero, quickshell:powermenu
+layerrule = blur, quickshell:lockscreen
+layerrule = blur, quickshell:osd
+layerrule = ignorezero, quickshell:osd
+layerrule = blur, quickshell:volumeosd
+layerrule = ignorezero, quickshell:volumeosd
+layerrule = blur, quickshell:brightnessosd
+layerrule = ignorezero, quickshell:brightnessosd
+layerrule = blur, ^quickshell:.*$
+layerrule = ignorezero, ^quickshell:.*$
+"""
+    with open(qs_conf_path, "w", encoding="utf-8") as f:
+        f.write(qs_conf_content)
+    with open(qs_conf_compat_path, "w", encoding="utf-8") as f:
+        f.write(qs_conf_content)
+
+    if not os.path.exists(conf_path):
+        with open(conf_path, "w", encoding="utf-8") as f:
+            f.write("""# Hyprland Main Configuration (~/.config/hypr/hyprland.conf)
+source = ~/.config/hypr/conf/autostart.conf
+source = ~/.config/hypr/conf/keybinds.conf
+source = ~/.config/hypr/conf/rules.conf
+source = ~/.config/hypr/conf/quickshell.conf
+""")
+        return {"ok": True, "created_main": True, "conf_dir": conf_dir}
+
+    backup_path = f"{conf_path}.bak.{int(time.time())}"
+    shutil.copy2(conf_path, backup_path)
+
+    with open(conf_path, "r", encoding="utf-8") as f:
+        lines = f.readlines()
+
+    autostart_lines = []
+    keybind_lines = []
+    rule_lines = []
+    main_lines = []
+
+    for line in lines:
+        stripped = line.strip()
+
+        if not stripped or stripped.startswith("#"):
+            if "source = ~/.config/hypr/" in stripped or "quickshell" in stripped:
+                continue
+            main_lines.append(line)
+            continue
+
+        if "qs ipc call" in stripped or "quickshell:" in stripped or stripped.startswith("source = ~/.config/hypr/"):
+            continue
+
+        if stripped.startswith("exec-once") or stripped.startswith("exec "):
+            if re.match(r'^exec-once\s*=\s*qs\b', stripped):
+                continue
+            autostart_lines.append(line)
+        elif stripped.startswith("bind") or stripped.startswith("bindm") or stripped.startswith("bindl") or stripped.startswith("binde"):
+            keybind_lines.append(line)
+        elif stripped.startswith("windowrule") or stripped.startswith("windowrulev2") or stripped.startswith("layerrule") or stripped.startswith("workspacerule"):
+            rule_lines.append(line)
+        else:
+            main_lines.append(line)
+
+    # 2. conf/autostart.conf
+    autostart_path = os.path.join(conf_dir, "autostart.conf")
+    autostart_content = "".join(autostart_lines).strip()
+    if not autostart_content:
+        autostart_content = """exec-once = systemctl enable --now --user hyprpolkitagent
+exec-once = wl-paste --type text --watch cliphist store
+exec-once = wl-paste --type image --watch cliphist store"""
+    with open(autostart_path, "w", encoding="utf-8") as f:
+        f.write(f"""# ══════════════════════════════════════════════════════════════════════════════
+#  Autostart Daemons & Background Services (~/.config/hypr/conf/autostart.conf)
+# ══════════════════════════════════════════════════════════════════════════════
+
+{autostart_content}
+""")
+
+    # 3. conf/keybinds.conf
+    keybinds_path = os.path.join(conf_dir, "keybinds.conf")
+    keybind_content = "".join(keybind_lines).strip()
+    if not keybind_content:
+        keybind_content = """$mainMod = SUPER
+$terminal = kitty
+$fileManager = nautilus
+
+bind = $mainMod, T, exec, $terminal
+bind = $mainMod, E, exec, $fileManager
+bind = $mainMod, Q, killactive,
+bind = $mainMod ALT, F, togglefloating,
+bind = $mainMod SHIFT, F, fullscreen, 0
+bind = $mainMod, J, togglesplit,
+
+bind = $mainMod, 1, workspace, 1
+bind = $mainMod, 2, workspace, 2
+bind = $mainMod, 3, workspace, 3
+bind = $mainMod, 4, workspace, 4
+bind = $mainMod, 5, workspace, 5
+bind = $mainMod, 6, workspace, 6
+bind = $mainMod, 7, workspace, 7
+bind = $mainMod, 8, workspace, 8
+bind = $mainMod, 9, workspace, 9
+bind = $mainMod, 0, workspace, 10
+
+bind = , PRINT, exec, ~/.config/quickshell/scripts/screenshot.sh full
+bind = SHIFT, PRINT, exec, ~/.config/quickshell/scripts/screenshot.sh region
+bind = $mainMod, PRINT, exec, ~/.config/quickshell/scripts/screenshot.sh window"""
+    with open(keybinds_path, "w", encoding="utf-8") as f:
+        f.write(f"""# ══════════════════════════════════════════════════════════════════════════════
+#  Keybindings & Shortcuts (~/.config/hypr/conf/keybinds.conf)
+# ══════════════════════════════════════════════════════════════════════════════
+
+{keybind_content}
+""")
+
+    # 4. conf/rules.conf
+    rules_path = os.path.join(conf_dir, "rules.conf")
+    rules_content = "".join(rule_lines).strip()
+    if not rules_content:
+        rules_content = """windowrulev2 = suppressevent maximize, class:.*
+windowrulev2 = float, title:^(Picture-in-Picture|Picture in picture)$
+windowrulev2 = pin, title:^(Picture-in-Picture|Picture in picture)$
+windowrulev2 = float, class:^(pavucontrol|nm-connection-editor|blueman-manager|swappy)$"""
+    with open(rules_path, "w", encoding="utf-8") as f:
+        f.write(f"""# ══════════════════════════════════════════════════════════════════════════════
+#  Window Rules (~/.config/hypr/conf/rules.conf)
+# ══════════════════════════════════════════════════════════════════════════════
+
+{rules_content}
+""")
+
+    # 5. Clean main hyprland.conf
+    while main_lines and not main_lines[-1].strip():
+        main_lines.pop()
+
+    cleaned_main = "".join(main_lines).strip()
+    final_main = f"""{cleaned_main}
+
+# ── Modular Configuration Sources ────────────────────────────────────────────
+source = ~/.config/hypr/conf/autostart.conf
+source = ~/.config/hypr/conf/keybinds.conf
+source = ~/.config/hypr/conf/rules.conf
+source = ~/.config/hypr/conf/quickshell.conf
+"""
+    with open(conf_path, "w", encoding="utf-8") as f:
+        f.write(final_main)
+
+    return {
+        "ok": True,
+        "backup": backup_path,
+        "conf_dir": conf_dir,
+        "extracted_autostart": len(autostart_lines),
+        "extracted_keybinds": len(keybind_lines),
+        "extracted_rules": len(rule_lines)
+    }
+
+def modularize_niri_kdl():
+    niri_dir = os.path.join(HOME, ".config/niri")
+    conf_dir = os.path.join(niri_dir, "conf")
+    niri_path = os.path.join(niri_dir, "config.kdl")
+    os.makedirs(conf_dir, exist_ok=True)
+
+    qs_kdl_path = os.path.join(conf_dir, "quickshell.kdl")
+    qs_kdl_compat_path = os.path.join(niri_dir, "quickshell.kdl")
+    qs_kdl_content = """// ══════════════════════════════════════════════════════════════════════════════
+//  Quickshell Desktop Environment Integration (~/.config/niri/conf/quickshell.kdl)
+// ══════════════════════════════════════════════════════════════════════════════
+
+// ── 1. Autostart Quickshell Desktop Environment ──────────────────────────────
+spawn-at-startup "qs"
+
+// ── 2. Quickshell IPC Keybindings ─────────────────────────────────────────────
+binds {
+    Mod+Space       { spawn "qs" "ipc" "call" "launcher" "toggle"; }
+    Mod+Shift+W     { spawn "qs" "ipc" "call" "wallpaper" "toggle"; }
+    Mod+Shift+E     { spawn "qs" "ipc" "call" "emoji" "toggle"; }
+    Mod+V           { spawn "qs" "ipc" "call" "clipboard" "toggle"; }
+    Mod+P           { spawn "qs" "ipc" "call" "powermenu" "toggle"; }
+    Mod+Alt+L       { spawn "qs" "ipc" "call" "lockscreen" "toggle"; }
+    Mod+D           { spawn "qs" "ipc" "call" "dashboard" "toggle"; }
+    Mod+N           { spawn "qs" "ipc" "call" "notifCenter" "toggle"; }
+    Mod+C           { spawn "qs" "ipc" "call" "controlCenter" "toggle"; }
+    Mod+B           { spawn "qs" "ipc" "call" "battery" "toggle"; }
+}
+"""
+    with open(qs_kdl_path, "w", encoding="utf-8") as f:
+        f.write(qs_kdl_content)
+    with open(qs_kdl_compat_path, "w", encoding="utf-8") as f:
+        f.write(qs_kdl_content)
+
+    if not os.path.exists(niri_path):
+        with open(niri_path, "w", encoding="utf-8") as f:
+            f.write("""// Niri Main Configuration (~/.config/niri/config.kdl)
+include "conf/autostart.kdl"
+include "conf/keybinds.kdl"
+include "conf/rules.kdl"
+include "conf/quickshell.kdl"
+""")
+        return {"ok": True, "created_main": True, "conf_dir": conf_dir}
+
+    backup_path = f"{niri_path}.bak.{int(time.time())}"
+    shutil.copy2(niri_path, backup_path)
+
+    with open(niri_path, "r", encoding="utf-8") as f:
+        content = f.read()
+
+    # Extract spawn-at-startup
+    spawn_matches = re.findall(r'spawn-at-startup\s+([^\n;]+);?', content)
+    clean_spawns = []
+    for sp in spawn_matches:
+        if '"qs"' in sp or "'qs'" in sp:
+            continue
+        clean_spawns.append(f'spawn-at-startup {sp}')
+
+    # Extract binds
+    binds_match = re.search(r'binds\s*\{([\s\S]*?)\n\}', content)
+    binds_body = binds_match.group(1) if binds_match else ""
+    clean_binds_lines = []
+    if binds_body:
+        for bl in binds_body.splitlines():
+            if "qs ipc call" in bl or '"qs" "ipc" "call"' in bl:
+                continue
+            clean_binds_lines.append(bl)
+
+    # Extract window-rule
+    rule_matches = re.findall(r'window-rule\s*\{([\s\S]*?)\n\}', content)
+
+    # Write conf/autostart.kdl
+    autostart_path = os.path.join(conf_dir, "autostart.kdl")
+    autostart_content = "\n".join(clean_spawns).strip()
+    if not autostart_content:
+        autostart_content = """spawn-at-startup "wl-paste" "--type" "text" "--watch" "cliphist" "store"
+spawn-at-startup "wl-paste" "--type" "image" "--watch" "cliphist" "store\""""
+    with open(autostart_path, "w", encoding="utf-8") as f:
+        f.write(f"""// ══════════════════════════════════════════════════════════════════════════════
+//  Autostart Daemons & Services (~/.config/niri/conf/autostart.kdl)
+// ══════════════════════════════════════════════════════════════════════════════
+
+{autostart_content}
+""")
+
+    # Write conf/keybinds.kdl
+    keybinds_path = os.path.join(conf_dir, "keybinds.kdl")
+    keybinds_content = "\n".join(clean_binds_lines).strip()
+    if not keybinds_content:
+        keybinds_content = """    Mod+Return { spawn "kitty"; }
+    Mod+E      { spawn "nautilus"; }
+    Mod+Q      { close-window; }
+    Mod+F      { fullscreen-window; }
+
+    Mod+Left   { focus-column-left; }
+    Mod+Right  { focus-column-right; }
+    Mod+Up     { focus-window-up; }
+    Mod+Down   { focus-window-down; }
+
+    Mod+1 { focus-workspace 1; }
+    Mod+2 { focus-workspace 2; }
+    Mod+3 { focus-workspace 3; }
+    Mod+4 { focus-workspace 4; }
+    Mod+5 { focus-workspace 5; }
+    Mod+6 { focus-workspace 6; }
+    Mod+7 { focus-workspace 7; }
+    Mod+8 { focus-workspace 8; }
+    Mod+9 { focus-workspace 9; }
+
+    Print       { spawn "sh" "-c" "~/.config/quickshell/scripts/screenshot.sh full"; }
+    Shift+Print { spawn "sh" "-c" "~/.config/quickshell/scripts/screenshot.sh region"; }
+    Mod+Print   { spawn "sh" "-c" "~/.config/quickshell/scripts/screenshot.sh window"; }"""
+    with open(keybinds_path, "w", encoding="utf-8") as f:
+        f.write(f"""// ══════════════════════════════════════════════════════════════════════════════
+//  Keybindings & Shortcuts (~/.config/niri/conf/keybinds.kdl)
+// ══════════════════════════════════════════════════════════════════════════════
+
+binds {{
+{keybinds_content}
+}}
+""")
+
+    # Write conf/rules.kdl
+    rules_path = os.path.join(conf_dir, "rules.kdl")
+    rules_content = "\n\n".join([f"window-rule {{\n{rm.strip()}\n}}" for rm in rule_matches]).strip()
+    if not rules_content:
+        rules_content = """window-rule {
+    match app-id=r#"^(pavucontrol|nm-connection-editor|blueman-manager|swappy)$"#
+    open-floating true
+}
+
+window-rule {
+    match title=r#"^(Picture-in-Picture|Picture in picture)$"#
+    open-floating true
+}"""
+    with open(rules_path, "w", encoding="utf-8") as f:
+        f.write(f"""// ══════════════════════════════════════════════════════════════════════════════
+//  Window & Layout Rules (~/.config/niri/conf/rules.kdl)
+// ══════════════════════════════════════════════════════════════════════════════
+
+{rules_content}
+""")
+
+    # Clean main config.kdl
+    cleaned = content
+    cleaned = re.sub(r'//\s*──\s*Quickshell.*', '', cleaned)
+    cleaned = re.sub(r'include\s+["\'][^"\']*quickshell[^"\']*["\'];?', '', cleaned)
+    cleaned = re.sub(r'include\s+["\']conf/[^"\']*["\'];?', '', cleaned)
+    cleaned = re.sub(r'spawn-at-startup\s+[^\n;]+;?', '', cleaned)
+    cleaned = re.sub(r'binds\s*\{[\s\S]*?\n\}', '', cleaned)
+    cleaned = re.sub(r'window-rule\s*\{[\s\S]*?\n\}', '', cleaned)
+    cleaned = re.sub(r'\n{3,}', '\n\n', cleaned).strip()
+
+    final_kdl = f"""{cleaned}
+
+// ── Modular Configurations ───────────────────────────────────────────────────
+include "conf/autostart.kdl"
+include "conf/keybinds.kdl"
+include "conf/rules.kdl"
+include "conf/quickshell.kdl"
+"""
+    with open(niri_path, "w", encoding="utf-8") as f:
+        f.write(final_kdl)
+
+    return {
+        "ok": True,
+        "backup": backup_path,
+        "conf_dir": conf_dir
+    }
+
+def modularize_compositor(comp_type="auto"):
+    results = {}
+    if comp_type in ["auto", "hypr_lua", "all"]:
+        if comp_type != "auto" or os.path.exists(os.path.join(HOME, ".config/hypr/hyprland.lua")):
+            results["hypr_lua"] = modularize_hypr_lua()
+    if comp_type in ["auto", "hypr_conf", "all"]:
+        if comp_type != "auto" or os.path.exists(os.path.join(HOME, ".config/hypr/hyprland.conf")):
+            results["hypr_conf"] = modularize_hypr_conf()
+    if comp_type in ["auto", "niri", "all"]:
+        if comp_type != "auto" or os.path.exists(os.path.join(HOME, ".config/niri/config.kdl")):
+            results["niri"] = modularize_niri_kdl()
+    return {"ok": True, "results": results}
+
+def save_monitors_to_file(monitors_data, is_lua=True):
+    hypr_dir = os.path.join(HOME, ".config/hypr")
+    if not os.path.exists(hypr_dir):
+        os.makedirs(hypr_dir, exist_ok=True)
+
+    if is_lua:
+        lua_path = os.path.join(hypr_dir, "hyprland.lua")
+        if not os.path.exists(lua_path):
+            return {"ok": False, "error": "hyprland.lua does not exist"}
+
+        backup_path = f"{lua_path}.bak.{int(time.time())}"
+        shutil.copy2(lua_path, backup_path)
+
+        with open(lua_path, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        blocks = [
+            "-- ──────────────────────────────",
+            "--  MONITORS",
+            "-- ──────────────────────────────",
+            "-- https://wiki.hypr.land/Configuring/Basics/Monitors/\n"
+        ]
+
+        for m in monitors_data:
+            name = m.get("name")
+            if not name:
+                continue
+            if m.get("disabled"):
+                blocks.append(f"""hl.monitor({{
+    output   = "{name}",
+    mode     = "disabled",
+}})\n""")
+            elif m.get("mirrorOf") and m.get("mirrorOf") != "none" and m.get("mirrorOf") != name:
+                mirror = m.get("mirrorOf")
+                scale = float(m.get("scale", 1.0))
+                mode = str(m.get("mode") or "preferred")
+                blocks.append(f"""hl.monitor({{
+    output   = "{name}",
+    mode     = "{mode}",
+    position = "{int(m.get('x', 0))}x{int(m.get('y', 0))}",
+    scale    = {scale},
+    mirror   = "{mirror}",
+}})\n""")
+            else:
+                scale = float(m.get("scale", 1.0))
+                mode = str(m.get("mode") or "preferred")
+                transform = int(m.get("transform", 0))
+                vrr_val = 1 if m.get("vrr") else 0
+                x = int(m.get("x", 0))
+                y = int(m.get("y", 0))
+                blocks.append(f"""hl.monitor({{
+    output    = "{name}",
+    mode      = "{mode}",
+    position  = "{x}x{y}",
+    scale     = {scale},
+    transform = {transform},
+    vrr       = {vrr_val},
+}})\n""")
+
+        new_monitors_section = "\n".join(blocks).strip() + "\n\n"
+
+        pattern = r'(--\s*─+\s*\n--\s*MONITORS\s*\n--\s*─+[\s\S]*?)(?=\n--\s*─+\s*\n--\s*|\Z)'
+        if re.search(pattern, content):
+            new_content = re.sub(pattern, new_monitors_section.strip(), content, count=1)
+        else:
+            mon_call_pattern = r'(hl\.monitor\(\{[\s\S]*?\}\)\s*)+'
+            if re.search(mon_call_pattern, content):
+                new_content = re.sub(mon_call_pattern, new_monitors_section, content, count=1)
+            else:
+                new_content = new_monitors_section + "\n" + content
+
+        with open(lua_path, "w", encoding="utf-8") as f:
+            f.write(new_content)
+
+        return {"ok": True, "file": lua_path, "backup": backup_path}
+
+    else:
+        conf_path = os.path.join(hypr_dir, "hyprland.conf")
+        if not os.path.exists(conf_path):
+            return {"ok": False, "error": "hyprland.conf does not exist"}
+
+        backup_path = f"{conf_path}.bak.{int(time.time())}"
+        shutil.copy2(conf_path, backup_path)
+
+        with open(conf_path, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        lines = [
+            "# ── Monitors ──────────────────────────────────────────────────────────────────"
+        ]
+        for m in monitors_data:
+            name = m.get("name")
+            if not name:
+                continue
+            if m.get("disabled"):
+                lines.append(f"monitor = {name}, disable")
+            elif m.get("mirrorOf") and m.get("mirrorOf") != "none" and m.get("mirrorOf") != name:
+                scale = float(m.get("scale", 1.0))
+                lines.append(f"monitor = {name}, preferred, auto, {scale}, mirror, {m.get('mirrorOf')}")
+            else:
+                scale = float(m.get("scale", 1.0))
+                mode = str(m.get("mode") or "preferred")
+                x = int(m.get("x", 0))
+                y = int(m.get("y", 0))
+                transform = int(m.get("transform", 0))
+                lines.append(f"monitor = {name}, {mode}, {x}x{y}, {scale}, transform, {transform}")
+
+        new_section = "\n".join(lines) + "\n"
+        cleaned = re.sub(r'^\s*monitor\s*=.*$\n?', '', content, flags=re.MULTILINE)
+        cleaned = re.sub(r'#\s*──+\s*Monitors[\s\S]*?(?=\n#\s*──|\Z)', '', cleaned)
+        new_content = new_section + "\n" + cleaned.strip() + "\n"
+
+        with open(conf_path, "w", encoding="utf-8") as f:
+            f.write(new_content)
+
+        return {"ok": True, "file": conf_path, "backup": backup_path}
+
+def save_niri_monitors(monitors_data):
+    niri_dir = os.path.join(HOME, ".config/niri")
+    kdl_path = os.path.join(niri_dir, "config.kdl")
+    if not os.path.exists(kdl_path):
+        return {"ok": False, "error": "config.kdl does not exist"}
+
+    backup_path = f"{kdl_path}.bak.{int(time.time())}"
+    shutil.copy2(kdl_path, backup_path)
+
+    with open(kdl_path, "r", encoding="utf-8") as f:
+        content = f.read()
+
+    blocks = []
+    for m in monitors_data:
+        name = m.get("name")
+        if not name:
+            continue
+        scale = float(m.get("scale", 1.0))
+        mode = str(m.get("mode") or "")
+        x = int(m.get("x", 0))
+        y = int(m.get("y", 0))
+        mode_line = f'    mode "{mode}"\n' if mode and mode != "preferred" else ""
+        off_line = "    off\n" if m.get("disabled") else ""
+        vrr_line = "    variable-refresh-rate\n" if m.get("vrr") else ""
+        blocks.append(f"""output "{name}" {{
+{off_line}{mode_line}    scale {scale}
+    position x={x} y={y}
+{vrr_line}}}""")
+
+    outputs_section = "\n\n".join(blocks)
+    cleaned = re.sub(r'output\s+"[^"]+"\s*\{[\s\S]*?\n\}', '', content)
+    cleaned = re.sub(r'\n{3,}', '\n\n', cleaned).strip()
+    new_content = outputs_section + "\n\n" + cleaned + "\n"
+
+    with open(kdl_path, "w", encoding="utf-8") as f:
+        f.write(new_content)
+
+    return {"ok": True, "file": kdl_path, "backup": backup_path}
+
+def apply_monitors_layout(monitors_data, save_config=True):
+    if not isinstance(monitors_data, list):
+        return {"ok": False, "error": "monitors_data must be a list of monitor objects"}
+
+    comp = "hyprland"
+    if is_niri():
+        comp = "niri"
+
+    results = []
+    if comp == "hyprland":
+        is_lua = is_lua_config()
+        if is_lua:
+            lua_parts = []
+            for m in monitors_data:
+                name = m.get("name")
+                if not name:
+                    continue
+                disabled = m.get("disabled", False)
+                if disabled:
+                    lua_parts.append(f'hl.monitor({{ output = "{name}", mode = "disabled" }})')
+                    continue
+
+                mirror = m.get("mirrorOf")
+                scale = float(m.get("scale", 1.0))
+                mode = str(m.get("mode") or "preferred")
+                x = int(m.get("x", 0))
+                y = int(m.get("y", 0))
+                transform = int(m.get("transform", 0))
+                vrr = 1 if m.get("vrr") else 0
+                pos_str = f"{x}x{y}"
+
+                if mirror and mirror != "none" and mirror != name:
+                    lua_parts.append(f'hl.monitor({{ output = "{name}", mode = "{mode}", position = "{pos_str}", scale = {scale}, mirror = "{mirror}" }})')
+                else:
+                    lua_parts.append(f'hl.monitor({{ output = "{name}", mode = "{mode}", position = "{pos_str}", scale = {scale}, transform = {transform}, vrr = {vrr} }})')
+
+            if lua_parts:
+                eval_cmd = " ; ".join(lua_parts)
+                r = subprocess.run(["hyprctl", "eval", eval_cmd], capture_output=True, text=True, timeout=2.0)
+                results.append({"type": "hypr_eval", "returncode": r.returncode, "stdout": r.stdout.strip(), "stderr": r.stderr.strip()})
+        else:
+            for m in monitors_data:
+                name = m.get("name")
+                if not name:
+                    continue
+                disabled = m.get("disabled", False)
+                if disabled:
+                    subprocess.run(["hyprctl", "keyword", "monitor", f"{name},disable"], timeout=1.0)
+                    continue
+
+                mirror = m.get("mirrorOf")
+                scale = float(m.get("scale", 1.0))
+                mode = str(m.get("mode") or "preferred")
+                x = int(m.get("x", 0))
+                y = int(m.get("y", 0))
+                transform = int(m.get("transform", 0))
+                pos_str = f"{x}x{y}"
+
+                if mirror and mirror != "none" and mirror != name:
+                    cmd_str = f"{name},preferred,auto,{scale},mirror,{mirror}"
+                else:
+                    cmd_str = f"{name},{mode},{pos_str},{scale},transform,{transform}"
+
+                subprocess.run(["hyprctl", "keyword", "monitor", cmd_str], timeout=1.0)
+                if m.get("vrr") is not None:
+                    subprocess.run(["hyprctl", "keyword", "misc:vrr", "1" if m.get("vrr") else "0"], timeout=1.0)
+
+        if save_config:
+            save_res = save_monitors_to_file(monitors_data, is_lua=is_lua)
+            return {"ok": True, "live": results, "saved": save_res}
+
+        return {"ok": True, "live": results}
+
+    elif comp == "niri":
+        if save_config:
+            save_res = save_niri_monitors(monitors_data)
+            return {"ok": True, "saved": save_res}
+        return {"ok": True}
+
+    return {"ok": False, "error": f"Unsupported compositor {comp}"}
+
 def main():
     if len(sys.argv) < 2:
         print(json.dumps({"ok": False, "error": "Missing command argument"}))
@@ -771,6 +2181,26 @@ def main():
     if cmd == "query":
         data = query_all()
         print(json.dumps(data))
+    elif cmd == "modularize":
+        target = sys.argv[2] if len(sys.argv) > 2 else "auto"
+        res = modularize_compositor(target)
+        print(json.dumps(res))
+    elif cmd == "monitors-apply":
+        import argparse
+        parser = argparse.ArgumentParser()
+        parser.add_argument("--layout", required=True)
+        parser.add_argument("--save", action="store_true", default=False)
+        args = parser.parse_args(sys.argv[2:])
+        try:
+            if os.path.exists(args.layout):
+                with open(args.layout, "r", encoding="utf-8") as lf:
+                    layout_data = json.load(lf)
+            else:
+                layout_data = json.loads(args.layout)
+            res = apply_monitors_layout(layout_data, save_config=args.save)
+            print(json.dumps(res))
+        except Exception as e:
+            print(json.dumps({"ok": False, "error": str(e)}))
     elif cmd == "binds-list":
         data = list_keybinds()
         print(json.dumps(data))
@@ -780,8 +2210,9 @@ def main():
         parser.add_argument("--keys", required=True)
         parser.add_argument("--action", required=True)
         parser.add_argument("--desc", default="")
+        parser.add_argument("--file", default=None)
         args = parser.parse_args(sys.argv[2:])
-        res = add_keybind(args.keys, args.action, args.desc)
+        res = add_keybind(args.keys, args.action, args.desc, target_file=args.file)
         print(json.dumps(res))
     elif cmd == "binds-update":
         import argparse
@@ -790,16 +2221,29 @@ def main():
         parser.add_argument("--keys", required=True)
         parser.add_argument("--action", required=True)
         parser.add_argument("--desc", default="")
+        parser.add_argument("--file", default=None)
         args = parser.parse_args(sys.argv[2:])
-        res = update_keybind(args.line, args.keys, args.action, args.desc)
+        res = update_keybind(args.line, args.keys, args.action, args.desc, target_file=args.file)
         print(json.dumps(res))
     elif cmd == "binds-delete":
         import argparse
         parser = argparse.ArgumentParser()
         parser.add_argument("--line", required=True)
+        parser.add_argument("--file", default=None)
         args = parser.parse_args(sys.argv[2:])
-        res = delete_keybind(args.line)
+        res = delete_keybind(args.line, target_file=args.file)
         print(json.dumps(res))
+    elif cmd in ("options-apply", "save-options"):
+        import argparse
+        parser = argparse.ArgumentParser()
+        parser.add_argument("--changes", required=True)
+        args = parser.parse_args(sys.argv[2:])
+        try:
+            changes_data = json.loads(args.changes)
+            res = save_general_options(changes_data)
+            print(json.dumps(res))
+        except Exception as e:
+            print(json.dumps({"ok": False, "error": str(e)}))
     elif cmd == "set":
         if len(sys.argv) < 4:
             print(json.dumps({"ok": False, "error": "Usage: set <option> <value>"}))
@@ -832,3 +2276,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

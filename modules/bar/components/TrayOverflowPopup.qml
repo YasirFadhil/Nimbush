@@ -89,7 +89,7 @@ PanelWindow {
 
                     Text {
                         text: "󰍹"
-                        font.family: Services.Theme.fontMono
+                        font.family: Services.Theme.fontSymbols
                         font.pixelSize: Services.Theme.fontSizeXl
                         color: Services.Theme.accent
                     }
@@ -173,9 +173,16 @@ PanelWindow {
                                         source: {
                                             const icon = overflowItem.item.icon || ""
                                             if (!icon) return ""
-                                            if (icon.startsWith("/") || icon.startsWith("file://") || icon.startsWith("http") || icon.startsWith("image://"))
+                                            if (Services.SystemTheme) {
+                                                const res = Services.SystemTheme.getIcon(icon)
+                                                if (res && res.length > 0) return res
+                                            }
+                                            if (icon.startsWith("file://") || icon.startsWith("http") || icon.startsWith("image://"))
                                                 return icon
-                                            return Quickshell.iconPath(icon, true)
+                                            if (icon.startsWith("/"))
+                                                return "file://" + icon
+                                            const qp = Quickshell.iconPath(icon, true)
+                                            return (qp && qp.startsWith("/")) ? ("file://" + qp) : qp
                                         }
                                         fillMode: Image.PreserveAspectFit
                                         asynchronous: true

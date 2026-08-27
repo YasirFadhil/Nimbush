@@ -1,0 +1,20 @@
+// ══════════════════════════════════════════════════════════════════════════════
+//  Quickshell Desktop Environment Integration (~/.config/niri/conf/quickshell.kdl)
+// ══════════════════════════════════════════════════════════════════════════════
+
+// ── 1. Autostart Quickshell Desktop Environment ──────────────────────────────
+spawn-at-startup "qs"
+
+// ── 2. Quickshell IPC Keybindings ─────────────────────────────────────────────
+binds {
+    Mod+Space       { spawn "qs" "ipc" "call" "launcher" "toggle"; }
+    Mod+Shift+W     { spawn "qs" "ipc" "call" "wallpaper" "toggle"; }
+    Mod+Shift+E     { spawn "qs" "ipc" "call" "emoji" "toggle"; }
+    Mod+V           { spawn "qs" "ipc" "call" "clipboard" "toggle"; }
+    Mod+P           { spawn "qs" "ipc" "call" "powermenu" "toggle"; }
+    Mod+Alt+L       { spawn "qs" "ipc" "call" "lockscreen" "toggle"; }
+    Mod+D           { spawn "qs" "ipc" "call" "dashboard" "toggle"; }
+    Mod+N           { spawn "qs" "ipc" "call" "notifCenter" "toggle"; }
+    Mod+C           { spawn "qs" "ipc" "call" "controlCenter" "toggle"; }
+    Mod+B           { spawn "qs" "ipc" "call" "battery" "toggle"; }
+}

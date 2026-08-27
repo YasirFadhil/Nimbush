@@ -11,13 +11,17 @@ PanelWindow {
     readonly property bool isBottom: Services.Config ? (Services.Config.barPosition === "bottom") : false
     readonly property int barTotalHeight: Services.Config ? (Services.Config.barStyle === "minimal" ? 30 : (Services.Config.barStyle === "unified" ? 38 : (Services.Config.barStyle === "floating" ? 46 : 36))) : 36
 
+    property int activeReplyNotifId: -1
+    property string activeReplyActionId: ""
+    readonly property bool replyMode: activeReplyNotifId !== -1
+
     anchors { top: true; bottom: true; left: true; right: true }
     color: "transparent"
     exclusiveZone: 0
     visible: Services.Notifications.centerVisible
     WlrLayershell.layer: WlrLayer.Top
     WlrLayershell.namespace: "quickshell:notifcenter"
-    WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
+    WlrLayershell.keyboardFocus: centerWin.replyMode ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
 
     mask: Region {
         Region {
@@ -28,15 +32,34 @@ PanelWindow {
         }
     }
 
-    function hide() { Services.Notifications.centerVisible = false }
+    function cancelReply() {
+        activeReplyNotifId = -1
+        activeReplyActionId = ""
+        Services.Notifications.replyingNotifId = -1
+    }
+
+    function hide() {
+        cancelReply()
+        Services.Notifications.centerVisible = false
+    }
     function close() { hide() }
+
+    onVisibleChanged: {
+        if (!visible) cancelReply()
+    }
 
     Component.onCompleted: Services.OverlayManager.register(centerWin)
 
     Item {
         id: escFocus
         focus: centerWin.visible
-        Keys.onEscapePressed: centerWin.hide()
+        Keys.onEscapePressed: {
+            if (centerWin.replyMode) {
+                centerWin.cancelReply()
+            } else {
+                centerWin.hide()
+            }
+        }
     }
     // Local theme shorthand
     readonly property var t: Services.Theme
@@ -290,8 +313,7 @@ PanelWindow {
                     property bool expanded: isMulti && centerWin.expandedGroups[group.appName] === true
                     property bool isBatteryGroup: primaryItem ? centerWin.isBatteryNotification(primaryItem) : false
                     property bool isCritical: primaryItem ? (primaryItem.urgency === 2 || isBatteryGroup) : false
-                    property bool replyMode: false
-                    property string activeReplyActionId: ""
+                    readonly property bool isReplying: primaryItem ? (centerWin.activeReplyNotifId === primaryItem.notifId) : false
 
                     property real expandProgress: expanded ? 1.0 : 0.0
                     Behavior on expandProgress { NumberAnimation { duration: 380; easing.type: Easing.OutExpo } }
@@ -383,11 +405,15 @@ PanelWindow {
                                                 if (!icon) return ""
                                                 if (icon.startsWith("/") || icon.startsWith("file://") || icon.startsWith("http"))
                                                     return icon
+                                                if (Services.SystemTheme) {
+                                                    const res = Services.SystemTheme.getIcon(icon)
+                                                    if (res) return res
+                                                }
                                                 return Quickshell.iconPath(icon, true)
                                             }
                                             fillMode: Image.PreserveAspectFit
                                             asynchronous: true
-                                            cache: true
+                                            cache: false
                                             sourceSize: Qt.size(32, 32)
                                             visible: status === Image.Ready
                                         }
@@ -632,7 +658,7 @@ PanelWindow {
                             RowLayout {
                                 readonly property var actList: groupCard.primaryItem ? groupCard.primaryItem.actions : null
                                 readonly property int actCount: actList ? (actList.count !== undefined ? actList.count : (actList.length !== undefined ? actList.length : 0)) : 0
-                                visible: actCount > 0 && !groupCard.replyMode
+                                visible: actCount > 0 && !groupCard.isReplying
                                 spacing: 6
                                 Layout.topMargin: 2
 
@@ -664,8 +690,9 @@ PanelWindow {
                                             cursorShape: Qt.PointingHandCursor
                                             onClicked: {
                                                 if (centerWin.isReplyAction(pActBtn)) {
-                                                    groupCard.activeReplyActionId = pActBtn.identifier
-                                                    groupCard.replyMode = true
+                                                    centerWin.activeReplyActionId = pActBtn.identifier
+                                                    centerWin.activeReplyNotifId = groupCard.primaryItem.notifId
+                                                    Services.Notifications.replyingNotifId = groupCard.primaryItem.notifId
                                                     Qt.callLater(() => pReplyInput.forceActiveFocus())
                                                 } else {
                                                     Services.Notifications.invokeAction(
@@ -679,7 +706,7 @@ PanelWindow {
 
                             // Primary Notification Inline Reply Area
                             ColumnLayout {
-                                visible: groupCard.replyMode
+                                visible: groupCard.isReplying
                                 Layout.fillWidth: true
                                 spacing: 6
                                 Layout.topMargin: 2
@@ -699,24 +726,31 @@ PanelWindow {
                                         color: centerWin.t.textPrimary
                                         font.pixelSize: 11
                                         clip: true
-                                        focus: groupCard.replyMode
+                                        focus: groupCard.isReplying
+                                        selectByMouse: true
 
                                         Text {
-                                            text: "Write a reply..."
+                                            text: (groupCard.primaryItem && groupCard.primaryItem.inlineReplyPlaceholder && groupCard.primaryItem.inlineReplyPlaceholder.length > 0)
+                                                ? groupCard.primaryItem.inlineReplyPlaceholder
+                                                : "Write a reply..."
                                             color: centerWin.t.textDisabled
                                             font.pixelSize: 11
                                             visible: pReplyInput.text.length === 0 && !pReplyInput.activeFocus
                                         }
 
+                                        Keys.onEscapePressed: {
+                                            centerWin.cancelReply()
+                                            pReplyInput.text = ""
+                                        }
+
                                         Keys.onReturnPressed: {
                                             if (pReplyInput.text.trim().length > 0) {
-                                                Services.Notifications.invokeAction(
-                                                    groupCard.primaryItem.notifId,
-                                                    groupCard.activeReplyActionId,
-                                                    pReplyInput.text.trim()
-                                                )
-                                                groupCard.replyMode = false
+                                                const msg = pReplyInput.text.trim()
+                                                const nId = groupCard.primaryItem.notifId
+                                                const aId = centerWin.activeReplyActionId
+                                                centerWin.cancelReply()
                                                 pReplyInput.text = ""
+                                                Services.Notifications.invokeAction(nId, aId, msg)
                                             }
                                         }
                                     }
@@ -752,7 +786,7 @@ PanelWindow {
                                             hoverEnabled: true
                                             cursorShape: Qt.PointingHandCursor
                                             onClicked: {
-                                                groupCard.replyMode = false
+                                                centerWin.cancelReply()
                                                 pReplyInput.text = ""
                                             }
                                         }
@@ -795,8 +829,8 @@ PanelWindow {
                                                 if (pReplyInput.text.trim().length > 0) {
                                                     const msg = pReplyInput.text.trim()
                                                     const nId = groupCard.primaryItem.notifId
-                                                    const aId = groupCard.activeReplyActionId
-                                                    groupCard.replyMode = false
+                                                    const aId = centerWin.activeReplyActionId
+                                                    centerWin.cancelReply()
                                                     pReplyInput.text = ""
                                                     Services.Notifications.invokeAction(nId, aId, msg)
                                                 }
@@ -897,8 +931,7 @@ PanelWindow {
                                         id: olderItemDelegate
                                         required property var modelData
                                         property var notifItem: modelData
-                                        property bool itemReplyMode: false
-                                        property string itemReplyActionId: ""
+                                        readonly property bool isReplying: notifItem ? (centerWin.activeReplyNotifId === notifItem.notifId) : false
                                         property bool isBatteryItem: centerWin.isBatteryNotification(notifItem)
                                         property bool isItemCritical: notifItem.urgency === 2 || isBatteryItem
 
@@ -1008,7 +1041,7 @@ PanelWindow {
                                         RowLayout {
                                             readonly property var actList: olderItemDelegate.notifItem.actions
                                             readonly property int actCount: actList ? (actList.count !== undefined ? actList.count : (actList.length !== undefined ? actList.length : 0)) : 0
-                                            visible: actCount > 0 && !olderItemDelegate.itemReplyMode
+                                            visible: actCount > 0 && !olderItemDelegate.isReplying
                                             spacing: 6
                                             Layout.topMargin: 2
 
@@ -1040,8 +1073,9 @@ PanelWindow {
                                                         cursorShape: Qt.PointingHandCursor
                                                         onClicked: {
                                                             if (centerWin.isReplyAction(oActBtn)) {
-                                                                olderItemDelegate.itemReplyActionId = oActBtn.identifier
-                                                                olderItemDelegate.itemReplyMode = true
+                                                                centerWin.activeReplyActionId = oActBtn.identifier
+                                                                centerWin.activeReplyNotifId = olderItemDelegate.notifItem.notifId
+                                                                Services.Notifications.replyingNotifId = olderItemDelegate.notifItem.notifId
                                                                 Qt.callLater(() => oReplyInput.forceActiveFocus())
                                                             } else {
                                                                 Services.Notifications.invokeAction(
@@ -1055,7 +1089,7 @@ PanelWindow {
 
                                         // Older Item Inline Reply Area
                                         ColumnLayout {
-                                            visible: olderItemDelegate.itemReplyMode
+                                            visible: olderItemDelegate.isReplying
                                             Layout.fillWidth: true
                                             spacing: 6
                                             Layout.topMargin: 2
@@ -1075,24 +1109,31 @@ PanelWindow {
                                                     color: centerWin.t.textPrimary
                                                     font.pixelSize: 11
                                                     clip: true
-                                                    focus: olderItemDelegate.itemReplyMode
+                                                    focus: olderItemDelegate.isReplying
+                                                    selectByMouse: true
 
                                                     Text {
-                                                        text: "Write a reply..."
+                                                        text: (olderItemDelegate.notifItem && olderItemDelegate.notifItem.inlineReplyPlaceholder && olderItemDelegate.notifItem.inlineReplyPlaceholder.length > 0)
+                                                            ? olderItemDelegate.notifItem.inlineReplyPlaceholder
+                                                            : "Write a reply..."
                                                         color: centerWin.t.textDisabled
                                                         font.pixelSize: 11
                                                         visible: oReplyInput.text.length === 0 && !oReplyInput.activeFocus
                                                     }
 
+                                                    Keys.onEscapePressed: {
+                                                        centerWin.cancelReply()
+                                                        oReplyInput.text = ""
+                                                    }
+
                                                     Keys.onReturnPressed: {
                                                         if (oReplyInput.text.trim().length > 0) {
-                                                            Services.Notifications.invokeAction(
-                                                                olderItemDelegate.notifItem.notifId,
-                                                                olderItemDelegate.itemReplyActionId,
-                                                                oReplyInput.text.trim()
-                                                            )
-                                                            olderItemDelegate.itemReplyMode = false
+                                                            const msg = oReplyInput.text.trim()
+                                                            const nId = olderItemDelegate.notifItem.notifId
+                                                            const aId = centerWin.activeReplyActionId
+                                                            centerWin.cancelReply()
                                                             oReplyInput.text = ""
+                                                            Services.Notifications.invokeAction(nId, aId, msg)
                                                         }
                                                     }
                                                 }
@@ -1127,7 +1168,7 @@ PanelWindow {
                                                         hoverEnabled: true
                                                         cursorShape: Qt.PointingHandCursor
                                                         onClicked: {
-                                                            olderItemDelegate.itemReplyMode = false
+                                                            centerWin.cancelReply()
                                                             oReplyInput.text = ""
                                                         }
                                                     }
@@ -1167,13 +1208,12 @@ PanelWindow {
                                                         cursorShape: Qt.PointingHandCursor
                                                         onClicked: {
                                                             if (oReplyInput.text.trim().length > 0) {
-                                                                Services.Notifications.invokeAction(
-                                                                    olderItemDelegate.notifItem.notifId,
-                                                                    olderItemDelegate.itemReplyActionId,
-                                                                    oReplyInput.text.trim()
-                                                                )
-                                                                olderItemDelegate.itemReplyMode = false
+                                                                const msg = oReplyInput.text.trim()
+                                                                const nId = olderItemDelegate.notifItem.notifId
+                                                                const aId = centerWin.activeReplyActionId
+                                                                centerWin.cancelReply()
                                                                 oReplyInput.text = ""
+                                                                Services.Notifications.invokeAction(nId, aId, msg)
                                                             }
                                                         }
                                                     }

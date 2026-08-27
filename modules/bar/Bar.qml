@@ -5,10 +5,16 @@ import Quickshell.Wayland
 import "components" as Components
 import "../../services" as Services
 
-PanelWindow {
-    id: root
+Variants {
+    id: barVariants
+    model: (Services.Config && Services.Config.barScreens) ? Services.Config.barScreens : Quickshell.screens
 
-    readonly property bool isBottom: Services.Config ? (Services.Config.barPosition === "bottom") : false
+    delegate: PanelWindow {
+        id: root
+        required property var modelData
+        screen: modelData
+
+        readonly property bool isBottom: Services.Config ? (Services.Config.barPosition === "bottom") : false
     readonly property string barStyle: Services.Config ? Services.Config.barStyle : "islands"
     readonly property bool isMinimal: barStyle === "minimal"
     readonly property bool isUnified: barStyle === "unified"
@@ -32,10 +38,10 @@ PanelWindow {
     color: "transparent"
     WlrLayershell.layer: WlrLayer.Top
     WlrLayershell.namespace: "quickshell:bar"
-    WlrLayershell.keyboardFocus: (root.showDynamicIsland && dynamicIsland.replyMode) ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
+    WlrLayershell.keyboardFocus: (root.showDynamicIsland && (dynamicIsland.replyMode || dynamicIsland.wallpaperMode)) ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
 
     exclusiveZone: isMinimal ? 30 : (isUnified ? 38 : (isFloating ? 46 : 36))
-    implicitHeight: 160
+    implicitHeight: 220
 
     mask: Region {
         // Base bar clickable region
@@ -48,10 +54,10 @@ PanelWindow {
         // Dynamic Island expanded region (only in islands mode)
         Region {
             readonly property bool isIslandActive: root.showDynamicIsland
-            x: isIslandActive ? ((root.width - (dynamicIsland.expanded ? 400 : Math.max(160, dynamicIsland.calculatedCollapsedWidth + 20))) / 2) : 0
-            y: isIslandActive ? (root.isBottom ? (root.height - (dynamicIsland.expanded ? 160 : root.barHeight)) : 0) : 0
-            width: isIslandActive ? (dynamicIsland.expanded ? 400 : Math.max(160, dynamicIsland.calculatedCollapsedWidth + 20)) : 0
-            height: isIslandActive ? (dynamicIsland.expanded ? 160 : root.barHeight) : 0
+            x: isIslandActive ? ((root.width - (dynamicIsland.expanded ? Math.max(480, dynamicIsland.islandWidth) : Math.max(160, dynamicIsland.calculatedCollapsedWidth + 20))) / 2) : 0
+            y: isIslandActive ? (root.isBottom ? (root.height - (dynamicIsland.expanded ? Math.max(140, dynamicIsland.islandHeight) : root.barHeight)) : 0) : 0
+            width: isIslandActive ? (dynamicIsland.expanded ? Math.max(480, dynamicIsland.islandWidth) : Math.max(160, dynamicIsland.calculatedCollapsedWidth + 20)) : 0
+            height: isIslandActive ? (dynamicIsland.expanded ? Math.max(140, dynamicIsland.islandHeight) : root.barHeight) : 0
         }
     }
 
@@ -141,10 +147,10 @@ PanelWindow {
 
                 Components.WorkspaceIndicator {
                     Layout.alignment: Qt.AlignVCenter
-                    visible: (Services.Config ? Services.Config.showWorkspaces : true) && opacity > 0
+                    visible: Services.Config ? Services.Config.showWorkspaces : true
                     opacity: Services.OverlayManager.isLocked ? 0.0 : 1.0
                     transform: Translate {
-                        x: Services.OverlayManager.isLocked ? -40 : 0
+                        x: Services.OverlayManager.isLocked ? -35 : 0
                         Behavior on x { NumberAnimation { duration: 350; easing.type: Services.OverlayManager.isLocked ? Easing.OutCubic : Easing.InCubic } }
                     }
                     Behavior on opacity { NumberAnimation { duration: 350; easing.type: Services.OverlayManager.isLocked ? Easing.OutCubic : Easing.InCubic } }
@@ -157,14 +163,9 @@ PanelWindow {
                 Components.StatusTray {
                     id: statusTray
                     Layout.alignment: Qt.AlignVCenter
-
-                    readonly property real islandRightEdge: (root.width + (root.showDynamicIsland ? dynamicIsland.calculatedCollapsedWidth : 0)) / 2
-                    readonly property real trayFullLeftEdge: root.width - 12 - statusTray.fullUncollapsedWidth
-
-                    collapseNear: root.showDynamicIsland && (dynamicIsland.expanded
-                                 || (dynamicIsland.calculatedCollapsedWidth > 180)
-                                 || (trayFullLeftEdge <= islandRightEdge + 24))
-                    collapseMore: root.showDynamicIsland && dynamicIsland.expanded && (dynamicIsland.calculatedExpandedWidth >= 320 || dynamicIsland.notifActive || dynamicIsland.replyMode)
+                    barWidth: root.width
+                    islandRightEdge: root.showDynamicIsland ? ((root.width + (dynamicIsland.expanded ? dynamicIsland.calculatedExpandedWidth : dynamicIsland.calculatedCollapsedWidth)) / 2) : 0
+                    isIslandExpanded: root.showDynamicIsland && dynamicIsland.expanded
                 }
             }
         }
@@ -190,4 +191,5 @@ PanelWindow {
             visible: root.showDynamicIsland
         }
     }
+}
 }

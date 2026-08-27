@@ -73,13 +73,54 @@ Rectangle {
             anchors.rightMargin: 12
             spacing: 8
 
-            Text {
-                id: iconText
-                text: sliderRoot.icon
-                font.family: Services.Theme.fontSymbols
-                font.pixelSize: 14
-                color: (fillBar.width > (iconText.x + sliderContentRow.x + iconText.width / 2)) ? Services.Theme.bgDeep : Services.Theme.textPrimary
-                Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+            Item {
+                id: sliderIconBox
+                property string icon: sliderRoot.icon
+                property string oldIcon: ""
+                property color iconColor: (fillBar.width > (sliderIconBox.x + sliderContentRow.x + sliderIconBox.width / 2)) ? Services.Theme.bgDeep : Services.Theme.textPrimary
+                Behavior on iconColor { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+
+                implicitWidth: mainIconText.implicitWidth
+                implicitHeight: mainIconText.implicitHeight
+                Layout.alignment: Qt.AlignVCenter
+
+                onIconChanged: {
+                    if (icon !== mainIconText.text) {
+                        oldIcon = mainIconText.text
+                        oldIconText.opacity = 1.0
+                        mainIconText.text = icon
+                        mainIconText.opacity = 0.0
+                        sliderCrossFade.restart()
+                    }
+                }
+
+                Component.onCompleted: mainIconText.text = icon
+
+                Text {
+                    id: oldIconText
+                    anchors.centerIn: parent
+                    text: sliderIconBox.oldIcon
+                    font.family: Services.Theme.fontSymbols
+                    font.pixelSize: 14
+                    color: sliderIconBox.iconColor
+                    opacity: 0.0
+                    visible: opacity > 0
+                }
+
+                Text {
+                    id: mainIconText
+                    anchors.centerIn: parent
+                    font.family: Services.Theme.fontSymbols
+                    font.pixelSize: 14
+                    color: sliderIconBox.iconColor
+                    opacity: 1.0
+                }
+
+                ParallelAnimation {
+                    id: sliderCrossFade
+                    NumberAnimation { target: oldIconText; property: "opacity"; to: 0.0; duration: 220; easing.type: Easing.OutCubic }
+                    NumberAnimation { target: mainIconText; property: "opacity"; to: 1.0; duration: 220; easing.type: Easing.OutCubic }
+                }
             }
 
             Item { Layout.fillWidth: true }
@@ -306,7 +347,7 @@ Rectangle {
 
                             Text {
                                 anchors.centerIn: parent
-                                text: Services.Icons.wifi
+                                text: Services.Icons.wifiIcon(Services.Wifi.signalStrength, Services.Wifi.connected, Services.Wifi.enabled)
                                 font.family: Services.Theme.fontSymbols
                                 font.pixelSize: 16
                                 color: Services.Wifi.enabled ? Services.Theme.bgDeep : Services.Theme.textPrimary
@@ -355,7 +396,7 @@ Rectangle {
                                     Text {
                                         text: root.wifiExpanded
                                               ? (Services.Wifi.scanning ? "Scanning..." : (Services.Wifi.networks.length + " networks"))
-                                              : (Services.Wifi.enabled ? (Services.Wifi.connected ? "Connected" : "On") : "Off")
+                                              : (Services.Wifi.enabled ? (Services.Wifi.connected ? ("Connected • " + Services.Wifi.signalStrength + "%") : "On") : "Off")
                                         font.pixelSize: 9
                                         color: Services.Wifi.enabled ? Qt.rgba(Services.Theme.bgDeep.r, Services.Theme.bgDeep.g, Services.Theme.bgDeep.b, 0.75) : Services.Theme.textDisabled
                                     }
@@ -591,7 +632,9 @@ Rectangle {
 
                             Text {
                                 anchors.centerIn: parent
-                                text: Services.Icons.bluetooth
+                                text: (Services.Bluetooth.enabled && Services.Bluetooth.hasConnectedDevice)
+                                      ? Services.Icons.btDeviceIcon(Services.Bluetooth.connectedDeviceIcon, Services.Bluetooth.connectedDeviceName)
+                                      : Services.Icons.bluetooth
                                 font.family: Services.Theme.fontSymbols
                                 font.pixelSize: 16
                                 color: Services.Bluetooth.enabled ? Services.Theme.bgDeep : Services.Theme.textPrimary
@@ -628,7 +671,11 @@ Rectangle {
                                     spacing: 1
 
                                     Text {
-                                        text: root.btExpanded ? "Bluetooth Devices" : "Bluetooth"
+                                        text: root.btExpanded 
+                                              ? "Bluetooth Devices" 
+                                              : (Services.Bluetooth.enabled && Services.Bluetooth.hasConnectedDevice 
+                                                 ? Services.Bluetooth.connectedDeviceName 
+                                                 : "Bluetooth")
                                         font.pixelSize: 11
                                         font.bold: true
                                         elide: Text.ElideRight
@@ -638,7 +685,13 @@ Rectangle {
                                     Text {
                                         text: root.btExpanded
                                               ? (Services.Bluetooth.refreshing ? "Searching..." : (Services.Bluetooth.devices.length + " paired"))
-                                              : (Services.Bluetooth.enabled ? (Services.Bluetooth.devices.some(d => d.connected) ? "Connected" : "On") : "Off")
+                                              : (Services.Bluetooth.enabled 
+                                                 ? (Services.Bluetooth.hasConnectedDevice 
+                                                    ? (Services.Bluetooth.connectedDeviceBattery >= 0 
+                                                       ? ("Connected • " + Services.Bluetooth.connectedDeviceBattery + "%") 
+                                                       : "Connected") 
+                                                    : "On") 
+                                                 : "Off")
                                         font.pixelSize: 9
                                         color: Services.Bluetooth.enabled ? Qt.rgba(Services.Theme.bgDeep.r, Services.Theme.bgDeep.g, Services.Theme.bgDeep.b, 0.75) : Services.Theme.textDisabled
                                     }
@@ -710,7 +763,7 @@ Rectangle {
                                         spacing: 8
 
                                         Text {
-                                            text: btRow.modelData.connected ? "󰂱" : "󰂯"
+                                            text: Services.Icons.btDeviceIcon(btRow.modelData.icon, btRow.modelData.name)
                                             font.family: Services.Theme.fontSymbols
                                             font.pixelSize: 13
                                             color: Services.Theme.bgDeep
@@ -729,7 +782,11 @@ Rectangle {
                                                 Layout.fillWidth: true
                                             }
                                             Text {
-                                                text: btRow.modelData.connected ? "Connected" : "Paired"
+                                                text: btRow.modelData.connected 
+                                                      ? ((btRow.modelData.battery !== undefined && btRow.modelData.battery >= 0) 
+                                                         ? ("Connected • " + btRow.modelData.battery + "%") 
+                                                         : "Connected") 
+                                                      : "Paired"
                                                 font.pixelSize: 8
                                                 color: Qt.rgba(Services.Theme.bgDeep.r, Services.Theme.bgDeep.g, Services.Theme.bgDeep.b, 0.75)
                                             }

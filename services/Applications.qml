@@ -16,6 +16,13 @@ Singleton {
     onAppListChanged: _rebuildIndex()
     onQueryChanged: updateFiltered()
 
+    Connections {
+        target: Services.SystemTheme
+        function onIconThemeRevChanged() {
+            root._rebuildIndex()
+        }
+    }
+
     Component.onCompleted: _rebuildIndex()
 
     function _rebuildIndex() {
@@ -56,26 +63,13 @@ Singleton {
                     name: "Quickshell Settings",
                     description: "Configure theme, wallpaper, dynamic island, bar & widgets",
                     icon: "preferences-system",
-                    execute: function() { Services.OverlayManager.openSettings(0) }
+                    execute: function() { Services.OverlayManager.openSettings() }
                 },
                 name: "Quickshell Settings",
                 nameLower: "quickshell settings",
                 descLower: "configure theme wallpaper dynamic island bar widgets preferences options quickshell pengaturan setelan konfigurasi opsi",
                 idLower: "quickshell-settings",
-                keywordsLower: "settings config theme wallpaper preferences island bar lockscreen quickshell pengaturan setelan opsi >s >settings"
-            },
-            {
-                app: {
-                    name: "Wallpaper Selector",
-                    description: "Select desktop wallpaper, blur effects and slideshow",
-                    icon: "preferences-desktop-wallpaper",
-                    execute: function() { Services.OverlayManager.openSettings(0) }
-                },
-                name: "Wallpaper Selector",
-                nameLower: "wallpaper selector",
-                descLower: "select desktop wallpaper blur effects slideshow background tema gambar latar belakang",
-                idLower: "quickshell-wallpaper",
-                keywordsLower: "wallpaper selector background tema gambar latar desktop wall >w >wallpaper"
+                keywordsLower: "settings config theme preferences island bar lockscreen quickshell pengaturan setelan opsi"
             }
         ]
 

@@ -8,8 +8,20 @@ RowLayout {
     id: root
     spacing: isMinimal ? 4 : 8
 
-    property bool collapseNear: false
-    property bool collapseMore: false
+    property real barWidth: 1920
+    property real islandRightEdge: 0
+    property bool isIslandExpanded: false
+
+    // Available space between the Dynamic Island's right edge and the right screen margin
+    readonly property real availableRightSpace: (barWidth > 0 && islandRightEdge > 0) ? (barWidth - islandRightEdge) : 9999
+
+    // Adaptively hide only the elements that the island's expansion physically reaches
+    readonly property bool hideTrayIcons: isIslandExpanded && (availableRightSpace < 540)
+    readonly property bool hideSysmon: isIslandExpanded && (availableRightSpace < 510)
+    readonly property bool hideVolume: isIslandExpanded && (availableRightSpace < 460)
+    readonly property bool hideBattery: isIslandExpanded && (availableRightSpace < 310)
+    readonly property bool hideControl: isIslandExpanded && (availableRightSpace < 220)
+    readonly property bool hideClock: isIslandExpanded && (availableRightSpace < 130)
 
     readonly property string barStyle: Services.Config ? Services.Config.barStyle : "islands"
     readonly property bool isIslands: barStyle === "islands"
@@ -45,21 +57,22 @@ RowLayout {
         return trayW + 370
     }
 
-    // System Tray App Icons (Hides on Lock, collapseNear, or collapseMore)
+    // System Tray App Icons (Hides on Lock or when colliding with Island)
     Components.SystemTrayIcons {
         id: sysTrayIcons
         trayMenuPopup: trayMenuPopup
         trayOverflowPopup: trayOverflowPopup
 
-        opacity: (Services.OverlayManager.isLocked || root.collapseNear || root.collapseMore) ? 0 : 1
-        visible: (Services.Config ? Services.Config.showSysTray : true) && opacity > 0
+        opacity: (Services.OverlayManager.isLocked || root.hideTrayIcons) ? 0 : 1
+        visible: Services.Config ? Services.Config.showSysTray : true
+        enabled: opacity > 0.5
 
         transform: Translate {
-            x: Services.OverlayManager.isLocked ? 35 : ((root.collapseNear || root.collapseMore) ? 32 : 0)
-            Behavior on x { NumberAnimation { duration: 350; easing.type: (Services.OverlayManager.isLocked || root.collapseNear || root.collapseMore) ? Easing.OutCubic : Easing.InCubic } }
+            x: (Services.OverlayManager.isLocked || root.hideTrayIcons) ? 35 : 0
+            Behavior on x { NumberAnimation { duration: 350; easing.type: (Services.OverlayManager.isLocked || root.hideTrayIcons) ? Easing.OutCubic : Easing.InCubic } }
         }
 
-        Behavior on opacity { NumberAnimation { duration: 350; easing.type: (Services.OverlayManager.isLocked || root.collapseNear || root.collapseMore) ? Easing.OutCubic : Easing.InCubic } }
+        Behavior on opacity { NumberAnimation { duration: 350; easing.type: (Services.OverlayManager.isLocked || root.hideTrayIcons) ? Easing.OutCubic : Easing.InCubic } }
     }
 
     Components.TrayMenuPopup {
@@ -72,18 +85,20 @@ RowLayout {
         maxVisibleCount: sysTrayIcons.maxVisibleCount
     }
 
-    // CPU Usage (Hides on Lock or collapseMore)
+    // CPU Usage (Hides on Lock or when colliding with Island)
     Components.SysmonIndicator {
-        opacity: (Services.OverlayManager.isLocked || root.collapseMore) ? 0.0 : 1.0
-        visible: (Services.Config ? Services.Config.showSysmonTray : true) && opacity > 0
+        id: sysmonInd
+        opacity: (Services.OverlayManager.isLocked || root.hideSysmon) ? 0.0 : 1.0
+        visible: Services.Config ? Services.Config.showSysmonTray : true
+        enabled: opacity > 0.5
         transform: Translate {
-            x: Services.OverlayManager.isLocked ? 35 : (root.collapseMore ? 32 : 0)
-            Behavior on x { NumberAnimation { duration: 350; easing.type: (Services.OverlayManager.isLocked || root.collapseMore) ? Easing.OutCubic : Easing.InCubic } }
+            x: (Services.OverlayManager.isLocked || root.hideSysmon) ? 35 : 0
+            Behavior on x { NumberAnimation { duration: 350; easing.type: (Services.OverlayManager.isLocked || root.hideSysmon) ? Easing.OutCubic : Easing.InCubic } }
         }
-        Behavior on opacity { NumberAnimation { duration: 350; easing.type: (Services.OverlayManager.isLocked || root.collapseMore) ? Easing.OutCubic : Easing.InCubic } }
+        Behavior on opacity { NumberAnimation { duration: 350; easing.type: (Services.OverlayManager.isLocked || root.hideSysmon) ? Easing.OutCubic : Easing.InCubic } }
     }
 
-    // Volume Pill (Hides on Lock)
+    // Volume Pill (Hides on Lock or when colliding with Island)
     Rectangle {
         id: volPill
         implicitHeight: root.pillHeight
@@ -92,29 +107,73 @@ RowLayout {
         color: root.getPillBg(volMouse.containsMouse || Services.OverlayManager.volumePanelVisible)
         border.color: root.getPillBorder(volMouse.containsMouse || Services.OverlayManager.volumePanelVisible)
         border.width: root.isMinimal ? 0 : 1
-        opacity: Services.OverlayManager.isLocked ? 0.0 : 1.0
-        visible: (Services.Config ? Services.Config.showVolumeTray : true) && opacity > 0
+        
+        opacity: (Services.OverlayManager.isLocked || root.hideVolume) ? 0.0 : 1.0
+        visible: Services.Config ? Services.Config.showVolumeTray : true
+        enabled: opacity > 0.5
 
         Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
         Behavior on border.color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
         transform: Translate {
-            x: Services.OverlayManager.isLocked ? 35 : 0
-            Behavior on x { NumberAnimation { duration: 350; easing.type: Services.OverlayManager.isLocked ? Easing.OutCubic : Easing.InCubic } }
+            x: (Services.OverlayManager.isLocked || root.hideVolume) ? 35 : 0
+            Behavior on x { NumberAnimation { duration: 350; easing.type: (Services.OverlayManager.isLocked || root.hideVolume) ? Easing.OutCubic : Easing.InCubic } }
         }
-        Behavior on opacity { NumberAnimation { duration: 350; easing.type: Services.OverlayManager.isLocked ? Easing.OutCubic : Easing.InCubic } }
+        Behavior on opacity { NumberAnimation { duration: 350; easing.type: (Services.OverlayManager.isLocked || root.hideVolume) ? Easing.OutCubic : Easing.InCubic } }
 
         RowLayout {
             id: volLayout
             anchors.centerIn: parent
             spacing: root.isMinimal ? 4 : 6
 
-            Text {
-                text: Services.Icons.volumeIcon(Services.Audio.volume, Services.Audio.muted, Services.Audio.isHeadphone, Services.Audio.isTws)
-                font.family: Services.Theme.fontSymbols
-                font.pixelSize: root.isMinimal ? Services.Theme.fontSizeMd : Services.Theme.fontSizeXl
-                color: (volMouse.containsMouse || Services.OverlayManager.volumePanelVisible) ? Services.Theme.accent : Services.Theme.textPrimary
-                Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+            Item {
+                id: volIconBox
+                property string icon: Services.Icons.volumeIcon(Services.Audio.volume, Services.Audio.muted, Services.Audio.isHeadphone, Services.Audio.isTws)
+                property string oldIcon: ""
+                property color iconColor: (volMouse.containsMouse || Services.OverlayManager.volumePanelVisible) ? Services.Theme.accent : Services.Theme.textPrimary
+                Behavior on iconColor { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+
+                implicitWidth: mainVolText.implicitWidth
+                implicitHeight: mainVolText.implicitHeight
+                Layout.alignment: Qt.AlignVCenter
+
+                onIconChanged: {
+                    if (icon !== mainVolText.text) {
+                        oldIcon = mainVolText.text
+                        oldVolText.opacity = 1.0
+                        mainVolText.text = icon
+                        mainVolText.opacity = 0.0
+                        volCrossFade.restart()
+                    }
+                }
+
+                Component.onCompleted: mainVolText.text = icon
+
+                Text {
+                    id: oldVolText
+                    anchors.centerIn: parent
+                    text: volIconBox.oldIcon
+                    font.family: Services.Theme.fontSymbols
+                    font.pixelSize: root.isMinimal ? Services.Theme.fontSizeMd : Services.Theme.fontSizeXl
+                    color: volIconBox.iconColor
+                    opacity: 0.0
+                    visible: opacity > 0
+                }
+
+                Text {
+                    id: mainVolText
+                    anchors.centerIn: parent
+                    font.family: Services.Theme.fontSymbols
+                    font.pixelSize: root.isMinimal ? Services.Theme.fontSizeMd : Services.Theme.fontSizeXl
+                    color: volIconBox.iconColor
+                    opacity: 1.0
+                }
+
+                ParallelAnimation {
+                    id: volCrossFade
+                    NumberAnimation { target: oldVolText; property: "opacity"; to: 0.0; duration: 220; easing.type: Easing.OutCubic }
+                    NumberAnimation { target: mainVolText; property: "opacity"; to: 1.0; duration: 220; easing.type: Easing.OutCubic }
+                }
             }
             Text {
                 text: Math.round(Services.Audio.volume * 100) + "%"
@@ -148,10 +207,19 @@ RowLayout {
         color: root.getPillBg(batMouse.containsMouse || Services.OverlayManager.batteryPanelVisible)
         border.color: root.getPillBorder(batMouse.containsMouse || Services.OverlayManager.batteryPanelVisible)
         border.width: root.isMinimal ? 0 : 1
+
+        opacity: (Services.OverlayManager.isLocked || root.hideBattery) ? 0.0 : 1.0
         visible: Services.Config ? Services.Config.showBatteryTray : true
+        enabled: opacity > 0.5
 
         Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
         Behavior on border.color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+
+        transform: Translate {
+            x: (Services.OverlayManager.isLocked || root.hideBattery) ? 35 : 0
+            Behavior on x { NumberAnimation { duration: 350; easing.type: (Services.OverlayManager.isLocked || root.hideBattery) ? Easing.OutCubic : Easing.InCubic } }
+        }
+        Behavior on opacity { NumberAnimation { duration: 350; easing.type: (Services.OverlayManager.isLocked || root.hideBattery) ? Easing.OutCubic : Easing.InCubic } }
 
         RowLayout {
             id: batLayout
@@ -216,10 +284,19 @@ RowLayout {
         color: root.getPillBg(Services.OverlayManager.controlCenterVisible || Services.Notifications.centerVisible)
         border.color: root.getPillBorder(Services.OverlayManager.controlCenterVisible || Services.Notifications.centerVisible)
         border.width: root.isMinimal ? 0 : 1
+
+        opacity: (Services.OverlayManager.isLocked || root.hideControl) ? 0.0 : 1.0
         visible: Services.Config ? Services.Config.showControlCenterTray : true
+        enabled: opacity > 0.5
 
         Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
         Behavior on border.color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+
+        transform: Translate {
+            x: (Services.OverlayManager.isLocked || root.hideControl) ? 35 : 0
+            Behavior on x { NumberAnimation { duration: 350; easing.type: (Services.OverlayManager.isLocked || root.hideControl) ? Easing.OutCubic : Easing.InCubic } }
+        }
+        Behavior on opacity { NumberAnimation { duration: 350; easing.type: (Services.OverlayManager.isLocked || root.hideControl) ? Easing.OutCubic : Easing.InCubic } }
 
         RowLayout {
             id: ctrlLayout
@@ -241,12 +318,14 @@ RowLayout {
 
     // Clock & Date Pill (Shown in Tray when in islands mode; in floating/unified/minimal clock is centered)
     Components.ClockCenter {
-        opacity: Services.OverlayManager.isLocked ? 0.0 : 1.0
-        visible: root.isIslands && (Services.Config ? Services.Config.showClockTray : true) && opacity > 0
+        id: clockCenterPill
+        opacity: (Services.OverlayManager.isLocked || root.hideClock) ? 0.0 : 1.0
+        visible: root.isIslands && (Services.Config ? Services.Config.showClockTray : true)
+        enabled: opacity > 0.5
         transform: Translate {
-            x: Services.OverlayManager.isLocked ? 35 : 0
-            Behavior on x { NumberAnimation { duration: 350; easing.type: Services.OverlayManager.isLocked ? Easing.OutCubic : Easing.InCubic } }
+            x: (Services.OverlayManager.isLocked || root.hideClock) ? 35 : 0
+            Behavior on x { NumberAnimation { duration: 350; easing.type: (Services.OverlayManager.isLocked || root.hideClock) ? Easing.OutCubic : Easing.InCubic } }
         }
-        Behavior on opacity { NumberAnimation { duration: 350; easing.type: Services.OverlayManager.isLocked ? Easing.OutCubic : Easing.InCubic } }
+        Behavior on opacity { NumberAnimation { duration: 350; easing.type: (Services.OverlayManager.isLocked || root.hideClock) ? Easing.OutCubic : Easing.InCubic } }
     }
 }

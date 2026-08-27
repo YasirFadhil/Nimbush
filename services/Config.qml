@@ -2,6 +2,7 @@ pragma Singleton
 import QtQuick
 import Quickshell
 import Quickshell.Io
+import "." as Services
 
 Singleton {
     id: root
@@ -14,6 +15,8 @@ Singleton {
     property real uiScale: 1.0                    // 0.9 (compact) | 1.0 (normal) | 1.15 (large)
     property bool useMatugen: false
     property string fontFamily: "Liga SFMono Nerd Font, monospace"
+    property string fontMono: "Liga SFMono Nerd Font, monospace"
+    property string fontDisplay: "SF Pro Display, Inter, Sans-Serif"
     property real glassOpacity: 0.85              // 0.70 | 0.85 | 0.98
 
     // ── Matugen Extracted Colors ─────────────────────────────────────────────
@@ -45,6 +48,55 @@ Singleton {
     property string islandStyle: "expanded"       // "expanded" | "compact" | "minimal" | "hidden"
     property string workspaceStyle: "pills"       // "pills" | "numbers" | "dots" | "icons"
     property bool workspaceShowAll: true
+    property string barMonitorMode: "all"         // "all" | "primary" | "custom"
+    property var barMonitorsList: []              // string[] of monitor names e.g. ["eDP-1", "DP-1"]
+
+    readonly property var barScreens: {
+        if (!Quickshell.screens || Quickshell.screens.length === 0) return []
+        const count = Quickshell.screens.length
+        if (barMonitorMode === "all") {
+            var all = []
+            for (var i = 0; i < count; i++) {
+                if (Quickshell.screens[i]) all.push(Quickshell.screens[i])
+            }
+            return all
+        } else if (barMonitorMode === "primary") {
+            var prim = ""
+            if (Services.Compositor && Services.Compositor.monitorsList && Services.Compositor.monitorsList.length > 0) {
+                var f = Services.Compositor.monitorsList.find(m => m.focused)
+                prim = f ? f.name : Services.Compositor.monitorsList[0].name
+            }
+            for (var j = 0; j < count; j++) {
+                if (Quickshell.screens[j] && Quickshell.screens[j].name === prim) {
+                    return [Quickshell.screens[j]]
+                }
+            }
+            return Quickshell.screens[0] ? [Quickshell.screens[0]] : []
+        } else if (barMonitorMode === "custom") {
+            var list = barMonitorsList || []
+            var res = []
+            for (var k = 0; k < count; k++) {
+                var sc = Quickshell.screens[k]
+                if (sc && list.indexOf(sc.name) !== -1) {
+                    res.push(sc)
+                }
+            }
+            if (res.length > 0) return res
+            return Quickshell.screens[0] ? [Quickshell.screens[0]] : []
+        }
+        return Quickshell.screens
+    }
+
+    // ── Dashboard & Weather ──────────────────────────────────────────────────
+    property string dashboardWidget: "weather"    // "weather" | "wallpaper" | "both"
+    property string weatherLocationMode: "auto"   // "auto" | "custom"
+    property string weatherCustomCity: ""
+    property string weatherUnit: "celsius"        // "celsius" | "fahrenheit"
+    property bool weatherAutoRefresh: true
+    property bool dashboardShowMetrics: true
+    property bool dashboardShowSpecs: true
+    property bool dashboardShowActions: true
+    property string dashboardMetricsStyle: "cards" // "cards" | "minimal"
 
     // ── Sound & Feedback ─────────────────────────────────────────────────────
     property bool soundFeedback: true
@@ -185,6 +237,8 @@ Singleton {
         if (data.cornerRadius !== undefined) cornerRadius = Number(data.cornerRadius)
         if (data.uiScale !== undefined) uiScale = Number(data.uiScale)
         if (data.fontFamily !== undefined) fontFamily = data.fontFamily
+        if (data.fontMono !== undefined) fontMono = data.fontMono
+        if (data.fontDisplay !== undefined) fontDisplay = data.fontDisplay
         if (data.glassOpacity !== undefined) glassOpacity = Number(data.glassOpacity)
 
         if (data.barPosition !== undefined) barPosition = data.barPosition
@@ -204,6 +258,8 @@ Singleton {
         if (data.islandStyle !== undefined) islandStyle = data.islandStyle
         if (data.workspaceStyle !== undefined) workspaceStyle = data.workspaceStyle
         if (data.workspaceShowAll !== undefined) workspaceShowAll = Boolean(data.workspaceShowAll)
+        if (data.barMonitorMode !== undefined) barMonitorMode = data.barMonitorMode
+        if (data.barMonitorsList !== undefined && Array.isArray(data.barMonitorsList)) barMonitorsList = data.barMonitorsList
 
         if (data.soundFeedback !== undefined) soundFeedback = Boolean(data.soundFeedback)
         if (data.soundVolumeFeedback !== undefined) soundVolumeFeedback = Boolean(data.soundVolumeFeedback)
@@ -249,6 +305,16 @@ Singleton {
         if (data.clipboardLimit !== undefined) clipboardLimit = Number(data.clipboardLimit)
         if (data.launcherMaxResults !== undefined) launcherMaxResults = Number(data.launcherMaxResults)
 
+        if (data.dashboardWidget !== undefined) dashboardWidget = data.dashboardWidget
+        if (data.weatherLocationMode !== undefined) weatherLocationMode = data.weatherLocationMode
+        if (data.weatherCustomCity !== undefined) weatherCustomCity = String(data.weatherCustomCity)
+        if (data.weatherUnit !== undefined) weatherUnit = data.weatherUnit
+        if (data.weatherAutoRefresh !== undefined) weatherAutoRefresh = Boolean(data.weatherAutoRefresh)
+        if (data.dashboardShowMetrics !== undefined) dashboardShowMetrics = Boolean(data.dashboardShowMetrics)
+        if (data.dashboardShowSpecs !== undefined) dashboardShowSpecs = Boolean(data.dashboardShowSpecs)
+        if (data.dashboardShowActions !== undefined) dashboardShowActions = Boolean(data.dashboardShowActions)
+        if (data.dashboardMetricsStyle !== undefined) dashboardMetricsStyle = data.dashboardMetricsStyle
+
         if (data.firstRunCompleted !== undefined) firstRunCompleted = Boolean(data.firstRunCompleted)
         if (data.lastSettingsTab !== undefined) lastSettingsTab = Number(data.lastSettingsTab)
         if (data.lastSettingsCompSubTab !== undefined) lastSettingsCompSubTab = Number(data.lastSettingsCompSubTab)
@@ -276,6 +342,8 @@ Singleton {
             cornerRadius: cornerRadius,
             uiScale: uiScale,
             fontFamily: fontFamily,
+            fontMono: fontMono,
+            fontDisplay: fontDisplay,
             glassOpacity: glassOpacity,
 
             lastSettingsTab: lastSettingsTab,
@@ -298,6 +366,8 @@ Singleton {
             islandStyle: islandStyle,
             workspaceStyle: workspaceStyle,
             workspaceShowAll: workspaceShowAll,
+            barMonitorMode: barMonitorMode,
+            barMonitorsList: barMonitorsList,
 
             soundFeedback: soundFeedback,
             soundVolumeFeedback: soundVolumeFeedback,
@@ -337,6 +407,16 @@ Singleton {
             clipboardLimit: clipboardLimit,
             launcherMaxResults: launcherMaxResults,
 
+            dashboardWidget: dashboardWidget,
+            weatherLocationMode: weatherLocationMode,
+            weatherCustomCity: weatherCustomCity,
+            weatherUnit: weatherUnit,
+            weatherAutoRefresh: weatherAutoRefresh,
+            dashboardShowMetrics: dashboardShowMetrics,
+            dashboardShowSpecs: dashboardShowSpecs,
+            dashboardShowActions: dashboardShowActions,
+            dashboardMetricsStyle: dashboardMetricsStyle,
+
             firstRunCompleted: firstRunCompleted,
             customSettingsVersion: customSettingsVersion
         }
@@ -344,6 +424,15 @@ Singleton {
 
     function saveConfig() {
         saveDebounceTimer.restart()
+        root.configChanged()
+    }
+
+    function saveConfigImmediately() {
+        saveDebounceTimer.stop()
+        var data = root.serializeData()
+        var jsonStr = JSON.stringify(data, null, 2)
+        saveConfigProc.payload = jsonStr
+        saveConfigProc.running = true
         root.configChanged()
     }
 
@@ -355,6 +444,8 @@ Singleton {
         cornerRadius = 16
         uiScale = 1.0
         fontFamily = "Liga SFMono Nerd Font, monospace"
+        fontMono = "Liga SFMono Nerd Font, monospace"
+        fontDisplay = "SF Pro Display, Inter, Sans-Serif"
         glassOpacity = 0.85
 
         barPosition = "top"
@@ -411,6 +502,16 @@ Singleton {
         clipboardLimit = 50
         launcherMaxResults = 8
 
+        dashboardWidget = "weather"
+        weatherLocationMode = "auto"
+        weatherCustomCity = ""
+        weatherUnit = "celsius"
+        weatherAutoRefresh = true
+        dashboardShowMetrics = true
+        dashboardShowSpecs = true
+        dashboardShowActions = true
+        dashboardMetricsStyle = "cards"
+
         firstRunCompleted = true
         saveConfig()
     }
@@ -447,7 +548,6 @@ Singleton {
     }
 
     function setThemeMode(mode) {
-        if (themeMode === mode) return
         themeMode = mode
         if (useMatugen || accentName === "Matugen (Wallpaper)") {
             accentColor = (mode === "light") ? matugenLightPrimary : matugenDarkPrimary
@@ -458,6 +558,9 @@ Singleton {
                     break
                 }
             }
+        }
+        if (Services.SystemTheme) {
+            Services.SystemTheme.setColorScheme(mode === "dark" ? "prefer-dark" : "prefer-light")
         }
         root.configChanged()
         saveConfig()
@@ -526,6 +629,42 @@ Singleton {
     function setIslandStyle(style) { islandStyle = style; saveConfig() }
     function setWorkspaceStyle(style) { workspaceStyle = style; saveConfig() }
     function setWorkspaceShowAll(val) { workspaceShowAll = val; saveConfig() }
+    function setBarMonitorMode(mode) { barMonitorMode = mode; saveConfig() }
+    function toggleBarMonitor(monName) {
+        if (!monName) return
+        var list = barMonitorsList ? barMonitorsList.slice() : []
+        var idx = list.indexOf(monName)
+        if (idx !== -1) {
+            list.splice(idx, 1)
+        } else {
+            list.push(monName)
+        }
+        barMonitorsList = list
+        saveConfig()
+    }
+    function setBarMonitor(monName, enabled) {
+        if (!monName) return
+        var list = barMonitorsList ? barMonitorsList.slice() : []
+        var idx = list.indexOf(monName)
+        if (enabled && idx === -1) {
+            list.push(monName)
+        } else if (!enabled && idx !== -1) {
+            list.splice(idx, 1)
+        }
+        barMonitorsList = list
+        saveConfig()
+    }
+    function isBarMonitorEnabled(monName) {
+        if (!monName) return true
+        if (barMonitorMode === "all") return true
+        if (barMonitorMode === "primary") {
+            var prim = (Services.Compositor && Services.Compositor.monitorsList && Services.Compositor.monitorsList.length > 0)
+                ? (Services.Compositor.monitorsList.find(m => m.focused)?.name || Services.Compositor.monitorsList[0].name)
+                : ""
+            return monName === prim
+        }
+        return (barMonitorsList || []).indexOf(monName) !== -1
+    }
 
     function setSoundFeedback(val) { soundFeedback = val; saveConfig() }
     function setSoundVolumeFeedback(val) { soundVolumeFeedback = val; saveConfig() }
@@ -565,10 +704,40 @@ Singleton {
     function setClipboardLimit(val) { clipboardLimit = val; saveConfig() }
     function setLauncherMaxResults(val) { launcherMaxResults = val; saveConfig() }
 
+    function setDashboardWidget(val) { dashboardWidget = val; saveConfig() }
+    function setWeatherLocationMode(val) {
+        weatherLocationMode = val
+        saveConfig()
+        if (Services.Weather) Services.Weather.refresh()
+    }
+    function setWeatherCustomCity(val) {
+        weatherCustomCity = val
+        saveConfig()
+        if (Services.Weather) Services.Weather.refresh()
+    }
+    function setWeatherUnit(val) {
+        weatherUnit = val
+        saveConfig()
+        if (Services.Weather) Services.Weather.refresh()
+    }
+    function setWeatherAutoRefresh(val) { weatherAutoRefresh = val; saveConfig() }
+    function setDashboardShowMetrics(val) { dashboardShowMetrics = val; saveConfig() }
+    function setDashboardShowSpecs(val) { dashboardShowSpecs = val; saveConfig() }
+    function setDashboardShowActions(val) { dashboardShowActions = val; saveConfig() }
+    function setDashboardMetricsStyle(val) { dashboardMetricsStyle = val; saveConfig() }
+
     function setFirstRunCompleted(val) { firstRunCompleted = val; saveConfig() }
-    function setCornerRadius(radius) { cornerRadius = radius; saveConfig() }
+    function setCornerRadius(radius) {
+        cornerRadius = radius
+        if (Services.Compositor) {
+            Services.Compositor.setOption("rounding", radius)
+        }
+        saveConfig()
+    }
     function setUiScale(scale) { uiScale = scale; saveConfig() }
     function setFontFamily(family) { fontFamily = family; saveConfig() }
+    function setFontMono(family) { fontMono = family; saveConfig() }
+    function setFontDisplay(family) { fontDisplay = family; saveConfig() }
     function setGlassOpacity(op) { glassOpacity = op; saveConfig() }
 
     // ── Processes ────────────────────────────────────────────────────────────

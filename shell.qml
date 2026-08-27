@@ -1,7 +1,8 @@
 //@ pragma UseQApplication
-//@ pragma IconTheme MacTahoe-dark
 import QtQuick
+import QtQuick.Layouts
 import Quickshell
+import Quickshell.Wayland
 import Quickshell.Io
 import "services" as Services
 import "modules/notifications" as Notif
@@ -19,6 +20,8 @@ import "modules/settings" as SettingsModule
 import "modules/welcome" as WelcomeModule
 import "modules/battery" as BatteryModule
 import "modules/volume" as VolumeModule
+import "modules/emoji" as EmojiModule
+import "modules/sysmon" as SysmonModule
 
 ShellRoot {
     // Native QML wallpaper layer (serves as wallpaper renderer and fallback for swww)
@@ -29,6 +32,8 @@ ShellRoot {
     Notif.Popup {}
     // Osd.PowerOsd {} // Disabled — charging status is now shown in DynamicIsland
     Launcher.Launcher  { id: launcherWindow }
+    // Wallpaper is integrated into Dynamic Island in Bar.qml
+    EmojiModule.EmojiPicker { id: emojiPickerWindow }
     DashboardModule.Dashboard { id: dashboardWindow }
     Clipboard.ClipboardHistory { id: clipboardWindow }
     PowerMenu.PowerMenu { id: powerMenu }
@@ -36,9 +41,90 @@ ShellRoot {
     ControlCenter.ControlCenter { id: controlCenter }
     BatteryModule.Battery { id: batteryWindow }
     VolumeModule.Volume { id: volumeWindow }
+    SysmonModule.Sysmon { id: sysmonWindow }
     CalendarModule.Calendar {}
     LockscreenModule.Lockscreen { id: lockscreenWindow }
     WelcomeModule.Welcome { id: welcomeWindow }
+
+    Loader {
+        id: identifyLoader
+        active: Services.OverlayManager ? Services.OverlayManager.identifyMonitorsActive : false
+        sourceComponent: Variants {
+            model: Quickshell.screens
+            delegate: PanelWindow {
+                id: idWin
+                required property var modelData
+                screen: modelData
+                anchors { top: true; bottom: true; left: true; right: true }
+                color: "transparent"
+                WlrLayershell.layer: WlrLayer.Overlay
+                WlrLayershell.namespace: "quickshell:identify"
+                exclusiveZone: -1
+
+                Rectangle {
+                    anchors.centerIn: parent
+                    width: 280
+                    height: 180
+                    radius: 20
+                    color: Qt.rgba(0.08, 0.08, 0.12, 0.94)
+                    border.color: Services.Theme.accent
+                    border.width: 3
+
+                    Rectangle {
+                        anchors.fill: parent
+                        anchors.margins: 1
+                        radius: 19
+                        color: "transparent"
+                        border.color: Qt.rgba(1, 1, 1, 0.2)
+                        border.width: 1
+                    }
+
+                    ColumnLayout {
+                        anchors.centerIn: parent
+                        spacing: 8
+
+                        Rectangle {
+                            Layout.alignment: Qt.AlignHCenter
+                            width: 52; height: 52; radius: 26
+                            color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.22)
+                            border.color: Services.Theme.accent
+                            border.width: 2
+
+                            Text {
+                                anchors.centerIn: parent
+                                text: {
+                                    if (!Quickshell.screens) return "1"
+                                    for (let i = 0; i < Quickshell.screens.length; i++) {
+                                        if (Quickshell.screens[i].name === idWin.modelData.name) return String(i + 1)
+                                    }
+                                    return "1"
+                                }
+                                font.pixelSize: 26
+                                font.bold: true
+                                color: Services.Theme.accent
+                            }
+                        }
+
+                        Text {
+                            Layout.alignment: Qt.AlignHCenter
+                            text: idWin.modelData.name || "Display"
+                            font.pixelSize: 20
+                            font.bold: true
+                            color: "#ffffff"
+                        }
+
+                        Text {
+                            Layout.alignment: Qt.AlignHCenter
+                            text: idWin.modelData.width + " × " + idWin.modelData.height
+                            font.pixelSize: 13
+                            font.family: Services.Theme.fontMono
+                            color: Services.Theme.textSecondary
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     Loader {
         id: settingsLoader
@@ -83,9 +169,11 @@ ShellRoot {
     Connections {
         target: Services.OverlayManager
         function onLauncherToggleRequested() { launcherWindow.toggle() }
+        function onEmojiToggleRequested() { emojiPickerWindow.toggle() }
+        function onEmojiShowRequested() { emojiPickerWindow.show() }
         function onDashboardToggleRequested() { dashboardWindow.toggle() }
         function onSettingsToggleRequested() { settingsWindow.toggle() }
-        function onSettingsShowRequested(tabIndex) { settingsWindow.show(tabIndex) }
+        function onSettingsShowRequested(tabIndex, subTabIndex) { settingsWindow.show(tabIndex, subTabIndex) }
         function onWelcomeToggleRequested() { welcomeWindow.toggle() }
         function onWelcomeShowRequested() { welcomeWindow.show() }
     }
@@ -122,6 +210,14 @@ ShellRoot {
         function hide():   void { volumeWindow.hide() }
     }
 
+    // ── System & Task Manager Panel ──────────────────────────────────────────
+    IpcHandler {
+        target: "sysmon"
+        function toggle(): void { if (!Services.OverlayManager.isLocked) sysmonWindow.toggle() }
+        function show():   void { if (!Services.OverlayManager.isLocked) sysmonWindow.show() }
+        function hide():   void { sysmonWindow.hide() }
+    }
+
     // ── Calendar Panel ───────────────────────────────────────────────────────
     IpcHandler {
         target: "calendar"
@@ -155,6 +251,36 @@ ShellRoot {
         function toggle(): void { if (!Services.OverlayManager.isLocked) launcherWindow.toggle() }
         function show():   void { if (!Services.OverlayManager.isLocked) launcherWindow.show() }
         function hide():   void { launcherWindow.hide() }
+    }
+
+    // ── Wallpaper Selector (Integrated in Dynamic Island) ───────────────────
+    IpcHandler {
+        target: "wallpaper"
+        function toggle(): void { if (!Services.OverlayManager.isLocked) Services.OverlayManager.wallpaperToggleRequested() }
+        function show():   void { if (!Services.OverlayManager.isLocked) Services.OverlayManager.wallpaperShowRequested() }
+        function hide():   void { if (!Services.OverlayManager.isLocked) Services.OverlayManager.wallpaperToggleRequested() }
+    }
+
+    IpcHandler {
+        target: "wallpaperSelector"
+        function toggle(): void { if (!Services.OverlayManager.isLocked) Services.OverlayManager.wallpaperToggleRequested() }
+        function show():   void { if (!Services.OverlayManager.isLocked) Services.OverlayManager.wallpaperShowRequested() }
+        function hide():   void { if (!Services.OverlayManager.isLocked) Services.OverlayManager.wallpaperToggleRequested() }
+    }
+
+    // ── Emoji Picker ─────────────────────────────────────────────────────────
+    IpcHandler {
+        target: "emoji"
+        function toggle(): void { if (!Services.OverlayManager.isLocked) emojiPickerWindow.toggle() }
+        function show():   void { if (!Services.OverlayManager.isLocked) emojiPickerWindow.show() }
+        function hide():   void { emojiPickerWindow.hide() }
+    }
+
+    IpcHandler {
+        target: "emojiPicker"
+        function toggle(): void { if (!Services.OverlayManager.isLocked) emojiPickerWindow.toggle() }
+        function show():   void { if (!Services.OverlayManager.isLocked) emojiPickerWindow.show() }
+        function hide():   void { emojiPickerWindow.hide() }
     }
 
     // ── Clipboard ────────────────────────────────────────────────────────────

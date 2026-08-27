@@ -1,0 +1,54 @@
+// ══════════════════════════════════════════════════════════════════════════════
+//  Niri Modular Configuration (~/.config/niri/config.kdl)
+// ══════════════════════════════════════════════════════════════════════════════
+
+// ── 1. Output & Display ──────────────────────────────────────────────────────
+output "eDP-1" {
+    mode "1920x1080@60.0"
+    scale 1.0
+    transform "normal"
+    position x=0 y=0
+}
+
+// ── 2. Layout & Window Behavior ──────────────────────────────────────────────
+layout {
+    gaps 8
+    center-focused-column "never"
+
+    preset-column-widths {
+        proportion 0.33333
+        proportion 0.5
+        proportion 0.66667
+    }
+
+    default-column-width { proportion 0.5; }
+
+    focus-ring {
+        width 2
+        active-color "#89b4fa"
+        inactive-color "#313244"
+    }
+
+    border {
+        off
+    }
+}
+
+// ── 3. Input Settings ────────────────────────────────────────────────────────
+input {
+    keyboard {
+        xkb {
+            layout "us"
+        }
+    }
+    touchpad {
+        natural-scroll
+        tap
+    }
+}
+
+// ── 4. Include Modular Configurations ────────────────────────────────────────
+include "conf/autostart.kdl"
+include "conf/keybinds.kdl"
+include "conf/rules.kdl"
+include "conf/quickshell.kdl"

@@ -65,11 +65,51 @@ PanelWindow {
             anchors.fill: parent
             anchors.margins: 14
             spacing: 12
-            Text {
-              text: osd.icon
-              font.family: Services.Theme.fontSymbols
-              font.pixelSize: Services.Theme.fontSize7xl
-              color: Services.Theme.textPrimary
+            Item {
+                id: osdIconBox
+                property string icon: osd.icon
+                property string oldIcon: ""
+                implicitWidth: mainOsdText.implicitWidth
+                implicitHeight: mainOsdText.implicitHeight
+                Layout.alignment: Qt.AlignVCenter
+
+                onIconChanged: {
+                    if (icon !== mainOsdText.text) {
+                        oldIcon = mainOsdText.text
+                        oldOsdText.opacity = 1.0
+                        mainOsdText.text = icon
+                        mainOsdText.opacity = 0.0
+                        osdCrossFade.restart()
+                    }
+                }
+
+                Component.onCompleted: mainOsdText.text = icon
+
+                Text {
+                    id: oldOsdText
+                    anchors.centerIn: parent
+                    text: osdIconBox.oldIcon
+                    font.family: Services.Theme.fontSymbols
+                    font.pixelSize: Services.Theme.fontSize7xl
+                    color: Services.Theme.textPrimary
+                    opacity: 0.0
+                    visible: opacity > 0
+                }
+
+                Text {
+                    id: mainOsdText
+                    anchors.centerIn: parent
+                    font.family: Services.Theme.fontSymbols
+                    font.pixelSize: Services.Theme.fontSize7xl
+                    color: Services.Theme.textPrimary
+                    opacity: 1.0
+                }
+
+                ParallelAnimation {
+                    id: osdCrossFade
+                    NumberAnimation { target: oldOsdText; property: "opacity"; to: 0.0; duration: 220; easing.type: Easing.OutCubic }
+                    NumberAnimation { target: mainOsdText; property: "opacity"; to: 1.0; duration: 220; easing.type: Easing.OutCubic }
+                }
             }
             Rectangle {
                 Layout.fillWidth: true

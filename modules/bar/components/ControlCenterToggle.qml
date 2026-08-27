@@ -10,7 +10,7 @@ Item {
         id: ccIcon
         anchors.fill: parent
         text: Services.Icons.controlcenter
-        font.family: Services.Theme.fontMono
+        font.family: Services.Theme.fontSymbols
         font.pixelSize: Services.Theme.fontSize4xl
         font.weight: Font.Bold
         color: (ccMouse.containsMouse || Services.OverlayManager.controlCenterVisible) ? Services.Theme.accent : Services.Theme.textPrimary

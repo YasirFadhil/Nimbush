@@ -46,6 +46,9 @@
           ]))
           gobject-introspection
           gtk3
+          fontconfig
+          dconf
+          gsettings-desktop-schemas
         ];
 
         # Derivation builder for Quickshell configuration with optional extra packages (Hyprland / Niri)
@@ -67,7 +70,8 @@
             # Create runner executable script
             makeWrapper ${pkgs.quickshell}/bin/qs $out/bin/quickshell-shell \
               --add-flags "-c $out/share/quickshell" \
-              --prefix PATH : ${pkgs.lib.makeBinPath (runtimeDependencies ++ extraPkgs)}
+              --prefix PATH : ${pkgs.lib.makeBinPath (runtimeDependencies ++ extraPkgs)} \
+              --prefix XDG_DATA_DIRS : "${pkgs.gsettings-desktop-schemas}/share/gsettings-schemas/${pkgs.gsettings-desktop-schemas.name}:${pkgs.gtk3}/share/gsettings-schemas/${pkgs.gtk3.name}"
           '';
 
           meta = with pkgs.lib; {

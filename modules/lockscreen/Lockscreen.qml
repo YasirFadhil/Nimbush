@@ -437,7 +437,7 @@ Scope {
                             Text {
                                 anchors.centerIn: parent
                                 text: "󰌾"
-                                font.family: Services.Theme.fontMono
+                                font.family: Services.Theme.fontSymbols
                                 font.pixelSize: 13
                                 color: Services.Theme.accent
                             }
@@ -467,7 +467,7 @@ Scope {
                                 Text {
                                     anchors.centerIn: parent
                                     text: "󰌾"
-                                    font.family: Services.Theme.fontMono
+                                    font.family: Services.Theme.fontSymbols
                                     font.pixelSize: 15
                                     color: Services.Theme.accent
                                 }
@@ -521,7 +521,7 @@ Scope {
                             // Wi-Fi Status Icon (if enabled)
                             Text {
                                 visible: Services.Wifi && Services.Wifi.enabled
-                                text: Services.Icons.wifi
+                                text: Services.Icons.wifiIcon(Services.Wifi.signalStrength, Services.Wifi.connected, Services.Wifi.enabled)
                                 font.family: Services.Theme.fontSymbols
                                 font.pixelSize: Services.Theme.fontSizeSm
                                 color: (Services.Wifi && Services.Wifi.connected) ? Services.Theme.accent : Services.Theme.textDisabled
@@ -530,10 +530,12 @@ Scope {
                             // Bluetooth Status Icon (if enabled)
                             Text {
                                 visible: Services.Bluetooth && Services.Bluetooth.enabled
-                                text: Services.Icons.bluetooth
+                                text: (Services.Bluetooth && Services.Bluetooth.hasConnectedDevice)
+                                      ? Services.Icons.btDeviceIcon(Services.Bluetooth.connectedDeviceIcon, Services.Bluetooth.connectedDeviceName)
+                                      : Services.Icons.bluetooth
                                 font.family: Services.Theme.fontSymbols
                                 font.pixelSize: Services.Theme.fontSizeSm
-                                color: (Services.Bluetooth && Services.Bluetooth.devices.some(d => d.connected)) ? Services.Theme.accent : Services.Theme.textDisabled
+                                color: (Services.Bluetooth && Services.Bluetooth.hasConnectedDevice) ? Services.Theme.accent : Services.Theme.textDisabled
                             }
 
                             // Battery Icon & Percentage
@@ -1124,7 +1126,7 @@ Scope {
                                                 // Wi-Fi Icon
                                                 Text {
                                                     visible: Services.Wifi && Services.Wifi.enabled
-                                                    text: Services.Icons.wifi
+                                                    text: Services.Icons.wifiIcon(Services.Wifi.signalStrength, Services.Wifi.connected, Services.Wifi.enabled)
                                                     font.family: Services.Theme.fontSymbols
                                                     font.pixelSize: 11
                                                     color: (Services.Wifi && Services.Wifi.connected) ? Services.Theme.accent : Services.Theme.textDisabled
@@ -1133,10 +1135,12 @@ Scope {
                                                 // Bluetooth Icon
                                                 Text {
                                                     visible: Services.Bluetooth && Services.Bluetooth.enabled
-                                                    text: Services.Icons.bluetooth
+                                                    text: (Services.Bluetooth && Services.Bluetooth.hasConnectedDevice)
+                                                          ? Services.Icons.btDeviceIcon(Services.Bluetooth.connectedDeviceIcon, Services.Bluetooth.connectedDeviceName)
+                                                          : Services.Icons.bluetooth
                                                     font.family: Services.Theme.fontSymbols
                                                     font.pixelSize: 11
-                                                    color: (Services.Bluetooth && Services.Bluetooth.devices.some(d => d.connected)) ? Services.Theme.accent : Services.Theme.textDisabled
+                                                    color: (Services.Bluetooth && Services.Bluetooth.hasConnectedDevice) ? Services.Theme.accent : Services.Theme.textDisabled
                                                 }
 
                                                 // Battery Icon & %

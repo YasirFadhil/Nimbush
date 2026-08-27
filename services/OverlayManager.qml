@@ -14,19 +14,46 @@ Singleton {
     property bool calendarVisible: false
     property bool batteryPanelVisible: false
     property bool volumePanelVisible: false
+    property bool sysmonPanelVisible: false
+    property bool identifyMonitorsActive: false
     property real batteryTargetX: -1
     property real volumeTargetX: -1
+    property real sysmonTargetX: -1
 
     signal launcherToggleRequested()
     signal dashboardToggleRequested()
     signal settingsToggleRequested()
-    signal settingsShowRequested(var tabIndex)
+    signal settingsShowRequested(var tabIndex, var subTabIndex)
     signal welcomeToggleRequested()
     signal welcomeShowRequested()
+    signal wallpaperToggleRequested()
+    signal wallpaperShowRequested()
+    signal emojiToggleRequested()
+    signal emojiShowRequested()
 
-    function openSettings(tabIndex) {
+    function openWallpaper() {
+        closeAllExcept("wallpaper")
+        wallpaperShowRequested()
+    }
+
+    function toggleWallpaper() {
+        if (isLocked) return
+        wallpaperToggleRequested()
+    }
+
+    function openEmoji() {
+        closeAllExcept("emoji")
+        emojiShowRequested()
+    }
+
+    function toggleEmoji() {
+        if (isLocked) return
+        emojiToggleRequested()
+    }
+
+    function openSettings(tabIndex, subTabIndex) {
         closeAllExcept("settings")
-        settingsShowRequested(tabIndex !== undefined ? tabIndex : 0)
+        settingsShowRequested(tabIndex, subTabIndex)
     }
 
     function toggleSettings() {
@@ -77,5 +104,20 @@ Singleton {
         if (except !== "volumePanel") {
             volumePanelVisible = false
         }
+        if (except !== "sysmonPanel") {
+            sysmonPanelVisible = false
+        }
+    }
+
+    function triggerIdentifyMonitors() {
+        identifyMonitorsActive = true
+        identifyTimer.restart()
+    }
+
+    Timer {
+        id: identifyTimer
+        interval: 2500
+        repeat: false
+        onTriggered: root.identifyMonitorsActive = false
     }
 }

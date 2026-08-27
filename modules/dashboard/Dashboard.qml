@@ -15,6 +15,9 @@ PanelWindow {
     readonly property bool isBottom: Services.Config ? (Services.Config.barPosition === "bottom") : false
     readonly property int barTotalHeight: Services.Config ? (Services.Config.barStyle === "minimal" ? 30 : (Services.Config.barStyle === "unified" ? 38 : (Services.Config.barStyle === "floating" ? 46 : 36))) : 36
 
+    // Tab state if user enabled "both" widgets
+    property int currentWidgetTab: 0 // 0 = Weather, 1 = Wallpaper
+
     visible: false
 
     color: "transparent"
@@ -41,6 +44,12 @@ PanelWindow {
         visible = true
         isOpen = true
         keyFocus.forceActiveFocus()
+        if (Services.Weather) {
+            // If weather data is older or empty, refresh
+            if (!Services.Weather.isReady || !Services.Weather.lastUpdated) {
+                Services.Weather.refresh()
+            }
+        }
     }
 
     function hide() {
@@ -65,6 +74,15 @@ PanelWindow {
         Keys.onEscapePressed: root.close()
     }
 
+    // Dynamic greeting calculation
+    function getGreeting() {
+        const hour = new Date().getHours()
+        if (hour >= 5 && hour < 12) return "Good morning"
+        if (hour >= 12 && hour < 17) return "Good afternoon"
+        if (hour >= 17 && hour < 22) return "Good evening"
+        return "Good night"
+    }
+
     MouseArea {
         anchors.fill: parent
         onClicked: root.close()
@@ -75,7 +93,7 @@ PanelWindow {
             anchors.left: parent.left
             anchors.leftMargin: 16
             y: root.isBottom ? (parent.height - height - 12) : 12
-            width: 350
+            width: 375
             implicitHeight: mainCol.implicitHeight + 28
 
             radius: Services.Theme.radiusLg
@@ -102,31 +120,31 @@ PanelWindow {
                 anchors.margins: 14
                 spacing: 12
 
-                // ── 1. Profile Header ─────────────────────────────────────────
+                // ── 1. Modern Profile & Greeting Header ──────────────────────
                 RowLayout {
                     Layout.fillWidth: true
                     spacing: 10
 
-                    // Avatar / Distro Glyph
+                    // Avatar with active ring
                     Rectangle {
-                        width: 38
-                        height: 38
-                        radius: 19
+                        width: 44
+                        height: 44
+                        radius: 22
                         color: Services.Theme.surfaceVariant
-                        border.color: Services.Theme.border
-                        border.width: 1
+                        border.color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.4)
+                        border.width: 1.5
                         antialiasing: true
                         smooth: true
 
                         Image {
                             id: avatarImg
                             anchors.fill: parent
-                            anchors.margins: 1
+                            anchors.margins: 2
                             source: Services.OsInfo.avatarPath
                             fillMode: Image.PreserveAspectCrop
                             asynchronous: true
                             cache: true
-                            sourceSize: Qt.size(76, 76)
+                            sourceSize: Qt.size(88, 88)
                             visible: false
                             smooth: true
                         }
@@ -146,7 +164,7 @@ PanelWindow {
                             layer.enabled: true
                             Rectangle {
                                 anchors.fill: parent
-                                radius: 18
+                                radius: 20
                                 color: "black"
                             }
                         }
@@ -156,63 +174,123 @@ PanelWindow {
                             visible: avatarImg.status !== Image.Ready
                             text: Services.OsInfo.logoGlyph || "\uf17c"
                             font.family: Services.Theme.fontSymbols
-                            font.pixelSize: 18
+                            font.pixelSize: 20
                             color: Services.Theme.accent
+                        }
+
+                        // Live status dot
+                        Rectangle {
+                            anchors.bottom: parent.bottom
+                            anchors.right: parent.right
+                            anchors.margins: 1
+                            width: 10
+                            height: 10
+                            radius: 5
+                            color: Services.Theme.success
+                            border.color: Services.Theme.bgElevated
+                            border.width: 1.5
                         }
                     }
 
-                    // User Identity
+                    // User Identity & Dynamic Greeting
                     ColumnLayout {
                         Layout.fillWidth: true
-                        spacing: 1
+                        spacing: 2
+
+                        Text {
+                            text: root.getGreeting() + ", " + (Services.OsInfo.username ? (Services.OsInfo.username.charAt(0).toUpperCase() + Services.OsInfo.username.slice(1)) : "User")
+                            font.pixelSize: 13
+                            font.weight: Font.DemiBold
+                            color: Services.Theme.textPrimary
+                            elide: Text.ElideRight
+                        }
 
                         RowLayout {
                             spacing: 6
+
+                            // Distro Badge
+                            Rectangle {
+                                implicitHeight: 18
+                                implicitWidth: distroBadgeRow.implicitWidth + 10
+                                radius: 9
+                                color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.12)
+                                border.color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.25)
+                                border.width: 1
+
+                                RowLayout {
+                                    id: distroBadgeRow
+                                    anchors.centerIn: parent
+                                    spacing: 4
+
+                                    Text {
+                                        text: Services.OsInfo.distroName || "Linux"
+                                        font.pixelSize: 9
+                                        font.weight: Font.Medium
+                                        color: Services.Theme.accent
+                                        elide: Text.ElideRight
+                                    }
+                                }
+                            }
+
                             Text {
-                                text: Services.OsInfo.username || "User"
-                                font.pixelSize: 14
-                                font.weight: Font.DemiBold
-                                color: Services.Theme.textPrimary
+                                text: "@" + (Services.OsInfo.hostname || "local")
+                                font.pixelSize: 10
+                                color: Services.Theme.textSecondary
                                 elide: Text.ElideRight
                             }
-
-                            Text {
-                                text: "·"
-                                font.pixelSize: 10
-                                color: Services.Theme.textDisabled
-                            }
-
-                            Text {
-                                text: Services.OsInfo.distroName || "Linux"
-                                font.pixelSize: 10
-                                color: Services.Theme.accent
-                                elide: Text.ElideRight
-                            }
-                        }
-
-                        Text {
-                            text: "@" + (Services.OsInfo.hostname || "local")
-                            font.pixelSize: 10
-                            color: Services.Theme.textSecondary
                         }
                     }
 
-                    // Settings & Close Actions
+                    // Header Action Buttons
                     RowLayout {
                         spacing: 4
 
+                        // Refresh Button
                         Rectangle {
                             width: 28
                             height: 28
-                            radius: 6
+                            radius: 7
+                            color: refBtnArea.containsMouse ? Services.Theme.bgHover : "transparent"
+                            Behavior on color { ColorAnimation { duration: 180 } }
+
+                            Text {
+                                id: refIcon
+                                anchors.centerIn: parent
+                                text: Services.Icons.refresh
+                                font.family: Services.Theme.fontSymbols
+                                font.pixelSize: 11
+                                color: refBtnArea.containsMouse ? Services.Theme.accent : Services.Theme.textSecondary
+                                transformOrigin: Item.Center
+                                RotationAnimation on rotation {
+                                    running: Services.Weather ? Services.Weather.isLoading : false
+                                    from: 0; to: 360; duration: 1000; loops: Animation.Infinite
+                                }
+                            }
+
+                            MouseArea {
+                                id: refBtnArea
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: {
+                                    if (Services.Weather) Services.Weather.refresh()
+                                }
+                            }
+                        }
+
+                        // Settings Button
+                        Rectangle {
+                            width: 28
+                            height: 28
+                            radius: 7
                             color: setBtnArea.containsMouse ? Services.Theme.bgHover : "transparent"
-                            Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                            Behavior on color { ColorAnimation { duration: 180 } }
 
                             Text {
                                 anchors.centerIn: parent
                                 text: Services.Icons.settings
                                 font.family: Services.Theme.fontSymbols
-                                font.pixelSize: 12
+                                font.pixelSize: 11
                                 color: setBtnArea.containsMouse ? Services.Theme.accent : Services.Theme.textSecondary
                             }
 
@@ -228,12 +306,13 @@ PanelWindow {
                             }
                         }
 
+                        // Close Button
                         Rectangle {
                             width: 28
                             height: 28
-                            radius: 6
-                            color: closeBtnArea.containsMouse ? Qt.rgba(0.9, 0.2, 0.2, 0.12) : "transparent"
-                            Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                            radius: 7
+                            color: closeBtnArea.containsMouse ? Qt.rgba(0.9, 0.2, 0.2, 0.15) : "transparent"
+                            Behavior on color { ColorAnimation { duration: 180 } }
 
                             Text {
                                 anchors.centerIn: parent
@@ -259,18 +338,19 @@ PanelWindow {
                     Layout.fillWidth: true
                     height: 1
                     color: Services.Theme.border
-                    opacity: 0.6
+                    opacity: 0.5
                 }
 
-                // ── 2. Minimal Metrics Grid ──────────────────────────────────
+                // ── 2. Hardware Metrics Grid (2x2) ───────────────────────────
                 GridLayout {
+                    visible: Services.Config ? Services.Config.dashboardShowMetrics : true
                     Layout.fillWidth: true
                     columns: 2
                     columnSpacing: 8
                     rowSpacing: 8
 
-                    component MinimalMetric: Rectangle {
-                        id: mmRoot
+                    component ModernMetricCard: Rectangle {
+                        id: cardRoot
                         property string icon: ""
                         property string name: ""
                         property string value: ""
@@ -278,63 +358,81 @@ PanelWindow {
                         property color barColor: Services.Theme.accent
 
                         Layout.fillWidth: true
-                        implicitHeight: 52
+                        implicitHeight: 56
                         radius: Services.Theme.radiusSm
-                        color: Services.Theme.surfaceVariant
-                        border.color: Services.Theme.border
+                        color: metricMouse.containsMouse ? Services.Theme.bgHover : Services.Theme.surfaceVariant
+                        border.color: metricMouse.containsMouse ? Services.Theme.borderHighlight : Services.Theme.border
                         border.width: 1
+                        Behavior on color { ColorAnimation { duration: 180 } }
+
+                        MouseArea {
+                            id: metricMouse
+                            anchors.fill: parent
+                            hoverEnabled: true
+                        }
 
                         ColumnLayout {
                             anchors.fill: parent
-                            anchors.margins: 8
-                            spacing: 4
+                            anchors.margins: 9
+                            spacing: 5
 
                             RowLayout {
                                 Layout.fillWidth: true
-                                spacing: 5
+                                spacing: 6
 
-                                Text {
-                                    text: mmRoot.icon
-                                    font.family: Services.Theme.fontSymbols
-                                    font.pixelSize: 11
-                                    color: mmRoot.barColor
+                                // Icon Pill
+                                Rectangle {
+                                    width: 20
+                                    height: 20
+                                    radius: 5
+                                    color: Qt.rgba(cardRoot.barColor.r, cardRoot.barColor.g, cardRoot.barColor.b, 0.15)
+
+                                    Text {
+                                        anchors.centerIn: parent
+                                        text: cardRoot.icon
+                                        font.family: Services.Theme.fontSymbols
+                                        font.pixelSize: 10
+                                        color: cardRoot.barColor
+                                    }
                                 }
 
                                 Text {
-                                    text: mmRoot.name
+                                    text: cardRoot.name
                                     font.pixelSize: 10
+                                    font.weight: Font.Medium
                                     color: Services.Theme.textSecondary
                                 }
 
                                 Item { Layout.fillWidth: true }
 
                                 Text {
-                                    text: mmRoot.value
-                                    font.pixelSize: 10
-                                    font.bold: true
+                                    text: cardRoot.value
+                                    font.pixelSize: 11
+                                    font.weight: Font.Bold
                                     color: Services.Theme.textPrimary
                                 }
                             }
 
+                            // Meter Bar
                             Rectangle {
                                 Layout.fillWidth: true
-                                height: 3
-                                radius: 1.5
+                                height: 4
+                                radius: 2
                                 color: Qt.rgba(Services.Theme.textPrimary.r, Services.Theme.textPrimary.g, Services.Theme.textPrimary.b, 0.08)
                                 clip: true
 
                                 Rectangle {
                                     height: parent.height
-                                    width: Math.max(0, Math.min(parent.width, parent.width * mmRoot.ratio))
+                                    width: Math.max(0, Math.min(parent.width, parent.width * cardRoot.ratio))
                                     radius: parent.radius
-                                    color: mmRoot.barColor
+                                    color: cardRoot.barColor
                                     Behavior on width { NumberAnimation { duration: 300; easing.type: Easing.OutCubic } }
                                 }
                             }
                         }
                     }
 
-                    MinimalMetric {
+                    ModernMetricCard {
                         icon: Services.Icons.cpu
                         name: "CPU"
                         value: Math.round(Services.Sysmon.cpuUsage) + "%"
@@ -342,23 +440,23 @@ PanelWindow {
                         barColor: Services.Sysmon.cpuUsage > 80 ? Services.Theme.danger : Services.Theme.accent
                     }
 
-                    MinimalMetric {
+                    ModernMetricCard {
                         icon: Services.Icons.ram
                         name: "RAM"
-                        value: Services.Sysmon.ramUsedStr || (Math.round(Services.Sysmon.ramUsage) + "%")
+                        value: Services.Sysmon.ramDetailStr || Services.Sysmon.ramUsedStr || (Math.round(Services.Sysmon.ramUsage) + "%")
                         ratio: Services.Sysmon.ramUsage / 100.0
                         barColor: Services.Sysmon.ramUsage > 85 ? Services.Theme.danger : Services.Theme.accent
                     }
 
-                    MinimalMetric {
+                    ModernMetricCard {
                         icon: Services.Icons.disk
                         name: "Disk"
-                        value: Services.Sysmon.diskUsedStr || (Math.round(Services.Sysmon.diskUsage) + "%")
+                        value: Services.Sysmon.diskDetailStr || Services.Sysmon.diskUsedStr || (Math.round(Services.Sysmon.diskUsage) + "%")
                         ratio: Services.Sysmon.diskUsage / 100.0
                         barColor: Services.Sysmon.diskUsage > 90 ? Services.Theme.danger : Services.Theme.accent
                     }
 
-                    MinimalMetric {
+                    ModernMetricCard {
                         icon: Services.Icons.temp
                         name: "Temp"
                         value: Math.round(Services.Sysmon.cpuTemp) + "°C"
@@ -369,8 +467,9 @@ PanelWindow {
 
                 // ── 3. Minimal Specs Bar ─────────────────────────────────────
                 Rectangle {
+                    visible: Services.Config ? Services.Config.dashboardShowSpecs : true
                     Layout.fillWidth: true
-                    implicitHeight: 26
+                    implicitHeight: 28
                     radius: Services.Theme.radiusSm
                     color: Services.Theme.surfaceVariant
                     border.color: Services.Theme.border
@@ -378,8 +477,8 @@ PanelWindow {
 
                     RowLayout {
                         anchors.fill: parent
-                        anchors.leftMargin: 8
-                        anchors.rightMargin: 8
+                        anchors.leftMargin: 10
+                        anchors.rightMargin: 10
                         spacing: 6
 
                         Text {
@@ -457,8 +556,307 @@ PanelWindow {
                     }
                 }
 
-                // ── 4. Wallpaper Strip ───────────────────────────────────────
+                // ── 4. Main Widget Section: Weather / Wallpaper Switcher ─────
+                // Tab bar if mode is "both"
+                RowLayout {
+                    visible: Services.Config && Services.Config.dashboardWidget === "both"
+                    Layout.fillWidth: true
+                    spacing: 4
+
+                    Rectangle {
+                        Layout.fillWidth: true
+                        implicitHeight: 24
+                        radius: 6
+                        color: root.currentWidgetTab === 0 ? Services.Theme.accent : Services.Theme.surfaceVariant
+                        Behavior on color { ColorAnimation { duration: 150 } }
+
+                        Text {
+                            anchors.centerIn: parent
+                            text: "Weather"
+                            font.pixelSize: 10
+                            font.weight: Font.DemiBold
+                            color: root.currentWidgetTab === 0 ? Services.Theme.bgOnAccent : Services.Theme.textSecondary
+                        }
+
+                        MouseArea {
+                            anchors.fill: parent
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: root.currentWidgetTab = 0
+                        }
+                    }
+
+                    Rectangle {
+                        Layout.fillWidth: true
+                        implicitHeight: 24
+                        radius: 6
+                        color: root.currentWidgetTab === 1 ? Services.Theme.accent : Services.Theme.surfaceVariant
+                        Behavior on color { ColorAnimation { duration: 150 } }
+
+                        Text {
+                            anchors.centerIn: parent
+                            text: "Wallpaper"
+                            font.pixelSize: 10
+                            font.weight: Font.DemiBold
+                            color: root.currentWidgetTab === 1 ? Services.Theme.bgOnAccent : Services.Theme.textSecondary
+                        }
+
+                        MouseArea {
+                            anchors.fill: parent
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: root.currentWidgetTab = 1
+                        }
+                    }
+                }
+
+                // ── 4A. Weather Widget Card ───────────────────────────────────
+                Rectangle {
+                    id: weatherCard
+                    visible: (Services.Config && Services.Config.dashboardWidget === "wallpaper")
+                             ? false
+                             : (Services.Config && Services.Config.dashboardWidget === "both" ? (root.currentWidgetTab === 0) : true)
+
+                    Layout.fillWidth: true
+                    implicitHeight: weatherCol.implicitHeight + 18
+                    radius: Services.Theme.radiusMd
+                    color: Services.Theme.surfaceVariant
+                    border.color: Services.Theme.border
+                    border.width: 1
+
+                    ColumnLayout {
+                        id: weatherCol
+                        anchors.fill: parent
+                        anchors.margins: 10
+                        spacing: 8
+
+                        // Top Row: Location & Condition Pill
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 6
+
+                            // Location Icon & City
+                            Text {
+                                text: Services.Icons.location
+                                font.family: Services.Theme.fontSymbols
+                                font.pixelSize: 10
+                                color: Services.Theme.accent
+                            }
+
+                            Text {
+                                text: (Services.Weather ? Services.Weather.city : "Local City") + (Services.Weather && Services.Weather.country ? (", " + Services.Weather.country) : "")
+                                font.pixelSize: 11
+                                font.weight: Font.DemiBold
+                                color: Services.Theme.textPrimary
+                                elide: Text.ElideRight
+                                Layout.fillWidth: true
+                            }
+
+                            // Condition Badge
+                            Rectangle {
+                                implicitHeight: 18
+                                implicitWidth: condTxt.implicitWidth + 12
+                                radius: 9
+                                color: Qt.rgba(
+                                    Services.Weather ? Services.Weather.weatherColor.r : 0.2,
+                                    Services.Weather ? Services.Weather.weatherColor.g : 0.6,
+                                    Services.Weather ? Services.Weather.weatherColor.b : 0.9,
+                                    0.15
+                                )
+                                border.color: Qt.rgba(
+                                    Services.Weather ? Services.Weather.weatherColor.r : 0.2,
+                                    Services.Weather ? Services.Weather.weatherColor.g : 0.6,
+                                    Services.Weather ? Services.Weather.weatherColor.b : 0.9,
+                                    0.3
+                                )
+                                border.width: 1
+
+                                Text {
+                                    id: condTxt
+                                    anchors.centerIn: parent
+                                    text: Services.Weather ? Services.Weather.condition : "Clear"
+                                    font.pixelSize: 9
+                                    font.weight: Font.Medium
+                                    color: Services.Weather ? Services.Weather.weatherColor : Services.Theme.accent
+                                }
+                            }
+                        }
+
+                        // Middle Row: Big Temp Display + Animated Weather Icon + Feels Like
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 12
+
+                            // Big Temp
+                            ColumnLayout {
+                                spacing: 0
+                                RowLayout {
+                                    spacing: 2
+                                    Text {
+                                        text: Services.Weather ? (Services.Weather.temp + "°") : "--°"
+                                        font.pixelSize: 28
+                                        font.weight: Font.Bold
+                                        color: Services.Theme.textPrimary
+                                    }
+                                }
+
+                                Text {
+                                    text: "Feels like " + (Services.Weather ? Services.Weather.feelsLikeStr : "--°")
+                                    font.pixelSize: 10
+                                    color: Services.Theme.textSecondary
+                                }
+                            }
+
+                            Item { Layout.fillWidth: true }
+
+                            // Weather Icon Pill
+                            Rectangle {
+                                width: 44
+                                height: 44
+                                radius: 22
+                                color: Qt.rgba(
+                                    Services.Weather ? Services.Weather.weatherColor.r : 0.2,
+                                    Services.Weather ? Services.Weather.weatherColor.g : 0.6,
+                                    Services.Weather ? Services.Weather.weatherColor.b : 0.9,
+                                    0.15
+                                )
+                                border.color: Qt.rgba(
+                                    Services.Weather ? Services.Weather.weatherColor.r : 0.2,
+                                    Services.Weather ? Services.Weather.weatherColor.g : 0.6,
+                                    Services.Weather ? Services.Weather.weatherColor.b : 0.9,
+                                    0.3
+                                )
+                                border.width: 1
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: Services.Weather ? Services.Weather.icon : "󰖙"
+                                    font.family: Services.Theme.fontSymbols
+                                    font.pixelSize: 22
+                                    color: Services.Weather ? Services.Weather.weatherColor : Services.Theme.accent
+                                }
+                            }
+                        }
+
+                        // Micro Stats Row (Humidity, Wind, High/Low)
+                        Rectangle {
+                            Layout.fillWidth: true
+                            implicitHeight: 24
+                            radius: 6
+                            color: Qt.rgba(Services.Theme.textPrimary.r, Services.Theme.textPrimary.g, Services.Theme.textPrimary.b, 0.04)
+
+                            RowLayout {
+                                anchors.fill: parent
+                                anchors.leftMargin: 8
+                                anchors.rightMargin: 8
+                                spacing: 8
+
+                                // Humidity
+                                RowLayout {
+                                    spacing: 3
+                                    Text {
+                                        text: Services.Icons.droplet || "\uf043"
+                                        font.family: Services.Theme.fontSymbols
+                                        font.pixelSize: 9
+                                        color: "#38bdf8"
+                                    }
+                                    Text {
+                                        text: Services.Weather ? Services.Weather.humidityStr : "--%"
+                                        font.pixelSize: 9
+                                        color: Services.Theme.textPrimary
+                                    }
+                                }
+
+                                Item { Layout.fillWidth: true }
+
+                                // Wind
+                                RowLayout {
+                                    spacing: 3
+                                    Text {
+                                        text: Services.Icons.wind || "󰖝"
+                                        font.family: Services.Theme.fontSymbols
+                                        font.pixelSize: 10
+                                        color: "#a1a1aa"
+                                    }
+                                    Text {
+                                        text: Services.Weather ? Services.Weather.windSpeedStr : "--"
+                                        font.pixelSize: 9
+                                        color: Services.Theme.textPrimary
+                                    }
+                                }
+
+                                Item { Layout.fillWidth: true }
+
+                                // High / Low
+                                RowLayout {
+                                    spacing: 3
+                                    Text {
+                                        text: "↕"
+                                        font.pixelSize: 9
+                                        color: Services.Theme.accent
+                                    }
+                                    Text {
+                                        text: Services.Weather ? Services.Weather.tempMinMaxStr : "--° / --°"
+                                        font.pixelSize: 9
+                                        color: Services.Theme.textPrimary
+                                    }
+                                }
+                            }
+                        }
+
+                        // 3-Day Forecast Mini Strip
+                        RowLayout {
+                            visible: Services.Weather && Services.Weather.forecast && Services.Weather.forecast.length > 0
+                            Layout.fillWidth: true
+                            spacing: 6
+
+                            Repeater {
+                                model: Services.Weather ? Services.Weather.forecast.slice(0, 3) : []
+
+                                delegate: Rectangle {
+                                    Layout.fillWidth: true
+                                    implicitHeight: 34
+                                    radius: 6
+                                    color: Qt.rgba(Services.Theme.textPrimary.r, Services.Theme.textPrimary.g, Services.Theme.textPrimary.b, 0.03)
+                                    border.color: Services.Theme.borderSubtle
+                                    border.width: 1
+
+                                    RowLayout {
+                                        anchors.centerIn: parent
+                                        spacing: 5
+
+                                        Text {
+                                            text: modelData.day
+                                            font.pixelSize: 8
+                                            font.weight: Font.Medium
+                                            color: Services.Theme.textSecondary
+                                        }
+
+                                        Text {
+                                            text: Services.Weather ? Services.Weather.getIcon(modelData.code, true) : "󰖙"
+                                            font.family: Services.Theme.fontSymbols
+                                            font.pixelSize: 11
+                                            color: Services.Weather ? Services.Weather.getColor(modelData.code, true) : Services.Theme.accent
+                                        }
+
+                                        Text {
+                                            text: modelData.tempRange || (modelData.tempMin + "° / " + modelData.tempMax + "°")
+                                            font.pixelSize: 8
+                                            font.bold: true
+                                            color: Services.Theme.textPrimary
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // ── 4B. Wallpaper Strip (if configured) ───────────────────────
                 ColumnLayout {
+                    id: wallpaperSection
+                    visible: (Services.Config && Services.Config.dashboardWidget === "weather")
+                             ? false
+                             : (Services.Config && Services.Config.dashboardWidget === "both" ? (root.currentWidgetTab === 1) : true)
+
                     Layout.fillWidth: true
                     spacing: 6
 
@@ -597,6 +995,7 @@ PanelWindow {
 
                 // ── 5. Minimal Quick Session Actions ─────────────────────────
                 RowLayout {
+                    visible: Services.Config ? Services.Config.dashboardShowActions : true
                     Layout.fillWidth: true
                     spacing: 6
 
@@ -608,7 +1007,7 @@ PanelWindow {
                         color: lockActionMouse.containsMouse ? Services.Theme.bgHover : Services.Theme.surfaceVariant
                         border.color: lockActionMouse.containsMouse ? Services.Theme.borderHighlight : Services.Theme.border
                         border.width: 1
-                        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                        Behavior on color { ColorAnimation { duration: 180 } }
 
                         RowLayout {
                             anchors.centerIn: parent
@@ -647,7 +1046,7 @@ PanelWindow {
                         color: reloadActionMouse.containsMouse ? Services.Theme.bgHover : Services.Theme.surfaceVariant
                         border.color: reloadActionMouse.containsMouse ? Services.Theme.borderHighlight : Services.Theme.border
                         border.width: 1
-                        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                        Behavior on color { ColorAnimation { duration: 180 } }
 
                         RowLayout {
                             anchors.centerIn: parent
@@ -686,7 +1085,7 @@ PanelWindow {
                         color: pwrActionMouse.containsMouse ? Qt.rgba(0.9, 0.2, 0.2, 0.12) : Services.Theme.surfaceVariant
                         border.color: pwrActionMouse.containsMouse ? Services.Theme.danger : Services.Theme.border
                         border.width: 1
-                        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                        Behavior on color { ColorAnimation { duration: 180 } }
 
                         RowLayout {
                             anchors.centerIn: parent

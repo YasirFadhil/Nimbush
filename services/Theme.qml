@@ -88,11 +88,35 @@ Singleton {
     readonly property int radiusXl:   Math.round(baseRadius * 1.5)
 
     // ─── Font Families ─────────────────────────────────────────────────────
-    readonly property string fontFamily: (Services.Config && Services.Config.fontFamily) ? Services.Config.fontFamily : "Liga SFMono Nerd Font, monospace"
-    readonly property string fontMono:    (Services.Config && Services.Config.fontFamily) ? Services.Config.fontFamily : "Liga SFMono Nerd Font, monospace"
-    readonly property string fontSymbols: "Symbols Nerd Font Mono, Liga SFMono Nerd Font, FontAwesome, monospace"
-    readonly property string fontDisplay: (Services.Config && Services.Config.fontFamily) ? Services.Config.fontFamily : "SF Pro Display, Inter, Sans-Serif"
+    function resolveFontFamily(fontListStr, fallback) {
+        if (!fontListStr || typeof fontListStr !== "string") return fallback || ""
+        var list = fontListStr.split(",").map(function(s) { return s.trim(); }).filter(function(s) { return s.length > 0; })
+        if (list.length === 0) return fallback || ""
+        try {
+            var avail = Qt.fontFamilies()
+            if (avail && avail.length > 0) {
+                for (var i = 0; i < list.length; i++) {
+                    var target = list[i]
+                    if (avail.indexOf(target) !== -1) {
+                        return target
+                    }
+                    for (var j = 0; j < avail.length; j++) {
+                        if (avail[j].toLowerCase() === target.toLowerCase()) {
+                            return avail[j]
+                        }
+                    }
+                }
+            }
+        } catch (e) {}
+        return list[0]
+    }
+
+    readonly property string fontFamily: resolveFontFamily((Services.Config && Services.Config.fontFamily && Services.Config.fontFamily.length > 0) ? Services.Config.fontFamily : "Liga SFMono Nerd Font, monospace", "Liga SFMono Nerd Font")
+    readonly property string fontMono:    resolveFontFamily((Services.Config && Services.Config.fontMono && Services.Config.fontMono.length > 0) ? Services.Config.fontMono : fontFamily, fontFamily)
+    readonly property string fontSymbols: resolveFontFamily("Symbols Nerd Font, Symbols Nerd Font Mono, JetBrainsMono Nerd Font, FiraCode Nerd Font", "Symbols Nerd Font")
+    readonly property string fontDisplay: resolveFontFamily((Services.Config && Services.Config.fontDisplay && Services.Config.fontDisplay.length > 0) ? Services.Config.fontDisplay : "SF Pro Display, Inter, Sans-Serif", fontFamily)
     readonly property string fontPrimary: fontDisplay
+    readonly property string fontEmoji:   resolveFontFamily("Noto Color Emoji, Apple Color Emoji, Segoe UI Emoji", "Noto Color Emoji")
 
     // ─── Font Scale ─────────────────────────────────────────────────────────
     readonly property real scale: Services.Config ? Services.Config.uiScale : 1.0
