@@ -5,10 +5,16 @@ import Quickshell.Wayland
 import "components" as Components
 import "../../services" as Services
 
-PanelWindow {
-    id: root
+Variants {
+    id: barVariants
+    model: (Services.Config && Services.Config.barScreens) ? Services.Config.barScreens : Quickshell.screens
 
-    readonly property bool isBottom: Services.Config ? (Services.Config.barPosition === "bottom") : false
+    delegate: PanelWindow {
+        id: root
+        required property var modelData
+        screen: modelData
+
+        readonly property bool isBottom: Services.Config ? (Services.Config.barPosition === "bottom") : false
     readonly property string barStyle: Services.Config ? Services.Config.barStyle : "islands"
     readonly property bool isMinimal: barStyle === "minimal"
     readonly property bool isUnified: barStyle === "unified"
@@ -185,4 +191,5 @@ PanelWindow {
             visible: root.showDynamicIsland
         }
     }
+}
 }

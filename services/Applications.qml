@@ -63,7 +63,7 @@ Singleton {
                     name: "Quickshell Settings",
                     description: "Configure theme, wallpaper, dynamic island, bar & widgets",
                     icon: "preferences-system",
-                    execute: function() { Services.OverlayManager.openSettings(0) }
+                    execute: function() { Services.OverlayManager.openSettings() }
                 },
                 name: "Quickshell Settings",
                 nameLower: "quickshell settings",

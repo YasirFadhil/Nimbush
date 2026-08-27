@@ -145,7 +145,7 @@ PanelWindow {
                         if ((event.modifiers & Qt.ControlModifier && (event.key === Qt.Key_Comma || event.key === Qt.Key_S)) ||
                             (event.modifiers & Qt.AltModifier && event.key === Qt.Key_S)) {
                             launcherWindow.hide()
-                            Services.OverlayManager.openSettings(0)
+                            Services.OverlayManager.openSettings()
                             event.accepted = true
                             return
                         }
@@ -228,7 +228,7 @@ PanelWindow {
                         cursorShape: Qt.PointingHandCursor
                         onClicked: {
                             launcherWindow.hide()
-                            Services.OverlayManager.openSettings(0)
+                            Services.OverlayManager.openSettings()
                         }
                     }
                 }

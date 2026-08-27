@@ -150,12 +150,27 @@ def query_all():
                                         "id": m.get("id", 0),
                                         "name": m.get("name", "Display"),
                                         "description": m.get("description", ""),
-                                        "width": m.get("width", 1920),
-                                        "height": m.get("height", 1080),
+                                        "make": m.get("make", ""),
+                                        "model": m.get("model", ""),
+                                        "serial": m.get("serial", ""),
+                                        "width": int(m.get("width", 1920)),
+                                        "height": int(m.get("height", 1080)),
+                                        "physicalWidth": int(m.get("physicalWidth", 0)),
+                                        "physicalHeight": int(m.get("physicalHeight", 0)),
                                         "refreshRate": round(float(m.get("refreshRate", 60))),
+                                        "exactRefreshRate": round(float(m.get("refreshRate", 60)), 2),
+                                        "x": int(m.get("x", 0)),
+                                        "y": int(m.get("y", 0)),
                                         "scale": float(m.get("scale", 1.0)),
+                                        "transform": int(m.get("transform", 0)),
                                         "focused": bool(m.get("focused", False)),
                                         "vrr": bool(m.get("vrr", False)),
+                                        "dpmsStatus": bool(m.get("dpmsStatus", True)),
+                                        "disabled": bool(m.get("disabled", False)),
+                                        "mirrorOf": m.get("mirrorOf", "none") or "none",
+                                        "availableModes": m.get("availableModes", []),
+                                        "sdrBrightness": float(m.get("sdrBrightness", 1.0)),
+                                        "sdrSaturation": float(m.get("sdrSaturation", 1.0)),
                                         "activeWorkspace": m.get("activeWorkspace", {}).get("name", "1") if isinstance(m.get("activeWorkspace"), dict) else "1"
                                     })
                     except Exception:
@@ -235,12 +250,28 @@ def query_all():
                             "id": name,
                             "name": name,
                             "description": (m.get("make", "") + " " + m.get("model", "")).strip() or name,
-                            "width": mode_info.get("width", 1920),
-                            "height": mode_info.get("height", 1080),
-                            "refreshRate": round(mode_info.get("refresh_rate", 60000) / 1000.0, 1),
-                            "scale": m.get("scale", 1.0),
+                            "make": m.get("make", ""),
+                            "model": m.get("model", ""),
+                            "serial": m.get("serial", ""),
+                            "width": int(mode_info.get("width", 1920)),
+                            "height": int(mode_info.get("height", 1080)),
+                            "physicalWidth": 0,
+                            "physicalHeight": 0,
+                            "refreshRate": round(float(mode_info.get("refresh_rate", 60000)) / 1000.0),
+                            "exactRefreshRate": round(float(mode_info.get("refresh_rate", 60000)) / 1000.0, 2),
+                            "x": int(m.get("position", {}).get("x", 0)) if isinstance(m.get("position"), dict) else 0,
+                            "y": int(m.get("position", {}).get("y", 0)) if isinstance(m.get("position"), dict) else 0,
+                            "scale": float(m.get("scale", 1.0)),
+                            "transform": 0,
                             "focused": True,
-                            "vrr": m.get("vrr", False)
+                            "vrr": bool(m.get("vrr", False)),
+                            "dpmsStatus": not bool(m.get("is_off", False)),
+                            "disabled": bool(m.get("is_off", False)),
+                            "mirrorOf": "none",
+                            "availableModes": [f"{mode.get('width')}x{mode.get('height')}@{round(mode.get('refresh_rate', 60000)/1000.0, 2)}Hz" for mode in modes if isinstance(mode, dict)],
+                            "sdrBrightness": 1.0,
+                            "sdrSaturation": 1.0,
+                            "activeWorkspace": "1"
                         })
         except Exception:
             pass
@@ -386,28 +417,182 @@ def set_option(opt_name, opt_val):
     }
 
     # If Lua mapper exists, try eval first
+    res = None
     if opt_name in lua_map:
         lua_code = lua_map[opt_name](opt_val)
         try:
             r = subprocess.run(["hyprctl", "eval", lua_code], capture_output=True, text=True, timeout=0.8)
             if r.returncode == 0 and "ok" in r.stdout.lower():
-                return {"ok": True, "method": "eval", "lua": lua_code}
+                res = {"ok": True, "method": "eval", "lua": lua_code}
         except Exception:
             pass
 
     # Fallback to keyword if eval not supported or returned error
-    if opt_name in keyword_map:
+    if res is None and opt_name in keyword_map:
         k_key, k_val = keyword_map[opt_name](opt_val)
         try:
             r = subprocess.run(["hyprctl", "keyword", k_key, str(k_val)], capture_output=True, text=True, timeout=0.8)
             if r.returncode == 0:
-                return {"ok": True, "method": "keyword", "key": k_key, "val": k_val}
+                res = {"ok": True, "method": "keyword", "key": k_key, "val": k_val}
             else:
-                return {"ok": False, "error": r.stderr.strip() or r.stdout.strip()}
+                res = {"ok": False, "error": r.stderr.strip() or r.stdout.strip()}
+        except Exception as e:
+            res = {"ok": False, "error": str(e)}
+
+    if res is None:
+        res = {"ok": False, "error": f"Unknown option {opt_name}"}
+
+    # Automatically persist option to config file
+    try:
+        save_general_options({opt_name: opt_val})
+    except Exception:
+        pass
+
+    return res
+
+def update_lua_option(content, opt_name, opt_val):
+    val_str = str(opt_val).lower() if isinstance(opt_val, bool) or str(opt_val).lower() in ("true", "false") else str(opt_val)
+
+    scalar_patterns = {
+        "gaps_in": r'(gaps_in\s*=\s*)[0-9]+',
+        "gaps_out": r'(gaps_out\s*=\s*)[0-9]+',
+        "border_size": r'(border_size\s*=\s*)[0-9]+',
+        "rounding": r'(rounding\s*=\s*)[0-9]+',
+        "active_opacity": r'(active_opacity\s*=\s*)[0-9.]+',
+        "inactive_opacity": r'(inactive_opacity\s*=\s*)[0-9.]+',
+        "dim_strength": r'(dim_strength\s*=\s*)[0-9.]+',
+        "sensitivity": r'(sensitivity\s*=\s*)[-0-9.]+',
+        "follow_mouse": r'(follow_mouse\s*=\s*)[0-9]+',
+        "dim_inactive": r'(dim_inactive\s*=\s*)(?:true|false)',
+        "resize_border": r'(resize_on_border\s*=\s*)(?:true|false)',
+        "allow_tearing": r'(allow_tearing\s*=\s*)(?:true|false)',
+        "disable_hyprland_logo": r'(disable_hyprland_logo\s*=\s*)(?:true|false)',
+        "vfr": r'(vfr\s*=\s*)(?:true|false)',
+        "smart_gaps": r'(no_gaps_when_only\s*=\s*)(?:true|false|[0-9]+)',
+    }
+
+    if opt_name in scalar_patterns:
+        pat = scalar_patterns[opt_name]
+        if re.search(pat, content):
+            return re.sub(pat, r'\g<1>' + val_str, content, count=1)
+
+    if opt_name == "layout":
+        pat = r'(layout\s*=\s*)"[^"]+"'
+        if re.search(pat, content):
+            return re.sub(pat, r'\g<1>"' + str(opt_val) + '"', content, count=1)
+
+    if opt_name == "anim":
+        pat = r'(animations\s*=\s*\{[\s\S]*?enabled\s*=\s*)(?:true|false)'
+        if re.search(pat, content):
+            return re.sub(pat, r'\g<1>' + val_str, content, count=1)
+
+    if opt_name == "blur":
+        pat = r'(blur\s*=\s*\{[\s\S]*?enabled\s*=\s*)(?:true|false)'
+        if re.search(pat, content):
+            return re.sub(pat, r'\g<1>' + val_str, content, count=1)
+
+    if opt_name == "blur_size":
+        pat = r'(blur\s*=\s*\{[\s\S]*?size\s*=\s*)[0-9]+'
+        if re.search(pat, content):
+            return re.sub(pat, r'\g<1>' + val_str, content, count=1)
+
+    if opt_name == "blur_passes":
+        pat = r'(blur\s*=\s*\{[\s\S]*?passes\s*=\s*)[0-9]+'
+        if re.search(pat, content):
+            return re.sub(pat, r'\g<1>' + val_str, content, count=1)
+
+    if opt_name == "shadow":
+        pat = r'(shadow\s*=\s*\{[\s\S]*?enabled\s*=\s*)(?:true|false)'
+        if re.search(pat, content):
+            return re.sub(pat, r'\g<1>' + val_str, content, count=1)
+
+    if opt_name == "shadow_range":
+        pat = r'(shadow\s*=\s*\{[\s\S]*?range\s*=\s*)[0-9]+'
+        if re.search(pat, content):
+            return re.sub(pat, r'\g<1>' + val_str, content, count=1)
+
+    if opt_name == "shadow_power":
+        pat = r'(shadow\s*=\s*\{[\s\S]*?render_power\s*=\s*)[0-9]+'
+        if re.search(pat, content):
+            return re.sub(pat, r'\g<1>' + val_str, content, count=1)
+
+    if opt_name == "touchpad_natural":
+        pat = r'(touchpad\s*=\s*\{[\s\S]*?natural_scroll\s*=\s*)(?:true|false)'
+        if re.search(pat, content):
+            return re.sub(pat, r'\g<1>' + val_str, content, count=1)
+
+    if opt_name == "touchpad_tap":
+        pat = r'(touchpad\s*=\s*\{[\s\S]*?tap_to_click\s*=\s*)(?:true|false)'
+        if re.search(pat, content):
+            return re.sub(pat, r'\g<1>' + val_str, content, count=1)
+
+    if opt_name == "touchpad_dwt":
+        pat = r'(touchpad\s*=\s*\{[\s\S]*?disable_while_typing\s*=\s*)(?:true|false)'
+        if re.search(pat, content):
+            return re.sub(pat, r'\g<1>' + val_str, content, count=1)
+
+    if opt_name == "workspace_swipe":
+        pat = r'(workspace_swipe\s*=\s*)(?:true|false)'
+        if re.search(pat, content):
+            return re.sub(pat, r'\g<1>' + val_str, content, count=1)
+
+    if opt_name == "workspace_swipe_invert":
+        pat = r'(workspace_swipe_invert\s*=\s*)(?:true|false)'
+        if re.search(pat, content):
+            return re.sub(pat, r'\g<1>' + val_str, content, count=1)
+
+    return content
+
+def save_general_options(changes):
+    if not isinstance(changes, dict) or not changes:
+        return {"ok": True, "saved": False}
+
+    if is_lua_config():
+        lua_path = os.path.join(HOME, ".config/hypr/hyprland.lua")
+        if not os.path.exists(lua_path):
+            return {"ok": False, "error": "hyprland.lua not found"}
+        try:
+            with open(lua_path, "r", encoding="utf-8") as f:
+                content = f.read()
+
+            modified = content
+            for k, v in changes.items():
+                modified = update_lua_option(modified, k, v)
+
+            if modified != content:
+                tmp_path = f"{lua_path}.tmp.{os.getpid()}"
+                with open(tmp_path, "w", encoding="utf-8") as f:
+                    f.write(modified)
+                os.replace(tmp_path, lua_path)
+                return {"ok": True, "file": lua_path}
+            return {"ok": True, "no_change": True}
         except Exception as e:
             return {"ok": False, "error": str(e)}
-
-    return {"ok": False, "error": f"Unknown option {opt_name}"}
+    else:
+        conf_path = os.path.join(HOME, ".config/hypr/hyprland.conf")
+        if os.path.exists(conf_path):
+            try:
+                with open(conf_path, "r", encoding="utf-8") as f:
+                    content = f.read()
+                modified = content
+                for k, v in changes.items():
+                    val_str = "1" if v is True else ("0" if v is False else str(v))
+                    if k in keyword_map:
+                        kw, _ = keyword_map[k](v)
+                        subkey = kw.split(":")[-1]
+                        pat = r'(?m)^(\s*' + re.escape(subkey) + r'\s*=\s*).*$'
+                        if re.search(pat, modified):
+                            modified = re.sub(pat, r'\g<1>' + val_str, modified, count=1)
+                if modified != content:
+                    tmp_path = f"{conf_path}.tmp.{os.getpid()}"
+                    with open(tmp_path, "w", encoding="utf-8") as f:
+                        f.write(modified)
+                    os.replace(tmp_path, conf_path)
+                    return {"ok": True, "file": conf_path}
+                return {"ok": True, "no_change": True}
+            except Exception as e:
+                return {"ok": False, "error": str(e)}
+        return {"ok": True, "saved": False}
 
 def _write_and_validate(target_path, content):
     if not target_path:
@@ -1750,6 +1935,243 @@ def modularize_compositor(comp_type="auto"):
             results["niri"] = modularize_niri_kdl()
     return {"ok": True, "results": results}
 
+def save_monitors_to_file(monitors_data, is_lua=True):
+    hypr_dir = os.path.join(HOME, ".config/hypr")
+    if not os.path.exists(hypr_dir):
+        os.makedirs(hypr_dir, exist_ok=True)
+
+    if is_lua:
+        lua_path = os.path.join(hypr_dir, "hyprland.lua")
+        if not os.path.exists(lua_path):
+            return {"ok": False, "error": "hyprland.lua does not exist"}
+
+        backup_path = f"{lua_path}.bak.{int(time.time())}"
+        shutil.copy2(lua_path, backup_path)
+
+        with open(lua_path, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        blocks = [
+            "-- ──────────────────────────────",
+            "--  MONITORS",
+            "-- ──────────────────────────────",
+            "-- https://wiki.hypr.land/Configuring/Basics/Monitors/\n"
+        ]
+
+        for m in monitors_data:
+            name = m.get("name")
+            if not name:
+                continue
+            if m.get("disabled"):
+                blocks.append(f"""hl.monitor({{
+    output   = "{name}",
+    mode     = "disabled",
+}})\n""")
+            elif m.get("mirrorOf") and m.get("mirrorOf") != "none" and m.get("mirrorOf") != name:
+                mirror = m.get("mirrorOf")
+                scale = float(m.get("scale", 1.0))
+                mode = str(m.get("mode") or "preferred")
+                blocks.append(f"""hl.monitor({{
+    output   = "{name}",
+    mode     = "{mode}",
+    position = "{int(m.get('x', 0))}x{int(m.get('y', 0))}",
+    scale    = {scale},
+    mirror   = "{mirror}",
+}})\n""")
+            else:
+                scale = float(m.get("scale", 1.0))
+                mode = str(m.get("mode") or "preferred")
+                transform = int(m.get("transform", 0))
+                vrr_val = 1 if m.get("vrr") else 0
+                x = int(m.get("x", 0))
+                y = int(m.get("y", 0))
+                blocks.append(f"""hl.monitor({{
+    output    = "{name}",
+    mode      = "{mode}",
+    position  = "{x}x{y}",
+    scale     = {scale},
+    transform = {transform},
+    vrr       = {vrr_val},
+}})\n""")
+
+        new_monitors_section = "\n".join(blocks).strip() + "\n\n"
+
+        pattern = r'(--\s*─+\s*\n--\s*MONITORS\s*\n--\s*─+[\s\S]*?)(?=\n--\s*─+\s*\n--\s*|\Z)'
+        if re.search(pattern, content):
+            new_content = re.sub(pattern, new_monitors_section.strip(), content, count=1)
+        else:
+            mon_call_pattern = r'(hl\.monitor\(\{[\s\S]*?\}\)\s*)+'
+            if re.search(mon_call_pattern, content):
+                new_content = re.sub(mon_call_pattern, new_monitors_section, content, count=1)
+            else:
+                new_content = new_monitors_section + "\n" + content
+
+        with open(lua_path, "w", encoding="utf-8") as f:
+            f.write(new_content)
+
+        return {"ok": True, "file": lua_path, "backup": backup_path}
+
+    else:
+        conf_path = os.path.join(hypr_dir, "hyprland.conf")
+        if not os.path.exists(conf_path):
+            return {"ok": False, "error": "hyprland.conf does not exist"}
+
+        backup_path = f"{conf_path}.bak.{int(time.time())}"
+        shutil.copy2(conf_path, backup_path)
+
+        with open(conf_path, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        lines = [
+            "# ── Monitors ──────────────────────────────────────────────────────────────────"
+        ]
+        for m in monitors_data:
+            name = m.get("name")
+            if not name:
+                continue
+            if m.get("disabled"):
+                lines.append(f"monitor = {name}, disable")
+            elif m.get("mirrorOf") and m.get("mirrorOf") != "none" and m.get("mirrorOf") != name:
+                scale = float(m.get("scale", 1.0))
+                lines.append(f"monitor = {name}, preferred, auto, {scale}, mirror, {m.get('mirrorOf')}")
+            else:
+                scale = float(m.get("scale", 1.0))
+                mode = str(m.get("mode") or "preferred")
+                x = int(m.get("x", 0))
+                y = int(m.get("y", 0))
+                transform = int(m.get("transform", 0))
+                lines.append(f"monitor = {name}, {mode}, {x}x{y}, {scale}, transform, {transform}")
+
+        new_section = "\n".join(lines) + "\n"
+        cleaned = re.sub(r'^\s*monitor\s*=.*$\n?', '', content, flags=re.MULTILINE)
+        cleaned = re.sub(r'#\s*──+\s*Monitors[\s\S]*?(?=\n#\s*──|\Z)', '', cleaned)
+        new_content = new_section + "\n" + cleaned.strip() + "\n"
+
+        with open(conf_path, "w", encoding="utf-8") as f:
+            f.write(new_content)
+
+        return {"ok": True, "file": conf_path, "backup": backup_path}
+
+def save_niri_monitors(monitors_data):
+    niri_dir = os.path.join(HOME, ".config/niri")
+    kdl_path = os.path.join(niri_dir, "config.kdl")
+    if not os.path.exists(kdl_path):
+        return {"ok": False, "error": "config.kdl does not exist"}
+
+    backup_path = f"{kdl_path}.bak.{int(time.time())}"
+    shutil.copy2(kdl_path, backup_path)
+
+    with open(kdl_path, "r", encoding="utf-8") as f:
+        content = f.read()
+
+    blocks = []
+    for m in monitors_data:
+        name = m.get("name")
+        if not name:
+            continue
+        scale = float(m.get("scale", 1.0))
+        mode = str(m.get("mode") or "")
+        x = int(m.get("x", 0))
+        y = int(m.get("y", 0))
+        mode_line = f'    mode "{mode}"\n' if mode and mode != "preferred" else ""
+        off_line = "    off\n" if m.get("disabled") else ""
+        vrr_line = "    variable-refresh-rate\n" if m.get("vrr") else ""
+        blocks.append(f"""output "{name}" {{
+{off_line}{mode_line}    scale {scale}
+    position x={x} y={y}
+{vrr_line}}}""")
+
+    outputs_section = "\n\n".join(blocks)
+    cleaned = re.sub(r'output\s+"[^"]+"\s*\{[\s\S]*?\n\}', '', content)
+    cleaned = re.sub(r'\n{3,}', '\n\n', cleaned).strip()
+    new_content = outputs_section + "\n\n" + cleaned + "\n"
+
+    with open(kdl_path, "w", encoding="utf-8") as f:
+        f.write(new_content)
+
+    return {"ok": True, "file": kdl_path, "backup": backup_path}
+
+def apply_monitors_layout(monitors_data, save_config=True):
+    if not isinstance(monitors_data, list):
+        return {"ok": False, "error": "monitors_data must be a list of monitor objects"}
+
+    comp = "hyprland"
+    if is_niri():
+        comp = "niri"
+
+    results = []
+    if comp == "hyprland":
+        is_lua = is_lua_config()
+        if is_lua:
+            lua_parts = []
+            for m in monitors_data:
+                name = m.get("name")
+                if not name:
+                    continue
+                disabled = m.get("disabled", False)
+                if disabled:
+                    lua_parts.append(f'hl.monitor({{ output = "{name}", mode = "disabled" }})')
+                    continue
+
+                mirror = m.get("mirrorOf")
+                scale = float(m.get("scale", 1.0))
+                mode = str(m.get("mode") or "preferred")
+                x = int(m.get("x", 0))
+                y = int(m.get("y", 0))
+                transform = int(m.get("transform", 0))
+                vrr = 1 if m.get("vrr") else 0
+                pos_str = f"{x}x{y}"
+
+                if mirror and mirror != "none" and mirror != name:
+                    lua_parts.append(f'hl.monitor({{ output = "{name}", mode = "{mode}", position = "{pos_str}", scale = {scale}, mirror = "{mirror}" }})')
+                else:
+                    lua_parts.append(f'hl.monitor({{ output = "{name}", mode = "{mode}", position = "{pos_str}", scale = {scale}, transform = {transform}, vrr = {vrr} }})')
+
+            if lua_parts:
+                eval_cmd = " ; ".join(lua_parts)
+                r = subprocess.run(["hyprctl", "eval", eval_cmd], capture_output=True, text=True, timeout=2.0)
+                results.append({"type": "hypr_eval", "returncode": r.returncode, "stdout": r.stdout.strip(), "stderr": r.stderr.strip()})
+        else:
+            for m in monitors_data:
+                name = m.get("name")
+                if not name:
+                    continue
+                disabled = m.get("disabled", False)
+                if disabled:
+                    subprocess.run(["hyprctl", "keyword", "monitor", f"{name},disable"], timeout=1.0)
+                    continue
+
+                mirror = m.get("mirrorOf")
+                scale = float(m.get("scale", 1.0))
+                mode = str(m.get("mode") or "preferred")
+                x = int(m.get("x", 0))
+                y = int(m.get("y", 0))
+                transform = int(m.get("transform", 0))
+                pos_str = f"{x}x{y}"
+
+                if mirror and mirror != "none" and mirror != name:
+                    cmd_str = f"{name},preferred,auto,{scale},mirror,{mirror}"
+                else:
+                    cmd_str = f"{name},{mode},{pos_str},{scale},transform,{transform}"
+
+                subprocess.run(["hyprctl", "keyword", "monitor", cmd_str], timeout=1.0)
+                if m.get("vrr") is not None:
+                    subprocess.run(["hyprctl", "keyword", "misc:vrr", "1" if m.get("vrr") else "0"], timeout=1.0)
+
+        if save_config:
+            save_res = save_monitors_to_file(monitors_data, is_lua=is_lua)
+            return {"ok": True, "live": results, "saved": save_res}
+
+        return {"ok": True, "live": results}
+
+    elif comp == "niri":
+        if save_config:
+            save_res = save_niri_monitors(monitors_data)
+            return {"ok": True, "saved": save_res}
+        return {"ok": True}
+
+    return {"ok": False, "error": f"Unsupported compositor {comp}"}
+
 def main():
     if len(sys.argv) < 2:
         print(json.dumps({"ok": False, "error": "Missing command argument"}))
@@ -1763,6 +2185,22 @@ def main():
         target = sys.argv[2] if len(sys.argv) > 2 else "auto"
         res = modularize_compositor(target)
         print(json.dumps(res))
+    elif cmd == "monitors-apply":
+        import argparse
+        parser = argparse.ArgumentParser()
+        parser.add_argument("--layout", required=True)
+        parser.add_argument("--save", action="store_true", default=False)
+        args = parser.parse_args(sys.argv[2:])
+        try:
+            if os.path.exists(args.layout):
+                with open(args.layout, "r", encoding="utf-8") as lf:
+                    layout_data = json.load(lf)
+            else:
+                layout_data = json.loads(args.layout)
+            res = apply_monitors_layout(layout_data, save_config=args.save)
+            print(json.dumps(res))
+        except Exception as e:
+            print(json.dumps({"ok": False, "error": str(e)}))
     elif cmd == "binds-list":
         data = list_keybinds()
         print(json.dumps(data))
@@ -1795,6 +2233,17 @@ def main():
         args = parser.parse_args(sys.argv[2:])
         res = delete_keybind(args.line, target_file=args.file)
         print(json.dumps(res))
+    elif cmd in ("options-apply", "save-options"):
+        import argparse
+        parser = argparse.ArgumentParser()
+        parser.add_argument("--changes", required=True)
+        args = parser.parse_args(sys.argv[2:])
+        try:
+            changes_data = json.loads(args.changes)
+            res = save_general_options(changes_data)
+            print(json.dumps(res))
+        except Exception as e:
+            print(json.dumps({"ok": False, "error": str(e)}))
     elif cmd == "set":
         if len(sys.argv) < 4:
             print(json.dumps({"ok": False, "error": "Usage: set <option> <value>"}))

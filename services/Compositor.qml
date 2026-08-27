@@ -2,6 +2,7 @@ pragma Singleton
 import QtQuick
 import Quickshell
 import Quickshell.Io
+import "." as Services
 
 Singleton {
     id: root
@@ -314,6 +315,10 @@ Singleton {
         _isApplying = true
 
         if (activeCompositor === "hyprland") {
+            // Save options to configuration file asynchronously
+            saveOptionsProc.command = [helperScript, "options-apply", "--changes", JSON.stringify(currentChanges)]
+            saveOptionsProc.running = true
+
             if (configType === "lua") {
                 const luaCode = buildLuaConfig(currentChanges)
                 if (luaCode.length > 0) {
@@ -350,6 +355,10 @@ Singleton {
             applyProcess.command = [helperScript, "set", firstKey, String(firstVal)]
             applyProcess.running = true
         }
+    }
+
+    Process {
+        id: saveOptionsProc
     }
 
     Process {
@@ -524,7 +533,7 @@ Singleton {
         setOption("workspace_swipe_invert", hyprSwipeInvert)
     }
 
-    function setMonitorScale(monName, scaleVal) {
+    function setMonitorScale(monName, scaleVal, saveToConfig) {
         if (!monName) return
         const s = Number(Number(scaleVal).toFixed(2))
         if (configType === "lua") {
@@ -533,10 +542,59 @@ Singleton {
             fastHyprProc.command = ["hyprctl", "keyword", "monitor", `${monName},preferred,auto,${s}`]
         }
         fastHyprProc.running = true
-        refreshTimer.restart()
+        if (saveToConfig) {
+            updateMonitorProperty(monName, "scale", s)
+            refreshTimer.restart()
+        }
     }
 
-    function setMonitorVRR(monName, vrrBool) {
+    function setMonitorMode(monName, modeStr, saveToConfig) {
+        if (!monName || !modeStr) return
+        if (configType === "lua") {
+            fastHyprProc.command = ["hyprctl", "eval", `hl.monitor({ output = "${monName}", mode = "${modeStr}" })`]
+        } else {
+            fastHyprProc.command = ["hyprctl", "keyword", "monitor", `${monName},${modeStr},auto,1`]
+        }
+        fastHyprProc.running = true
+        if (saveToConfig) {
+            updateMonitorProperty(monName, "mode", modeStr)
+            refreshTimer.restart()
+        }
+    }
+
+    function setMonitorTransform(monName, transformVal, saveToConfig) {
+        if (!monName) return
+        const t = parseInt(transformVal) || 0
+        if (configType === "lua") {
+            fastHyprProc.command = ["hyprctl", "eval", `hl.monitor({ output = "${monName}", transform = ${t} })`]
+        } else {
+            fastHyprProc.command = ["hyprctl", "keyword", "monitor", `${monName},preferred,auto,1,transform,${t}`]
+        }
+        fastHyprProc.running = true
+        if (saveToConfig) {
+            updateMonitorProperty(monName, "transform", t)
+            refreshTimer.restart()
+        }
+    }
+
+    function setMonitorPosition(monName, x, y, saveToConfig) {
+        if (!monName) return
+        const posX = parseInt(x) || 0
+        const posY = parseInt(y) || 0
+        if (configType === "lua") {
+            fastHyprProc.command = ["hyprctl", "eval", `hl.monitor({ output = "${monName}", position = "${posX}x${posY}" })`]
+        } else {
+            fastHyprProc.command = ["hyprctl", "keyword", "monitor", `${monName},preferred,${posX}x${posY},1`]
+        }
+        fastHyprProc.running = true
+        if (saveToConfig) {
+            updateMonitorProperty(monName, "x", posX)
+            updateMonitorProperty(monName, "y", posY)
+            refreshTimer.restart()
+        }
+    }
+
+    function setMonitorVRR(monName, vrrBool, saveToConfig) {
         if (!monName) return
         const v = vrrBool ? 1 : 0
         if (configType === "lua") {
@@ -545,7 +603,151 @@ Singleton {
             fastHyprProc.command = ["hyprctl", "keyword", "misc:vrr", `${v}`]
         }
         fastHyprProc.running = true
+        if (saveToConfig) {
+            updateMonitorProperty(monName, "vrr", Boolean(vrrBool))
+            refreshTimer.restart()
+        }
+    }
+
+    function setMonitorDisabled(monName, disabledBool, saveToConfig) {
+        if (!monName) return
+        if (configType === "lua") {
+            if (disabledBool) {
+                fastHyprProc.command = ["hyprctl", "eval", `hl.monitor({ output = "${monName}", mode = "disabled" })`]
+            } else {
+                fastHyprProc.command = ["hyprctl", "eval", `hl.monitor({ output = "${monName}", mode = "preferred" })`]
+            }
+        } else {
+            if (disabledBool) {
+                fastHyprProc.command = ["hyprctl", "keyword", "monitor", `${monName},disable`]
+            } else {
+                fastHyprProc.command = ["hyprctl", "keyword", "monitor", `${monName},preferred,auto,1`]
+            }
+        }
+        fastHyprProc.running = true
+        if (saveToConfig) {
+            updateMonitorProperty(monName, "disabled", Boolean(disabledBool))
+            refreshTimer.restart()
+        }
+    }
+
+    function setMonitorMirror(monName, mirrorTarget, saveToConfig) {
+        if (!monName) return
+        const mTarget = (mirrorTarget && mirrorTarget !== "none" && mirrorTarget !== monName) ? mirrorTarget : "none"
+        if (configType === "lua") {
+            if (mTarget !== "none") {
+                fastHyprProc.command = ["hyprctl", "eval", `hl.monitor({ output = "${monName}", mirror = "${mTarget}" })`]
+            } else {
+                fastHyprProc.command = ["hyprctl", "eval", `hl.monitor({ output = "${monName}", mirror = "" })`]
+            }
+        } else {
+            if (mTarget !== "none") {
+                fastHyprProc.command = ["hyprctl", "keyword", "monitor", `${monName},preferred,auto,1,mirror,${mTarget}`]
+            } else {
+                fastHyprProc.command = ["hyprctl", "keyword", "monitor", `${monName},preferred,auto,1`]
+            }
+        }
+        fastHyprProc.running = true
+        if (saveToConfig) {
+            updateMonitorProperty(monName, "mirrorOf", mTarget)
+            refreshTimer.restart()
+        }
+    }
+
+    function setPrimaryMonitor(monName) {
+        if (!monName) return
+        if (activeCompositor === "hyprland") {
+            fastHyprProc.command = ["hyprctl", "dispatch", "focusmonitor", monName]
+            fastHyprProc.running = true
+        }
         refreshTimer.restart()
+    }
+
+    function updateMonitorProperty(monName, prop, val) {
+        if (!monitorsList || monitorsList.length === 0) return
+        var list = JSON.parse(JSON.stringify(monitorsList))
+        for (var i = 0; i < list.length; i++) {
+            if (list[i].name === monName) {
+                list[i][prop] = val
+                break
+            }
+        }
+        applyMonitorLayout(list, true)
+    }
+
+    function applyMonitorLayout(layoutArray, saveToConfig) {
+        if (!Array.isArray(layoutArray) || layoutArray.length === 0) return
+        
+        if (configType === "lua") {
+            var parts = []
+            for (var i = 0; i < layoutArray.length; i++) {
+                var m = layoutArray[i]
+                if (!m.name) continue
+                if (m.disabled) {
+                    parts.push(`hl.monitor({ output = "${m.name}", mode = "disabled" })`)
+                } else if (m.mirrorOf && m.mirrorOf !== "none" && m.mirrorOf !== m.name) {
+                    var mPos = `${parseInt(m.x || 0)}x${parseInt(m.y || 0)}`
+                    var mSc = parseFloat(m.scale || 1.0)
+                    var mMd = (m.mode && m.mode !== "preferred") ? `mode = "${m.mode}", ` : ""
+                    parts.push(`hl.monitor({ output = "${m.name}", ${mMd}position = "${mPos}", scale = ${mSc}, mirror = "${m.mirrorOf}" })`)
+                } else {
+                    var x = parseInt(m.x || 0)
+                    var y = parseInt(m.y || 0)
+                    var sc = parseFloat(m.scale || 1.0)
+                    var tr = parseInt(m.transform || 0)
+                    var vr = m.vrr ? 1 : 0
+                    var md = (m.mode && m.mode !== "preferred") ? `mode = "${m.mode}", ` : ""
+                    parts.push(`hl.monitor({ output = "${m.name}", ${md}position = "${x}x${y}", scale = ${sc}, transform = ${tr}, vrr = ${vr} })`)
+                }
+            }
+            if (parts.length > 0) {
+                fastHyprProc.command = ["hyprctl", "eval", parts.join(" ; ")]
+                fastHyprProc.running = true
+            }
+        } else if (activeCompositor === "hyprland") {
+            var kwParts = []
+            for (var j = 0; j < layoutArray.length; j++) {
+                var mj = layoutArray[j]
+                if (!mj.name) continue
+                if (mj.disabled) {
+                    kwParts.push("keyword monitor " + mj.name + ",disable")
+                } else if (mj.mirrorOf && mj.mirrorOf !== "none" && mj.mirrorOf !== mj.name) {
+                    kwParts.push("keyword monitor " + mj.name + ",preferred,auto," + parseFloat(mj.scale || 1.0) + ",mirror," + mj.mirrorOf)
+                } else {
+                    var modeStr = mj.mode || "preferred"
+                    var posStr = parseInt(mj.x || 0) + "x" + parseInt(mj.y || 0)
+                    kwParts.push("keyword monitor " + mj.name + "," + modeStr + "," + posStr + "," + parseFloat(mj.scale || 1.0) + ",transform," + parseInt(mj.transform || 0))
+                }
+            }
+            if (kwParts.length > 0) {
+                fastHyprProc.command = ["hyprctl", "--batch", kwParts.join(" ; ")]
+                fastHyprProc.running = true
+            }
+        }
+
+        if (saveToConfig) {
+            monitorsApplyProc.command = [root.helperScript, "monitors-apply", "--layout", JSON.stringify(layoutArray), "--save"]
+            monitorsApplyProc.running = true
+            refreshTimer.restart()
+        }
+    }
+
+    function identifyMonitors() {
+        if (Services.OverlayManager) {
+            Services.OverlayManager.triggerIdentifyMonitors()
+        }
+    }
+
+    Process {
+        id: monitorsApplyProc
+        property string qOutput: ""
+        stdout: SplitParser {
+            onRead: chunk => { monitorsApplyProc.qOutput += chunk }
+        }
+        onExited: {
+            monitorsApplyProc.qOutput = ""
+            root.refreshState()
+        }
     }
 
     Timer {

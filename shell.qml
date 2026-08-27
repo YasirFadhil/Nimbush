@@ -1,6 +1,8 @@
 //@ pragma UseQApplication
 import QtQuick
+import QtQuick.Layouts
 import Quickshell
+import Quickshell.Wayland
 import Quickshell.Io
 import "services" as Services
 import "modules/notifications" as Notif
@@ -43,6 +45,86 @@ ShellRoot {
     CalendarModule.Calendar {}
     LockscreenModule.Lockscreen { id: lockscreenWindow }
     WelcomeModule.Welcome { id: welcomeWindow }
+
+    Loader {
+        id: identifyLoader
+        active: Services.OverlayManager ? Services.OverlayManager.identifyMonitorsActive : false
+        sourceComponent: Variants {
+            model: Quickshell.screens
+            delegate: PanelWindow {
+                id: idWin
+                required property var modelData
+                screen: modelData
+                anchors { top: true; bottom: true; left: true; right: true }
+                color: "transparent"
+                WlrLayershell.layer: WlrLayer.Overlay
+                WlrLayershell.namespace: "quickshell:identify"
+                exclusiveZone: -1
+
+                Rectangle {
+                    anchors.centerIn: parent
+                    width: 280
+                    height: 180
+                    radius: 20
+                    color: Qt.rgba(0.08, 0.08, 0.12, 0.94)
+                    border.color: Services.Theme.accent
+                    border.width: 3
+
+                    Rectangle {
+                        anchors.fill: parent
+                        anchors.margins: 1
+                        radius: 19
+                        color: "transparent"
+                        border.color: Qt.rgba(1, 1, 1, 0.2)
+                        border.width: 1
+                    }
+
+                    ColumnLayout {
+                        anchors.centerIn: parent
+                        spacing: 8
+
+                        Rectangle {
+                            Layout.alignment: Qt.AlignHCenter
+                            width: 52; height: 52; radius: 26
+                            color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.22)
+                            border.color: Services.Theme.accent
+                            border.width: 2
+
+                            Text {
+                                anchors.centerIn: parent
+                                text: {
+                                    if (!Quickshell.screens) return "1"
+                                    for (let i = 0; i < Quickshell.screens.length; i++) {
+                                        if (Quickshell.screens[i].name === idWin.modelData.name) return String(i + 1)
+                                    }
+                                    return "1"
+                                }
+                                font.pixelSize: 26
+                                font.bold: true
+                                color: Services.Theme.accent
+                            }
+                        }
+
+                        Text {
+                            Layout.alignment: Qt.AlignHCenter
+                            text: idWin.modelData.name || "Display"
+                            font.pixelSize: 20
+                            font.bold: true
+                            color: "#ffffff"
+                        }
+
+                        Text {
+                            Layout.alignment: Qt.AlignHCenter
+                            text: idWin.modelData.width + " × " + idWin.modelData.height
+                            font.pixelSize: 13
+                            font.family: Services.Theme.fontMono
+                            color: Services.Theme.textSecondary
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     Loader {
         id: settingsLoader
@@ -91,7 +173,7 @@ ShellRoot {
         function onEmojiShowRequested() { emojiPickerWindow.show() }
         function onDashboardToggleRequested() { dashboardWindow.toggle() }
         function onSettingsToggleRequested() { settingsWindow.toggle() }
-        function onSettingsShowRequested(tabIndex) { settingsWindow.show(tabIndex) }
+        function onSettingsShowRequested(tabIndex, subTabIndex) { settingsWindow.show(tabIndex, subTabIndex) }
         function onWelcomeToggleRequested() { welcomeWindow.toggle() }
         function onWelcomeShowRequested() { welcomeWindow.show() }
     }

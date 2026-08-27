@@ -15,6 +15,7 @@ Singleton {
     property bool batteryPanelVisible: false
     property bool volumePanelVisible: false
     property bool sysmonPanelVisible: false
+    property bool identifyMonitorsActive: false
     property real batteryTargetX: -1
     property real volumeTargetX: -1
     property real sysmonTargetX: -1
@@ -22,7 +23,7 @@ Singleton {
     signal launcherToggleRequested()
     signal dashboardToggleRequested()
     signal settingsToggleRequested()
-    signal settingsShowRequested(var tabIndex)
+    signal settingsShowRequested(var tabIndex, var subTabIndex)
     signal welcomeToggleRequested()
     signal welcomeShowRequested()
     signal wallpaperToggleRequested()
@@ -50,9 +51,9 @@ Singleton {
         emojiToggleRequested()
     }
 
-    function openSettings(tabIndex) {
+    function openSettings(tabIndex, subTabIndex) {
         closeAllExcept("settings")
-        settingsShowRequested(tabIndex !== undefined ? tabIndex : 0)
+        settingsShowRequested(tabIndex, subTabIndex)
     }
 
     function toggleSettings() {
@@ -106,5 +107,17 @@ Singleton {
         if (except !== "sysmonPanel") {
             sysmonPanelVisible = false
         }
+    }
+
+    function triggerIdentifyMonitors() {
+        identifyMonitorsActive = true
+        identifyTimer.restart()
+    }
+
+    Timer {
+        id: identifyTimer
+        interval: 2500
+        repeat: false
+        onTriggered: root.identifyMonitorsActive = false
     }
 }

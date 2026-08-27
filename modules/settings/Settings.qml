@@ -11,7 +11,7 @@ FloatingWindow {
     id: rootWindow
 
     title: "Quickshell Settings"
-    visible: true
+    visible: false
     implicitWidth: 980
     implicitHeight: 680
     minimumSize: Qt.size(800, 560)
@@ -23,7 +23,7 @@ FloatingWindow {
         if (contentFlick) contentFlick.contentY = 0
         if (Services.Config) Services.Config.setLastSettingsTab(currentTab)
     }
-    property int compSubTab: (Services.Config && Services.Config.lastSettingsCompSubTab !== undefined) ? Services.Config.lastSettingsCompSubTab : 0
+    property int compSubTab: 0
     onCompSubTabChanged: {
         if (Services.Config) Services.Config.setLastSettingsCompSubTab(compSubTab)
     }
@@ -37,17 +37,428 @@ FloatingWindow {
     property string formAction: ""
     property string formDesc: ""
 
+    // ── Displays & Monitors State & Geometry (Directly on rootWindow) ───────────
+    property var dispMonitors: (Services.Compositor && Services.Compositor.monitorsList) ? Services.Compositor.monitorsList : []
+    property var dispLocalLayout: []
+    property string dispSelectedMonitorName: ""
+    property bool dispHasPendingChanges: false
+    property bool dispIsDragging: false
+    property bool dispIsApplying: false
+    property string dispStatusMessage: ""
+    property real dispSnapGuideX: -1
+    property real dispSnapGuideY: -1
+    property bool dispShowSnapGuideX: false
+    property bool dispShowSnapGuideY: false
+
+    onDispMonitorsChanged: syncDisplaysLocal(false)
+
+    function getDisplayLogWidth(m) {
+        if (!m) return 1920
+        var rawW = (m.transform === 1 || m.transform === 3) ? parseInt(m.height || 1080) : parseInt(m.width || 1920)
+        var sc = (m.scale && m.scale > 0) ? parseFloat(m.scale) : 1.0
+        return Math.max(320, Math.round(rawW / sc))
+    }
+
+    function getDisplayLogHeight(m) {
+        if (!m) return 1080
+        var rawH = (m.transform === 1 || m.transform === 3) ? parseInt(m.width || 1920) : parseInt(m.height || 1080)
+        var sc = (m.scale && m.scale > 0) ? parseFloat(m.scale) : 1.0
+        return Math.max(240, Math.round(rawH / sc))
+    }
+
+    function syncDisplaysLocal(force) {
+        if (!force && (dispIsDragging || dispIsApplying || dispHasPendingChanges)) return
+        if (!dispMonitors || dispMonitors.length === 0) {
+            dispLocalLayout = []
+            dispSelectedMonitorName = ""
+            return
+        }
+        var copy = []
+        for (var i = 0; i < dispMonitors.length; i++) {
+            var m = dispMonitors[i]
+            copy.push({
+                id: m.id !== undefined ? m.id : i,
+                name: m.name || ("Display " + (i + 1)),
+                description: m.description || "",
+                make: m.make || "",
+                model: m.model || "",
+                width: parseInt(m.width || 1920),
+                height: parseInt(m.height || 1080),
+                physicalWidth: parseInt(m.physicalWidth || 0),
+                physicalHeight: parseInt(m.physicalHeight || 0),
+                refreshRate: parseInt(m.refreshRate || 60),
+                exactRefreshRate: parseFloat(m.exactRefreshRate || m.refreshRate || 60),
+                x: parseInt(m.x || 0),
+                y: parseInt(m.y || 0),
+                scale: parseFloat(m.scale || 1.0),
+                transform: parseInt(m.transform || 0),
+                focused: Boolean(m.focused),
+                vrr: Boolean(m.vrr),
+                dpmsStatus: m.dpmsStatus !== undefined ? Boolean(m.dpmsStatus) : true,
+                disabled: Boolean(m.disabled),
+                mirrorOf: m.mirrorOf || "none",
+                mode: m.mode || "preferred",
+                availableModes: Array.isArray(m.availableModes) ? m.availableModes : [],
+                activeWorkspace: m.activeWorkspace || "1"
+            })
+        }
+        dispLocalLayout = copy
+        enforceDisplayNoOverlaps()
+        if (!dispSelectedMonitorName || !findDisplayMonitor(dispSelectedMonitorName)) {
+            var focused = dispLocalLayout.find(function(it) { return it.focused })
+            dispSelectedMonitorName = focused ? focused.name : (dispLocalLayout[0] ? dispLocalLayout[0].name : "")
+        }
+        dispHasPendingChanges = false
+    }
+
+    function findDisplayMonitor(name) {
+        if (!dispLocalLayout) return null
+        for (var i = 0; i < dispLocalLayout.length; i++) {
+            if (dispLocalLayout[i].name === name) return dispLocalLayout[i]
+        }
+        return null
+    }
+
+    readonly property var currentDisplayMon: findDisplayMonitor(dispSelectedMonitorName) || (dispLocalLayout && dispLocalLayout.length > 0 ? dispLocalLayout[0] : null)
+
+    function updateDisplayProp(prop, val, applyLive) {
+        if (!currentDisplayMon) return
+        var copy = JSON.parse(JSON.stringify(dispLocalLayout))
+        for (var i = 0; i < copy.length; i++) {
+            if (copy[i].name === currentDisplayMon.name) {
+                copy[i][prop] = val
+                break
+            }
+        }
+        dispLocalLayout = copy
+
+        if (prop === "scale" || prop === "transform" || prop === "mode") {
+            enforceDisplayNoOverlaps()
+        }
+
+        dispHasPendingChanges = true
+        dispAutoSaveTimer.restart()
+
+        if (applyLive !== false && Services.Compositor) {
+            if (prop === "scale") Services.Compositor.setMonitorScale(currentDisplayMon.name, val, false)
+            else if (prop === "transform") Services.Compositor.setMonitorTransform(currentDisplayMon.name, val, false)
+            else if (prop === "mode") Services.Compositor.setMonitorMode(currentDisplayMon.name, val, false)
+            else if (prop === "vrr") Services.Compositor.setMonitorVRR(currentDisplayMon.name, val, false)
+            else if (prop === "disabled") Services.Compositor.setMonitorDisabled(currentDisplayMon.name, val, false)
+            else if (prop === "mirrorOf") Services.Compositor.setMonitorMirror(currentDisplayMon.name, val, false)
+            else if (prop === "x" || prop === "y") {
+                normalizeDisplayPositions()
+                Services.Compositor.applyMonitorLayout(dispLocalLayout, false)
+            }
+        }
+    }
+
+    function enforceDisplayNoOverlaps() {
+        if (!dispLocalLayout || dispLocalLayout.length < 2) return
+        var copy = JSON.parse(JSON.stringify(dispLocalLayout))
+        var activeIndices = []
+        for (var i = 0; i < copy.length; i++) {
+            if (!copy[i].disabled) activeIndices.push(i)
+        }
+        if (activeIndices.length < 2) return
+
+        activeIndices.sort(function(a, b) {
+            if (copy[a].x !== copy[b].x) return copy[a].x - copy[b].x
+            return copy[a].y - copy[b].y
+        })
+
+        for (var k = 1; k < activeIndices.length; k++) {
+            var prevIdx = activeIndices[k - 1]
+            var curIdx = activeIndices[k]
+            var prev = copy[prevIdx]
+            var cur = copy[curIdx]
+            var prevW = getDisplayLogWidth(prev)
+            var prevH = getDisplayLogHeight(prev)
+            var curW = getDisplayLogWidth(cur)
+            var curH = getDisplayLogHeight(cur)
+
+            var overlapX = (cur.x < prev.x + prevW) && (cur.x + curW > prev.x)
+            var overlapY = (cur.y < prev.y + prevH) && (cur.y + curH > prev.y)
+
+            if (overlapX && overlapY) {
+                cur.x = prev.x + prevW
+            }
+        }
+        dispLocalLayout = copy
+        normalizeDisplayPositions()
+    }
+
+    function normalizeDisplayPositions() {
+        if (!dispLocalLayout || dispLocalLayout.length === 0) return
+        var minX = Infinity, minY = Infinity
+        for (var i = 0; i < dispLocalLayout.length; i++) {
+            if (!dispLocalLayout[i].disabled) {
+                if (dispLocalLayout[i].x < minX) minX = dispLocalLayout[i].x
+                if (dispLocalLayout[i].y < minY) minY = dispLocalLayout[i].y
+            }
+        }
+        if (minX === Infinity || minY === Infinity) return
+        var copy = JSON.parse(JSON.stringify(dispLocalLayout))
+        for (var j = 0; j < copy.length; j++) {
+            copy[j].x = Math.max(0, copy[j].x - minX)
+            copy[j].y = Math.max(0, copy[j].y - minY)
+        }
+        dispLocalLayout = copy
+    }
+
+    function applyDisplayLayout(saveToConfig) {
+        if (!dispLocalLayout || dispLocalLayout.length === 0) return
+        dispAutoSaveTimer.stop()
+        enforceDisplayNoOverlaps()
+        normalizeDisplayPositions()
+        dispIsApplying = true
+        dispStatusMessage = "Applying display configuration..."
+        if (Services.Compositor) {
+            Services.Compositor.applyMonitorLayout(dispLocalLayout, saveToConfig !== false)
+        }
+        dispHasPendingChanges = false
+        dispFeedbackTimer.restart()
+    }
+
+    function revertDisplayChanges() {
+        dispAutoSaveTimer.stop()
+        syncDisplaysLocal(true)
+        if (Services.Compositor && dispLocalLayout.length > 0) {
+            Services.Compositor.applyMonitorLayout(dispLocalLayout, false)
+        }
+        dispStatusMessage = "Reverted unstaged display changes"
+        dispClearTimer.restart()
+    }
+
+    function autoAlignDisplaysHorizontal() {
+        if (!dispLocalLayout || dispLocalLayout.length === 0) return
+        var copy = JSON.parse(JSON.stringify(dispLocalLayout))
+        var curX = 0
+        for (var i = 0; i < copy.length; i++) {
+            if (!copy[i].disabled) {
+                copy[i].x = curX
+                copy[i].y = 0
+                curX += getDisplayLogWidth(copy[i])
+            }
+        }
+        dispLocalLayout = copy
+        dispHasPendingChanges = true
+        dispAutoSaveTimer.restart()
+        if (Services.Compositor) Services.Compositor.applyMonitorLayout(dispLocalLayout, false)
+    }
+
+    function autoAlignDisplaysVertical() {
+        if (!dispLocalLayout || dispLocalLayout.length === 0) return
+        var copy = JSON.parse(JSON.stringify(dispLocalLayout))
+        var curY = 0
+        for (var i = 0; i < copy.length; i++) {
+            if (!copy[i].disabled) {
+                copy[i].x = 0
+                copy[i].y = curY
+                curY += getDisplayLogHeight(copy[i])
+            }
+        }
+        dispLocalLayout = copy
+        dispHasPendingChanges = true
+        dispAutoSaveTimer.restart()
+        if (Services.Compositor) Services.Compositor.applyMonitorLayout(dispLocalLayout, false)
+    }
+
+    function swapDisplays() {
+        if (!dispLocalLayout || dispLocalLayout.length < 2) return
+        var copy = JSON.parse(JSON.stringify(dispLocalLayout))
+        var temp = copy[0]
+        copy[0] = copy[1]
+        copy[1] = temp
+
+        var curX = 0
+        for (var i = 0; i < copy.length; i++) {
+            if (!copy[i].disabled) {
+                copy[i].x = curX
+                copy[i].y = 0
+                curX += getDisplayLogWidth(copy[i])
+            }
+        }
+        dispLocalLayout = copy
+        dispHasPendingChanges = true
+        dispAutoSaveTimer.restart()
+        if (Services.Compositor) Services.Compositor.applyMonitorLayout(dispLocalLayout, false)
+    }
+
+    function setDisplayAsPrimary(name) {
+        if (!name) return
+        var copy = JSON.parse(JSON.stringify(dispLocalLayout))
+        for (var i = 0; i < copy.length; i++) {
+            copy[i].focused = (copy[i].name === name)
+        }
+        dispLocalLayout = copy
+        dispHasPendingChanges = true
+        dispAutoSaveTimer.restart()
+        if (Services.Compositor) Services.Compositor.setPrimaryMonitor(name)
+        dispStatusMessage = name + " set as primary display"
+        dispClearTimer.restart()
+    }
+
+    function commitDisplayDrop(draggedIndex, canvasX, canvasY, originX, originY, scale) {
+        if (!dispLocalLayout || draggedIndex < 0 || draggedIndex >= dispLocalLayout.length) return
+        var target = dispLocalLayout[draggedIndex]
+        var targetW = getDisplayLogWidth(target)
+        var targetH = getDisplayLogHeight(target)
+
+        var relX = canvasX - originX
+        var relY = canvasY - originY
+        var rawX = Math.round(relX / scale)
+        var rawY = Math.round(relY / scale)
+
+        var snappedX = rawX
+        var snappedY = rawY
+        var snapDist = 45
+
+        for (var j = 0; j < dispLocalLayout.length; j++) {
+            if (j === draggedIndex || dispLocalLayout[j].disabled) continue
+            var other = dispLocalLayout[j]
+            var otherW = getDisplayLogWidth(other)
+            var otherH = getDisplayLogHeight(other)
+
+            if (Math.abs(snappedX - (other.x + otherW)) < snapDist) {
+                snappedX = other.x + otherW
+            } else if (Math.abs((snappedX + targetW) - other.x) < snapDist) {
+                snappedX = other.x - targetW
+            } else if (Math.abs(snappedX - other.x) < snapDist) {
+                snappedX = other.x
+            }
+
+            if (Math.abs(snappedY - other.y) < snapDist) {
+                snappedY = other.y
+            } else if (Math.abs((snappedY + targetH) - (other.y + otherH)) < snapDist) {
+                snappedY = other.y + otherH - targetH
+            } else if (Math.abs(snappedY - (other.y + otherH)) < snapDist) {
+                snappedY = other.y + otherH
+            } else if (Math.abs((snappedY + targetH) - other.y) < snapDist) {
+                snappedY = other.y - targetH
+            }
+        }
+
+        // Overlap Prevention
+        for (var k = 0; k < dispLocalLayout.length; k++) {
+            if (k === draggedIndex || dispLocalLayout[k].disabled) continue
+            var o = dispLocalLayout[k]
+            var oW = getDisplayLogWidth(o)
+            var oH = getDisplayLogHeight(o)
+
+            var isOverlapX = (snappedX < o.x + oW) && (snappedX + targetW > o.x)
+            var isOverlapY = (snappedY < o.y + oH) && (snappedY + targetH > o.y)
+
+            if (isOverlapX && isOverlapY) {
+                var pushRight = (o.x + oW) - snappedX
+                var pushLeft = (snappedX + targetW) - o.x
+                var pushDown = (o.y + oH) - snappedY
+                var pushUp = (snappedY + targetH) - o.y
+
+                var minP = Math.min(pushRight, pushLeft, pushDown, pushUp)
+                if (minP === pushRight) snappedX = o.x + oW
+                else if (minP === pushLeft) snappedX = o.x - targetW
+                else if (minP === pushDown) snappedY = o.y + oH
+                else snappedY = o.y - targetH
+            }
+        }
+
+        var copy = JSON.parse(JSON.stringify(dispLocalLayout))
+        copy[draggedIndex].x = snappedX
+        copy[draggedIndex].y = snappedY
+        dispLocalLayout = copy
+
+        normalizeDisplayPositions()
+        dispHasPendingChanges = true
+        dispAutoSaveTimer.restart()
+        if (Services.Compositor) Services.Compositor.applyMonitorLayout(dispLocalLayout, false)
+    }
+
+    function updateDisplaySnapGuides(draggedIdx, curCanvasX, curCanvasY, boxW, boxH, originX, originY, scale) {
+        var relX = curCanvasX - originX
+        var relY = curCanvasY - originY
+        var virtX = Math.round(relX / scale)
+        var virtY = Math.round(relY / scale)
+        var targetW = getDisplayLogWidth(dispLocalLayout[draggedIdx])
+        var targetH = getDisplayLogHeight(dispLocalLayout[draggedIdx])
+
+        var snapDist = 45
+        var gx = -1, gy = -1
+
+        for (var j = 0; j < dispLocalLayout.length; j++) {
+            if (j === draggedIdx || dispLocalLayout[j].disabled) continue
+            var other = dispLocalLayout[j]
+            var otherW = getDisplayLogWidth(other)
+            var otherH = getDisplayLogHeight(other)
+
+            if (Math.abs(virtX - (other.x + otherW)) < snapDist) {
+                gx = originX + (other.x + otherW) * scale
+            } else if (Math.abs((virtX + targetW) - other.x) < snapDist) {
+                gx = originX + other.x * scale
+            }
+
+            if (Math.abs(virtY - other.y) < snapDist) {
+                gy = originY + other.y * scale
+            } else if (Math.abs(virtY - (other.y + otherH)) < snapDist) {
+                gy = originY + (other.y + otherH) * scale
+            }
+        }
+
+        dispSnapGuideX = gx
+        dispShowSnapGuideX = gx >= 0
+        dispSnapGuideY = gy
+        dispShowSnapGuideY = gy >= 0
+    }
+
+    Timer {
+        id: dispAutoSaveTimer
+        interval: 1200
+        repeat: false
+        onTriggered: {
+            if (rootWindow.dispHasPendingChanges && !rootWindow.dispIsDragging && !rootWindow.dispIsApplying) {
+                rootWindow.applyDisplayLayout(true)
+            }
+        }
+    }
+
+    Timer {
+        id: dispFeedbackTimer
+        interval: 1000
+        onTriggered: {
+            rootWindow.dispIsApplying = false
+            rootWindow.dispStatusMessage = "Display layout applied and saved"
+            dispClearTimer.restart()
+        }
+    }
+
+    Timer {
+        id: dispClearTimer
+        interval: 3000
+        onTriggered: rootWindow.dispStatusMessage = ""
+    }
+
     Component.onCompleted: {
         Services.OverlayManager.register(rootWindow)
+        syncDisplaysLocal(true)
         if (Services.Compositor) {
             Services.Compositor.refreshState()
             Services.Compositor.loadKeybinds()
         }
     }
 
-    function show(tabIndex) {
+    function show(tabIndex, subTabIndex) {
         if (typeof tabIndex === "number" && tabIndex >= 0) {
             currentTab = tabIndex
+            if (typeof subTabIndex === "number" && subTabIndex >= 0) {
+                compSubTab = subTabIndex
+            } else {
+                compSubTab = 0
+            }
+        } else if (Services.Config && Services.Config.lastSettingsTab !== undefined) {
+            currentTab = Services.Config.lastSettingsTab
+            compSubTab = 0
+        } else {
+            compSubTab = 0
         }
         visible = true
         keyFocus.forceActiveFocus()
@@ -58,6 +469,13 @@ FloatingWindow {
     }
 
     function hide() {
+        dispAutoSaveTimer.stop()
+        if (dispHasPendingChanges) {
+            applyDisplayLayout(true)
+        }
+        if (Services.Config) {
+            Services.Config.saveConfigImmediately()
+        }
         visible = false
     }
 
@@ -65,12 +483,20 @@ FloatingWindow {
         visible ? hide() : show()
     }
 
-    function open(tabIndex) { show(tabIndex) }
+    function open(tabIndex, subTabIndex) { show(tabIndex, subTabIndex) }
     function close() { hide() }
 
     onVisibleChanged: {
         if (visible) {
             keyFocus.forceActiveFocus()
+        } else {
+            dispAutoSaveTimer.stop()
+            if (dispHasPendingChanges) {
+                applyDisplayLayout(true)
+            }
+            if (Services.Config) {
+                Services.Config.saveConfigImmediately()
+            }
         }
     }
 
@@ -1860,7 +2286,10 @@ FloatingWindow {
                                 hoverEnabled: true
                                 cursorShape: Qt.PointingHandCursor
                                 onClicked: {
-                                    rootWindow.currentTab = modelData.id
+                                    if (rootWindow.currentTab !== modelData.id) {
+                                        if (modelData.id === 5) rootWindow.compSubTab = 0
+                                        rootWindow.currentTab = modelData.id
+                                    }
                                     if (modelData.id === 5 && Services.Compositor) Services.Compositor.refreshState()
                                     if (modelData.id === 6 && Services.Compositor) Services.Compositor.loadKeybinds()
                                 }
@@ -2831,6 +3260,52 @@ FloatingWindow {
                             }
 
                             SettingsSection {
+                                title: "Display & Monitor Assignment"
+                                icon: Services.Icons.display
+
+                                SettingsRow {
+                                    title: "Target Monitors"
+                                    subtitle: "Choose which connected display(s) render the QuickShell bar"
+
+                                    SettingsDropdown {
+                                        currentValue: Services.Config ? Services.Config.barMonitorMode : "all"
+                                        model: [
+                                            { id: "all",     label: "All Connected Displays" },
+                                            { id: "primary", label: "Primary / Focused Display Only" },
+                                            { id: "custom",  label: "Custom Display Selection" }
+                                        ]
+                                        onSelected: (val) => { if (Services.Config) Services.Config.setBarMonitorMode(val) }
+                                    }
+                                }
+
+                                SettingsDivider {
+                                    visible: (Services.Config ? Services.Config.barMonitorMode : "all") === "custom"
+                                }
+
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 8
+                                    visible: (Services.Config ? Services.Config.barMonitorMode : "all") === "custom"
+
+                                    Repeater {
+                                        model: (Services.Compositor && Services.Compositor.monitorsList) ? Services.Compositor.monitorsList : []
+                                        delegate: SettingsRow {
+                                            required property var modelData
+                                            title: (modelData.name || "Display") + (modelData.focused ? " (Primary)" : "")
+                                            subtitle: (modelData.width + "×" + modelData.height + " @ " + modelData.refreshRate + "Hz · " + (modelData.description || modelData.model || "Display Output"))
+
+                                            SettingsSwitch {
+                                                checked: Services.Config ? Services.Config.isBarMonitorEnabled(modelData.name) : true
+                                                onToggled: {
+                                                    if (Services.Config) Services.Config.setBarMonitor(modelData.name, checked)
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            SettingsSection {
                                 title: "Dynamic Island HUD"
                                 icon: Services.Icons.bell
 
@@ -2891,8 +3366,8 @@ FloatingWindow {
                                     SettingsDropdown {
                                         currentValue: Services.Config ? Services.Config.clockDateFormat : "short"
                                         model: [
-                                            { id: "short", label: "Short (Kam, 20 Agt)" },
-                                            { id: "full",  label: "Full (Kamis, 20 Agustus)" }
+                                            { id: "short", label: "Short (Thu, 20 Aug)" },
+                                            { id: "full",  label: "Full (Thursday, 20 August)" }
                                         ]
                                         onSelected: (val) => { if (Services.Config) Services.Config.setClockDateFormat(val) }
                                     }
@@ -3730,7 +4205,13 @@ FloatingWindow {
                                                 id: heroMonRow
                                                 anchors.centerIn: parent; spacing: 5
                                                 Text { text: Services.Icons.display; font.family: Services.Theme.fontSymbols; font.pixelSize: 11; color: Services.Theme.textSecondary }
-                                                Text { text: (Services.Compositor ? Services.Compositor.monitorsCount : 1) + " Display"; font.pixelSize: 10; font.weight: Font.Medium; color: Services.Theme.textPrimary }
+                                                Text {
+                                                    text: {
+                                                        const c = Services.Compositor ? Services.Compositor.monitorsCount : 1
+                                                        return c + (c > 1 ? " Displays" : " Display")
+                                                    }
+                                                    font.pixelSize: 10; font.weight: Font.Medium; color: Services.Theme.textPrimary
+                                                }
                                             }
                                         }
 
@@ -3746,7 +4227,13 @@ FloatingWindow {
                                                 id: heroWsRow
                                                 anchors.centerIn: parent; spacing: 5
                                                 Text { text: Services.Icons.grid; font.family: Services.Theme.fontSymbols; font.pixelSize: 11; color: Services.Theme.textSecondary }
-                                                Text { text: (Services.Compositor ? Services.Compositor.workspacesCount : 1) + " Workspace"; font.pixelSize: 10; font.weight: Font.Medium; color: Services.Theme.textPrimary }
+                                                Text {
+                                                    text: {
+                                                        const c = Services.Compositor ? Services.Compositor.workspacesCount : 1
+                                                        return c + (c > 1 ? " Workspaces" : " Workspace")
+                                                    }
+                                                    font.pixelSize: 10; font.weight: Font.Medium; color: Services.Theme.textPrimary
+                                                }
                                             }
                                         }
 
@@ -4028,46 +4515,11 @@ FloatingWindow {
                                         value: Services.Compositor ? Services.Compositor.hyprInactiveOpacity : 0.95
                                         onMoved: (v) => { if (Services.Compositor) Services.Compositor.setHyprInactiveOpacity(Number(v.toFixed(2))) }
                                     }
-
-                                    SettingsDivider {}
-
-                                    SettingsSwitch {
-                                        title: "Dim Inactive Windows"
-                                        subtitle: "Darken background windows to emphasize active focus"
-                                        checked: Services.Compositor ? Services.Compositor.hyprDimInactive : false
-                                        onToggled: () => { if (Services.Compositor) Services.Compositor.toggleHyprDimInactive() }
-                                    }
-
-                                    SettingsDivider {}
-
-                                    SettingsSlider {
-                                        title: "Dim Strength"
-                                        from: 0.10; to: 0.90; stepSize: 0.05; decimals: 2
-                                        value: Services.Compositor ? Services.Compositor.hyprDimStrength : 0.50
-                                        onMoved: (v) => { if (Services.Compositor) Services.Compositor.setHyprDimStrength(Number(v.toFixed(2))) }
-                                    }
                                 }
 
                                 SettingsSection {
                                     title: "Window Geometry, Gaps & Layout"
                                     icon: Services.Icons.layout
-
-                                    SettingsRow {
-                                        title: "Tiling Layout Engine"
-                                        subtitle: "Select active window tiling algorithm"
-
-                                        SettingsDropdown {
-                                            currentValue: Services.Compositor ? Services.Compositor.hyprLayout : "scrolling"
-                                            model: [
-                                                { id: "scrolling", label: "Scrolling" },
-                                                { id: "dwindle",   label: "Dwindle" },
-                                                { id: "master",    label: "Master" }
-                                            ]
-                                            onSelected: (val) => { if (Services.Compositor) Services.Compositor.setHyprLayout(val) }
-                                        }
-                                    }
-
-                                    SettingsDivider {}
 
                                     SettingsSlider {
                                         title: "Window Corner Radius"
@@ -4111,6 +4563,23 @@ FloatingWindow {
                                         checked: Services.Compositor ? Services.Compositor.hyprSmartGaps : false
                                         onToggled: () => { if (Services.Compositor) Services.Compositor.toggleHyprSmartGaps() }
                                     }
+
+                                    SettingsDivider {}
+
+                                    SettingsRow {
+                                        title: "Tiling Layout Engine"
+                                        subtitle: "Select active window tiling algorithm"
+
+                                        SettingsDropdown {
+                                            currentValue: Services.Compositor ? Services.Compositor.hyprLayout : "scrolling"
+                                            model: [
+                                                { id: "scrolling", label: "Scrolling" },
+                                                { id: "dwindle",   label: "Dwindle" },
+                                                { id: "master",    label: "Master" }
+                                            ]
+                                            onSelected: (val) => { if (Services.Compositor) Services.Compositor.setHyprLayout(val) }
+                                        }
+                                    }
                                 }
                             }
 
@@ -4118,116 +4587,746 @@ FloatingWindow {
                             ColumnLayout {
                                 visible: rootWindow.compSubTab === 1
                                 Layout.fillWidth: true
-                                spacing: 14
+                                spacing: 10
 
-                                Repeater {
-                                    model: Services.Compositor ? Services.Compositor.monitorsList : []
+                                // ── 1. SPATIAL TOPOLOGY CARD ────────────────────────
+                                SettingsSection {
+                                    title: "Display Layout & Canvas"
+                                    icon: Services.Icons.display
 
-                                    delegate: ColumnLayout {
-                                        id: monitorDelegate
-                                        required property var modelData
-                                        required property int index
-                                        Layout.fillWidth: true
-                                        spacing: 12
+                                    // Canvas Toolbar Row
+                                    SettingsRow {
+                                        title: "Display Arrangement"
+                                        subtitle: "Drag screens to arrange · Magnetic edge snapping (Zero Overlap)"
 
-                                        SettingsSection {
-                                            title: (monitorDelegate.modelData.name || "Display") + (monitorDelegate.modelData.focused ? "  ·  Primary Display" : "  ·  Display " + (index + 1))
-                                            icon: Services.Icons.display
+                                        RowLayout {
+                                            spacing: 6
 
-                                            // 1. Display Scaling Slider
-                                            SettingsSlider {
-                                                title: "Display Scale Factor"
-                                                subtitle: "Adjust UI scaling factor (e.g. 1.00× for 100%, 1.25× for 125%)"
-                                                from: 0.75; to: 2.00; stepSize: 0.05; decimals: 2; valueSuffix: "x"
-                                                value: Number(monitorDelegate.modelData.scale || 1.0)
-                                                onMoved: (v) => { if (Services.Compositor) Services.Compositor.setMonitorScale(monitorDelegate.modelData.name, v) }
+                                            // Identify Displays
+                                            Rectangle {
+                                                height: 26
+                                                implicitWidth: idRow.implicitWidth + 14
+                                                radius: 4
+                                                color: idMouse.containsMouse ? Qt.rgba(1, 1, 1, 0.08) : Services.Theme.bgElevated
+                                                border.color: Services.Theme.border; border.width: 1
+                                                RowLayout {
+                                                    id: idRow; anchors.centerIn: parent; spacing: 4
+                                                    Text { text: "󰍹"; font.family: Services.Theme.fontSymbols; font.pixelSize: 11; color: Services.Theme.accent }
+                                                    Text { text: "Identify"; font.pixelSize: 11; color: Services.Theme.textPrimary }
+                                                }
+                                                MouseArea {
+                                                    id: idMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                                                    onClicked: { if (Services.Compositor) Services.Compositor.identifyMonitors() }
+                                                }
                                             }
 
-                                            // Quick Preset Buttons Row inside Section
-                                            RowLayout {
-                                                Layout.fillWidth: true
-                                                Layout.leftMargin: 10
-                                                Layout.rightMargin: 10
-                                                Layout.topMargin: 2
-                                                Layout.bottomMargin: 8
-                                                spacing: 6
-
-                                                Text {
-                                                    text: "Presets:"
-                                                    font.pixelSize: Services.Theme.fontSizeXs
-                                                    color: Services.Theme.textDisabled
-                                                    Layout.alignment: Qt.AlignVCenter
+                                            // Swap (if 2+ monitors)
+                                            Rectangle {
+                                                visible: rootWindow.dispLocalLayout.length >= 2
+                                                height: 26
+                                                implicitWidth: swpRow.implicitWidth + 12
+                                                radius: 4
+                                                color: swpMouse.containsMouse ? Qt.rgba(1, 1, 1, 0.08) : Services.Theme.bgElevated
+                                                border.color: Services.Theme.border; border.width: 1
+                                                RowLayout {
+                                                    id: swpRow; anchors.centerIn: parent; spacing: 4
+                                                    Text { text: "⇄"; font.pixelSize: 11; color: Services.Theme.textPrimary }
+                                                    Text { text: "Swap"; font.pixelSize: 11; color: Services.Theme.textPrimary }
                                                 }
+                                                MouseArea {
+                                                    id: swpMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                                                    onClicked: rootWindow.swapDisplays()
+                                                }
+                                            }
 
-                                                Repeater {
-                                                    model: [1.0, 1.25, 1.5, 1.75, 2.0]
-                                                    delegate: Rectangle {
-                                                        required property var modelData
-                                                        height: 24
-                                                        implicitWidth: scTxt.implicitWidth + 14
-                                                        radius: 4
-                                                        readonly property bool isSel: Math.abs(Number(monitorDelegate.modelData.scale || 1.0) - Number(modelData)) < 0.01
-                                                        color: isSel ? Services.Theme.accent : (scMouse.containsMouse ? Qt.rgba(1, 1, 1, 0.08) : Services.Theme.bgElevated)
-                                                        border.color: isSel ? Services.Theme.accent : Services.Theme.border
-                                                        border.width: 1
+                                            // Align Horizontal (Side by Side)
+                                            Rectangle {
+                                                height: 26
+                                                implicitWidth: ahRow.implicitWidth + 10
+                                                radius: 4
+                                                color: ahMouse.containsMouse ? Qt.rgba(1, 1, 1, 0.08) : Services.Theme.bgElevated
+                                                border.color: Services.Theme.border; border.width: 1
+                                                RowLayout {
+                                                    id: ahRow; anchors.centerIn: parent; spacing: 3
+                                                    Text { text: "⊞"; font.pixelSize: 11; color: Services.Theme.textPrimary }
+                                                    Text { text: "Side by Side"; font.pixelSize: 10; color: Services.Theme.textPrimary }
+                                                }
+                                                MouseArea {
+                                                    id: ahMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                                                    onClicked: rootWindow.autoAlignDisplaysHorizontal()
+                                                }
+                                            }
+
+                                            // Align Vertical (Stacked)
+                                            Rectangle {
+                                                height: 26
+                                                implicitWidth: avRow.implicitWidth + 10
+                                                radius: 4
+                                                color: avMouse.containsMouse ? Qt.rgba(1, 1, 1, 0.08) : Services.Theme.bgElevated
+                                                border.color: Services.Theme.border; border.width: 1
+                                                RowLayout {
+                                                    id: avRow; anchors.centerIn: parent; spacing: 3
+                                                    Text { text: "⊟"; font.pixelSize: 11; color: Services.Theme.textPrimary }
+                                                    Text { text: "Stacked"; font.pixelSize: 10; color: Services.Theme.textPrimary }
+                                                }
+                                                MouseArea {
+                                                    id: avMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                                                    onClicked: rootWindow.autoAlignDisplaysVertical()
+                                                }
+                                            }
+
+                                            // Revert
+                                            Rectangle {
+                                                visible: rootWindow.dispHasPendingChanges
+                                                height: 26
+                                                implicitWidth: rvtRow.implicitWidth + 12
+                                                radius: 4
+                                                color: rvtMouse.containsMouse ? Qt.rgba(0.9, 0.2, 0.2, 0.15) : Services.Theme.bgElevated
+                                                border.color: Services.Theme.border; border.width: 1
+                                                RowLayout {
+                                                    id: rvtRow; anchors.centerIn: parent; spacing: 4
+                                                    Text { text: "󰕌"; font.family: Services.Theme.fontSymbols; font.pixelSize: 10; color: Services.Theme.danger }
+                                                    Text { text: "Revert"; font.pixelSize: 10; color: Services.Theme.danger }
+                                                }
+                                                MouseArea {
+                                                    id: rvtMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                                                    onClicked: rootWindow.revertDisplayChanges()
+                                                }
+                                            }
+
+                                            // Save & Apply
+                                            Rectangle {
+                                                height: 26
+                                                implicitWidth: savRow.implicitWidth + 14
+                                                radius: 4
+                                                color: rootWindow.dispHasPendingChanges ? Services.Theme.accent : (savMouse.containsMouse ? Qt.rgba(1, 1, 1, 0.08) : Services.Theme.bgElevated)
+                                                border.color: rootWindow.dispHasPendingChanges ? Services.Theme.accent : Services.Theme.border
+                                                border.width: 1
+                                                RowLayout {
+                                                    id: savRow; anchors.centerIn: parent; spacing: 4
+                                                    Text {
+                                                        text: rootWindow.dispIsApplying ? "󰑮" : (rootWindow.dispHasPendingChanges ? "󰄬" : "󰆓")
+                                                        font.family: Services.Theme.fontSymbols
+                                                        font.pixelSize: 11
+                                                        color: rootWindow.dispHasPendingChanges ? Services.Theme.bgOnAccent : Services.Theme.textSecondary
+                                                    }
+                                                    Text {
+                                                        text: rootWindow.dispIsApplying ? "Saving..." : (rootWindow.dispHasPendingChanges ? "Save Layout" : "Saved")
+                                                        font.pixelSize: 11
+                                                        font.weight: rootWindow.dispHasPendingChanges ? Font.Bold : Font.Normal
+                                                        color: rootWindow.dispHasPendingChanges ? Services.Theme.bgOnAccent : Services.Theme.textSecondary
+                                                    }
+                                                }
+                                                MouseArea {
+                                                    id: savMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                                                    onClicked: rootWindow.applyDisplayLayout(true)
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    SettingsDivider {}
+
+                                    // Canvas Stage Box (Clean and perfectly inlaid)
+                                    Rectangle {
+                                        id: stageBox
+                                        Layout.fillWidth: true
+                                        Layout.margins: 8
+                                        height: 240
+                                        radius: Services.Theme.radiusSm || 6
+                                        color: Services.Theme.bgDeep
+                                        border.color: Services.Theme.border
+                                        border.width: 1
+                                        clip: true
+
+                                        readonly property real totalVirtWidth: {
+                                            if (!rootWindow.dispLocalLayout || rootWindow.dispLocalLayout.length === 0) return 3840
+                                            var maxX = 0
+                                            for (var i = 0; i < rootWindow.dispLocalLayout.length; i++) {
+                                                var m = rootWindow.dispLocalLayout[i]
+                                                if (m.disabled) continue
+                                                var logW = rootWindow.getDisplayLogWidth(m)
+                                                var endX = (m.x || 0) + logW
+                                                if (endX > maxX) maxX = endX
+                                            }
+                                            return Math.max(1920, maxX)
+                                        }
+
+                                        readonly property real totalVirtHeight: {
+                                            if (!rootWindow.dispLocalLayout || rootWindow.dispLocalLayout.length === 0) return 1080
+                                            var maxY = 0
+                                            for (var i = 0; i < rootWindow.dispLocalLayout.length; i++) {
+                                                var m = rootWindow.dispLocalLayout[i]
+                                                if (m.disabled) continue
+                                                var logH = rootWindow.getDisplayLogHeight(m)
+                                                var endY = (m.y || 0) + logH
+                                                if (endY > maxY) maxY = endY
+                                            }
+                                            return Math.max(1080, maxY)
+                                        }
+
+                                        readonly property real stageScale: {
+                                            var availW = stageBox.width - 50
+                                            var availH = stageBox.height - 50
+                                            if (availW <= 0 || availH <= 0) return 0.08
+                                            return Math.min(availW / Math.max(1000, totalVirtWidth), availH / Math.max(600, totalVirtHeight))
+                                        }
+
+                                        readonly property real originStageX: {
+                                            var contentW = totalVirtWidth * stageScale
+                                            return Math.max(20, (stageBox.width - contentW) / 2)
+                                        }
+
+                                        readonly property real originStageY: {
+                                            var contentH = totalVirtHeight * stageScale
+                                            return Math.max(18, (stageBox.height - contentH) / 2)
+                                        }
+
+                                        // Snap laser guidelines
+                                        Rectangle {
+                                            visible: rootWindow.dispShowSnapGuideX
+                                            x: rootWindow.dispSnapGuideX
+                                            anchors.top: parent.top; anchors.bottom: parent.bottom
+                                            width: 1.5; color: Services.Theme.accent; z: 90
+                                        }
+                                        Rectangle {
+                                            visible: rootWindow.dispShowSnapGuideY
+                                            y: rootWindow.dispSnapGuideY
+                                            anchors.left: parent.left; anchors.right: parent.right
+                                            height: 1.5; color: Services.Theme.accent; z: 90
+                                        }
+
+                                        // Monitor items
+                                        Repeater {
+                                            model: rootWindow.dispLocalLayout
+
+                                            delegate: Item {
+                                                id: mBox
+                                                required property var modelData
+                                                required property int index
+
+                                                property real dragVisualX: 0
+                                                property real dragVisualY: 0
+                                                property bool isBeingDragged: false
+
+                                                readonly property bool isSelected: rootWindow.dispSelectedMonitorName === modelData.name
+                                                readonly property real effLogW: rootWindow.getDisplayLogWidth(modelData)
+                                                readonly property real effLogH: rootWindow.getDisplayLogHeight(modelData)
+                                                readonly property real cardW: Math.max(110, effLogW * stageBox.stageScale)
+                                                readonly property real cardH: Math.max(70, effLogH * stageBox.stageScale)
+
+                                                readonly property real baseX: stageBox.originStageX + (modelData.x * stageBox.stageScale)
+                                                readonly property real baseY: stageBox.originStageY + (modelData.y * stageBox.stageScale)
+
+                                                x: isBeingDragged ? dragVisualX : baseX
+                                                y: isBeingDragged ? dragVisualY : baseY
+                                                width: cardW
+                                                height: cardH
+                                                z: isBeingDragged ? 100 : (isSelected ? 20 : 10)
+
+                                                Behavior on x { enabled: !mBox.isBeingDragged; NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
+                                                Behavior on y { enabled: !mBox.isBeingDragged; NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
+
+                                                Rectangle {
+                                                    anchors.fill: parent
+                                                    radius: 6
+                                                    color: mBox.isSelected ? Services.Theme.bgElevated : Services.Theme.surfaceVariant
+                                                    border.color: mBox.isSelected ? Services.Theme.accent : (mDrag.containsMouse ? Services.Theme.borderHighlight : Services.Theme.border)
+                                                    border.width: mBox.isSelected ? 2 : 1
+                                                    opacity: mBox.modelData.disabled ? 0.45 : (mBox.isBeingDragged ? 0.92 : 1.0)
+                                                    scale: mBox.isBeingDragged ? 1.05 : (mDrag.containsMouse ? 1.02 : 1.0)
+                                                    Behavior on scale { NumberAnimation { duration: 120 } }
+
+                                                    ColumnLayout {
+                                                        anchors.centerIn: parent
+                                                        spacing: 2
+
+                                                        RowLayout {
+                                                            Layout.alignment: Qt.AlignHCenter
+                                                            spacing: 4
+                                                            Text {
+                                                                text: mBox.modelData.name.toLowerCase().includes("edp") ? "󰌢" : "󰍹"
+                                                                font.family: Services.Theme.fontSymbols
+                                                                font.pixelSize: 10
+                                                                color: mBox.isSelected ? Services.Theme.accent : Services.Theme.textSecondary
+                                                            }
+                                                            Text {
+                                                                text: mBox.modelData.name + (mBox.modelData.focused ? " ★" : "")
+                                                                font.pixelSize: 10
+                                                                font.weight: Font.DemiBold
+                                                                color: mBox.isSelected ? Services.Theme.accent : Services.Theme.textPrimary
+                                                            }
+                                                        }
 
                                                         Text {
-                                                            id: scTxt
-                                                            anchors.centerIn: parent
-                                                            text: (Number(modelData) * 100).toFixed(0) + "%"
-                                                            font.pixelSize: Services.Theme.fontSizeXs
-                                                            font.weight: isSel ? Font.Bold : Font.Medium
-                                                            color: isSel ? Services.Theme.bgOnAccent : (scMouse.containsMouse ? Services.Theme.textPrimary : Services.Theme.textSecondary)
+                                                            Layout.alignment: Qt.AlignHCenter
+                                                            text: mBox.modelData.width + "×" + mBox.modelData.height
+                                                            font.family: Services.Theme.fontMono
+                                                            font.pixelSize: 9
+                                                            color: Services.Theme.textSecondary
                                                         }
-                                                        MouseArea {
-                                                            id: scMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
-                                                            onClicked: { if (Services.Compositor) Services.Compositor.setMonitorScale(monitorDelegate.modelData.name, modelData) }
+
+                                                        RowLayout {
+                                                            Layout.alignment: Qt.AlignHCenter
+                                                            spacing: 3
+                                                            Text {
+                                                                text: mBox.modelData.refreshRate + "Hz"
+                                                                font.pixelSize: 8
+                                                                color: Services.Theme.accent
+                                                            }
+                                                            Text { text: "·"; font.pixelSize: 8; color: Services.Theme.textDisabled }
+                                                            Text {
+                                                                text: (mBox.modelData.scale || 1.0) + "x"
+                                                                font.pixelSize: 8
+                                                                color: Services.Theme.textSecondary
+                                                            }
+                                                        }
+
+                                                        Text {
+                                                            Layout.alignment: Qt.AlignHCenter
+                                                            text: "(" + mBox.modelData.x + ", " + mBox.modelData.y + ")"
+                                                            font.family: Services.Theme.fontMono
+                                                            font.pixelSize: 7
+                                                            color: Services.Theme.textDisabled
                                                         }
                                                     }
                                                 }
 
-                                                Item { Layout.fillWidth: true }
+                                                // Floating Live Coordinate Tooltip while dragging
+                                                Rectangle {
+                                                    visible: mBox.isBeingDragged
+                                                    anchors.bottom: parent.top
+                                                    anchors.horizontalCenter: parent.horizontalCenter
+                                                    anchors.bottomMargin: 4
+                                                    height: 20
+                                                    implicitWidth: liveTipTxt.implicitWidth + 12
+                                                    radius: 4
+                                                    color: Services.Theme.bgElevated
+                                                    border.color: Services.Theme.accent
+                                                    border.width: 1
+                                                    z: 110
+
+                                                    Text {
+                                                        id: liveTipTxt
+                                                        anchors.centerIn: parent
+                                                        text: mBox.modelData.name + " · X: " + Math.max(0, Math.round((mBox.x - stageBox.originStageX) / stageBox.stageScale)) + "  Y: " + Math.max(0, Math.round((mBox.y - stageBox.originStageY) / stageBox.stageScale))
+                                                        font.family: Services.Theme.fontMono
+                                                        font.pixelSize: 9
+                                                        font.weight: Font.Bold
+                                                        color: Services.Theme.accent
+                                                    }
+                                                }
+
+                                                MouseArea {
+                                                    id: mDrag
+                                                    anchors.fill: parent
+                                                    hoverEnabled: true
+                                                    cursorShape: pressed ? Qt.ClosedHandCursor : Qt.OpenHandCursor
+
+                                                    property real startPressX: 0
+                                                    property real startPressY: 0
+                                                    property real startBoxX: 0
+                                                    property real startBoxY: 0
+
+                                                    onPressed: (mouse) => {
+                                                        rootWindow.dispSelectedMonitorName = mBox.modelData.name
+                                                        rootWindow.dispIsDragging = true
+                                                        mBox.isBeingDragged = true
+                                                        startPressX = mouse.x
+                                                        startPressY = mouse.y
+                                                        mBox.dragVisualX = mBox.x
+                                                        mBox.dragVisualY = mBox.y
+                                                    }
+
+                                                    onPositionChanged: (mouse) => {
+                                                        if (!pressed) return
+                                                        var nextX = mBox.dragVisualX + (mouse.x - startPressX)
+                                                        var nextY = mBox.dragVisualY + (mouse.y - startPressY)
+
+                                                        nextX = Math.max(2, Math.min(stageBox.width - mBox.width - 2, nextX))
+                                                        nextY = Math.max(2, Math.min(stageBox.height - mBox.height - 2, nextY))
+
+                                                        mBox.dragVisualX = nextX
+                                                        mBox.dragVisualY = nextY
+
+                                                        rootWindow.updateDisplaySnapGuides(mBox.index, nextX, nextY, mBox.width, mBox.height, stageBox.originStageX, stageBox.originStageY, stageBox.stageScale)
+                                                    }
+
+                                                    onReleased: (mouse) => {
+                                                        rootWindow.dispIsDragging = false
+                                                        rootWindow.dispShowSnapGuideX = false
+                                                        rootWindow.dispShowSnapGuideY = false
+
+                                                        rootWindow.commitDisplayDrop(mBox.index, mBox.dragVisualX, mBox.dragVisualY, stageBox.originStageX, stageBox.originStageY, stageBox.stageScale)
+                                                        mBox.isBeingDragged = false
+                                                    }
+
+                                                    onCanceled: {
+                                                        rootWindow.dispIsDragging = false
+                                                        rootWindow.dispShowSnapGuideX = false
+                                                        rootWindow.dispShowSnapGuideY = false
+                                                        mBox.isBeingDragged = false
+                                                    }
+                                                }
                                             }
+                                        }
 
-                                            SettingsDivider {}
+                                        // Empty state
+                                        ColumnLayout {
+                                            anchors.centerIn: parent
+                                            visible: !rootWindow.dispLocalLayout || rootWindow.dispLocalLayout.length === 0
+                                            spacing: 6
+                                            Text { Layout.alignment: Qt.AlignHCenter; text: Services.Icons.display; font.family: Services.Theme.fontSymbols; font.pixelSize: 24; color: Services.Theme.textDisabled }
+                                            Text { Layout.alignment: Qt.AlignHCenter; text: "Detecting connected displays..."; font.pixelSize: 11; color: Services.Theme.textSecondary }
+                                        }
+                                    }
+                                }
 
-                                            // 2. Variable Refresh Rate Toggle
-                                            SettingsSwitch {
-                                                title: "Variable Refresh Rate (VRR / FreeSync)"
-                                                subtitle: "Adaptive sync to eliminate screen tearing during gaming or high frame rates"
-                                                checked: Boolean(monitorDelegate.modelData.vrr)
-                                                onToggled: (st) => { if (Services.Compositor) Services.Compositor.setMonitorVRR(monitorDelegate.modelData.name, st) }
-                                            }
+                                // ── 2. STATUS TOAST BANNER ──────────────────────────
+                                Rectangle {
+                                    visible: rootWindow.dispStatusMessage.length > 0
+                                    Layout.fillWidth: true
+                                    height: 32
+                                    radius: Services.Theme.radiusSm || 4
+                                    color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.15)
+                                    border.color: Services.Theme.accent
+                                    border.width: 1
 
-                                            SettingsDivider {}
+                                    RowLayout {
+                                        anchors.fill: parent
+                                        anchors.margins: 8
+                                        spacing: 8
+                                        Text { text: "󰄬"; font.family: Services.Theme.fontSymbols; font.pixelSize: 11; color: Services.Theme.accent }
+                                        Text { text: rootWindow.dispStatusMessage; font.pixelSize: 11; font.weight: Font.Medium; color: Services.Theme.textPrimary; Layout.fillWidth: true }
+                                    }
+                                }
 
-                                            // 3. Monitor Specs
-                                            SettingsRow {
-                                                title: "Hardware Specifications"
-                                                subtitle: (monitorDelegate.modelData.description || "Internal Display")
+                                // ── 3. DISPLAY SELECTOR SEGMENT PILLS ───────────────
+                                Rectangle {
+                                    visible: rootWindow.dispLocalLayout.length > 1
+                                    Layout.fillWidth: true
+                                    height: 36
+                                    radius: Services.Theme.radiusSm || 6
+                                    color: Services.Theme.surfaceVariant
+                                    border.color: Services.Theme.border
+                                    border.width: 1
+
+                                    RowLayout {
+                                        anchors.fill: parent
+                                        anchors.margins: 3
+                                        spacing: 3
+
+                                        Repeater {
+                                            model: rootWindow.dispLocalLayout
+
+                                            delegate: Rectangle {
+                                                required property var modelData
+                                                required property int index
+                                                Layout.fillWidth: true
+                                                Layout.fillHeight: true
+                                                radius: 4
+
+                                                readonly property bool isCur: rootWindow.dispSelectedMonitorName === modelData.name
+
+                                                color: isCur ? Services.Theme.bgElevated : (pMouse.containsMouse ? Qt.rgba(1, 1, 1, 0.05) : "transparent")
+                                                border.color: isCur ? Services.Theme.border : "transparent"
+                                                border.width: 1
 
                                                 RowLayout {
+                                                    anchors.centerIn: parent
                                                     spacing: 6
-
-                                                    Rectangle {
-                                                        height: 22; implicitWidth: resTxt.implicitWidth + 10; radius: 4
-                                                        color: Services.Theme.bgElevated; border.color: Services.Theme.border; border.width: 1
-                                                        Text { id: resTxt; anchors.centerIn: parent; font.family: Services.Theme.fontMono; font.pixelSize: Services.Theme.fontSizeXs; color: Services.Theme.textPrimary
-                                                            text: monitorDelegate.modelData.width + "×" + monitorDelegate.modelData.height }
+                                                    Text {
+                                                        text: modelData.name.toLowerCase().includes("edp") ? "󰌢" : "󰍹"
+                                                        font.family: Services.Theme.fontSymbols
+                                                        font.pixelSize: 11
+                                                        color: parent.parent.isCur ? Services.Theme.accent : Services.Theme.textSecondary
                                                     }
-
-                                                    Rectangle {
-                                                        height: 22; implicitWidth: hzTxt.implicitWidth + 10; radius: 4
-                                                        color: Services.Theme.bgElevated; border.color: Services.Theme.border; border.width: 1
-                                                        Text { id: hzTxt; anchors.centerIn: parent; font.family: Services.Theme.fontMono; font.pixelSize: Services.Theme.fontSizeXs; color: Services.Theme.accent; font.weight: Font.DemiBold
-                                                            text: monitorDelegate.modelData.refreshRate + "Hz" }
+                                                    Text {
+                                                        text: (modelData.name || "Display") + (modelData.focused ? " ★" : "")
+                                                        font.pixelSize: 11
+                                                        font.weight: parent.parent.isCur ? Font.DemiBold : Font.Normal
+                                                        color: parent.parent.isCur ? Services.Theme.textPrimary : Services.Theme.textSecondary
                                                     }
+                                                    Text {
+                                                        text: modelData.width + "×" + modelData.height
+                                                        font.family: Services.Theme.fontMono
+                                                        font.pixelSize: 9
+                                                        color: Services.Theme.textDisabled
+                                                    }
+                                                }
+
+                                                MouseArea {
+                                                    id: pMouse
+                                                    anchors.fill: parent
+                                                    hoverEnabled: true
+                                                    cursorShape: Qt.PointingHandCursor
+                                                    onClicked: rootWindow.dispSelectedMonitorName = modelData.name
                                                 }
                                             }
                                         }
                                     }
                                 }
+
+                                // ── 4. DISPLAY CONFIGURATION (100% Native Settings Components) ──
+                                SettingsSection {
+                                    title: "Display Output & Scaling · " + (rootWindow.currentDisplayMon ? rootWindow.currentDisplayMon.name : "Active Output")
+                                    icon: Services.Icons.sliders
+
+                                    SettingsRow {
+                                        title: "Resolution & Refresh Rate"
+                                        subtitle: "Active display resolution and refresh rate mode"
+
+                                        SettingsDropdown {
+                                            currentValue: (rootWindow.currentDisplayMon && rootWindow.currentDisplayMon.mode) ? rootWindow.currentDisplayMon.mode : "preferred"
+                                            minButtonWidth: 200
+                                            model: {
+                                                var list = [
+                                                    { id: "preferred", label: "Auto (Preferred)" },
+                                                    { id: "highrr",     label: "Max Refresh Rate" },
+                                                    { id: "highres",   label: "Max Resolution" }
+                                                ]
+                                                if (rootWindow.currentDisplayMon && rootWindow.currentDisplayMon.availableModes) {
+                                                    var modes = rootWindow.currentDisplayMon.availableModes
+                                                    for (var i = 0; i < modes.length; i++) {
+                                                        var mStr = String(modes[i])
+                                                        list.push({ id: mStr, label: mStr.replace("@", " @ ").replace("Hz", " Hz") })
+                                                    }
+                                                }
+                                                return list
+                                            }
+                                            onSelected: (val) => rootWindow.updateDisplayProp("mode", val, true)
+                                        }
+                                    }
+
+                                    SettingsDivider {}
+
+                                    SettingsSlider {
+                                        title: "Display Scale Factor"
+                                        subtitle: "Scale UI elements for high-density monitors or low-resolution screens"
+                                        from: 0.50
+                                        to: 2.50
+                                        stepSize: 0.05
+                                        decimals: 2
+                                        valueSuffix: "x"
+                                        value: rootWindow.currentDisplayMon ? (rootWindow.currentDisplayMon.scale || 1.0) : 1.0
+                                        onMoved: (v) => rootWindow.updateDisplayProp("scale", Number(Number(v).toFixed(2)), true)
+                                    }
+
+                                    SettingsDivider {}
+
+                                    SettingsRow {
+                                        title: "Display Orientation"
+                                        subtitle: "Rotate screen layout for vertical monitors or flipped setups"
+
+                                        SettingsDropdown {
+                                            currentValue: rootWindow.currentDisplayMon ? String(rootWindow.currentDisplayMon.transform || 0) : "0"
+                                            minButtonWidth: 160
+                                            model: [
+                                                { id: "0", label: "0° (Standard Landscape)" },
+                                                { id: "1", label: "90° (Portrait Left)" },
+                                                { id: "2", label: "180° (Inverted Landscape)" },
+                                                { id: "3", label: "270° (Portrait Right)" }
+                                            ]
+                                            onSelected: (val) => rootWindow.updateDisplayProp("transform", parseInt(val), true)
+                                        }
+                                    }
+
+                                    SettingsDivider {}
+
+                                    SettingsSwitch {
+                                        title: "Variable Refresh Rate (VRR / FreeSync)"
+                                        subtitle: "Eliminate tearing and stuttering during gaming and high frame rates"
+                                        checked: rootWindow.currentDisplayMon ? Boolean(rootWindow.currentDisplayMon.vrr) : false
+                                        onToggled: (st) => rootWindow.updateDisplayProp("vrr", st, true)
+                                    }
+
+                                    SettingsDivider {}
+
+                                    SettingsSwitch {
+                                        title: "Display Power Output"
+                                        subtitle: "Turn monitor output on or off via DPMS"
+                                        checked: rootWindow.currentDisplayMon ? !Boolean(rootWindow.currentDisplayMon.disabled) : true
+                                        onToggled: (st) => rootWindow.updateDisplayProp("disabled", !st, true)
+                                    }
+
+                                    SettingsDivider {}
+
+                                    SettingsSwitch {
+                                        title: "Show Status Bar on this Monitor"
+                                        subtitle: "Display QuickShell top bar on this screen"
+                                        checked: (rootWindow.currentDisplayMon && Services.Config) ? Services.Config.isBarMonitorEnabled(rootWindow.currentDisplayMon.name) : true
+                                        onToggled: (st) => {
+                                            if (!rootWindow.currentDisplayMon || !Services.Config) return
+                                            if (Services.Config.barMonitorMode !== "custom") Services.Config.setBarMonitorMode("custom")
+                                            Services.Config.setBarMonitor(rootWindow.currentDisplayMon.name, st)
+                                        }
+                                    }
+
+                                    SettingsDivider {}
+
+                                    SettingsRow {
+                                        title: "Manual Spatial Offsets"
+                                        subtitle: "Fine-tune precise X and Y pixel positions"
+
+                                        RowLayout {
+                                            spacing: 10
+
+                                            // X Stepper
+                                            RowLayout {
+                                                spacing: 4
+                                                Text { text: "X:"; font.family: Services.Theme.fontMono; font.pixelSize: 11; font.weight: Font.Bold; color: Services.Theme.textSecondary }
+                                                Rectangle {
+                                                    height: 26; implicitWidth: 84; radius: 4
+                                                    color: Services.Theme.bgElevated; border.color: Services.Theme.border; border.width: 1
+                                                    RowLayout {
+                                                        anchors.fill: parent; anchors.margins: 2; spacing: 2
+                                                        Rectangle {
+                                                            width: 20; height: 20; radius: 3
+                                                            color: xMinMouse.containsMouse ? Qt.rgba(1,1,1,0.1) : "transparent"
+                                                            Text { anchors.centerIn: parent; text: "−"; font.pixelSize: 12; color: Services.Theme.textPrimary }
+                                                            MouseArea { id: xMinMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: rootWindow.updateDisplayProp("x", Math.max(0, (rootWindow.currentDisplayMon ? rootWindow.currentDisplayMon.x : 0) - 50), true) }
+                                                        }
+                                                        Text { Layout.fillWidth: true; horizontalAlignment: Text.AlignHCenter; text: (rootWindow.currentDisplayMon ? rootWindow.currentDisplayMon.x : 0) + "px"; font.family: Services.Theme.fontMono; font.pixelSize: 10; color: Services.Theme.textPrimary }
+                                                        Rectangle {
+                                                            width: 20; height: 20; radius: 3
+                                                            color: xPlusMouse.containsMouse ? Qt.rgba(1,1,1,0.1) : "transparent"
+                                                            Text { anchors.centerIn: parent; text: "+"; font.pixelSize: 12; color: Services.Theme.textPrimary }
+                                                            MouseArea { id: xPlusMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: rootWindow.updateDisplayProp("x", (rootWindow.currentDisplayMon ? rootWindow.currentDisplayMon.x : 0) + 50, true) }
+                                                        }
+                                                    }
+                                                }
+                                            }
+
+                                            // Y Stepper
+                                            RowLayout {
+                                                spacing: 4
+                                                Text { text: "Y:"; font.family: Services.Theme.fontMono; font.pixelSize: 11; font.weight: Font.Bold; color: Services.Theme.textSecondary }
+                                                Rectangle {
+                                                    height: 26; implicitWidth: 84; radius: 4
+                                                    color: Services.Theme.bgElevated; border.color: Services.Theme.border; border.width: 1
+                                                    RowLayout {
+                                                        anchors.fill: parent; anchors.margins: 2; spacing: 2
+                                                        Rectangle {
+                                                            width: 20; height: 20; radius: 3
+                                                            color: yMinMouse.containsMouse ? Qt.rgba(1,1,1,0.1) : "transparent"
+                                                            Text { anchors.centerIn: parent; text: "−"; font.pixelSize: 12; color: Services.Theme.textPrimary }
+                                                            MouseArea { id: yMinMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: rootWindow.updateDisplayProp("y", Math.max(0, (rootWindow.currentDisplayMon ? rootWindow.currentDisplayMon.y : 0) - 50), true) }
+                                                        }
+                                                        Text { Layout.fillWidth: true; horizontalAlignment: Text.AlignHCenter; text: (rootWindow.currentDisplayMon ? rootWindow.currentDisplayMon.y : 0) + "px"; font.family: Services.Theme.fontMono; font.pixelSize: 10; color: Services.Theme.textPrimary }
+                                                        Rectangle {
+                                                            width: 20; height: 20; radius: 3
+                                                            color: yPlusMouse.containsMouse ? Qt.rgba(1,1,1,0.1) : "transparent"
+                                                            Text { anchors.centerIn: parent; text: "+"; font.pixelSize: 12; color: Services.Theme.textPrimary }
+                                                            MouseArea { id: yPlusMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: rootWindow.updateDisplayProp("y", (rootWindow.currentDisplayMon ? rootWindow.currentDisplayMon.y : 0) + 50, true) }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    SettingsDivider {}
+
+                                    SettingsRow {
+                                        title: "Mirror Display"
+                                        subtitle: "Clone another connected monitor's screen output"
+
+                                        SettingsDropdown {
+                                            currentValue: (rootWindow.currentDisplayMon && rootWindow.currentDisplayMon.mirrorOf) ? rootWindow.currentDisplayMon.mirrorOf : "none"
+                                            minButtonWidth: 160
+                                            model: {
+                                                var list = [{ id: "none", label: "None (Extend Display)" }]
+                                                for (var i = 0; i < rootWindow.dispLocalLayout.length; i++) {
+                                                    var m = rootWindow.dispLocalLayout[i]
+                                                    if (rootWindow.currentDisplayMon && m.name !== rootWindow.currentDisplayMon.name) {
+                                                        list.push({ id: m.name, label: "Mirror " + m.name })
+                                                    }
+                                                }
+                                                return list
+                                            }
+                                            onSelected: (val) => rootWindow.updateDisplayProp("mirrorOf", val, true)
+                                        }
+                                    }
+
+                                    SettingsDivider {}
+
+                                    SettingsRow {
+                                        title: "Primary Display Target"
+                                        subtitle: "Designate as active target for new windows and primary bar"
+
+                                        Rectangle {
+                                            height: 26
+                                            implicitWidth: primTxt.implicitWidth + 14
+                                            radius: 4
+                                            readonly property bool isPrim: rootWindow.currentDisplayMon && rootWindow.currentDisplayMon.focused
+                                            color: isPrim ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.18) : (primMouse.containsMouse ? Qt.rgba(1, 1, 1, 0.08) : Services.Theme.bgElevated)
+                                            border.color: isPrim ? Services.Theme.accent : Services.Theme.border
+                                            border.width: 1
+
+                                            RowLayout {
+                                                anchors.centerIn: parent
+                                                spacing: 4
+                                                Text { text: parent.parent.isPrim ? "★" : "☆"; font.pixelSize: 10; color: Services.Theme.accent }
+                                                Text { id: primTxt; text: parent.parent.isPrim ? "Primary Display" : "Set as Primary"; font.pixelSize: 11; font.weight: parent.parent.isPrim ? Font.Bold : Font.Normal; color: parent.parent.isPrim ? Services.Theme.accent : Services.Theme.textPrimary }
+                                            }
+                                            MouseArea {
+                                                id: primMouse
+                                                anchors.fill: parent
+                                                hoverEnabled: true
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: {
+                                                    if (rootWindow.currentDisplayMon) rootWindow.setDisplayAsPrimary(rootWindow.currentDisplayMon.name)
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // ── 5. HARDWARE DIAGNOSTICS SECTION ─────────────────
+                                SettingsSection {
+                                    title: "Hardware Specifications & Diagnostics"
+                                    icon: Services.Icons.info
+
+                                    SettingsRow {
+                                        title: "Panel Model & Description"
+                                        subtitle: (rootWindow.currentDisplayMon ? (rootWindow.currentDisplayMon.description || (rootWindow.currentDisplayMon.make + " " + rootWindow.currentDisplayMon.model) || rootWindow.currentDisplayMon.name) : "No Display Detected")
+
+                                        Text {
+                                            text: "Port: " + (rootWindow.currentDisplayMon ? rootWindow.currentDisplayMon.name : "-")
+                                            font.family: Services.Theme.fontMono
+                                            font.pixelSize: 11
+                                            color: Services.Theme.textSecondary
+                                        }
+                                    }
+
+                                    SettingsDivider {}
+
+                                    SettingsRow {
+                                        title: "Physical Dimensions & Workspace"
+                                        subtitle: {
+                                            if (!rootWindow.currentDisplayMon) return "-"
+                                            var pw = rootWindow.currentDisplayMon.physicalWidth || 0
+                                            var ph = rootWindow.currentDisplayMon.physicalHeight || 0
+                                            var diag = Math.sqrt(pw * pw + ph * ph) / 25.4
+                                            return pw + " mm × " + ph + " mm" + (diag > 0 ? (" (~" + diag.toFixed(1) + "″ diagonal)") : "")
+                                        }
+
+                                        Rectangle {
+                                            height: 22
+                                            implicitWidth: wsTxt.implicitWidth + 10
+                                            radius: 4
+                                            color: Services.Theme.bgElevated
+                                            border.color: Services.Theme.border; border.width: 1
+                                            Text {
+                                                id: wsTxt; anchors.centerIn: parent
+                                                text: "Workspace " + (rootWindow.currentDisplayMon ? rootWindow.currentDisplayMon.activeWorkspace : "1")
+                                                font.pixelSize: 10; color: Services.Theme.accent
+                                            }
+                                        }
+                                    }
+                                }
                             }
+
 
                             // ── SUB-TAB 2: INPUT & TOUCHPAD GESTURES ───────────────
                             ColumnLayout {

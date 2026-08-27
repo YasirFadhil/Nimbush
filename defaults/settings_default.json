@@ -26,6 +26,8 @@
   "islandStyle": "expanded",
   "workspaceStyle": "pills",
   "workspaceShowAll": true,
+  "barMonitorMode": "all",
+  "barMonitorsList": [],
   "soundFeedback": true,
   "soundVolumeFeedback": true,
   "soundWorkspaceFeedback": true,

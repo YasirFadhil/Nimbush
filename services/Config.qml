@@ -48,6 +48,44 @@ Singleton {
     property string islandStyle: "expanded"       // "expanded" | "compact" | "minimal" | "hidden"
     property string workspaceStyle: "pills"       // "pills" | "numbers" | "dots" | "icons"
     property bool workspaceShowAll: true
+    property string barMonitorMode: "all"         // "all" | "primary" | "custom"
+    property var barMonitorsList: []              // string[] of monitor names e.g. ["eDP-1", "DP-1"]
+
+    readonly property var barScreens: {
+        if (!Quickshell.screens || Quickshell.screens.length === 0) return []
+        const count = Quickshell.screens.length
+        if (barMonitorMode === "all") {
+            var all = []
+            for (var i = 0; i < count; i++) {
+                if (Quickshell.screens[i]) all.push(Quickshell.screens[i])
+            }
+            return all
+        } else if (barMonitorMode === "primary") {
+            var prim = ""
+            if (Services.Compositor && Services.Compositor.monitorsList && Services.Compositor.monitorsList.length > 0) {
+                var f = Services.Compositor.monitorsList.find(m => m.focused)
+                prim = f ? f.name : Services.Compositor.monitorsList[0].name
+            }
+            for (var j = 0; j < count; j++) {
+                if (Quickshell.screens[j] && Quickshell.screens[j].name === prim) {
+                    return [Quickshell.screens[j]]
+                }
+            }
+            return Quickshell.screens[0] ? [Quickshell.screens[0]] : []
+        } else if (barMonitorMode === "custom") {
+            var list = barMonitorsList || []
+            var res = []
+            for (var k = 0; k < count; k++) {
+                var sc = Quickshell.screens[k]
+                if (sc && list.indexOf(sc.name) !== -1) {
+                    res.push(sc)
+                }
+            }
+            if (res.length > 0) return res
+            return Quickshell.screens[0] ? [Quickshell.screens[0]] : []
+        }
+        return Quickshell.screens
+    }
 
     // ── Dashboard & Weather ──────────────────────────────────────────────────
     property string dashboardWidget: "weather"    // "weather" | "wallpaper" | "both"
@@ -220,6 +258,8 @@ Singleton {
         if (data.islandStyle !== undefined) islandStyle = data.islandStyle
         if (data.workspaceStyle !== undefined) workspaceStyle = data.workspaceStyle
         if (data.workspaceShowAll !== undefined) workspaceShowAll = Boolean(data.workspaceShowAll)
+        if (data.barMonitorMode !== undefined) barMonitorMode = data.barMonitorMode
+        if (data.barMonitorsList !== undefined && Array.isArray(data.barMonitorsList)) barMonitorsList = data.barMonitorsList
 
         if (data.soundFeedback !== undefined) soundFeedback = Boolean(data.soundFeedback)
         if (data.soundVolumeFeedback !== undefined) soundVolumeFeedback = Boolean(data.soundVolumeFeedback)
@@ -326,6 +366,8 @@ Singleton {
             islandStyle: islandStyle,
             workspaceStyle: workspaceStyle,
             workspaceShowAll: workspaceShowAll,
+            barMonitorMode: barMonitorMode,
+            barMonitorsList: barMonitorsList,
 
             soundFeedback: soundFeedback,
             soundVolumeFeedback: soundVolumeFeedback,
@@ -382,6 +424,15 @@ Singleton {
 
     function saveConfig() {
         saveDebounceTimer.restart()
+        root.configChanged()
+    }
+
+    function saveConfigImmediately() {
+        saveDebounceTimer.stop()
+        var data = root.serializeData()
+        var jsonStr = JSON.stringify(data, null, 2)
+        saveConfigProc.payload = jsonStr
+        saveConfigProc.running = true
         root.configChanged()
     }
 
@@ -578,6 +629,42 @@ Singleton {
     function setIslandStyle(style) { islandStyle = style; saveConfig() }
     function setWorkspaceStyle(style) { workspaceStyle = style; saveConfig() }
     function setWorkspaceShowAll(val) { workspaceShowAll = val; saveConfig() }
+    function setBarMonitorMode(mode) { barMonitorMode = mode; saveConfig() }
+    function toggleBarMonitor(monName) {
+        if (!monName) return
+        var list = barMonitorsList ? barMonitorsList.slice() : []
+        var idx = list.indexOf(monName)
+        if (idx !== -1) {
+            list.splice(idx, 1)
+        } else {
+            list.push(monName)
+        }
+        barMonitorsList = list
+        saveConfig()
+    }
+    function setBarMonitor(monName, enabled) {
+        if (!monName) return
+        var list = barMonitorsList ? barMonitorsList.slice() : []
+        var idx = list.indexOf(monName)
+        if (enabled && idx === -1) {
+            list.push(monName)
+        } else if (!enabled && idx !== -1) {
+            list.splice(idx, 1)
+        }
+        barMonitorsList = list
+        saveConfig()
+    }
+    function isBarMonitorEnabled(monName) {
+        if (!monName) return true
+        if (barMonitorMode === "all") return true
+        if (barMonitorMode === "primary") {
+            var prim = (Services.Compositor && Services.Compositor.monitorsList && Services.Compositor.monitorsList.length > 0)
+                ? (Services.Compositor.monitorsList.find(m => m.focused)?.name || Services.Compositor.monitorsList[0].name)
+                : ""
+            return monName === prim
+        }
+        return (barMonitorsList || []).indexOf(monName) !== -1
+    }
 
     function setSoundFeedback(val) { soundFeedback = val; saveConfig() }
     function setSoundVolumeFeedback(val) { soundVolumeFeedback = val; saveConfig() }
