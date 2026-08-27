@@ -49,6 +49,7 @@ FloatingWindow {
     property real dispSnapGuideY: -1
     property bool dispShowSnapGuideX: false
     property bool dispShowSnapGuideY: false
+    property string dispDockMessage: ""
 
     onDispMonitorsChanged: syncDisplaysLocal(false)
 
@@ -299,47 +300,169 @@ FloatingWindow {
         dispClearTimer.restart()
     }
 
+    function calcDisplaySnap(draggedIdx, rawStageX, rawStageY, boxW, boxH, originX, originY, scale) {
+        if (!dispLocalLayout || draggedIdx < 0 || draggedIdx >= dispLocalLayout.length) {
+            return {
+                snappedStageX: rawStageX,
+                snappedStageY: rawStageY,
+                snappedVirtX: 0,
+                snappedVirtY: 0,
+                guideX: -1,
+                hasGuideX: false,
+                guideY: -1,
+                hasGuideY: false,
+                dockMessage: ""
+            }
+        }
+
+        var target = dispLocalLayout[draggedIdx]
+        var targetW = getDisplayLogWidth(target)
+        var targetH = getDisplayLogHeight(target)
+
+        var rawVirtX = (rawStageX - originX) / scale
+        var rawVirtY = (rawStageY - originY) / scale
+
+        // Snap threshold: 24 canvas screen pixels
+        var snapPx = 24
+        var snapVirt = snapPx / Math.max(0.01, scale)
+
+        var snappedVirtX = rawVirtX
+        var snappedVirtY = rawVirtY
+        var gx = -1, gy = -1
+        var dockMsg = ""
+
+        for (var j = 0; j < dispLocalLayout.length; j++) {
+            if (j === draggedIdx || dispLocalLayout[j].disabled) continue
+            var other = dispLocalLayout[j]
+            var otherW = getDisplayLogWidth(other)
+            var otherH = getDisplayLogHeight(other)
+
+            // Horizontal Magnetic Edge Snapping
+            // 1. Flush Right of other
+            if (Math.abs(rawVirtX - (other.x + otherW)) < snapVirt) {
+                snappedVirtX = other.x + otherW
+                gx = originX + (other.x + otherW) * scale
+                dockMsg = "Right of " + other.name
+            }
+            // 2. Flush Left of other
+            else if (Math.abs((rawVirtX + targetW) - other.x) < snapVirt) {
+                snappedVirtX = other.x - targetW
+                gx = originX + other.x * scale
+                dockMsg = "Left of " + other.name
+            }
+            // 3. Align Left with other
+            else if (Math.abs(rawVirtX - other.x) < snapVirt) {
+                snappedVirtX = other.x
+                gx = originX + other.x * scale
+            }
+            // 4. Align Right with other
+            else if (Math.abs((rawVirtX + targetW) - (other.x + otherW)) < snapVirt) {
+                snappedVirtX = other.x + otherW - targetW
+                gx = originX + (other.x + otherW) * scale
+            }
+
+            // Vertical Magnetic Edge Snapping
+            // 1. Align Top with other
+            if (Math.abs(rawVirtY - other.y) < snapVirt) {
+                snappedVirtY = other.y
+                gy = originY + other.y * scale
+            }
+            // 2. Align Bottom with other
+            else if (Math.abs((rawVirtY + targetH) - (other.y + otherH)) < snapVirt) {
+                snappedVirtY = other.y + otherH - targetH
+                gy = originY + (other.y + otherH) * scale
+            }
+            // 3. Flush Below other
+            else if (Math.abs(rawVirtY - (other.y + otherH)) < snapVirt) {
+                snappedVirtY = other.y + otherH
+                gy = originY + (other.y + otherH) * scale
+                dockMsg = "Below " + other.name
+            }
+            // 4. Flush Above other
+            else if (Math.abs((rawVirtY + targetH) - other.y) < snapVirt) {
+                snappedVirtY = other.y - targetH
+                gy = originY + other.y * scale
+                dockMsg = "Above " + other.name
+            }
+        }
+
+        var snappedStageX = originX + snappedVirtX * scale
+        var snappedStageY = originY + snappedVirtY * scale
+
+        return {
+            snappedStageX: snappedStageX,
+            snappedStageY: snappedStageY,
+            snappedVirtX: snappedVirtX,
+            snappedVirtY: snappedVirtY,
+            guideX: gx,
+            hasGuideX: gx >= 0,
+            guideY: gy,
+            hasGuideY: gy >= 0,
+            dockMessage: dockMsg
+        }
+    }
+
+    function dockSelectedDisplay(direction) {
+        if (!currentDisplayMon || !dispLocalLayout || dispLocalLayout.length < 2) return
+        var selIdx = -1
+        var otherIdx = -1
+        for (var i = 0; i < dispLocalLayout.length; i++) {
+            if (dispLocalLayout[i].name === currentDisplayMon.name) selIdx = i
+            else if (!dispLocalLayout[i].disabled && otherIdx === -1) otherIdx = i
+        }
+        if (selIdx === -1 || otherIdx === -1) return
+
+        var copy = JSON.parse(JSON.stringify(dispLocalLayout))
+        var target = copy[selIdx]
+        var other = copy[otherIdx]
+        var targetW = getDisplayLogWidth(target)
+        var targetH = getDisplayLogHeight(target)
+        var otherW = getDisplayLogWidth(other)
+        var otherH = getDisplayLogHeight(other)
+
+        if (direction === "left") {
+            target.x = 0
+            target.y = 0
+            other.x = targetW
+            other.y = 0
+        } else if (direction === "right") {
+            other.x = 0
+            other.y = 0
+            target.x = otherW
+            target.y = 0
+        } else if (direction === "top") {
+            target.x = 0
+            target.y = 0
+            other.x = 0
+            other.y = targetH
+        } else if (direction === "bottom") {
+            other.x = 0
+            other.y = 0
+            target.x = 0
+            target.y = otherH
+        }
+
+        dispLocalLayout = copy
+        normalizeDisplayPositions()
+        enforceDisplayNoOverlaps()
+        dispHasPendingChanges = true
+        dispAutoSaveTimer.restart()
+        if (Services.Compositor) Services.Compositor.applyMonitorLayout(dispLocalLayout, false)
+        dispStatusMessage = target.name + " attached to " + direction + " of " + other.name
+        dispClearTimer.restart()
+    }
+
     function commitDisplayDrop(draggedIndex, canvasX, canvasY, originX, originY, scale) {
         if (!dispLocalLayout || draggedIndex < 0 || draggedIndex >= dispLocalLayout.length) return
         var target = dispLocalLayout[draggedIndex]
         var targetW = getDisplayLogWidth(target)
         var targetH = getDisplayLogHeight(target)
 
-        var relX = canvasX - originX
-        var relY = canvasY - originY
-        var rawX = Math.round(relX / scale)
-        var rawY = Math.round(relY / scale)
+        var snap = calcDisplaySnap(draggedIndex, canvasX, canvasY, 0, 0, originX, originY, scale)
+        var snappedX = Math.round(snap.snappedVirtX)
+        var snappedY = Math.round(snap.snappedVirtY)
 
-        var snappedX = rawX
-        var snappedY = rawY
-        var snapDist = 45
-
-        for (var j = 0; j < dispLocalLayout.length; j++) {
-            if (j === draggedIndex || dispLocalLayout[j].disabled) continue
-            var other = dispLocalLayout[j]
-            var otherW = getDisplayLogWidth(other)
-            var otherH = getDisplayLogHeight(other)
-
-            if (Math.abs(snappedX - (other.x + otherW)) < snapDist) {
-                snappedX = other.x + otherW
-            } else if (Math.abs((snappedX + targetW) - other.x) < snapDist) {
-                snappedX = other.x - targetW
-            } else if (Math.abs(snappedX - other.x) < snapDist) {
-                snappedX = other.x
-            }
-
-            if (Math.abs(snappedY - other.y) < snapDist) {
-                snappedY = other.y
-            } else if (Math.abs((snappedY + targetH) - (other.y + otherH)) < snapDist) {
-                snappedY = other.y + otherH - targetH
-            } else if (Math.abs(snappedY - (other.y + otherH)) < snapDist) {
-                snappedY = other.y + otherH
-            } else if (Math.abs((snappedY + targetH) - other.y) < snapDist) {
-                snappedY = other.y - targetH
-            }
-        }
-
-        // Overlap Prevention
+        // Strict Overlap Prevention: if bounding boxes overlap with any monitor, resolve to nearest edge
         for (var k = 0; k < dispLocalLayout.length; k++) {
             if (k === draggedIndex || dispLocalLayout[k].disabled) continue
             var o = dispLocalLayout[k]
@@ -369,45 +492,10 @@ FloatingWindow {
         dispLocalLayout = copy
 
         normalizeDisplayPositions()
+        enforceDisplayNoOverlaps()
         dispHasPendingChanges = true
         dispAutoSaveTimer.restart()
         if (Services.Compositor) Services.Compositor.applyMonitorLayout(dispLocalLayout, false)
-    }
-
-    function updateDisplaySnapGuides(draggedIdx, curCanvasX, curCanvasY, boxW, boxH, originX, originY, scale) {
-        var relX = curCanvasX - originX
-        var relY = curCanvasY - originY
-        var virtX = Math.round(relX / scale)
-        var virtY = Math.round(relY / scale)
-        var targetW = getDisplayLogWidth(dispLocalLayout[draggedIdx])
-        var targetH = getDisplayLogHeight(dispLocalLayout[draggedIdx])
-
-        var snapDist = 45
-        var gx = -1, gy = -1
-
-        for (var j = 0; j < dispLocalLayout.length; j++) {
-            if (j === draggedIdx || dispLocalLayout[j].disabled) continue
-            var other = dispLocalLayout[j]
-            var otherW = getDisplayLogWidth(other)
-            var otherH = getDisplayLogHeight(other)
-
-            if (Math.abs(virtX - (other.x + otherW)) < snapDist) {
-                gx = originX + (other.x + otherW) * scale
-            } else if (Math.abs((virtX + targetW) - other.x) < snapDist) {
-                gx = originX + other.x * scale
-            }
-
-            if (Math.abs(virtY - other.y) < snapDist) {
-                gy = originY + other.y * scale
-            } else if (Math.abs(virtY - (other.y + otherH)) < snapDist) {
-                gy = originY + (other.y + otherH) * scale
-            }
-        }
-
-        dispSnapGuideX = gx
-        dispShowSnapGuideX = gx >= 0
-        dispSnapGuideY = gy
-        dispShowSnapGuideY = gy >= 0
     }
 
     Timer {
@@ -4727,17 +4815,36 @@ FloatingWindow {
 
                                     SettingsDivider {}
 
-                                    // Canvas Stage Box (Clean and perfectly inlaid)
+                                    // Canvas Stage Box (Refined High-Precision Spatial Canvas)
                                     Rectangle {
                                         id: stageBox
                                         Layout.fillWidth: true
                                         Layout.margins: 8
-                                        height: 240
-                                        radius: Services.Theme.radiusSm || 6
-                                        color: Services.Theme.bgDeep
+                                        height: 285
+                                        radius: Services.Theme.radiusSm || 8
+                                        color: Services.Theme.isDark ? "#101014" : "#e8ebf0"
                                         border.color: Services.Theme.border
                                         border.width: 1
                                         clip: true
+
+                                        // Subtle Luxury Coordinate Blueprint Grid
+                                        Canvas {
+                                            anchors.fill: parent
+                                            opacity: Services.Theme.isDark ? 0.35 : 0.45
+                                            onPaint: {
+                                                var ctx = getContext("2d")
+                                                ctx.clearRect(0, 0, width, height)
+                                                ctx.strokeStyle = Services.Theme.isDark ? "#282834" : "#d1d5db"
+                                                ctx.lineWidth = 0.75
+                                                var step = 24
+                                                for (var x = 0; x < width; x += step) {
+                                                    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, height); ctx.stroke()
+                                                }
+                                                for (var y = 0; y < height; y += step) {
+                                                    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(width, y); ctx.stroke()
+                                                }
+                                            }
+                                        }
 
                                         readonly property real totalVirtWidth: {
                                             if (!rootWindow.dispLocalLayout || rootWindow.dispLocalLayout.length === 0) return 3840
@@ -4766,20 +4873,20 @@ FloatingWindow {
                                         }
 
                                         readonly property real stageScale: {
-                                            var availW = stageBox.width - 50
-                                            var availH = stageBox.height - 50
+                                            var availW = stageBox.width - 60
+                                            var availH = stageBox.height - 60
                                             if (availW <= 0 || availH <= 0) return 0.08
                                             return Math.min(availW / Math.max(1000, totalVirtWidth), availH / Math.max(600, totalVirtHeight))
                                         }
 
                                         readonly property real originStageX: {
                                             var contentW = totalVirtWidth * stageScale
-                                            return Math.max(20, (stageBox.width - contentW) / 2)
+                                            return Math.max(25, (stageBox.width - contentW) / 2)
                                         }
 
                                         readonly property real originStageY: {
                                             var contentH = totalVirtHeight * stageScale
-                                            return Math.max(18, (stageBox.height - contentH) / 2)
+                                            return Math.max(25, (stageBox.height - contentH) / 2)
                                         }
 
                                         // Snap laser guidelines
@@ -4796,7 +4903,26 @@ FloatingWindow {
                                             height: 1.5; color: Services.Theme.accent; z: 90
                                         }
 
-                                        // Monitor items
+                                        // Floating Magnetic Snap Badge Hint
+                                        Rectangle {
+                                            visible: rootWindow.dispIsDragging && rootWindow.dispDockMessage.length > 0
+                                            anchors.top: parent.top
+                                            anchors.horizontalCenter: parent.horizontalCenter
+                                            anchors.topMargin: 8
+                                            height: 24
+                                            implicitWidth: snapMsgTxt.implicitWidth + 24
+                                            radius: 12
+                                            color: Services.Theme.accent
+                                            z: 200
+                                            RowLayout {
+                                                anchors.centerIn: parent
+                                                spacing: 6
+                                                Text { text: "󰄬"; font.family: Services.Theme.fontSymbols; font.pixelSize: 11; color: Services.Theme.bgOnAccent || "#ffffff" }
+                                                Text { id: snapMsgTxt; text: "Magnetic Snap: " + rootWindow.dispDockMessage; font.pixelSize: 11; font.weight: Font.Bold; color: Services.Theme.bgOnAccent || "#ffffff" }
+                                            }
+                                        }
+
+                                        // Monitor screen cards
                                         Repeater {
                                             model: rootWindow.dispLocalLayout
 
@@ -4812,8 +4938,8 @@ FloatingWindow {
                                                 readonly property bool isSelected: rootWindow.dispSelectedMonitorName === modelData.name
                                                 readonly property real effLogW: rootWindow.getDisplayLogWidth(modelData)
                                                 readonly property real effLogH: rootWindow.getDisplayLogHeight(modelData)
-                                                readonly property real cardW: Math.max(110, effLogW * stageBox.stageScale)
-                                                readonly property real cardH: Math.max(70, effLogH * stageBox.stageScale)
+                                                readonly property real cardW: Math.max(120, effLogW * stageBox.stageScale)
+                                                readonly property real cardH: Math.max(80, effLogH * stageBox.stageScale)
 
                                                 readonly property real baseX: stageBox.originStageX + (modelData.x * stageBox.stageScale)
                                                 readonly property real baseY: stageBox.originStageY + (modelData.y * stageBox.stageScale)
@@ -4829,30 +4955,40 @@ FloatingWindow {
 
                                                 Rectangle {
                                                     anchors.fill: parent
-                                                    radius: 6
+                                                    radius: 8
                                                     color: mBox.isSelected ? Services.Theme.bgElevated : Services.Theme.surfaceVariant
                                                     border.color: mBox.isSelected ? Services.Theme.accent : (mDrag.containsMouse ? Services.Theme.borderHighlight : Services.Theme.border)
                                                     border.width: mBox.isSelected ? 2 : 1
-                                                    opacity: mBox.modelData.disabled ? 0.45 : (mBox.isBeingDragged ? 0.92 : 1.0)
-                                                    scale: mBox.isBeingDragged ? 1.05 : (mDrag.containsMouse ? 1.02 : 1.0)
+                                                    opacity: mBox.modelData.disabled ? 0.45 : (mBox.isBeingDragged ? 0.95 : 1.0)
+                                                    scale: mBox.isBeingDragged ? 1.04 : (mDrag.containsMouse ? 1.02 : 1.0)
                                                     Behavior on scale { NumberAnimation { duration: 120 } }
+
+                                                    // Drag Grip Dots Indicator (Top Right)
+                                                    Text {
+                                                        anchors.top: parent.top
+                                                        anchors.right: parent.right
+                                                        anchors.margins: 6
+                                                        text: "⠿"
+                                                        font.pixelSize: 10
+                                                        color: mBox.isSelected ? Services.Theme.accent : Services.Theme.textDisabled
+                                                    }
 
                                                     ColumnLayout {
                                                         anchors.centerIn: parent
-                                                        spacing: 2
+                                                        spacing: 3
 
                                                         RowLayout {
                                                             Layout.alignment: Qt.AlignHCenter
-                                                            spacing: 4
+                                                            spacing: 5
                                                             Text {
                                                                 text: mBox.modelData.name.toLowerCase().includes("edp") ? "󰌢" : "󰍹"
                                                                 font.family: Services.Theme.fontSymbols
-                                                                font.pixelSize: 10
+                                                                font.pixelSize: 12
                                                                 color: mBox.isSelected ? Services.Theme.accent : Services.Theme.textSecondary
                                                             }
                                                             Text {
                                                                 text: mBox.modelData.name + (mBox.modelData.focused ? " ★" : "")
-                                                                font.pixelSize: 10
+                                                                font.pixelSize: 11
                                                                 font.weight: Font.DemiBold
                                                                 color: mBox.isSelected ? Services.Theme.accent : Services.Theme.textPrimary
                                                             }
@@ -4862,22 +4998,22 @@ FloatingWindow {
                                                             Layout.alignment: Qt.AlignHCenter
                                                             text: mBox.modelData.width + "×" + mBox.modelData.height
                                                             font.family: Services.Theme.fontMono
-                                                            font.pixelSize: 9
+                                                            font.pixelSize: 10
                                                             color: Services.Theme.textSecondary
                                                         }
 
                                                         RowLayout {
                                                             Layout.alignment: Qt.AlignHCenter
-                                                            spacing: 3
+                                                            spacing: 4
                                                             Text {
                                                                 text: mBox.modelData.refreshRate + "Hz"
-                                                                font.pixelSize: 8
+                                                                font.pixelSize: 9
                                                                 color: Services.Theme.accent
                                                             }
-                                                            Text { text: "·"; font.pixelSize: 8; color: Services.Theme.textDisabled }
+                                                            Text { text: "·"; font.pixelSize: 9; color: Services.Theme.textDisabled }
                                                             Text {
                                                                 text: (mBox.modelData.scale || 1.0) + "x"
-                                                                font.pixelSize: 8
+                                                                font.pixelSize: 9
                                                                 color: Services.Theme.textSecondary
                                                             }
                                                         }
@@ -4886,7 +5022,7 @@ FloatingWindow {
                                                             Layout.alignment: Qt.AlignHCenter
                                                             text: "(" + mBox.modelData.x + ", " + mBox.modelData.y + ")"
                                                             font.family: Services.Theme.fontMono
-                                                            font.pixelSize: 7
+                                                            font.pixelSize: 8
                                                             color: Services.Theme.textDisabled
                                                         }
                                                     }
@@ -4897,9 +5033,9 @@ FloatingWindow {
                                                     visible: mBox.isBeingDragged
                                                     anchors.bottom: parent.top
                                                     anchors.horizontalCenter: parent.horizontalCenter
-                                                    anchors.bottomMargin: 4
-                                                    height: 20
-                                                    implicitWidth: liveTipTxt.implicitWidth + 12
+                                                    anchors.bottomMargin: 6
+                                                    height: 22
+                                                    implicitWidth: liveTipTxt.implicitWidth + 14
                                                     radius: 4
                                                     color: Services.Theme.bgElevated
                                                     border.color: Services.Theme.accent
@@ -4911,7 +5047,7 @@ FloatingWindow {
                                                         anchors.centerIn: parent
                                                         text: mBox.modelData.name + " · X: " + Math.max(0, Math.round((mBox.x - stageBox.originStageX) / stageBox.stageScale)) + "  Y: " + Math.max(0, Math.round((mBox.y - stageBox.originStageY) / stageBox.stageScale))
                                                         font.family: Services.Theme.fontMono
-                                                        font.pixelSize: 9
+                                                        font.pixelSize: 10
                                                         font.weight: Font.Bold
                                                         color: Services.Theme.accent
                                                     }
@@ -4923,39 +5059,51 @@ FloatingWindow {
                                                     hoverEnabled: true
                                                     cursorShape: pressed ? Qt.ClosedHandCursor : Qt.OpenHandCursor
 
-                                                    property real startPressX: 0
-                                                    property real startPressY: 0
-                                                    property real startBoxX: 0
-                                                    property real startBoxY: 0
+                                                    property real grabOriginStageX: 0
+                                                    property real grabOriginStageY: 0
+                                                    property real initialBoxStageX: 0
+                                                    property real initialBoxStageY: 0
 
                                                     onPressed: (mouse) => {
                                                         rootWindow.dispSelectedMonitorName = mBox.modelData.name
                                                         rootWindow.dispIsDragging = true
                                                         mBox.isBeingDragged = true
-                                                        startPressX = mouse.x
-                                                        startPressY = mouse.y
+
+                                                        var stagePt = mapToItem(stageBox, mouse.x, mouse.y)
+                                                        grabOriginStageX = stagePt.x
+                                                        grabOriginStageY = stagePt.y
+                                                        initialBoxStageX = mBox.x
+                                                        initialBoxStageY = mBox.y
                                                         mBox.dragVisualX = mBox.x
                                                         mBox.dragVisualY = mBox.y
                                                     }
 
                                                     onPositionChanged: (mouse) => {
                                                         if (!pressed) return
-                                                        var nextX = mBox.dragVisualX + (mouse.x - startPressX)
-                                                        var nextY = mBox.dragVisualY + (mouse.y - startPressY)
+                                                        var curStagePt = mapToItem(stageBox, mouse.x, mouse.y)
+                                                        var rawVisualX = initialBoxStageX + (curStagePt.x - grabOriginStageX)
+                                                        var rawVisualY = initialBoxStageY + (curStagePt.y - grabOriginStageY)
 
-                                                        nextX = Math.max(2, Math.min(stageBox.width - mBox.width - 2, nextX))
-                                                        nextY = Math.max(2, Math.min(stageBox.height - mBox.height - 2, nextY))
+                                                        rawVisualX = Math.max(4, Math.min(stageBox.width - mBox.width - 4, rawVisualX))
+                                                        rawVisualY = Math.max(4, Math.min(stageBox.height - mBox.height - 4, rawVisualY))
 
-                                                        mBox.dragVisualX = nextX
-                                                        mBox.dragVisualY = nextY
+                                                        var snap = rootWindow.calcDisplaySnap(mBox.index, rawVisualX, rawVisualY, mBox.width, mBox.height, stageBox.originStageX, stageBox.originStageY, stageBox.stageScale)
 
-                                                        rootWindow.updateDisplaySnapGuides(mBox.index, nextX, nextY, mBox.width, mBox.height, stageBox.originStageX, stageBox.originStageY, stageBox.stageScale)
+                                                        mBox.dragVisualX = snap.snappedStageX
+                                                        mBox.dragVisualY = snap.snappedStageY
+
+                                                        rootWindow.dispSnapGuideX = snap.guideX
+                                                        rootWindow.dispShowSnapGuideX = snap.hasGuideX
+                                                        rootWindow.dispSnapGuideY = snap.guideY
+                                                        rootWindow.dispShowSnapGuideY = snap.hasGuideY
+                                                        rootWindow.dispDockMessage = snap.dockMessage
                                                     }
 
                                                     onReleased: (mouse) => {
                                                         rootWindow.dispIsDragging = false
                                                         rootWindow.dispShowSnapGuideX = false
                                                         rootWindow.dispShowSnapGuideY = false
+                                                        rootWindow.dispDockMessage = ""
 
                                                         rootWindow.commitDisplayDrop(mBox.index, mBox.dragVisualX, mBox.dragVisualY, stageBox.originStageX, stageBox.originStageY, stageBox.stageScale)
                                                         mBox.isBeingDragged = false
@@ -4965,6 +5113,7 @@ FloatingWindow {
                                                         rootWindow.dispIsDragging = false
                                                         rootWindow.dispShowSnapGuideX = false
                                                         rootWindow.dispShowSnapGuideY = false
+                                                        rootWindow.dispDockMessage = ""
                                                         mBox.isBeingDragged = false
                                                     }
                                                 }
@@ -5163,6 +5312,66 @@ FloatingWindow {
                                     }
 
                                     SettingsDivider {}
+
+                                    SettingsRow {
+                                        title: "Quick Screen Docking"
+                                        subtitle: "Instantly attach " + (rootWindow.currentDisplayMon ? rootWindow.currentDisplayMon.name : "display") + " next to adjacent screen"
+                                        visible: rootWindow.dispLocalLayout.length > 1
+
+                                        RowLayout {
+                                            spacing: 6
+
+                                            Rectangle {
+                                                height: 26; implicitWidth: 74; radius: 4
+                                                color: dockLMouse.containsMouse ? Qt.rgba(1,1,1,0.08) : Services.Theme.bgElevated
+                                                border.color: Services.Theme.border; border.width: 1
+                                                RowLayout {
+                                                    anchors.centerIn: parent; spacing: 4
+                                                    Text { text: "◀"; font.pixelSize: 9; color: Services.Theme.accent }
+                                                    Text { text: "Left"; font.pixelSize: 10; color: Services.Theme.textPrimary }
+                                                }
+                                                MouseArea { id: dockLMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: rootWindow.dockSelectedDisplay("left") }
+                                            }
+
+                                            Rectangle {
+                                                height: 26; implicitWidth: 74; radius: 4
+                                                color: dockRMouse.containsMouse ? Qt.rgba(1,1,1,0.08) : Services.Theme.bgElevated
+                                                border.color: Services.Theme.border; border.width: 1
+                                                RowLayout {
+                                                    anchors.centerIn: parent; spacing: 4
+                                                    Text { text: "Right"; font.pixelSize: 10; color: Services.Theme.textPrimary }
+                                                    Text { text: "▶"; font.pixelSize: 9; color: Services.Theme.accent }
+                                                }
+                                                MouseArea { id: dockRMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: rootWindow.dockSelectedDisplay("right") }
+                                            }
+
+                                            Rectangle {
+                                                height: 26; implicitWidth: 74; radius: 4
+                                                color: dockTMouse.containsMouse ? Qt.rgba(1,1,1,0.08) : Services.Theme.bgElevated
+                                                border.color: Services.Theme.border; border.width: 1
+                                                RowLayout {
+                                                    anchors.centerIn: parent; spacing: 4
+                                                    Text { text: "▲"; font.pixelSize: 9; color: Services.Theme.accent }
+                                                    Text { text: "Above"; font.pixelSize: 10; color: Services.Theme.textPrimary }
+                                                }
+                                                MouseArea { id: dockTMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: rootWindow.dockSelectedDisplay("top") }
+                                            }
+
+                                            Rectangle {
+                                                height: 26; implicitWidth: 74; radius: 4
+                                                color: dockBMouse.containsMouse ? Qt.rgba(1,1,1,0.08) : Services.Theme.bgElevated
+                                                border.color: Services.Theme.border; border.width: 1
+                                                RowLayout {
+                                                    anchors.centerIn: parent; spacing: 4
+                                                    Text { text: "▼"; font.pixelSize: 9; color: Services.Theme.accent }
+                                                    Text { text: "Below"; font.pixelSize: 10; color: Services.Theme.textPrimary }
+                                                }
+                                                MouseArea { id: dockBMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: rootWindow.dockSelectedDisplay("bottom") }
+                                            }
+                                        }
+                                    }
+
+                                    SettingsDivider { visible: rootWindow.dispLocalLayout.length > 1 }
 
                                     SettingsRow {
                                         title: "Manual Spatial Offsets"
