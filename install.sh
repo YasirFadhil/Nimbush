@@ -54,6 +54,7 @@ CHECK_ONLY=false
 INJECT_ONLY=false
 SKIP_DEPS=false
 SHOW_NIX_GUIDE=false
+CLI_COMPOSITOR=""
 
 print_help() {
     echo -e "${BOLD}Nimbush Wayland Desktop Environment Installer${NC}"
@@ -64,6 +65,8 @@ print_help() {
     echo "  -y, --yes          Non-interactive mode (automatically answer yes to prompts)"
     echo "  --check-only       Only perform real-time dependency and health diagnostics"
     echo "  --inject-only      Only run compositor configuration injection (Hyprland / Niri)"
+    echo "  --hyprland         Target Hyprland compositor (auto-detects Lua or Classic format)"
+    echo "  --niri             Target Niri scrollable compositor"
     echo "  --skip-deps        Skip dependency package checking & installation"
     echo "  --nix-guide        Display NixOS & Home Manager declarative setup instructions"
     echo "  -h, --help         Show this help message and exit"
@@ -82,6 +85,14 @@ while [[ $# -gt 0 ]]; do
             ;;
         --inject-only)
             INJECT_ONLY=true
+            shift
+            ;;
+        --hyprland)
+            CLI_COMPOSITOR="hyprland"
+            shift
+            ;;
+        --niri)
+            CLI_COMPOSITOR="niri"
             shift
             ;;
         --skip-deps)
@@ -304,7 +315,7 @@ DEPENDENCIES_DB=(
     "bluetoothctl|Bluetooth|bluez-utils|bluez|bluez-tools|bluez|BlueZ Bluetooth management CLI|req"
 
     # Theming, Thematic Colors & Wallpaper
-    "swww|Theming|swww|swww|swww|swww|Wayland animated wallpaper daemon with smooth transitions|opt"
+    "swww|Theming|swww|swww|swww|awww|Wayland animated wallpaper daemon (awww / swww)|opt"
     "matugen|Theming|matugen-bin|matugen|matugen|matugen|Material You dynamic color palette generator from wallpaper|opt"
     "swaybg|Theming|swaybg|swaybg|swaybg|swaybg|Wayland wallpaper daemon (fallback)|opt"
 
@@ -353,6 +364,9 @@ run_dependency_diagnostics() {
         case "$c" in
             qs)
                 command -v quickshell 2>/dev/null || true
+                ;;
+            swww)
+                command -v awww 2>/dev/null || true
                 ;;
             paplay)
                 command -v pw-play 2>/dev/null || true
@@ -626,28 +640,24 @@ inject_compositor_configs() {
 
     echo -e "  ${BOLD}Detected Compositor Configuration Status:${NC}"
     if [ "$HAS_HYPR_LUA" = true ]; then
-        echo -e "    ${GREEN}●${NC} Hyprland Lua:   ${BOLD}$HYPR_LUA${NC} ${GREEN}(Found)${NC}"
+        echo -e "    ${GREEN}●${NC} Hyprland (Lua format):   ${BOLD}$HYPR_LUA${NC} ${GREEN}(Found)${NC}"
+    elif [ "$HAS_HYPR_CONF" = true ]; then
+        echo -e "    ${GREEN}●${NC} Hyprland (Classic conf): ${BOLD}$HYPR_CONF${NC} ${GREEN}(Found)${NC}"
     else
-        echo -e "    ${DIM}○ Hyprland Lua:   $HYPR_LUA (Not found)${NC}"
-    fi
-
-    if [ "$HAS_HYPR_CONF" = true ]; then
-        echo -e "    ${GREEN}●${NC} Hyprland Conf:  ${BOLD}$HYPR_CONF${NC} ${GREEN}(Found)${NC}"
-    else
-        echo -e "    ${DIM}○ Hyprland Conf:  $HYPR_CONF (Not found)${NC}"
+        echo -e "    ${DIM}○ Hyprland Configuration: Not found (will create clean modular tree if selected)${NC}"
     fi
 
     if [ "$HAS_NIRI_CONF" = true ]; then
-        echo -e "    ${GREEN}●${NC} Niri KDL:       ${BOLD}$NIRI_CONF${NC} ${GREEN}(Found)${NC}"
+        echo -e "    ${GREEN}●${NC} Niri (KDL format):       ${BOLD}$NIRI_CONF${NC} ${GREEN}(Found)${NC}"
     else
-        echo -e "    ${DIM}○ Niri KDL:       $NIRI_CONF (Not found)${NC}"
+        echo -e "    ${DIM}○ Niri Configuration:     Not found (will create clean modular tree if selected)${NC}"
     fi
 
     # ── Injection Helper Functions ────────────────────────────────────────────
 
     write_hypr_classic_modular() {
         mkdir -p "$HYPR_CONF_DIR"
-        info "Modularizing Hyprland Classic configuration: $HYPR_CONF -> $HYPR_QS_CONF..."
+        info "Modularizing Hyprland Classic configuration: $HYPR_CONF -> $HYPR_CONF_DIR/..."
 
         local helper=""
         if [ -f "$TARGET_DIR/scripts/compositor-helper.py" ]; then
@@ -658,13 +668,13 @@ inject_compositor_configs() {
 
         if command -v python3 &>/dev/null && [ -n "$helper" ]; then
             python3 "$helper" modularize hypr_conf >/dev/null 2>&1 || true
-            success "Extracted inline Quickshell rules/bindings and generated clean modular $HYPR_QS_CONF without duplicates."
+            success "Generated clean modular Hyprland tree in $HYPR_CONF_DIR without duplicates."
         else
             # ── Fallback bash deduplicating modularization ──
+            # 1. Quickshell Integration
             cat << 'EOF' > "$HYPR_QS_CONF"
 # ══════════════════════════════════════════════════════════════════════════════
-#  Quickshell Desktop Environment Integration (Hyprland Classic)
-#  Included from ~/.config/hypr/hyprland.conf
+#  Quickshell Desktop Environment Integration (~/.config/hypr/conf/quickshell.conf)
 # ══════════════════════════════════════════════════════════════════════════════
 
 # ── 1. Autostart Quickshell Desktop Environment ──────────────────────────────
@@ -726,9 +736,77 @@ layerrule = ignorezero, quickshell:brightnessosd
 layerrule = blur, ^quickshell:.*$
 layerrule = ignorezero, ^quickshell:.*$
 EOF
-            cp "$HYPR_QS_CONF" "$HYPR_DIR/quickshell.conf"
             success "Wrote $HYPR_QS_CONF"
 
+            # 2. Autostart Daemons
+            if [ ! -f "$HYPR_CONF_DIR/autostart.conf" ]; then
+                cat << 'EOF' > "$HYPR_CONF_DIR/autostart.conf"
+# ══════════════════════════════════════════════════════════════════════════════
+#  Autostart Daemons & Background Services (~/.config/hypr/conf/autostart.conf)
+# ══════════════════════════════════════════════════════════════════════════════
+
+# Polkit Authentication Agent
+exec-once = systemctl enable --now --user hyprpolkitagent
+
+# Clipboard History Daemons
+exec-once = wl-paste --type text --watch cliphist store
+exec-once = wl-paste --type image --watch cliphist store
+EOF
+                success "Wrote $HYPR_CONF_DIR/autostart.conf"
+            fi
+
+            # 3. Keybindings
+            if [ ! -f "$HYPR_CONF_DIR/keybinds.conf" ]; then
+                cat << 'EOF' > "$HYPR_CONF_DIR/keybinds.conf"
+# ══════════════════════════════════════════════════════════════════════════════
+#  Keybindings & Shortcuts (~/.config/hypr/conf/keybinds.conf)
+# ══════════════════════════════════════════════════════════════════════════════
+
+$mainMod = SUPER
+$terminal = kitty
+$fileManager = nautilus
+
+bind = $mainMod, T, exec, $terminal
+bind = $mainMod, E, exec, $fileManager
+bind = $mainMod, Q, killactive,
+bind = $mainMod ALT, F, togglefloating,
+bind = $mainMod SHIFT, F, fullscreen, 0
+bind = $mainMod, J, togglesplit,
+
+bind = $mainMod, 1, workspace, 1
+bind = $mainMod, 2, workspace, 2
+bind = $mainMod, 3, workspace, 3
+bind = $mainMod, 4, workspace, 4
+bind = $mainMod, 5, workspace, 5
+bind = $mainMod, 6, workspace, 6
+bind = $mainMod, 7, workspace, 7
+bind = $mainMod, 8, workspace, 8
+bind = $mainMod, 9, workspace, 9
+bind = $mainMod, 0, workspace, 10
+
+bind = , PRINT, exec, ~/.config/quickshell/scripts/screenshot.sh full
+bind = SHIFT, PRINT, exec, ~/.config/quickshell/scripts/screenshot.sh region
+bind = $mainMod, PRINT, exec, ~/.config/quickshell/scripts/screenshot.sh window
+EOF
+                success "Wrote $HYPR_CONF_DIR/keybinds.conf"
+            fi
+
+            # 4. Rules
+            if [ ! -f "$HYPR_CONF_DIR/rules.conf" ]; then
+                cat << 'EOF' > "$HYPR_CONF_DIR/rules.conf"
+# ══════════════════════════════════════════════════════════════════════════════
+#  Window Rules (~/.config/hypr/conf/rules.conf)
+# ══════════════════════════════════════════════════════════════════════════════
+
+windowrulev2 = suppressevent maximize, class:.*
+windowrulev2 = float, title:^(Picture-in-Picture|Picture in picture)$
+windowrulev2 = pin, title:^(Picture-in-Picture|Picture in picture)$
+windowrulev2 = float, class:^(pavucontrol|nm-connection-editor|blueman-manager|swappy)$
+EOF
+                success "Wrote $HYPR_CONF_DIR/rules.conf"
+            fi
+
+            # 5. Clean & Connect Main hyprland.conf
             if [ -f "$HYPR_CONF" ]; then
                 local backup_conf="${HYPR_CONF}.bak.$(date +%Y%m%d_%H%M%S)"
                 cp "$HYPR_CONF" "$backup_conf"
@@ -737,11 +815,42 @@ EOF
                 sed -i '/qs ipc call/d' "$HYPR_CONF"
                 sed -i '/quickshell:/d' "$HYPR_CONF"
                 sed -i '/exec-once = qs\b/d' "$HYPR_CONF"
-                echo -e "\n# ── Modular Configuration Sources ──\nsource = ~/.config/hypr/conf/quickshell.conf" >> "$HYPR_CONF"
-                success "Cleaned inline duplicates and connected modular source to $HYPR_CONF"
+                sed -i '/source = ~\/\.config\/hypr\/conf\//d' "$HYPR_CONF"
+                echo -e "\n# ── Modular Configuration Sources ──\nsource = ~/.config/hypr/conf/autostart.conf\nsource = ~/.config/hypr/conf/keybinds.conf\nsource = ~/.config/hypr/conf/rules.conf\nsource = ~/.config/hypr/conf/quickshell.conf" >> "$HYPR_CONF"
+                success "Connected modular sources to $HYPR_CONF without duplicates."
             else
-                info "Creating starter $HYPR_CONF with source directive..."
-                echo -e "# Hyprland Configuration\n# ── Modular Configuration Sources ──\nsource = ~/.config/hypr/conf/quickshell.conf\n" > "$HYPR_CONF"
+                info "Creating starter $HYPR_CONF with modular sources..."
+                cat << 'EOF' > "$HYPR_CONF"
+# ══════════════════════════════════════════════════════════════════════════════
+#  Hyprland Classic Modular Configuration (~/.config/hypr/hyprland.conf)
+# ══════════════════════════════════════════════════════════════════════════════
+
+monitor=,preferred,auto,1
+
+general {
+    gaps_in = 5
+    gaps_out = 10
+    border_size = 2
+    col.active_border = rgba(89b4faee) rgba(cba6f7ee) 45deg
+    col.inactive_border = rgba(313244aa)
+    layout = dwindle
+}
+
+decoration {
+    rounding = 10
+    blur {
+        enabled = true
+        size = 6
+        passes = 3
+    }
+}
+
+# ── Modular Configuration Sources ──
+source = ~/.config/hypr/conf/autostart.conf
+source = ~/.config/hypr/conf/keybinds.conf
+source = ~/.config/hypr/conf/rules.conf
+source = ~/.config/hypr/conf/quickshell.conf
+EOF
                 success "Created starter $HYPR_CONF"
             fi
         fi
@@ -749,7 +858,7 @@ EOF
 
     write_hypr_lua_modular() {
         mkdir -p "$HYPR_CONF_DIR"
-        info "Modularizing Hyprland Lua configuration: $HYPR_LUA -> $HYPR_QS_LUA..."
+        info "Modularizing Hyprland Lua configuration: $HYPR_LUA -> $HYPR_CONF_DIR/..."
 
         local helper=""
         if [ -f "$TARGET_DIR/scripts/compositor-helper.py" ]; then
@@ -760,7 +869,7 @@ EOF
 
         if command -v python3 &>/dev/null && [ -n "$helper" ]; then
             python3 "$helper" modularize hypr_lua >/dev/null 2>&1 || true
-            success "Extracted inline Quickshell rules/bindings and generated clean modular $HYPR_QS_LUA without duplicates."
+            success "Generated clean modular Hyprland Lua tree in $HYPR_CONF_DIR without duplicates."
         else
             # ── Fallback bash deduplicating modularization ──
             cat << 'EOF' > "$HYPR_QS_LUA"
@@ -808,8 +917,22 @@ hl.layer_rule({ match = { namespace = "quickshell:welcome" },           blur = t
 hl.layer_rule({ match = { namespace = "quickshell:powermenu" },         blur = true, ignore_alpha = 0 })
 hl.layer_rule({ match = { namespace = "^quickshell:.*$" },              blur = true, ignore_alpha = 0 })
 EOF
-            cp "$HYPR_QS_LUA" "$HYPR_DIR/quickshell.lua"
             success "Wrote $HYPR_QS_LUA"
+
+            if [ ! -f "$HYPR_CONF_DIR/autostart.lua" ]; then
+                cat << 'EOF' > "$HYPR_CONF_DIR/autostart.lua"
+-- ══════════════════════════════════════════════════════════════════════════════
+--  Autostart Daemons & Background Services (~/.config/hypr/conf/autostart.lua)
+-- ══════════════════════════════════════════════════════════════════════════════
+
+hl.on("hyprland.start", function ()
+    hl.exec_cmd("systemctl enable --now --user hyprpolkitagent")
+    hl.exec_cmd("wl-paste --type text --watch cliphist store")
+    hl.exec_cmd("wl-paste --type image --watch cliphist store")
+end)
+EOF
+                success "Wrote $HYPR_CONF_DIR/autostart.lua"
+            fi
 
             if [ -f "$HYPR_LUA" ]; then
                 local backup_lua="${HYPR_LUA}.bak.$(date +%Y%m%d_%H%M%S)"
@@ -818,8 +941,9 @@ EOF
                 sed -i '/quickshell\.lua/d' "$HYPR_LUA"
                 sed -i '/qs ipc call/d' "$HYPR_LUA"
                 sed -i '/quickshell:/d' "$HYPR_LUA"
+                sed -i '/load_conf(/d' "$HYPR_LUA"
                 echo -e "\n-- ── Load Modular Configuration Files ──\nlocal home = os.getenv(\"HOME\") or \"\"\nlocal confDir = home .. \"/.config/hypr/conf\"\n\nlocal function load_conf(module_name)\n    local module_path = confDir .. \"/\" .. module_name .. \".lua\"\n    if io.open(module_path, \"r\") then\n        dofile(module_path)\n    end\nend\n\nload_conf(\"autostart\")\nload_conf(\"keybinds\")\nload_conf(\"rules\")\nload_conf(\"quickshell\")" >> "$HYPR_LUA"
-                success "Cleaned inline duplicates and connected modular loader to $HYPR_LUA"
+                success "Connected modular loader to $HYPR_LUA"
             else
                 info "Writing starter $HYPR_LUA with modular loader..."
                 cat << 'EOF' > "$HYPR_LUA"
@@ -844,9 +968,17 @@ EOF
         fi
     }
 
+    write_hypr_modular() {
+        if [ "$HAS_HYPR_LUA" = true ]; then
+            write_hypr_lua_modular
+        else
+            write_hypr_classic_modular
+        fi
+    }
+
     write_niri_modular() {
         mkdir -p "$NIRI_CONF_DIR"
-        info "Modularizing Niri configuration: $NIRI_CONF -> $NIRI_QS_KDL..."
+        info "Modularizing Niri configuration: $NIRI_CONF -> $NIRI_CONF_DIR/..."
 
         local helper=""
         if [ -f "$TARGET_DIR/scripts/compositor-helper.py" ]; then
@@ -857,7 +989,7 @@ EOF
 
         if command -v python3 &>/dev/null && [ -n "$helper" ]; then
             python3 "$helper" modularize niri >/dev/null 2>&1 || true
-            success "Extracted inline Quickshell binds/autostart and generated clean modular $NIRI_QS_KDL without duplicates."
+            success "Generated clean modular Niri tree in $NIRI_CONF_DIR without duplicates."
         else
             # ── Fallback bash deduplicating modularization ──
             cat << 'EOF' > "$NIRI_QS_KDL"
@@ -883,8 +1015,19 @@ binds {
     Mod+B           { spawn "qs" "ipc" "call" "battery" "toggle"; }
 }
 EOF
-            cp "$NIRI_QS_KDL" "$NIRI_DIR/quickshell.kdl"
             success "Wrote $NIRI_QS_KDL"
+
+            if [ ! -f "$NIRI_CONF_DIR/autostart.kdl" ]; then
+                cat << 'EOF' > "$NIRI_CONF_DIR/autostart.kdl"
+// ══════════════════════════════════════════════════════════════════════════════
+//  Autostart Daemons & Services (~/.config/niri/conf/autostart.kdl)
+// ══════════════════════════════════════════════════════════════════════════════
+
+spawn-at-startup "wl-paste" "--type" "text" "--watch" "cliphist" "store"
+spawn-at-startup "wl-paste" "--type" "image" "--watch" "cliphist" "store"
+EOF
+                success "Wrote $NIRI_CONF_DIR/autostart.kdl"
+            fi
 
             if [ -f "$NIRI_CONF" ]; then
                 local backup_niri="${NIRI_CONF}.bak.$(date +%Y%m%d_%H%M%S)"
@@ -892,11 +1035,19 @@ EOF
                 info "Created backup: $backup_niri"
                 sed -i '/quickshell\.kdl/d' "$NIRI_CONF"
                 sed -i '/qs ipc call/d' "$NIRI_CONF"
+                sed -i '/include "conf\//d' "$NIRI_CONF"
                 echo -e "\n// ── Modular Configurations ──\ninclude \"conf/autostart.kdl\"\ninclude \"conf/keybinds.kdl\"\ninclude \"conf/rules.kdl\"\ninclude \"conf/quickshell.kdl\"" >> "$NIRI_CONF"
-                success "Cleaned inline duplicates and connected modular includes to $NIRI_CONF"
+                success "Connected modular includes to $NIRI_CONF"
             else
                 info "Writing starter $NIRI_CONF with include directive..."
-                echo -e "// Niri Configuration\n// ── Modular Configurations ──\ninclude \"conf/autostart.kdl\"\ninclude \"conf/keybinds.kdl\"\ninclude \"conf/rules.kdl\"\ninclude \"conf/quickshell.kdl\"\n" > "$NIRI_CONF"
+                cat << 'EOF' > "$NIRI_CONF"
+// Niri Configuration
+// ── Modular Configurations ──
+include "conf/autostart.kdl"
+include "conf/keybinds.kdl"
+include "conf/rules.kdl"
+include "conf/quickshell.kdl"
+EOF
                 success "Created starter $NIRI_CONF"
             fi
         fi
@@ -904,49 +1055,48 @@ EOF
 
     # ── Interactive Menu for Injection ────────────────────────────────────────
     INJECT_TARGET="auto"
-    if [ "$AUTO_YES" = false ]; then
+    if [ -n "$CLI_COMPOSITOR" ]; then
+        INJECT_TARGET="$CLI_COMPOSITOR"
+    elif [ "$AUTO_YES" = false ]; then
         echo -e "\n  ${BOLD}Compositor Integration Menu:${NC}"
-        echo -e "    ${CYAN}1)${NC} ${BOLD}Smart Auto-Inject${NC} (Auto-detect active compositor & apply clean modular integration) ${GREEN}(Recommended)${NC}"
-        echo -e "    ${CYAN}2)${NC} Hyprland Lua (${DIM}~/.config/hypr/quickshell.lua + hyprland.lua${NC})"
-        echo -e "    ${CYAN}3)${NC} Hyprland Classic (${DIM}~/.config/hypr/quickshell.conf + hyprland.conf${NC})"
-        echo -e "    ${CYAN}4)${NC} Niri (${DIM}~/.config/niri/quickshell.kdl + config.kdl${NC})"
-        echo -e "    ${CYAN}5)${NC} Configure All (Hyprland Lua, Hyprland Conf & Niri)"
-        echo -e "    ${CYAN}6)${NC} Skip Compositor Configuration"
-        read -rp "  Select option [1-6] (default: 1): " comp_menu_choice
+        echo -e "    ${CYAN}1)${NC} ${BOLD}Smart Auto-Detect & Inject${NC} (Hyprland / Niri) ${GREEN}(Recommended)${NC}"
+        echo -e "    ${CYAN}2)${NC} ${BOLD}Hyprland${NC} (Auto-detects whether your setup uses Lua or Classic format)"
+        echo -e "    ${CYAN}3)${NC} ${BOLD}Niri${NC} (${DIM}~/.config/niri/conf/quickshell.kdl + config.kdl${NC})"
+        echo -e "    ${CYAN}4)${NC} ${BOLD}Both${NC} (Hyprland & Niri)"
+        echo -e "    ${CYAN}5)${NC} Skip Compositor Configuration"
+        read -rp "  Select option [1-5] (default: 1): " comp_menu_choice
         case "$comp_menu_choice" in
-            2) INJECT_TARGET="hypr_lua" ;;
-            3) INJECT_TARGET="hypr_conf" ;;
-            4) INJECT_TARGET="niri" ;;
-            5) INJECT_TARGET="all" ;;
-            6) INJECT_TARGET="skip" ;;
+            2) INJECT_TARGET="hyprland" ;;
+            3) INJECT_TARGET="niri" ;;
+            4) INJECT_TARGET="all" ;;
+            5) INJECT_TARGET="skip" ;;
             *) INJECT_TARGET="auto" ;;
         esac
     fi
 
     case "$INJECT_TARGET" in
         auto)
-            if [ "$HAS_HYPR_LUA" = true ]; then
-                write_hypr_lua_modular
+            applied=false
+            if [ "$HAS_HYPR_LUA" = true ] || [ "$HAS_HYPR_CONF" = true ] || [ "$HAS_HYPRLAND" = true ]; then
+                write_hypr_modular
+                applied=true
             fi
-            if [ "$HAS_HYPR_CONF" = true ] || ([ "$HAS_HYPR_LUA" = false ] && [ "$HAS_NIRI_CONF" = false ] && [ "$HAS_HYPRLAND" = true ]); then
-                write_hypr_classic_modular
-            fi
-            if [ "$HAS_NIRI_CONF" = true ] || ([ "$HAS_HYPR_LUA" = false ] && [ "$HAS_HYPR_CONF" = false ] && [ "$HAS_NIRI" = true ]); then
+            if [ "$HAS_NIRI_CONF" = true ] || [ "$HAS_NIRI" = true ]; then
                 write_niri_modular
+                applied=true
+            fi
+            if [ "$applied" = false ]; then
+                write_hypr_modular
             fi
             ;;
-        hypr_lua)
-            write_hypr_lua_modular
-            ;;
-        hypr_conf)
-            write_hypr_classic_modular
+        hyprland)
+            write_hypr_modular
             ;;
         niri)
             write_niri_modular
             ;;
         all)
-            write_hypr_lua_modular
-            write_hypr_classic_modular
+            write_hypr_modular
             write_niri_modular
             ;;
         skip)

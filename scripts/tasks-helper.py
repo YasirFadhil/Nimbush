@@ -50,6 +50,8 @@ NAME_MAP = {
     "waybar": "Waybar",
     "swww": "SWWW Daemon",
     "swww-daemon": "SWWW Daemon",
+    "awww": "AWWW Daemon",
+    "awww-daemon": "AWWW Daemon",
     "dunst": "Dunst",
     "mako": "Mako",
     "rofi": "Rofi",

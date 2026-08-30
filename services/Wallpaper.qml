@@ -122,7 +122,10 @@ Singleton {
 
     Process {
         id: swwwDaemonProc
-        command: ["sh", "-c", "command -v swww-daemon >/dev/null 2>&1 && (pgrep -x swww-daemon >/dev/null || nohup swww-daemon >/dev/null 2>&1 &)"]
+        command: [
+            "sh", "-c",
+            "if command -v awww-daemon >/dev/null 2>&1; then (pgrep -x awww-daemon >/dev/null || nohup awww-daemon >/dev/null 2>&1 &); elif command -v swww-daemon >/dev/null 2>&1; then (pgrep -x swww-daemon >/dev/null || nohup swww-daemon >/dev/null 2>&1 &); fi"
+        ]
     }
 
     Process {
@@ -130,7 +133,7 @@ Singleton {
         property string targetFile: ""
         command: [
             "sh", "-c",
-            "command -v swww >/dev/null 2>&1 && swww img \"$1\" --transition-type grow --transition-pos center --transition-duration 0.5 --transition-fps 60 --transition-bezier .25,1,.5,1",
+            "if command -v awww >/dev/null 2>&1; then awww img \"$1\" --transition-type grow --transition-pos center --transition-duration 0.5 --transition-fps 60 --transition-bezier .25,1,.5,1; elif command -v swww >/dev/null 2>&1; then swww img \"$1\" --transition-type grow --transition-pos center --transition-duration 0.5 --transition-fps 60 --transition-bezier .25,1,.5,1; fi",
             "_", targetFile
         ]
     }

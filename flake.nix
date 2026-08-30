@@ -38,7 +38,7 @@
           sound-theme-freedesktop
           matugen
           wireplumber
-          swww
+          awww
           swaybg
           (python3.withPackages (ps: with ps; [
             pygobject3

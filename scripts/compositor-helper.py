@@ -1265,15 +1265,48 @@ def reload_compositor():
             return {"ok": False, "error": str(e)}
     return {"ok": False, "error": "Unsupported compositor"}
 
+def deduplicate_lines(lines):
+    seen = set()
+    result = []
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            if result and result[-1].strip():
+                result.append(line)
+            continue
+        if stripped in seen:
+            continue
+        seen.add(stripped)
+        result.append(line)
+    return result
+
+def strip_header_banner(content: str) -> str:
+    lines = content.splitlines()
+    res = []
+    in_banner = False
+    for line in lines:
+        s = line.strip()
+        if s.startswith("# ═══") or s.startswith("// ═══") or s.startswith("-- ═══"):
+            in_banner = not in_banner
+            continue
+        if in_banner:
+            continue
+        if (s.startswith("#  Autostart") or s.startswith("--  Autostart") or s.startswith("//  Autostart") or
+            s.startswith("#  Keybindings") or s.startswith("--  Keybindings") or s.startswith("//  Keybindings") or
+            s.startswith("#  Window") or s.startswith("--  Window") or s.startswith("//  Window") or
+            s.startswith("#  Quickshell") or s.startswith("--  Quickshell") or s.startswith("//  Quickshell")):
+            continue
+        res.append(line)
+    return "\n".join(res).strip()
+
 def modularize_hypr_lua():
     hypr_dir = os.path.join(HOME, ".config/hypr")
     conf_dir = os.path.join(hypr_dir, "conf")
     lua_path = os.path.join(hypr_dir, "hyprland.lua")
     os.makedirs(conf_dir, exist_ok=True)
 
-    # 1. Quickshell Integration File
+    # 1. Quickshell Integration File (~/.config/hypr/conf/quickshell.lua)
     qs_lua_path = os.path.join(conf_dir, "quickshell.lua")
-    qs_lua_compat_path = os.path.join(hypr_dir, "quickshell.lua")
     qs_lua_content = """-- ══════════════════════════════════════════════════════════════════════════════
 --  Quickshell Desktop Environment Integration (~/.config/hypr/conf/quickshell.lua)
 -- ══════════════════════════════════════════════════════════════════════════════
@@ -1319,12 +1352,84 @@ hl.layer_rule({ match = { namespace = "^quickshell:.*$" },              blur = t
 """
     with open(qs_lua_path, "w", encoding="utf-8") as f:
         f.write(qs_lua_content)
-    with open(qs_lua_compat_path, "w", encoding="utf-8") as f:
-        f.write(qs_lua_content)
+
+    autostart_path = os.path.join(conf_dir, "autostart.lua")
+    keybinds_path = os.path.join(conf_dir, "keybinds.lua")
+    rules_path = os.path.join(conf_dir, "rules.lua")
 
     if not os.path.exists(lua_path):
         with open(lua_path, "w", encoding="utf-8") as f:
-            f.write("""-- Hyprland Main Configuration (~/.config/hypr/hyprland.lua)
+            f.write("""-- ══════════════════════════════════════════════════════════════════════════════
+--  Hyprland Lua Modular Configuration (~/.config/hypr/hyprland.lua)
+-- ══════════════════════════════════════════════════════════════════════════════
+
+-- ── 1. Monitors ──────────────────────────────────────────────────────────────
+hl.monitor({ name = "", modeline = "preferred,auto,1" })
+
+-- ── 2. Environment Variables ─────────────────────────────────────────────────
+hl.env({
+    XCURSOR_SIZE        = 24,
+    HYPRCURSOR_SIZE     = 24,
+    XDG_CURRENT_DESKTOP = "Hyprland",
+    XDG_SESSION_TYPE    = "wayland",
+    XDG_SESSION_DESKTOP = "Hyprland",
+    QT_QPA_PLATFORM     = "wayland;xcb",
+    GDK_BACKEND         = "wayland,x11,*",
+})
+
+-- ── 3. Look and Feel ─────────────────────────────────────────────────────────
+hl.general({
+    gaps_in             = 5,
+    gaps_out            = 10,
+    border_size         = 2,
+    "col.active_border"   = "rgba(89b4faee) rgba(cba6f7ee) 45deg",
+    "col.inactive_border" = "rgba(313244aa)",
+    resize_on_border    = true,
+    allow_tearing       = false,
+    layout              = "dwindle",
+})
+
+hl.decoration({
+    rounding            = 10,
+    active_opacity      = 1.0,
+    inactive_opacity    = 0.95,
+    shadow = {
+        enabled = true,
+        range   = 15,
+        render_power = 3,
+        color   = "rgba(181825ee)",
+    },
+    blur = {
+        enabled = true,
+        size    = 6,
+        passes  = 3,
+        new_optimizations = true,
+        xray    = false,
+    },
+})
+
+-- ── 4. Animations ────────────────────────────────────────────────────────────
+hl.animation({ leaf = "windows",   enabled = true, speed = 4, bezier = "easeOutQuint" })
+hl.animation({ leaf = "layers",    enabled = true, speed = 4, bezier = "easeOutQuint" })
+hl.animation({ leaf = "fade",      enabled = true, speed = 3 })
+hl.animation({ leaf = "workspaces", enabled = true, speed = 4, bezier = "easeOutQuint", style = "slide" })
+
+-- ── 5. Layouts & Input ───────────────────────────────────────────────────────
+hl.dwindle({
+    pseudotile     = true,
+    preserve_split = true,
+})
+
+hl.input({
+    kb_layout     = "us",
+    follow_mouse  = 1,
+    sensitivity   = 0,
+    touchpad = {
+        natural_scroll = true,
+    },
+})
+
+-- ── 6. Load Modular Configuration Files ──────────────────────────────────────
 local home = os.getenv("HOME") or ""
 local confDir = home .. "/.config/hypr/conf"
 
@@ -1335,10 +1440,75 @@ local function load_conf(module_name)
     end
 end
 
+-- Load separated modules
 load_conf("autostart")
 load_conf("keybinds")
 load_conf("rules")
 load_conf("quickshell")
+""")
+        if not os.path.exists(autostart_path):
+            with open(autostart_path, "w", encoding="utf-8") as f:
+                f.write("""-- ══════════════════════════════════════════════════════════════════════════════
+--  Autostart Daemons & Background Services (~/.config/hypr/conf/autostart.lua)
+-- ══════════════════════════════════════════════════════════════════════════════
+
+hl.on("hyprland.start", function ()
+    hl.exec_cmd("systemctl enable --now --user hyprpolkitagent")
+    hl.exec_cmd("wl-paste --type text --watch cliphist store")
+    hl.exec_cmd("wl-paste --type image --watch cliphist store")
+end)
+""")
+        if not os.path.exists(keybinds_path):
+            with open(keybinds_path, "w", encoding="utf-8") as f:
+                f.write("""-- ══════════════════════════════════════════════════════════════════════════════
+--  Keybindings & Shortcuts (~/.config/hypr/conf/keybinds.lua)
+-- ══════════════════════════════════════════════════════════════════════════════
+
+local mainMod = "SUPER"
+local terminal = "kitty"
+local fileManager = "nautilus"
+
+hl.bind(mainMod .. " + T", hl.dsp.exec_cmd(terminal), { repeating = true })
+hl.bind(mainMod .. " + E", hl.dsp.exec_cmd(fileManager))
+hl.bind(mainMod .. " + Q", hl.dsp.window.close(), { repeating = true })
+hl.bind(mainMod .. " + ALT + F", hl.dsp.window.float({ action = "toggle" }))
+hl.bind(mainMod .. " + SHIFT + F", hl.dsp.window.fullscreen({ mode = "fullscreen", action = "toggle" }))
+hl.bind(mainMod .. " + J", hl.dsp.layout("togglesplit"))
+
+for i = 1, 10 do
+    local key = i % 10
+    hl.bind(mainMod .. " + " .. key, hl.dsp.focus({ workspace = i }))
+    hl.bind(mainMod .. " + SHIFT + " .. key, hl.dsp.window.move({ workspace = i }))
+end
+
+hl.bind("print", hl.dsp.exec_cmd("~/.config/quickshell/scripts/screenshot.sh full"), { locked = true })
+hl.bind("SHIFT + print", hl.dsp.exec_cmd("~/.config/quickshell/scripts/screenshot.sh region"), { locked = true })
+hl.bind(mainMod .. " + print", hl.dsp.exec_cmd("~/.config/quickshell/scripts/screenshot.sh window"), { locked = true })
+""")
+        if not os.path.exists(rules_path):
+            with open(rules_path, "w", encoding="utf-8") as f:
+                f.write("""-- ══════════════════════════════════════════════════════════════════════════════
+--  Window & Workspace Rules (~/.config/hypr/conf/rules.lua)
+-- ══════════════════════════════════════════════════════════════════════════════
+
+hl.window_rule({
+    name  = "suppress-maximize",
+    match = { class = ".*" },
+    suppress_event = "maximize",
+})
+
+hl.window_rule({
+    name  = "pip-float",
+    match = { title = "^(Picture-in-Picture|Picture in picture)$" },
+    float = true,
+    pin   = true,
+})
+
+hl.window_rule({
+    name  = "dialog-float",
+    match = { class = "(pavucontrol|nm-connection-editor|blueman-manager|swappy)" },
+    float = true,
+})
 """)
         return {"ok": True, "created_main": True, "conf_dir": conf_dir}
 
@@ -1361,7 +1531,6 @@ load_conf("quickshell")
         'main': ['MONITORS', 'PROGRAMS / VARIABLES', 'ENVIRONMENT VARIABLES', 'PERMISSIONS', 'LOOK AND FEEL', 'ANIMATIONS', 'WORKSPACE RULES', 'LAYOUTS', 'MISC', 'INPUT']
     }
 
-    # Extract user-defined variables from PROGRAMS / VARIABLES section
     var_defs = []
     qs_vars = set([
         'menu', 'clipboard', 'lockscreen', 'lockScreen', 'notifcenter', 'notifCenter',
@@ -1379,16 +1548,33 @@ load_conf("quickshell")
             elif vname in ['mainMod', 'terminal', 'fileManager', 'browser', 'editor']:
                 var_defs.append(line.strip())
 
+    in_loader_block = False
     for line in lines:
         stripped = line.strip()
 
-        # Check for section headers
+        if "Load Modular Configuration Files" in stripped or "── Modular Configuration" in stripped:
+            in_loader_block = True
+            continue
+
+        if in_loader_block:
+            if (stripped.startswith("load_conf(") or 
+                stripped in ["end", "end)", "end);", "end}"] or 
+                "local home" in stripped or 
+                "local confDir" in stripped or 
+                "local function load_conf" in stripped or 
+                "dofile(" in stripped or 
+                "io.open(" in stripped or 
+                "Load separated modules" in stripped or 
+                not stripped):
+                continue
+            else:
+                in_loader_block = False
+
         for sec, kws in section_keywords.items():
             if any(re.search(rf'--\s*{re.escape(kw)}\b', stripped, re.IGNORECASE) for kw in kws):
                 current_section = sec
                 break
 
-        # Ignore loader artifacts or previous quickshell integration headers
         if any(marker in stripped for marker in [
             'Load Modular Configuration Files',
             'Quickshell Desktop Environment Integration',
@@ -1397,17 +1583,16 @@ load_conf("quickshell")
             'confDir',
             'module_name',
             'module_path',
+            'Load separated modules',
         ]):
             continue
-        if stripped in ['end', 'end)', 'end);'] and current_section == 'rules':
-            # Check if this end belongs to a function or loader
+        if stripped in ['end', 'end)', 'end);'] and current_section in ['rules', 'main']:
             continue
         if ('dofile(' in stripped and ('quickshell' in stripped or 'conf/' in stripped or 'module_path' in stripped)):
             continue
-        if 'local home = os.getenv("HOME")' in stripped or 'io.open(module_path' in stripped:
+        if 'local home = os.getenv("HOME")' in stripped or 'io.open(module_path' in stripped or 'local function load_conf' in stripped:
             continue
 
-        # Filter out quickshell items from general sections
         if 'qs ipc call' in stripped or 'quickshell:' in stripped:
             continue
         if current_section == 'keybinds' and any(re.search(rf'\b{re.escape(v)}\b', stripped) for v in qs_vars):
@@ -1424,15 +1609,24 @@ load_conf("quickshell")
         else:
             main_lines.append(line)
 
-    # 2. Write conf/autostart.lua
-    autostart_path = os.path.join(conf_dir, "autostart.lua")
-    autostart_content = "".join(autostart_lines).strip()
-    if not autostart_content:
+    # Write conf/autostart.lua (Deduplicated)
+    existing_autostart = ""
+    if os.path.exists(autostart_path):
+        with open(autostart_path, "r", encoding="utf-8") as f:
+            existing_autostart = f.read()
+
+    if autostart_lines:
+        combined_autostart = deduplicate_lines(autostart_lines)
+        autostart_content = strip_header_banner("".join(combined_autostart))
+    elif existing_autostart.strip():
+        autostart_content = strip_header_banner(existing_autostart)
+    else:
         autostart_content = """hl.on("hyprland.start", function ()
     hl.exec_cmd("systemctl enable --now --user hyprpolkitagent")
     hl.exec_cmd("wl-paste --type text --watch cliphist store")
     hl.exec_cmd("wl-paste --type image --watch cliphist store")
 end)"""
+
     with open(autostart_path, "w", encoding="utf-8") as f:
         f.write(f"""-- ══════════════════════════════════════════════════════════════════════════════
 --  Autostart Daemons & Background Services (~/.config/hypr/conf/autostart.lua)
@@ -1441,12 +1635,18 @@ end)"""
 {autostart_content}
 """)
 
-    # 3. Write conf/keybinds.lua
-    keybinds_path = os.path.join(conf_dir, "keybinds.lua")
-    keybind_content = "".join(keybind_lines).strip()
+    # Write conf/keybinds.lua (Deduplicated)
     vars_prefix = "\n".join(var_defs) if var_defs else 'local mainMod = "SUPER"\nlocal terminal = "kitty"\nlocal fileManager = "nautilus"'
-    if not keybind_content:
-        keybind_content = """hl.bind(mainMod .. " + T", hl.dsp.exec_cmd(terminal), { repeating = true })
+    if keybind_lines:
+        combined_keybinds = deduplicate_lines(keybind_lines)
+        keybind_content = f"{vars_prefix}\n\n" + strip_header_banner("".join(combined_keybinds))
+    elif os.path.exists(keybinds_path):
+        with open(keybinds_path, "r", encoding="utf-8") as f:
+            keybind_content = strip_header_banner(f.read())
+    else:
+        keybind_content = vars_prefix + """
+
+hl.bind(mainMod .. " + T", hl.dsp.exec_cmd(terminal), { repeating = true })
 hl.bind(mainMod .. " + E", hl.dsp.exec_cmd(fileManager))
 hl.bind(mainMod .. " + Q", hl.dsp.window.close(), { repeating = true })
 hl.bind(mainMod .. " + ALT + F", hl.dsp.window.float({ action = "toggle" }))
@@ -1468,15 +1668,17 @@ hl.bind(mainMod .. " + print", hl.dsp.exec_cmd("~/.config/quickshell/scripts/scr
 --  Keybindings & Shortcuts (~/.config/hypr/conf/keybinds.lua)
 -- ══════════════════════════════════════════════════════════════════════════════
 
-{vars_prefix}
-
 {keybind_content}
 """)
 
-    # 4. Write conf/rules.lua
-    rules_path = os.path.join(conf_dir, "rules.lua")
-    rules_content = "".join(rule_lines).strip()
-    if not rules_content:
+    # Write conf/rules.lua
+    if rule_lines:
+        combined_rules = deduplicate_lines(rule_lines)
+        rules_content = strip_header_banner("".join(combined_rules))
+    elif os.path.exists(rules_path):
+        with open(rules_path, "r", encoding="utf-8") as f:
+            rules_content = strip_header_banner(f.read())
+    else:
         rules_content = """hl.window_rule({
     name  = "suppress-maximize",
     match = { class = ".*" },
@@ -1495,6 +1697,7 @@ hl.window_rule({
     match = { class = "(pavucontrol|nm-connection-editor|blueman-manager|swappy)" },
     float = true,
 })"""
+
     with open(rules_path, "w", encoding="utf-8") as f:
         f.write(f"""-- ══════════════════════════════════════════════════════════════════════════════
 --  Window & Workspace Rules (~/.config/hypr/conf/rules.lua)
@@ -1503,7 +1706,7 @@ hl.window_rule({
 {rules_content}
 """)
 
-    # 5. Clean up main hyprland.lua
+    # Clean up main hyprland.lua
     while main_lines and (not main_lines[-1].strip() or main_lines[-1].strip() in ['end', 'end)', 'end);', 'end}']):
         main_lines.pop()
 
@@ -1521,6 +1724,7 @@ local function load_conf(module_name)
     end
 end
 
+-- Load separated modules
 load_conf("autostart")
 load_conf("keybinds")
 load_conf("rules")
@@ -1544,9 +1748,8 @@ def modularize_hypr_conf():
     conf_path = os.path.join(hypr_dir, "hyprland.conf")
     os.makedirs(conf_dir, exist_ok=True)
 
-    # 1. Quickshell conf
+    # 1. Quickshell conf (~/.config/hypr/conf/quickshell.conf)
     qs_conf_path = os.path.join(conf_dir, "quickshell.conf")
-    qs_conf_compat_path = os.path.join(hypr_dir, "quickshell.conf")
     qs_conf_content = """# ══════════════════════════════════════════════════════════════════════════════
 #  Quickshell Desktop Environment Integration (~/.config/hypr/conf/quickshell.conf)
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1612,16 +1815,146 @@ layerrule = ignorezero, ^quickshell:.*$
 """
     with open(qs_conf_path, "w", encoding="utf-8") as f:
         f.write(qs_conf_content)
-    with open(qs_conf_compat_path, "w", encoding="utf-8") as f:
-        f.write(qs_conf_content)
+
+    autostart_path = os.path.join(conf_dir, "autostart.conf")
+    keybinds_path = os.path.join(conf_dir, "keybinds.conf")
+    rules_path = os.path.join(conf_dir, "rules.conf")
 
     if not os.path.exists(conf_path):
         with open(conf_path, "w", encoding="utf-8") as f:
-            f.write("""# Hyprland Main Configuration (~/.config/hypr/hyprland.conf)
+            f.write("""# ══════════════════════════════════════════════════════════════════════════════
+#  Hyprland Classic Modular Configuration (~/.config/hypr/hyprland.conf)
+# ══════════════════════════════════════════════════════════════════════════════
+
+# ── 1. Monitors ──────────────────────────────────────────────────────────────
+monitor=,preferred,auto,1
+
+# ── 2. Environment Variables ─────────────────────────────────────────────────
+env = XCURSOR_SIZE,24
+env = HYPRCURSOR_SIZE,24
+env = XDG_CURRENT_DESKTOP,Hyprland
+env = XDG_SESSION_TYPE,wayland
+env = XDG_SESSION_DESKTOP,Hyprland
+env = QT_QPA_PLATFORM,wayland;xcb
+env = GDK_BACKEND,wayland,x11,*
+
+# ── 3. Look and Feel ─────────────────────────────────────────────────────────
+general {
+    gaps_in = 5
+    gaps_out = 10
+    border_size = 2
+    col.active_border = rgba(89b4faee) rgba(cba6f7ee) 45deg
+    col.inactive_border = rgba(313244aa)
+    resize_on_border = true
+    allow_tearing = false
+    layout = dwindle
+}
+
+decoration {
+    rounding = 10
+    active_opacity = 1.0
+    inactive_opacity = 0.95
+    shadow {
+        enabled = true
+        range = 15
+        render_power = 3
+        color = rgba(181825ee)
+    }
+    blur {
+        enabled = true
+        size = 6
+        passes = 3
+        new_optimizations = true
+        xray = false
+    }
+}
+
+# ── 4. Animations ────────────────────────────────────────────────────────────
+animations {
+    enabled = true
+    bezier = easeOutQuint,0.23,1,0.32,1
+    animation = windows, 1, 4, easeOutQuint
+    animation = layers, 1, 4, easeOutQuint
+    animation = fade, 1, 3, default
+    animation = workspaces, 1, 4, easeOutQuint, slide
+}
+
+# ── 5. Layouts & Input ───────────────────────────────────────────────────────
+dwindle {
+    pseudotile = true
+    preserve_split = true
+}
+
+input {
+    kb_layout = us
+    follow_mouse = 1
+    sensitivity = 0
+    touchpad {
+        natural_scroll = true
+    }
+}
+
+# ── 6. Source Modular Configuration Files ────────────────────────────────────
 source = ~/.config/hypr/conf/autostart.conf
 source = ~/.config/hypr/conf/keybinds.conf
 source = ~/.config/hypr/conf/rules.conf
 source = ~/.config/hypr/conf/quickshell.conf
+""")
+        if not os.path.exists(autostart_path):
+            with open(autostart_path, "w", encoding="utf-8") as f:
+                f.write("""# ══════════════════════════════════════════════════════════════════════════════
+#  Autostart Daemons & Background Services (~/.config/hypr/conf/autostart.conf)
+# ══════════════════════════════════════════════════════════════════════════════
+
+# Polkit Authentication Agent
+exec-once = systemctl enable --now --user hyprpolkitagent
+
+# Clipboard History Daemons
+exec-once = wl-paste --type text --watch cliphist store
+exec-once = wl-paste --type image --watch cliphist store
+""")
+        if not os.path.exists(keybinds_path):
+            with open(keybinds_path, "w", encoding="utf-8") as f:
+                f.write("""# ══════════════════════════════════════════════════════════════════════════════
+#  Keybindings & Shortcuts (~/.config/hypr/conf/keybinds.conf)
+# ══════════════════════════════════════════════════════════════════════════════
+
+$mainMod = SUPER
+$terminal = kitty
+$fileManager = nautilus
+
+bind = $mainMod, T, exec, $terminal
+bind = $mainMod, E, exec, $fileManager
+bind = $mainMod, Q, killactive,
+bind = $mainMod ALT, F, togglefloating,
+bind = $mainMod SHIFT, F, fullscreen, 0
+bind = $mainMod, J, togglesplit,
+
+bind = $mainMod, 1, workspace, 1
+bind = $mainMod, 2, workspace, 2
+bind = $mainMod, 3, workspace, 3
+bind = $mainMod, 4, workspace, 4
+bind = $mainMod, 5, workspace, 5
+bind = $mainMod, 6, workspace, 6
+bind = $mainMod, 7, workspace, 7
+bind = $mainMod, 8, workspace, 8
+bind = $mainMod, 9, workspace, 9
+bind = $mainMod, 0, workspace, 10
+
+bind = , PRINT, exec, ~/.config/quickshell/scripts/screenshot.sh full
+bind = SHIFT, PRINT, exec, ~/.config/quickshell/scripts/screenshot.sh region
+bind = $mainMod, PRINT, exec, ~/.config/quickshell/scripts/screenshot.sh window
+""")
+        if not os.path.exists(rules_path):
+            with open(rules_path, "w", encoding="utf-8") as f:
+                f.write("""# ══════════════════════════════════════════════════════════════════════════════
+#  Window Rules (~/.config/hypr/conf/rules.conf)
+# ══════════════════════════════════════════════════════════════════════════════
+
+windowrulev2 = suppressevent maximize, class:.*
+windowrulev2 = float, title:^(Picture-in-Picture|Picture in picture)$
+windowrulev2 = pin, title:^(Picture-in-Picture|Picture in picture)$
+windowrulev2 = float, class:^(pavucontrol|nm-connection-editor|blueman-manager|swappy)$
 """)
         return {"ok": True, "created_main": True, "conf_dir": conf_dir}
 
@@ -1640,7 +1973,7 @@ source = ~/.config/hypr/conf/quickshell.conf
         stripped = line.strip()
 
         if not stripped or stripped.startswith("#"):
-            if "source = ~/.config/hypr/" in stripped or "quickshell" in stripped:
+            if "source = ~/.config/hypr/" in stripped or "quickshell" in stripped or "Modular Configuration Sources" in stripped:
                 continue
             main_lines.append(line)
             continue
@@ -1659,13 +1992,25 @@ source = ~/.config/hypr/conf/quickshell.conf
         else:
             main_lines.append(line)
 
-    # 2. conf/autostart.conf
-    autostart_path = os.path.join(conf_dir, "autostart.conf")
-    autostart_content = "".join(autostart_lines).strip()
-    if not autostart_content:
-        autostart_content = """exec-once = systemctl enable --now --user hyprpolkitagent
+    # 2. Write conf/autostart.conf (Deduplicated)
+    existing_autostart = ""
+    if os.path.exists(autostart_path):
+        with open(autostart_path, "r", encoding="utf-8") as f:
+            existing_autostart = f.read()
+
+    if autostart_lines:
+        combined_autostart = deduplicate_lines(autostart_lines)
+        autostart_content = strip_header_banner("".join(combined_autostart))
+    elif existing_autostart.strip():
+        autostart_content = strip_header_banner(existing_autostart)
+    else:
+        autostart_content = """# Polkit Authentication Agent
+exec-once = systemctl enable --now --user hyprpolkitagent
+
+# Clipboard History Daemons
 exec-once = wl-paste --type text --watch cliphist store
 exec-once = wl-paste --type image --watch cliphist store"""
+
     with open(autostart_path, "w", encoding="utf-8") as f:
         f.write(f"""# ══════════════════════════════════════════════════════════════════════════════
 #  Autostart Daemons & Background Services (~/.config/hypr/conf/autostart.conf)
@@ -1674,10 +2019,14 @@ exec-once = wl-paste --type image --watch cliphist store"""
 {autostart_content}
 """)
 
-    # 3. conf/keybinds.conf
-    keybinds_path = os.path.join(conf_dir, "keybinds.conf")
-    keybind_content = "".join(keybind_lines).strip()
-    if not keybind_content:
+    # 3. Write conf/keybinds.conf (Deduplicated)
+    if keybind_lines:
+        combined_keybinds = deduplicate_lines(keybind_lines)
+        keybind_content = strip_header_banner("".join(combined_keybinds))
+    elif os.path.exists(keybinds_path):
+        with open(keybinds_path, "r", encoding="utf-8") as f:
+            keybind_content = strip_header_banner(f.read())
+    else:
         keybind_content = """$mainMod = SUPER
 $terminal = kitty
 $fileManager = nautilus
@@ -1703,6 +2052,7 @@ bind = $mainMod, 0, workspace, 10
 bind = , PRINT, exec, ~/.config/quickshell/scripts/screenshot.sh full
 bind = SHIFT, PRINT, exec, ~/.config/quickshell/scripts/screenshot.sh region
 bind = $mainMod, PRINT, exec, ~/.config/quickshell/scripts/screenshot.sh window"""
+
     with open(keybinds_path, "w", encoding="utf-8") as f:
         f.write(f"""# ══════════════════════════════════════════════════════════════════════════════
 #  Keybindings & Shortcuts (~/.config/hypr/conf/keybinds.conf)
@@ -1711,14 +2061,19 @@ bind = $mainMod, PRINT, exec, ~/.config/quickshell/scripts/screenshot.sh window"
 {keybind_content}
 """)
 
-    # 4. conf/rules.conf
-    rules_path = os.path.join(conf_dir, "rules.conf")
-    rules_content = "".join(rule_lines).strip()
-    if not rules_content:
+    # 4. Write conf/rules.conf (Deduplicated)
+    if rule_lines:
+        combined_rules = deduplicate_lines(rule_lines)
+        rules_content = strip_header_banner("".join(combined_rules))
+    elif os.path.exists(rules_path):
+        with open(rules_path, "r", encoding="utf-8") as f:
+            rules_content = strip_header_banner(f.read())
+    else:
         rules_content = """windowrulev2 = suppressevent maximize, class:.*
 windowrulev2 = float, title:^(Picture-in-Picture|Picture in picture)$
 windowrulev2 = pin, title:^(Picture-in-Picture|Picture in picture)$
 windowrulev2 = float, class:^(pavucontrol|nm-connection-editor|blueman-manager|swappy)$"""
+
     with open(rules_path, "w", encoding="utf-8") as f:
         f.write(f"""# ══════════════════════════════════════════════════════════════════════════════
 #  Window Rules (~/.config/hypr/conf/rules.conf)
@@ -1758,8 +2113,8 @@ def modularize_niri_kdl():
     niri_path = os.path.join(niri_dir, "config.kdl")
     os.makedirs(conf_dir, exist_ok=True)
 
+    # 1. Quickshell kdl (~/.config/niri/conf/quickshell.kdl)
     qs_kdl_path = os.path.join(conf_dir, "quickshell.kdl")
-    qs_kdl_compat_path = os.path.join(niri_dir, "quickshell.kdl")
     qs_kdl_content = """// ══════════════════════════════════════════════════════════════════════════════
 //  Quickshell Desktop Environment Integration (~/.config/niri/conf/quickshell.kdl)
 // ══════════════════════════════════════════════════════════════════════════════
@@ -1783,16 +2138,124 @@ binds {
 """
     with open(qs_kdl_path, "w", encoding="utf-8") as f:
         f.write(qs_kdl_content)
-    with open(qs_kdl_compat_path, "w", encoding="utf-8") as f:
-        f.write(qs_kdl_content)
+
+    autostart_path = os.path.join(conf_dir, "autostart.kdl")
+    keybinds_path = os.path.join(conf_dir, "keybinds.kdl")
+    rules_path = os.path.join(conf_dir, "rules.kdl")
 
     if not os.path.exists(niri_path):
         with open(niri_path, "w", encoding="utf-8") as f:
-            f.write("""// Niri Main Configuration (~/.config/niri/config.kdl)
+            f.write("""// ══════════════════════════════════════════════════════════════════════════════
+//  Niri Modular Configuration (~/.config/niri/config.kdl)
+// ══════════════════════════════════════════════════════════════════════════════
+
+// ── 1. Output & Display ──────────────────────────────────────────────────────
+output "eDP-1" {
+    mode "1920x1080@60.0"
+    scale 1.0
+    transform "normal"
+    position x=0 y=0
+}
+
+// ── 2. Layout & Window Behavior ──────────────────────────────────────────────
+layout {
+    gaps 8
+    center-focused-column "never"
+
+    preset-column-widths {
+        proportion 0.33333
+        proportion 0.5
+        proportion 0.66667
+    }
+
+    default-column-width { proportion 0.5; }
+
+    focus-ring {
+        width 2
+        active-color "#89b4fa"
+        inactive-color "#313244"
+    }
+
+    border {
+        off
+    }
+}
+
+// ── 3. Input Settings ────────────────────────────────────────────────────────
+input {
+    keyboard {
+        xkb {
+            layout "us"
+        }
+    }
+    touchpad {
+        natural-scroll
+        tap
+    }
+}
+
+// ── 4. Include Modular Configurations ────────────────────────────────────────
 include "conf/autostart.kdl"
 include "conf/keybinds.kdl"
 include "conf/rules.kdl"
 include "conf/quickshell.kdl"
+""")
+        if not os.path.exists(autostart_path):
+            with open(autostart_path, "w", encoding="utf-8") as f:
+                f.write("""// ══════════════════════════════════════════════════════════════════════════════
+//  Autostart Daemons & Services (~/.config/niri/conf/autostart.kdl)
+// ══════════════════════════════════════════════════════════════════════════════
+
+spawn-at-startup "wl-paste" "--type" "text" "--watch" "cliphist" "store"
+spawn-at-startup "wl-paste" "--type" "image" "--watch" "cliphist" "store"
+""")
+        if not os.path.exists(keybinds_path):
+            with open(keybinds_path, "w", encoding="utf-8") as f:
+                f.write("""// ══════════════════════════════════════════════════════════════════════════════
+//  Keybindings & Shortcuts (~/.config/niri/conf/keybinds.kdl)
+// ══════════════════════════════════════════════════════════════════════════════
+
+binds {
+    Mod+Return { spawn "kitty"; }
+    Mod+E      { spawn "nautilus"; }
+    Mod+Q      { close-window; }
+    Mod+F      { fullscreen-window; }
+
+    Mod+Left   { focus-column-left; }
+    Mod+Right  { focus-column-right; }
+    Mod+Up     { focus-window-up; }
+    Mod+Down   { focus-window-down; }
+
+    Mod+1 { focus-workspace 1; }
+    Mod+2 { focus-workspace 2; }
+    Mod+3 { focus-workspace 3; }
+    Mod+4 { focus-workspace 4; }
+    Mod+5 { focus-workspace 5; }
+    Mod+6 { focus-workspace 6; }
+    Mod+7 { focus-workspace 7; }
+    Mod+8 { focus-workspace 8; }
+    Mod+9 { focus-workspace 9; }
+
+    Print       { spawn "sh" "-c" "~/.config/quickshell/scripts/screenshot.sh full"; }
+    Shift+Print { spawn "sh" "-c" "~/.config/quickshell/scripts/screenshot.sh region"; }
+    Mod+Print   { spawn "sh" "-c" "~/.config/quickshell/scripts/screenshot.sh window"; }
+}
+""")
+        if not os.path.exists(rules_path):
+            with open(rules_path, "w", encoding="utf-8") as f:
+                f.write("""// ══════════════════════════════════════════════════════════════════════════════
+//  Window & Layout Rules (~/.config/niri/conf/rules.kdl)
+// ══════════════════════════════════════════════════════════════════════════════
+
+window-rule {
+    match app-id=r#"^(pavucontrol|nm-connection-editor|blueman-manager|swappy)$"#
+    open-floating true
+}
+
+window-rule {
+    match title=r#"^(Picture-in-Picture|Picture in picture)$"#
+    open-floating true
+}
 """)
         return {"ok": True, "created_main": True, "conf_dir": conf_dir}
 
@@ -1824,11 +2287,16 @@ include "conf/quickshell.kdl"
     rule_matches = re.findall(r'window-rule\s*\{([\s\S]*?)\n\}', content)
 
     # Write conf/autostart.kdl
-    autostart_path = os.path.join(conf_dir, "autostart.kdl")
-    autostart_content = "\n".join(clean_spawns).strip()
-    if not autostart_content:
+    if clean_spawns:
+        combined_spawns = deduplicate_lines(clean_spawns)
+        autostart_content = strip_header_banner("\n".join(combined_spawns))
+    elif os.path.exists(autostart_path):
+        with open(autostart_path, "r", encoding="utf-8") as f:
+            autostart_content = strip_header_banner(f.read())
+    else:
         autostart_content = """spawn-at-startup "wl-paste" "--type" "text" "--watch" "cliphist" "store"
 spawn-at-startup "wl-paste" "--type" "image" "--watch" "cliphist" "store\""""
+
     with open(autostart_path, "w", encoding="utf-8") as f:
         f.write(f"""// ══════════════════════════════════════════════════════════════════════════════
 //  Autostart Daemons & Services (~/.config/niri/conf/autostart.kdl)
@@ -1838,9 +2306,13 @@ spawn-at-startup "wl-paste" "--type" "image" "--watch" "cliphist" "store\""""
 """)
 
     # Write conf/keybinds.kdl
-    keybinds_path = os.path.join(conf_dir, "keybinds.kdl")
-    keybinds_content = "\n".join(clean_binds_lines).strip()
-    if not keybinds_content:
+    if clean_binds_lines:
+        combined_binds = deduplicate_lines(clean_binds_lines)
+        keybinds_content = strip_header_banner("\n".join(combined_binds))
+    elif os.path.exists(keybinds_path):
+        with open(keybinds_path, "r", encoding="utf-8") as f:
+            keybinds_content = strip_header_banner(f.read())
+    else:
         keybinds_content = """    Mod+Return { spawn "kitty"; }
     Mod+E      { spawn "nautilus"; }
     Mod+Q      { close-window; }
@@ -1864,6 +2336,7 @@ spawn-at-startup "wl-paste" "--type" "image" "--watch" "cliphist" "store\""""
     Print       { spawn "sh" "-c" "~/.config/quickshell/scripts/screenshot.sh full"; }
     Shift+Print { spawn "sh" "-c" "~/.config/quickshell/scripts/screenshot.sh region"; }
     Mod+Print   { spawn "sh" "-c" "~/.config/quickshell/scripts/screenshot.sh window"; }"""
+
     with open(keybinds_path, "w", encoding="utf-8") as f:
         f.write(f"""// ══════════════════════════════════════════════════════════════════════════════
 //  Keybindings & Shortcuts (~/.config/niri/conf/keybinds.kdl)
@@ -1875,9 +2348,12 @@ binds {{
 """)
 
     # Write conf/rules.kdl
-    rules_path = os.path.join(conf_dir, "rules.kdl")
-    rules_content = "\n\n".join([f"window-rule {{\n{rm.strip()}\n}}" for rm in rule_matches]).strip()
-    if not rules_content:
+    if rule_matches:
+        rules_content = strip_header_banner("\n\n".join([f"window-rule {{\n{rm.strip()}\n}}" for rm in rule_matches]))
+    elif os.path.exists(rules_path):
+        with open(rules_path, "r", encoding="utf-8") as f:
+            rules_content = strip_header_banner(f.read())
+    else:
         rules_content = """window-rule {
     match app-id=r#"^(pavucontrol|nm-connection-editor|blueman-manager|swappy)$"#
     open-floating true
@@ -1887,6 +2363,7 @@ window-rule {
     match title=r#"^(Picture-in-Picture|Picture in picture)$"#
     open-floating true
 }"""
+
     with open(rules_path, "w", encoding="utf-8") as f:
         f.write(f"""// ══════════════════════════════════════════════════════════════════════════════
 //  Window & Layout Rules (~/.config/niri/conf/rules.kdl)
@@ -1898,6 +2375,7 @@ window-rule {
     # Clean main config.kdl
     cleaned = content
     cleaned = re.sub(r'//\s*──\s*Quickshell.*', '', cleaned)
+    cleaned = re.sub(r'//\s*──\s*Modular Configurations.*', '', cleaned)
     cleaned = re.sub(r'include\s+["\'][^"\']*quickshell[^"\']*["\'];?', '', cleaned)
     cleaned = re.sub(r'include\s+["\']conf/[^"\']*["\'];?', '', cleaned)
     cleaned = re.sub(r'spawn-at-startup\s+[^\n;]+;?', '', cleaned)
@@ -1924,15 +2402,47 @@ include "conf/quickshell.kdl"
 
 def modularize_compositor(comp_type="auto"):
     results = {}
-    if comp_type in ["auto", "hypr_lua", "all"]:
-        if comp_type != "auto" or os.path.exists(os.path.join(HOME, ".config/hypr/hyprland.lua")):
+    hypr_lua_exists = os.path.exists(os.path.join(HOME, ".config/hypr/hyprland.lua"))
+    hypr_conf_exists = os.path.exists(os.path.join(HOME, ".config/hypr/hyprland.conf"))
+    niri_exists = os.path.exists(os.path.join(HOME, ".config/niri/config.kdl"))
+
+    if comp_type == "hyprland":
+        if hypr_lua_exists:
             results["hypr_lua"] = modularize_hypr_lua()
-    if comp_type in ["auto", "hypr_conf", "all"]:
-        if comp_type != "auto" or os.path.exists(os.path.join(HOME, ".config/hypr/hyprland.conf")):
+        else:
             results["hypr_conf"] = modularize_hypr_conf()
-    if comp_type in ["auto", "niri", "all"]:
-        if comp_type != "auto" or os.path.exists(os.path.join(HOME, ".config/niri/config.kdl")):
+    elif comp_type == "hypr_lua":
+        results["hypr_lua"] = modularize_hypr_lua()
+    elif comp_type == "hypr_conf":
+        results["hypr_conf"] = modularize_hypr_conf()
+    elif comp_type == "niri":
+        results["niri"] = modularize_niri_kdl()
+    elif comp_type == "all":
+        if hypr_lua_exists:
+            results["hypr_lua"] = modularize_hypr_lua()
+        if hypr_conf_exists or not hypr_lua_exists:
+            results["hypr_conf"] = modularize_hypr_conf()
+        results["niri"] = modularize_niri_kdl()
+    else:  # auto
+        applied = False
+        if hypr_lua_exists:
+            results["hypr_lua"] = modularize_hypr_lua()
+            applied = True
+        if hypr_conf_exists:
+            results["hypr_conf"] = modularize_hypr_conf()
+            applied = True
+        if niri_exists:
             results["niri"] = modularize_niri_kdl()
+            applied = True
+        if not applied:
+            # Check installed binaries
+            if is_hyprland() or shutil.which("hyprctl"):
+                results["hypr_conf"] = modularize_hypr_conf()
+            elif is_niri() or shutil.which("niri"):
+                results["niri"] = modularize_niri_kdl()
+            else:
+                results["hypr_conf"] = modularize_hypr_conf()
+
     return {"ok": True, "results": results}
 
 def save_monitors_to_file(monitors_data, is_lua=True):
