@@ -148,14 +148,16 @@ PanelWindow {
                             anchors.fill: parent
                             source: {
                                 const icon = notifItem.appIcon
-                                if (!icon) return ""
-                                if (icon.startsWith("/") || icon.startsWith("file://") || icon.startsWith("http"))
+                                if (icon.startsWith("file://") || icon.startsWith("http://") || icon.startsWith("https://") || icon.startsWith("image://"))
                                     return icon
+                                if (icon.startsWith("/"))
+                                    return "file://" + icon
                                 if (Services.SystemTheme) {
                                     const res = Services.SystemTheme.getIcon(icon)
-                                    if (res) return res
+                                    if (res && res.length > 0) return res
                                 }
-                                return Quickshell.iconPath(icon, true)
+                                const qp = Quickshell.iconPath(icon, false)
+                                return (qp && qp.startsWith("/")) ? ("file://" + qp) : (qp || "")
                             }
                             fillMode: Image.PreserveAspectFit
                             asynchronous: true
@@ -211,18 +213,25 @@ PanelWindow {
                         id: popThumb
                         property string imgPath: notifItem.image || ""
                         visible: imgPath.length > 0 && status === Image.Ready
+                        Layout.preferredWidth: visible ? 30 : 0
+                        Layout.preferredHeight: visible ? 30 : 0
                         source: {
                             if (!imgPath) return ""
-                            if (imgPath.startsWith("/") || imgPath.startsWith("file://") || imgPath.startsWith("http"))
+                            if (imgPath.startsWith("file://") || imgPath.startsWith("http://") || imgPath.startsWith("https://") || imgPath.startsWith("image://"))
                                 return imgPath
-                            return Quickshell.iconPath(imgPath, true)
+                            if (imgPath.startsWith("/"))
+                                return "file://" + imgPath
+                            if (Services.SystemTheme) {
+                                const res = Services.SystemTheme.getIcon(imgPath)
+                                if (res && res.length > 0) return res
+                            }
+                            const qp = Quickshell.iconPath(imgPath, false)
+                            return (qp && qp.startsWith("/")) ? ("file://" + qp) : (qp || "")
                         }
-                        Layout.preferredWidth: 40
-                        Layout.preferredHeight: 40
                         fillMode: Image.PreserveAspectCrop
                         asynchronous: true
                         cache: true
-                        sourceSize: Qt.size(80, 80)
+                        sourceSize: Qt.size(60, 60)
                         clip: true
                         Layout.alignment: Qt.AlignTop
                     }

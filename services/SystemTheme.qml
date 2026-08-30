@@ -153,6 +153,22 @@ Singleton {
     property var iconCacheMap: ({})
     property int iconThemeRev: 0
 
+    function reloadIconCache() {
+        if (iconCacheFileView) {
+            iconCacheFileView.reload()
+            try {
+                var raw = iconCacheFileView.text()
+                if (raw && raw.trim().startsWith("{")) {
+                    root.iconCacheMap = JSON.parse(raw.trim())
+                    root.iconThemeRev++
+                }
+            } catch (e) {}
+        }
+        loadCacheProc.running = false
+        loadCacheProc.rawOutput = ""
+        loadCacheProc.running = true
+    }
+
     FileView {
         id: iconCacheFileView
         path: (Quickshell.env("HOME") || "/home/" + (Quickshell.env("USER") || "user")) + "/.cache/quickshell/icon_theme_cache.json"
@@ -170,11 +186,22 @@ Singleton {
     }
 
     function getIcon(iconName) {
-        if (!iconName || typeof iconName !== "string") return ""
-        if (iconName.startsWith("file://")) return iconName
-        if (iconName.startsWith("/")) return "file://" + iconName
+        if (!iconName) return ""
+        var s = typeof iconName === "string" ? iconName : (iconName.name || iconName.toString() || "")
+        if (!s) return ""
+
+        if (s.startsWith("file://") || s.startsWith("http://") || s.startsWith("https://")) return s
+        if (s.startsWith("/")) return "file://" + s
         
-        var clean = iconName.toLowerCase().trim()
+        // Strip image://icon/ prefix emitted by Quickshell DBusMenu/desktop items
+        if (s.startsWith("image://icon/")) {
+            s = s.substring(13)
+        } else if (s.startsWith("image://")) {
+            // Internal image memory handles (e.g. image://qsimage/, image://qsdbusmenu/)
+            return s
+        }
+        
+        var clean = s.toLowerCase().trim()
         if (clean.endsWith(".svg") || clean.endsWith(".png") || clean.endsWith(".xpm")) {
             clean = clean.substring(0, clean.lastIndexOf("."))
         }
@@ -195,8 +222,18 @@ Singleton {
                 return "file://" + iconCacheMap[dashed]
             }
         }
+
+        // Try reverse-DNS stripped prefixes (e.g. org.gnome.tweaks -> gnome-tweaks)
+        if (clean.indexOf("org.gnome.") === 0) {
+            var gn = "gnome-" + clean.substring(10)
+            if (iconCacheMap && iconCacheMap[gn]) return "file://" + iconCacheMap[gn]
+        }
+        if (clean.indexOf("org.kde.") === 0) {
+            var kde = clean.substring(8)
+            if (iconCacheMap && iconCacheMap[kde]) return "file://" + iconCacheMap[kde]
+        }
         
-        var qp = Quickshell.iconPath(iconName, true)
+        var qp = Quickshell.iconPath(s, false)
         if (qp && qp.length > 0) {
             return qp.startsWith("file://") ? qp : (qp.startsWith("/") ? ("file://" + qp) : qp)
         }
@@ -267,8 +304,7 @@ Singleton {
                             if (cur.color_scheme) root.currentColorScheme = cur.color_scheme
                         }
                         root.isLoaded = true
-                        loadCacheProc.rawOutput = ""
-                        loadCacheProc.running = true
+                        root.reloadIconCache()
                     }
                 } catch (e) {
                 }
@@ -279,11 +315,7 @@ Singleton {
     Process {
         id: execProc
         onExited: (exitCode, exitStatus) => {
-            if (execProc.command && execProc.command.indexOf("set_icon_theme") !== -1) {
-                loadCacheProc.rawOutput = ""
-                loadCacheProc.running = true
-                iconCacheFileView.reload()
-            }
+            root.reloadIconCache()
         }
     }
 }

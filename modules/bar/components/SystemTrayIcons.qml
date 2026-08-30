@@ -75,14 +75,14 @@ Rectangle {
                             return icon
                         if (icon.startsWith("/"))
                             return "file://" + icon
-                        const qp = Quickshell.iconPath(icon, true)
-                        return (qp && qp.startsWith("/")) ? ("file://" + qp) : qp
+                        const qp = Quickshell.iconPath(icon, false)
+                        return (qp && qp.startsWith("/")) ? ("file://" + qp) : (qp || "")
                     }
                     fillMode: Image.PreserveAspectFit
                     asynchronous: true
                     cache: true
                     sourceSize: Qt.size(32, 32)
-                    visible: status === Image.Ready
+                    visible: status === Image.Ready && source.toString().length > 0
                 }
 
                 Text {
