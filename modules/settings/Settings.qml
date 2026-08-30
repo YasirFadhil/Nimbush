@@ -18,15 +18,15 @@ FloatingWindow {
     color: Services.Theme.isDark ? "#16161a" : "#f4f5f8"
 
     property string overlayId: "settings"
-    property int currentTab: (Services.Config && Services.Config.lastSettingsTab !== undefined) ? Services.Config.lastSettingsTab : 0
+    property int currentTab: 0
     onCurrentTabChanged: {
         if (contentFlick) contentFlick.contentY = 0
-        if (Services.Config) Services.Config.setLastSettingsTab(currentTab)
+        compSubTab = 0
+        keyCategory = "all"
+        isAddingKeybind = false
+        keySearchQuery = ""
     }
     property int compSubTab: 0
-    onCompSubTabChanged: {
-        if (Services.Config) Services.Config.setLastSettingsCompSubTab(compSubTab)
-    }
     property string keySearchQuery: ""
     property string keyCategory: "all"
     property string sidebarSearchQuery: ""
@@ -542,12 +542,14 @@ FloatingWindow {
             } else {
                 compSubTab = 0
             }
-        } else if (Services.Config && Services.Config.lastSettingsTab !== undefined) {
-            currentTab = Services.Config.lastSettingsTab
-            compSubTab = 0
         } else {
+            currentTab = 0
             compSubTab = 0
         }
+        keyCategory = "all"
+        isAddingKeybind = false
+        keySearchQuery = ""
+        sidebarSearchQuery = ""
         visible = true
         keyFocus.forceActiveFocus()
         if (Services.Compositor) {
@@ -564,6 +566,12 @@ FloatingWindow {
         if (Services.Config) {
             Services.Config.saveConfigImmediately()
         }
+        currentTab = 0
+        compSubTab = 0
+        keyCategory = "all"
+        isAddingKeybind = false
+        keySearchQuery = ""
+        sidebarSearchQuery = ""
         visible = false
     }
 
@@ -585,6 +593,12 @@ FloatingWindow {
             if (Services.Config) {
                 Services.Config.saveConfigImmediately()
             }
+            currentTab = 0
+            compSubTab = 0
+            keyCategory = "all"
+            isAddingKeybind = false
+            keySearchQuery = ""
+            sidebarSearchQuery = ""
         }
     }
 
@@ -2200,36 +2214,43 @@ FloatingWindow {
 
                     // User Profile Banner (macOS Apple ID Card Style)
                     Rectangle {
+                        id: sidebarUserBanner
                         Layout.fillWidth: true
                         height: 48
                         radius: 8
-                        color: Services.Theme.isDark ? Qt.rgba(255, 255, 255, 0.04) : Qt.rgba(0, 0, 0, 0.03)
-                        border.color: Services.Theme.borderSubtle
+                        color: bannerMouse.containsMouse ? (Services.Theme.isDark ? Qt.rgba(255, 255, 255, 0.08) : Qt.rgba(0, 0, 0, 0.06)) : (Services.Theme.isDark ? Qt.rgba(255, 255, 255, 0.04) : Qt.rgba(0, 0, 0, 0.03))
+                        border.color: bannerMouse.containsMouse ? Services.Theme.accent : Services.Theme.borderSubtle
                         border.width: 1
+
+                        MouseArea {
+                            id: bannerMouse
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: {
+                                rootWindow.currentTab = 4 // Jump to Lock & Power / User Profile & Avatar
+                            }
+                        }
 
                         RowLayout {
                             anchors.fill: parent
                             anchors.margins: 6
                             spacing: 8
 
-                            // Avatar Squircle
-                            Rectangle {
+                            // Avatar Squircle with Live Avatar
+                            Services.AvatarFrame {
                                 Layout.preferredWidth: 34
                                 Layout.preferredHeight: 34
-                                radius: 8
-                                color: Services.Theme.accent
-
-                                Text {
-                                    anchors.centerIn: parent
-                                    text: {
-                                        const u = (Quickshell.env("USER") || "user").toUpperCase()
-                                        return u.length > 0 ? u.charAt(0) : "󰌽"
-                                    }
-                                    font.family: Services.Theme.fontSymbols
-                                    font.pixelSize: 14
-                                    font.bold: true
-                                    color: Services.Theme.bgOnAccent
+                                source: Services.OsInfo.avatarPath
+                                shapeRadius: 8
+                                backgroundColor: Services.Theme.accent
+                                fallbackText: {
+                                    const u = (Services.OsInfo.username || Quickshell.env("USER") || "user").toUpperCase()
+                                    return u.length > 0 ? u.charAt(0) : "󰌽"
                                 }
+                                fallbackFontFamily: Services.Theme.fontSymbols
+                                fallbackFontSize: 14
+                                fallbackColor: Services.Theme.bgOnAccent
                             }
 
                             ColumnLayout {
@@ -2239,7 +2260,7 @@ FloatingWindow {
 
                                 Text {
                                     Layout.fillWidth: true
-                                    text: Quickshell.env("USER") || "User"
+                                    text: Services.OsInfo.username || Quickshell.env("USER") || "User"
                                     font.pixelSize: 12
                                     font.weight: Font.DemiBold
                                     color: Services.Theme.textPrimary
@@ -3377,16 +3398,13 @@ FloatingWindow {
 
                                     Repeater {
                                         model: (Services.Compositor && Services.Compositor.monitorsList) ? Services.Compositor.monitorsList : []
-                                        delegate: SettingsRow {
+                                        delegate: SettingsSwitch {
                                             required property var modelData
                                             title: (modelData.name || "Display") + (modelData.focused ? " (Primary)" : "")
                                             subtitle: (modelData.width + "×" + modelData.height + " @ " + modelData.refreshRate + "Hz · " + (modelData.description || modelData.model || "Display Output"))
-
-                                            SettingsSwitch {
-                                                checked: Services.Config ? Services.Config.isBarMonitorEnabled(modelData.name) : true
-                                                onToggled: {
-                                                    if (Services.Config) Services.Config.setBarMonitor(modelData.name, checked)
-                                                }
+                                            checked: Services.Config ? Services.Config.isBarMonitorEnabled(modelData.name) : true
+                                            onToggled: (st) => {
+                                                if (Services.Config) Services.Config.setBarMonitor(modelData.name, st)
                                             }
                                         }
                                     }
@@ -3879,26 +3897,264 @@ FloatingWindow {
                             Layout.fillWidth: true
                             spacing: 14
 
+                            // User Profile & Avatar Styling Section (Top Priority)
                             SettingsSection {
-                                title: "Lockscreen Display"
-                                icon: Services.Icons.lock
+                                title: "User Profile & Avatar"
+                                icon: Services.Icons.user
 
-                                SettingsRow {
-                                    title: "Lockscreen Layout Mode"
-                                    subtitle: "Overall layout style (Default, Compact Card, or Minimalist)"
+                                // Interactive Profile Picture Card
+                                Rectangle {
+                                    Layout.fillWidth: true
+                                    Layout.margins: 10
+                                    height: 100
+                                    radius: 8
+                                    color: Services.Theme.bgElevated
+                                    border.color: Services.Theme.border
+                                    border.width: 1
 
-                                    SettingsDropdown {
-                                        currentValue: Services.Config ? Services.Config.lockscreenLayout : "default"
-                                        model: [
-                                            { id: "default", label: "Default (Spacious Spread)" },
-                                            { id: "compact", label: "Compact (Centered Glass Card)" },
-                                            { id: "minimal", label: "Minimal (Clean Typography)" }
-                                        ]
-                                        onSelected: (val) => { if (Services.Config) Services.Config.setLockscreenLayout(val) }
+                                    RowLayout {
+                                        anchors.fill: parent
+                                        anchors.margins: 12
+                                        spacing: 14
+
+                                        // Live Avatar Frame with Shape & Glow
+                                        Item {
+                                            id: profilePreviewFrame
+                                            Layout.preferredWidth: 68
+                                            Layout.preferredHeight: 68
+
+                                            Services.AvatarFrame {
+                                                anchors.fill: parent
+                                                source: Services.OsInfo.avatarPath
+                                                shapeRadius: {
+                                                    const s = Services.Config ? Services.Config.lockscreenAvatarShape : "circle"
+                                                    if (s === "circle") return 34
+                                                    if (s === "squircle") return 20
+                                                    return 14
+                                                }
+                                                backgroundColor: Services.Theme.surfaceVariant
+                                                borderColor: (Services.Config && Services.Config.lockscreenAvatarRing) ? Services.Theme.accent : Services.Theme.border
+                                                borderWidth: (Services.Config && Services.Config.lockscreenAvatarRing) ? 2 : 1
+                                                fallbackText: {
+                                                    const u = (Services.OsInfo.username || Quickshell.env("USER") || "user").toUpperCase()
+                                                    return u.length > 0 ? u.charAt(0) : "󰌽"
+                                                }
+                                                fallbackFontFamily: Services.Theme.fontSymbols
+                                                fallbackFontSize: 26
+                                                fallbackColor: Services.Theme.accent
+                                            }
+
+                                            // Camera badge overlay on hover
+                                            Rectangle {
+                                                anchors.fill: parent
+                                                radius: {
+                                                    const s = Services.Config ? Services.Config.lockscreenAvatarShape : "circle"
+                                                    if (s === "circle") return 34
+                                                    if (s === "squircle") return 20
+                                                    return 14
+                                                }
+                                                color: Qt.rgba(0, 0, 0, 0.45)
+                                                visible: previewCardMouse.containsMouse
+                                                antialiasing: true
+
+                                                Text {
+                                                    anchors.centerIn: parent
+                                                    text: "󰄀"
+                                                    font.family: Services.Theme.fontSymbols
+                                                    font.pixelSize: 18
+                                                    color: "white"
+                                                }
+                                            }
+
+                                            MouseArea {
+                                                id: previewCardMouse
+                                                anchors.fill: parent
+                                                hoverEnabled: true
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: Services.OsInfo.pickCustomAvatar()
+                                            }
+                                        }
+
+                                        // User Info & Status
+                                        ColumnLayout {
+                                            Layout.fillWidth: true
+                                            Layout.alignment: Qt.AlignVCenter
+                                            spacing: 3
+
+                                            RowLayout {
+                                                spacing: 6
+                                                Text {
+                                                    text: Services.OsInfo.username || Quickshell.env("USER") || "User"
+                                                    font.pixelSize: 14
+                                                    font.weight: Font.DemiBold
+                                                    color: Services.Theme.textPrimary
+                                                }
+
+                                                // Status badge
+                                                Rectangle {
+                                                    height: 18
+                                                    implicitWidth: avatarStatusTxt.implicitWidth + 10
+                                                    radius: 4
+                                                    color: Services.OsInfo.isCustomAvatar ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.15) : (Services.Theme.isDark ? Qt.rgba(255, 255, 255, 0.06) : Qt.rgba(0, 0, 0, 0.05))
+                                                    border.color: Services.OsInfo.isCustomAvatar ? Services.Theme.accent : Services.Theme.border
+                                                    border.width: 1
+
+                                                    Text {
+                                                        id: avatarStatusTxt
+                                                        anchors.centerIn: parent
+                                                        text: Services.OsInfo.isCustomAvatar ? "Custom Photo" : "System Default"
+                                                        font.pixelSize: 9
+                                                        font.weight: Font.Medium
+                                                        color: Services.OsInfo.isCustomAvatar ? Services.Theme.accent : Services.Theme.textSecondary
+                                                    }
+                                                }
+                                            }
+
+                                            Text {
+                                                text: (Services.OsInfo.username || "user") + "@" + (Services.OsInfo.hostname || "local") + " · " + (Services.OsInfo.shellName || "sh")
+                                                font.pixelSize: 10
+                                                color: Services.Theme.textSecondary
+                                            }
+
+                                            Text {
+                                                Layout.fillWidth: true
+                                                text: Services.OsInfo.isCustomAvatar ? (Services.Config.customAvatar.replace("file://", "")) : "Using ~/.face or desktop accounts icon"
+                                                font.family: Services.Theme.fontMono
+                                                font.pixelSize: 9
+                                                color: Services.Theme.textDisabled
+                                                elide: Text.ElideMiddle
+                                            }
+                                        }
+
+                                        // Action Buttons (Choose / Reset)
+                                        RowLayout {
+                                            Layout.alignment: Qt.AlignVCenter
+                                            spacing: 6
+
+                                            // Choose Photo Button
+                                            Rectangle {
+                                                height: 32
+                                                implicitWidth: choosePhotoTxt.implicitWidth + 24
+                                                radius: 6
+                                                color: chooseBtnMouse.containsMouse ? Qt.lighter(Services.Theme.accent, 1.15) : Services.Theme.accent
+                                                border.color: Services.Theme.accent
+                                                border.width: 1
+
+                                                RowLayout {
+                                                    anchors.centerIn: parent
+                                                    spacing: 6
+                                                    Text {
+                                                        text: Services.Icons.image || "󰋩"
+                                                        font.family: Services.Theme.fontSymbols
+                                                        font.pixelSize: 11
+                                                        color: Services.Theme.bgOnAccent
+                                                    }
+                                                    Text {
+                                                        id: choosePhotoTxt
+                                                        text: "Choose Photo"
+                                                        font.pixelSize: 10
+                                                        font.weight: Font.DemiBold
+                                                        color: Services.Theme.bgOnAccent
+                                                    }
+                                                }
+
+                                                MouseArea {
+                                                    id: chooseBtnMouse
+                                                    anchors.fill: parent
+                                                    hoverEnabled: true
+                                                    cursorShape: Qt.PointingHandCursor
+                                                    onClicked: Services.OsInfo.pickCustomAvatar()
+                                                }
+                                            }
+
+                                            // Reset Button (Only visible if custom avatar is set)
+                                            Rectangle {
+                                                visible: Services.OsInfo.isCustomAvatar
+                                                height: 32
+                                                implicitWidth: resetPhotoTxt.implicitWidth + 20
+                                                radius: 6
+                                                color: resetBtnMouse.containsMouse ? Services.Theme.bgHover : Services.Theme.surfaceVariant
+                                                border.color: Services.Theme.border
+                                                border.width: 1
+
+                                                RowLayout {
+                                                    anchors.centerIn: parent
+                                                    spacing: 5
+                                                    Text {
+                                                        text: Services.Icons.undo || "󰁯"
+                                                        font.family: Services.Theme.fontSymbols
+                                                        font.pixelSize: 11
+                                                        color: Services.Theme.textSecondary
+                                                    }
+                                                    Text {
+                                                        id: resetPhotoTxt
+                                                        text: "Reset"
+                                                        font.pixelSize: 10
+                                                        font.weight: Font.Medium
+                                                        color: Services.Theme.textPrimary
+                                                    }
+                                                }
+
+                                                MouseArea {
+                                                    id: resetBtnMouse
+                                                    anchors.fill: parent
+                                                    hoverEnabled: true
+                                                    cursorShape: Qt.PointingHandCursor
+                                                    onClicked: Services.OsInfo.clearCustomAvatar()
+                                                }
+                                            }
+                                        }
                                     }
                                 }
 
                                 SettingsDivider {}
+
+                                SettingsRow {
+                                    title: "Avatar Profile Shape"
+                                    subtitle: "Geometry and curvature of avatar frame"
+
+                                    SettingsDropdown {
+                                        currentValue: Services.Config ? Services.Config.lockscreenAvatarShape : "circle"
+                                        model: [
+                                            { id: "circle",   label: "Circular (Round 360°)" },
+                                            { id: "squircle", label: "Squircle (Smooth Curvature)" },
+                                            { id: "rounded",  label: "Rounded Square (Radius 16)" }
+                                        ]
+                                        onSelected: (val) => { if (Services.Config) Services.Config.setLockscreenAvatarShape(val) }
+                                    }
+                                }
+
+                                SettingsDivider {}
+
+                                SettingsSwitch {
+                                    title: "Accent Glow Focus Ring"
+                                    subtitle: "Outer breathing glow ring around avatar picture"
+                                    checked: Services.Config ? Services.Config.lockscreenAvatarRing : true
+                                    onToggled: (st) => { if (Services.Config) Services.Config.setLockscreenAvatarRing(st) }
+                                }
+
+                                SettingsDivider {}
+
+                                SettingsSwitch {
+                                    title: "Display Profile Picture"
+                                    subtitle: "Show user avatar or initials monogram"
+                                    checked: Services.Config ? Services.Config.lockscreenShowAvatar : true
+                                    onToggled: (st) => { if (Services.Config) Services.Config.setLockscreenShowAvatar(st) }
+                                }
+
+                                SettingsDivider {}
+
+                                SettingsSwitch {
+                                    title: "Display Greeting Subtitle"
+                                    subtitle: "Show greeting and user@hostname tag"
+                                    checked: Services.Config ? Services.Config.lockscreenShowGreeting : true
+                                    onToggled: (st) => { if (Services.Config) Services.Config.setLockscreenShowGreeting(st) }
+                                }
+                            }
+
+                            SettingsSection {
+                                title: "Lockscreen Display"
+                                icon: Services.Icons.lock
 
                                 SettingsRow {
                                     title: "Clock Presentation Style"
@@ -3972,54 +4228,6 @@ FloatingWindow {
                                 }
                             }
 
-                            // User Profile & Avatar Styling Section
-                            SettingsSection {
-                                title: "User Profile & Avatar"
-                                icon: Services.Icons.user
-
-                                SettingsRow {
-                                    title: "Avatar Profile Shape"
-                                    subtitle: "Geometry and curvature of avatar frame"
-
-                                    SettingsDropdown {
-                                        currentValue: Services.Config ? Services.Config.lockscreenAvatarShape : "circle"
-                                        model: [
-                                            { id: "circle",   label: "Circular (Round 360°)" },
-                                            { id: "squircle", label: "Squircle (Smooth Curvature)" },
-                                            { id: "rounded",  label: "Rounded Square (Radius 16)" }
-                                        ]
-                                        onSelected: (val) => { if (Services.Config) Services.Config.setLockscreenAvatarShape(val) }
-                                    }
-                                }
-
-                                SettingsDivider {}
-
-                                SettingsSwitch {
-                                    title: "Accent Glow Focus Ring"
-                                    subtitle: "Outer breathing glow ring around avatar picture"
-                                    checked: Services.Config ? Services.Config.lockscreenAvatarRing : true
-                                    onToggled: (st) => { if (Services.Config) Services.Config.setLockscreenAvatarRing(st) }
-                                }
-
-                                SettingsDivider {}
-
-                                SettingsSwitch {
-                                    title: "Display Profile Picture"
-                                    subtitle: "Show user avatar or initials monogram"
-                                    checked: Services.Config ? Services.Config.lockscreenShowAvatar : true
-                                    onToggled: (st) => { if (Services.Config) Services.Config.setLockscreenShowAvatar(st) }
-                                }
-
-                                SettingsDivider {}
-
-                                SettingsSwitch {
-                                    title: "Display Greeting Subtitle"
-                                    subtitle: "Show greeting and user@hostname tag"
-                                    checked: Services.Config ? Services.Config.lockscreenShowGreeting : true
-                                    onToggled: (st) => { if (Services.Config) Services.Config.setLockscreenShowGreeting(st) }
-                                }
-                            }
-
                             // Password Input & Authentication Styling Section
                             SettingsSection {
                                 title: "Password Authentication & Media"
@@ -4043,25 +4251,9 @@ FloatingWindow {
 
                                 SettingsDivider {}
 
-                                SettingsRow {
-                                    title: "Media Player Layout"
-                                    subtitle: "Appearance of music and media widget on lockscreen"
-
-                                    SettingsDropdown {
-                                        currentValue: Services.Config ? Services.Config.lockscreenMediaStyle : "pill"
-                                        model: [
-                                            { id: "pill", label: "Floating Mini Capsule" },
-                                            { id: "card", label: "Full Glass Album Card" }
-                                        ]
-                                        onSelected: (val) => { if (Services.Config) Services.Config.setLockscreenMediaStyle(val) }
-                                    }
-                                }
-
-                                SettingsDivider {}
-
                                 SettingsSwitch {
                                     title: "Show Media Player"
-                                    subtitle: "Display media playback controls when audio is playing"
+                                    subtitle: "Display corner media playback controls when audio is playing"
                                     checked: Services.Config ? Services.Config.lockscreenShowMedia : true
                                     onToggled: (st) => { if (Services.Config) Services.Config.setLockscreenShowMedia(st) }
                                 }
@@ -7140,10 +7332,10 @@ FloatingWindow {
                             Layout.fillWidth: true
                             spacing: 12
 
-                            // ── Hero Branding Card (Subtle & Calm) ────────────────
+                            // ── User Profile Hero Banner (Refined Card) ────────────────
                             Rectangle {
                                 Layout.fillWidth: true
-                                height: 88
+                                height: 96
                                 radius: Services.Theme.radiusSm || 8
                                 color: Services.Theme.surfaceVariant
                                 border.color: Services.Theme.border
@@ -7155,51 +7347,114 @@ FloatingWindow {
                                     anchors.rightMargin: 16
                                     anchors.topMargin: 12
                                     anchors.bottomMargin: 12
-                                    spacing: 14
+                                    spacing: 16
 
-                                    // Subtle Logo Container
-                                    Rectangle {
-                                        Layout.preferredWidth: 46
-                                        Layout.preferredHeight: 46
+                                    // Interactive Avatar Frame with Live Photo & Shape
+                                    Item {
+                                        id: aboutHeroAvatarFrame
+                                        Layout.preferredWidth: 64
+                                        Layout.preferredHeight: 64
                                         Layout.alignment: Qt.AlignVCenter
-                                        radius: 10
-                                        color: Services.Theme.bgElevated
-                                        border.color: Services.Theme.border
-                                        border.width: 1
 
-                                        Text {
-                                            anchors.centerIn: parent
-                                            text: (Services.OsInfo && Services.OsInfo.logoGlyph) ? Services.OsInfo.logoGlyph : (Services.Icons.sparkle || "󰀉")
-                                            font.family: Services.Theme.fontSymbols
-                                            font.pixelSize: 22
-                                            color: Services.Theme.accent
+                                        Services.AvatarFrame {
+                                            anchors.fill: parent
+                                            source: Services.OsInfo.avatarPath
+                                            shapeRadius: {
+                                                const s = Services.Config ? Services.Config.lockscreenAvatarShape : "circle"
+                                                if (s === "circle") return 32
+                                                if (s === "squircle") return 18
+                                                return 12
+                                            }
+                                            backgroundColor: Services.Theme.bgElevated
+                                            borderColor: (Services.Config && Services.Config.lockscreenAvatarRing) ? Services.Theme.accent : Services.Theme.border
+                                            borderWidth: (Services.Config && Services.Config.lockscreenAvatarRing) ? 2 : 1
+                                            fallbackText: {
+                                                const u = (Services.OsInfo.username || Quickshell.env("USER") || "user").toUpperCase()
+                                                return u.length > 0 ? u.charAt(0) : "󰌽"
+                                            }
+                                            fallbackFontFamily: Services.Theme.fontSymbols
+                                            fallbackFontSize: 24
+                                            fallbackColor: Services.Theme.accent
+                                        }
+
+                                        // Camera overlay on hover
+                                        Rectangle {
+                                            anchors.fill: parent
+                                            radius: {
+                                                const s = Services.Config ? Services.Config.lockscreenAvatarShape : "circle"
+                                                if (s === "circle") return 32
+                                                if (s === "squircle") return 18
+                                                return 12
+                                            }
+                                            color: Qt.rgba(0, 0, 0, 0.45)
+                                            visible: aboutHeroAvatarMouse.containsMouse
+                                            antialiasing: true
+
+                                            Text {
+                                                anchors.centerIn: parent
+                                                text: "󰄀"
+                                                font.family: Services.Theme.fontSymbols
+                                                font.pixelSize: 18
+                                                color: "white"
+                                            }
+                                        }
+
+                                        MouseArea {
+                                            id: aboutHeroAvatarMouse
+                                            anchors.fill: parent
+                                            hoverEnabled: true
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: Services.OsInfo.pickCustomAvatar()
                                         }
                                     }
 
-                                    // Suite Information
+                                    // User & Host Information Column
                                     ColumnLayout {
-                                        spacing: 2
+                                        spacing: 3
                                         Layout.alignment: Qt.AlignVCenter
+                                        Layout.fillWidth: true
 
                                         RowLayout {
-                                            spacing: 6
+                                            spacing: 8
                                             Text {
-                                                text: "Quickshell Desktop"
-                                                font.pixelSize: 14
+                                                text: Services.OsInfo.username || Quickshell.env("USER") || "User"
+                                                font.pixelSize: 15
                                                 font.weight: Font.DemiBold
                                                 color: Services.Theme.textPrimary
                                             }
+
+                                            // Distro Badge Pill
                                             Rectangle {
                                                 height: 18
-                                                implicitWidth: qsVerTxt.implicitWidth + 8
+                                                implicitWidth: aboutHeroDistroTxt.implicitWidth + 10
                                                 radius: 4
-                                                color: Services.Theme.bgElevated
+                                                color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.15)
+                                                border.color: Services.Theme.accent
+                                                border.width: 1
+
+                                                Text {
+                                                    id: aboutHeroDistroTxt
+                                                    anchors.centerIn: parent
+                                                    text: Services.OsInfo.distroName || "Linux"
+                                                    font.pixelSize: 9
+                                                    font.weight: Font.Medium
+                                                    color: Services.Theme.accent
+                                                }
+                                            }
+
+                                            // Avatar Status Badge Pill
+                                            Rectangle {
+                                                height: 18
+                                                implicitWidth: aboutHeroStatusTxt.implicitWidth + 10
+                                                radius: 4
+                                                color: Services.Theme.isDark ? Qt.rgba(255, 255, 255, 0.06) : Qt.rgba(0, 0, 0, 0.05)
                                                 border.color: Services.Theme.border
                                                 border.width: 1
+
                                                 Text {
-                                                    id: qsVerTxt
+                                                    id: aboutHeroStatusTxt
                                                     anchors.centerIn: parent
-                                                    text: "v1.2"
+                                                    text: Services.OsInfo.isCustomAvatar ? "Custom Photo" : "System Default"
                                                     font.pixelSize: 9
                                                     font.weight: Font.Medium
                                                     color: Services.Theme.textSecondary
@@ -7208,8 +7463,9 @@ FloatingWindow {
                                         }
 
                                         Text {
-                                            text: "Crafted with Qt 6, QML & Wayland LayerShell protocols."
+                                            text: (Services.OsInfo.username || "user") + "@" + (Services.OsInfo.hostname || "local") + "  ·  " + (Services.OsInfo.shellName || "sh")
                                             font.pixelSize: 10
+                                            font.weight: Font.Medium
                                             color: Services.Theme.textSecondary
                                         }
 
@@ -7221,7 +7477,84 @@ FloatingWindow {
                                         }
                                     }
 
-                                    Item { Layout.fillWidth: true }
+                                    // Action Buttons: Choose Photo & Reset
+                                    RowLayout {
+                                        Layout.alignment: Qt.AlignVCenter
+                                        spacing: 6
+
+                                        // Choose Photo Button
+                                        Rectangle {
+                                            height: 32
+                                            implicitWidth: heroChooseTxt.implicitWidth + 22
+                                            radius: 6
+                                            color: heroChooseMouse.containsMouse ? Services.Theme.accentHover : Services.Theme.accent
+                                            border.color: Services.Theme.accent
+                                            border.width: 1
+
+                                            RowLayout {
+                                                anchors.centerIn: parent
+                                                spacing: 6
+                                                Text {
+                                                    text: Services.Icons.image || "󰋩"
+                                                    font.family: Services.Theme.fontSymbols
+                                                    font.pixelSize: 11
+                                                    color: Services.Theme.bgOnAccent
+                                                }
+                                                Text {
+                                                    id: heroChooseTxt
+                                                    text: "Choose Photo"
+                                                    font.pixelSize: 10
+                                                    font.weight: Font.DemiBold
+                                                    color: Services.Theme.bgOnAccent
+                                                }
+                                            }
+
+                                            MouseArea {
+                                                id: heroChooseMouse
+                                                anchors.fill: parent
+                                                hoverEnabled: true
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: Services.OsInfo.pickCustomAvatar()
+                                            }
+                                        }
+
+                                        // Reset Button
+                                        Rectangle {
+                                            visible: Services.OsInfo.isCustomAvatar
+                                            height: 32
+                                            implicitWidth: heroResetTxt.implicitWidth + 18
+                                            radius: 6
+                                            color: heroResetMouse.containsMouse ? Services.Theme.bgHover : Services.Theme.surfaceVariant
+                                            border.color: Services.Theme.border
+                                            border.width: 1
+
+                                            RowLayout {
+                                                anchors.centerIn: parent
+                                                spacing: 5
+                                                Text {
+                                                    text: Services.Icons.undo || "󰁯"
+                                                    font.family: Services.Theme.fontSymbols
+                                                    font.pixelSize: 11
+                                                    color: Services.Theme.textSecondary
+                                                }
+                                                Text {
+                                                    id: heroResetTxt
+                                                    text: "Reset"
+                                                    font.pixelSize: 10
+                                                    font.weight: Font.Medium
+                                                    color: Services.Theme.textPrimary
+                                                }
+                                            }
+
+                                            MouseArea {
+                                                id: heroResetMouse
+                                                anchors.fill: parent
+                                                hoverEnabled: true
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: Services.OsInfo.clearCustomAvatar()
+                                            }
+                                        }
+                                    }
                                 }
                             }
 
@@ -7310,7 +7643,7 @@ FloatingWindow {
                                     }
                                 }
 
-                                // Tile 4: Host & User
+                                // Tile 4: Desktop & Shell (Green Area in Screenshot)
                                 Rectangle {
                                     Layout.fillWidth: true
                                     height: 50
@@ -7326,12 +7659,12 @@ FloatingWindow {
                                             color: Services.Theme.bgElevated
                                             border.color: Services.Theme.border
                                             border.width: 1
-                                            Text { anchors.centerIn: parent; text: Services.Icons.user || "󰀉"; font.family: Services.Theme.fontSymbols; font.pixelSize: 13; color: Services.Theme.textSecondary }
+                                            Text { anchors.centerIn: parent; text: Services.Icons.terminal || Services.Icons.sparkle || "󰞷"; font.family: Services.Theme.fontSymbols; font.pixelSize: 13; color: Services.Theme.textSecondary }
                                         }
                                         ColumnLayout {
                                             spacing: 1; Layout.fillWidth: true
-                                            Text { text: "Host & Shell"; font.pixelSize: 8; font.weight: Font.Bold; color: Services.Theme.textDisabled }
-                                            Text { text: (Services.OsInfo.username || "user") + "@" + (Services.OsInfo.hostname || "local") + " · " + (Services.OsInfo.shellName || "sh"); font.pixelSize: 11; font.weight: Font.Medium; color: Services.Theme.textPrimary; elide: Text.ElideRight; Layout.fillWidth: true }
+                                            Text { text: "Desktop & Shell"; font.pixelSize: 8; font.weight: Font.Bold; color: Services.Theme.textDisabled }
+                                            Text { text: "Quickshell Desktop v1.2 · " + (Services.OsInfo.shellName || "sh"); font.pixelSize: 11; font.weight: Font.Medium; color: Services.Theme.textPrimary; elide: Text.ElideRight; Layout.fillWidth: true }
                                         }
                                     }
                                 }
@@ -7372,7 +7705,7 @@ FloatingWindow {
                                         MouseArea {
                                             id: copyMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
                                             onClicked: {
-                                                const specs = `OS: ${Services.OsInfo.distroName || "Linux"}\nKernel: ${Services.OsInfo.kernel || "-"}\nHost: ${Services.OsInfo.hostname || "local"}\nCompositor: ${Services.Compositor ? Services.Compositor.activeDisplayName : "Wayland"}\nShell: ${Services.OsInfo.shellName || "sh"}\nDesktop: Quickshell v1.2`
+                                                const specs = `OS: ${Services.OsInfo.distroName || "Linux"}\nKernel: ${Services.OsInfo.kernel || "-"}\nHost: ${Services.OsInfo.hostname || "local"}\nCompositor: ${Services.Compositor ? Services.Compositor.activeDisplayName : "Wayland"}\nShell: ${Services.OsInfo.shellName || "sh"}\nUser: ${Services.OsInfo.username || "user"}\nDesktop: Quickshell v1.2`
                                                 if (Services.Clipboard) Services.Clipboard.copyText(specs)
                                                 parent.justCopied = true
                                                 copySpecsTimer.restart()

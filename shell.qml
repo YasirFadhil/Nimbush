@@ -140,12 +140,12 @@ ShellRoot {
         id: settingsWindow
         readonly property bool visible: settingsLoader.active && settingsLoader.item && settingsLoader.item.visible
 
-        function show(tabIndex) {
+        function show(tabIndex, subTabIndex) {
             if (!settingsLoader.active) {
                 settingsLoader.active = true
             }
             if (settingsLoader.item) {
-                settingsLoader.item.show(tabIndex)
+                settingsLoader.item.show(tabIndex, subTabIndex)
             }
         }
 

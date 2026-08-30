@@ -24,6 +24,23 @@ Item {
     property bool wallpaperMode: false
     property int wallpaperIndex: 0
 
+    onWallpaperIndexChanged: {
+        if (wallpaperMode && islandWallList) {
+            islandWallList.positionViewAtIndex(wallpaperIndex, ListView.Contain)
+        }
+    }
+
+    onWallpaperModeChanged: {
+        if (wallpaperMode) {
+            Qt.callLater(() => {
+                if (islandWallList) {
+                    islandWallList.forceActiveFocus()
+                    islandWallList.positionViewAtIndex(wallpaperIndex, ListView.Contain)
+                }
+            })
+        }
+    }
+
     readonly property var wallpaperList: {
         const all = (Services.Wallpaper && Services.Wallpaper.allWallpapers) ? Services.Wallpaper.allWallpapers : []
         return all.concat([{ isAddAction: true }])
@@ -2006,8 +2023,48 @@ Item {
                     spacing: 8
                     clip: true
                     boundsBehavior: Flickable.StopAtBounds
+                    focus: root.wallpaperMode
+                    currentIndex: root.wallpaperIndex
+                    keyNavigationEnabled: false
 
                     model: root.wallpaperList
+
+                    Keys.onPressed: (event) => {
+                        const count = root.wallpaperList ? root.wallpaperList.length : 0
+                        if (count === 0) return
+
+                        if (event.key === Qt.Key_Right) {
+                            root.wallpaperIndex = (root.wallpaperIndex + 1) % count
+                            islandWallList.positionViewAtIndex(root.wallpaperIndex, ListView.Contain)
+                            event.accepted = true
+                        } else if (event.key === Qt.Key_Left) {
+                            root.wallpaperIndex = (root.wallpaperIndex - 1 + count) % count
+                            islandWallList.positionViewAtIndex(root.wallpaperIndex, ListView.Contain)
+                            event.accepted = true
+                        } else if (event.key === Qt.Key_Backtab || (event.key === Qt.Key_Tab && (event.modifiers & Qt.ShiftModifier))) {
+                            root.wallpaperIndex = (root.wallpaperIndex - 1 + count) % count
+                            islandWallList.positionViewAtIndex(root.wallpaperIndex, ListView.Contain)
+                            event.accepted = true
+                        } else if (event.key === Qt.Key_Tab) {
+                            root.wallpaperIndex = (root.wallpaperIndex + 1) % count
+                            islandWallList.positionViewAtIndex(root.wallpaperIndex, ListView.Contain)
+                            event.accepted = true
+                        } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) {
+                            if (root.wallpaperList && root.wallpaperList.length > root.wallpaperIndex) {
+                                const item = root.wallpaperList[root.wallpaperIndex]
+                                if (item && item.isAddAction) {
+                                    root.collapse()
+                                    if (Services.Wallpaper) Services.Wallpaper.pickCustomWallpaper()
+                                } else if (item && item.path && Services.Wallpaper) {
+                                    Services.Wallpaper.setWallpaper(item.path)
+                                }
+                            }
+                            event.accepted = true
+                        } else if (event.key === Qt.Key_Escape) {
+                            root.collapse()
+                            event.accepted = true
+                        }
+                    }
 
                     delegate: Item {
                         id: iWallCell
@@ -2018,6 +2075,7 @@ Item {
                         width: isAdd ? 72 : 124
                         height: islandWallList.height
 
+                        readonly property bool isSelected: iWallCell.index === root.wallpaperIndex
                         readonly property bool isActive: !isAdd && Services.Wallpaper && (
                             Services.Wallpaper.currentWallpaper === iWallCell.modelData.path ||
                             (iWallCell.modelData.isDynamic === true && Services.Wallpaper.isWallblerActive)
@@ -2028,12 +2086,12 @@ Item {
                             anchors.fill: parent
                             radius: 10
                             color: Services.Theme.surfaceVariant
-                            border.color: iWallCell.isActive
+                            border.color: (iWallCell.isActive || iWallCell.isSelected)
                                 ? Services.Theme.accent
                                 : (iWallMouse.containsMouse ? Services.Theme.borderHighlight : Services.Theme.borderSubtle)
-                            border.width: iWallCell.isActive ? 2 : 1
+                            border.width: (iWallCell.isActive || iWallCell.isSelected) ? 2 : 1
                             clip: true
-                            scale: iWallMouse.containsMouse ? 1.03 : 1.0
+                            scale: (iWallMouse.containsMouse || iWallCell.isSelected) ? 1.03 : 1.0
                             visible: !iWallCell.isAdd
 
                             Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
@@ -2099,7 +2157,7 @@ Item {
                                     text: (iWallCell.modelData && iWallCell.modelData.name) ? iWallCell.modelData.name : "Wallpaper"
                                     color: Services.Theme.white
                                     font.pixelSize: 9
-                                    font.bold: iWallCell.isActive
+                                    font.bold: iWallCell.isActive || iWallCell.isSelected
                                     elide: Text.ElideRight
                                 }
                             }
@@ -2109,10 +2167,14 @@ Item {
                         Rectangle {
                             anchors.fill: parent
                             radius: 10
-                            color: iAddMouse.containsMouse ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.12) : Qt.rgba(255, 255, 255, 0.03)
-                            border.color: iAddMouse.containsMouse ? Services.Theme.accent : Services.Theme.borderSubtle
-                            border.width: 1
+                            color: (iAddMouse.containsMouse || iWallCell.isSelected) ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.12) : Qt.rgba(255, 255, 255, 0.03)
+                            border.color: (iAddMouse.containsMouse || iWallCell.isSelected) ? Services.Theme.accent : Services.Theme.borderSubtle
+                            border.width: iWallCell.isSelected ? 2 : 1
+                            scale: (iAddMouse.containsMouse || iWallCell.isSelected) ? 1.03 : 1.0
                             visible: iWallCell.isAdd
+
+                            Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
+                            Behavior on border.color { ColorAnimation { duration: 150 } }
 
                             ColumnLayout {
                                 anchors.centerIn: parent
@@ -2138,6 +2200,7 @@ Item {
                                 anchors.fill: parent
                                 hoverEnabled: true
                                 cursorShape: Qt.PointingHandCursor
+                                onEntered: root.wallpaperIndex = iWallCell.index
                                 onClicked: {
                                     root.collapse()
                                     if (Services.Wallpaper) Services.Wallpaper.pickCustomWallpaper()
@@ -2152,7 +2215,9 @@ Item {
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
                             visible: !iWallCell.isAdd
+                            onEntered: root.wallpaperIndex = iWallCell.index
                             onClicked: {
+                                root.wallpaperIndex = iWallCell.index
                                 if (iWallCell.modelData && iWallCell.modelData.path && Services.Wallpaper) {
                                     Services.Wallpaper.setWallpaper(iWallCell.modelData.path)
                                 }

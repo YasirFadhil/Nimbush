@@ -126,56 +126,21 @@ PanelWindow {
                     spacing: 10
 
                     // Avatar with active ring
-                    Rectangle {
+                    Item {
                         width: 44
                         height: 44
-                        radius: 22
-                        color: Services.Theme.surfaceVariant
-                        border.color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.4)
-                        border.width: 1.5
-                        antialiasing: true
-                        smooth: true
 
-                        Image {
-                            id: avatarImg
+                        Services.AvatarFrame {
                             anchors.fill: parent
-                            anchors.margins: 2
                             source: Services.OsInfo.avatarPath
-                            fillMode: Image.PreserveAspectCrop
-                            asynchronous: true
-                            cache: true
-                            sourceSize: Qt.size(88, 88)
-                            visible: false
-                            smooth: true
-                        }
-
-                        MultiEffect {
-                            anchors.fill: avatarImg
-                            source: avatarImg
-                            maskEnabled: true
-                            maskSource: avatarMask
-                            visible: avatarImg.status === Image.Ready
-                        }
-
-                        Item {
-                            id: avatarMask
-                            anchors.fill: avatarImg
-                            visible: false
-                            layer.enabled: true
-                            Rectangle {
-                                anchors.fill: parent
-                                radius: 20
-                                color: "black"
-                            }
-                        }
-
-                        Text {
-                            anchors.centerIn: parent
-                            visible: avatarImg.status !== Image.Ready
-                            text: Services.OsInfo.logoGlyph || "\uf17c"
-                            font.family: Services.Theme.fontSymbols
-                            font.pixelSize: 20
-                            color: Services.Theme.accent
+                            shapeRadius: 22
+                            backgroundColor: Services.Theme.surfaceVariant
+                            borderColor: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.4)
+                            borderWidth: 1.5
+                            fallbackText: Services.OsInfo.logoGlyph || "\uf17c"
+                            fallbackFontFamily: Services.Theme.fontSymbols
+                            fallbackFontSize: 20
+                            fallbackColor: Services.Theme.accent
                         }
 
                         // Live status dot

@@ -125,9 +125,19 @@ PanelWindow {
                     Keys.onPressed: (event) => {
                         if (event.key === Qt.Key_Down) {
                             resultList.currentIndex = Math.min(resultList.currentIndex + 1, resultList.count - 1)
+                            resultList.positionViewAtIndex(resultList.currentIndex, ListView.Contain)
                             event.accepted = true
                         } else if (event.key === Qt.Key_Up) {
                             resultList.currentIndex = Math.max(resultList.currentIndex - 1, 0)
+                            resultList.positionViewAtIndex(resultList.currentIndex, ListView.Contain)
+                            event.accepted = true
+                        } else if (event.key === Qt.Key_Backtab || (event.key === Qt.Key_Tab && (event.modifiers & Qt.ShiftModifier))) {
+                            if (Services.Clipboard.filterType === "all") Services.Clipboard.filterType = "pinned"
+                            else if (Services.Clipboard.filterType === "pinned") Services.Clipboard.filterType = "image"
+                            else if (Services.Clipboard.filterType === "image") Services.Clipboard.filterType = "text"
+                            else Services.Clipboard.filterType = "all"
+                            resultList.currentIndex = 0
+                            if (resultList.count > 0) resultList.positionViewAtIndex(0, ListView.Beginning)
                             event.accepted = true
                         } else if (event.key === Qt.Key_Tab) {
                             if (Services.Clipboard.filterType === "all") Services.Clipboard.filterType = "text"
@@ -135,6 +145,7 @@ PanelWindow {
                             else if (Services.Clipboard.filterType === "image") Services.Clipboard.filterType = "pinned"
                             else Services.Clipboard.filterType = "all"
                             resultList.currentIndex = 0
+                            if (resultList.count > 0) resultList.positionViewAtIndex(0, ListView.Beginning)
                             event.accepted = true
                         } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
                             const list = Services.Clipboard.filtered()

@@ -184,7 +184,7 @@ PanelWindow {
             }
 
             // ── Arrow Keys & Tab Navigation (No letter conflicts) ────────────
-            if (k === Qt.Key_Left) {
+            if (k === Qt.Key_Left || k === Qt.Key_Backtab || (k === Qt.Key_Tab && (event.modifiers & Qt.ShiftModifier))) {
                 root.selectedIndex = (root.selectedIndex - 1 + root.actions.length) % root.actions.length
                 event.accepted = true
             } else if (k === Qt.Key_Right || k === Qt.Key_Tab) {

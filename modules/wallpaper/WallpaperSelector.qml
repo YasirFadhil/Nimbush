@@ -513,11 +513,23 @@ PanelWindow {
                                     wallpaperSelectorWindow.currentIndex = Math.max(0, count - 1)
                                     if (wallpaperGridView) wallpaperGridView.positionViewAtIndex(wallpaperSelectorWindow.currentIndex, GridView.End)
                                     event.accepted = true
+                                } else if (event.key === Qt.Key_Backtab || (event.key === Qt.Key_Tab && (event.modifiers & Qt.ShiftModifier))) {
+                                    if (wallpaperSelectorWindow.activeCategory === "all") wallpaperSelectorWindow.activeCategory = "custom"
+                                    else if (wallpaperSelectorWindow.activeCategory === "custom") wallpaperSelectorWindow.activeCategory = "dynamic"
+                                    else wallpaperSelectorWindow.activeCategory = "all"
+                                    wallpaperSelectorWindow.currentIndex = 0
+                                    if (wallpaperGridView && wallpaperGridView.count > 0) {
+                                        wallpaperGridView.positionViewAtIndex(0, GridView.Beginning)
+                                    }
+                                    event.accepted = true
                                 } else if (event.key === Qt.Key_Tab) {
                                     if (wallpaperSelectorWindow.activeCategory === "all") wallpaperSelectorWindow.activeCategory = "dynamic"
                                     else if (wallpaperSelectorWindow.activeCategory === "dynamic") wallpaperSelectorWindow.activeCategory = "custom"
                                     else wallpaperSelectorWindow.activeCategory = "all"
                                     wallpaperSelectorWindow.currentIndex = 0
+                                    if (wallpaperGridView && wallpaperGridView.count > 0) {
+                                        wallpaperGridView.positionViewAtIndex(0, GridView.Beginning)
+                                    }
                                     event.accepted = true
                                 } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) {
                                     const list = wallpaperSelectorWindow.wallpaperList
