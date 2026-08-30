@@ -6,27 +6,45 @@ import "." as Services
 Singleton {
     id: root
 
-    property var appList: DesktopEntries.applications.values
+    property var appList: (DesktopEntries.applications && DesktopEntries.applications.values) ? DesktopEntries.applications.values : []
     property string query: ""
     property var filteredApps: []
 
     // Internal cache of preprocessed search tokens
     property var _indexedApps: []
 
-    onAppListChanged: _rebuildIndex()
+    onAppListChanged: debounceTimer.restart()
     onQueryChanged: updateFiltered()
+
+    Timer {
+        id: debounceTimer
+        interval: 60
+        repeat: false
+        onTriggered: root._rebuildIndex()
+    }
+
+    Connections {
+        target: DesktopEntries.applications
+        function onValuesChanged() { debounceTimer.restart() }
+        function onRowsInserted() { debounceTimer.restart() }
+        function onRowsRemoved() { debounceTimer.restart() }
+        function onModelReset() { debounceTimer.restart() }
+    }
 
     Connections {
         target: Services.SystemTheme
         function onIconThemeRevChanged() {
-            root._rebuildIndex()
+            debounceTimer.restart()
         }
     }
 
-    Component.onCompleted: _rebuildIndex()
+    Component.onCompleted: {
+        _rebuildIndex()
+        debounceTimer.restart()
+    }
 
     function _rebuildIndex() {
-        const raw = DesktopEntries.applications.values || []
+        const raw = (DesktopEntries.applications && DesktopEntries.applications.values) ? DesktopEntries.applications.values : []
         const indexed = []
 
         for (let i = 0; i < raw.length; i++) {

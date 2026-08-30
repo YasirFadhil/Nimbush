@@ -138,8 +138,8 @@ PanelWindow {
         anchors.right: parent.right
         anchors.rightMargin: 12
         y: centerWin.isBottom ? (parent.height - height - 12) : 12
-        width: 390
-        height: Math.max(480, Math.min(mainCol.implicitHeight + 20, Math.min(690, parent.height - 24)))
+        width: 340
+        height: Math.max(420, Math.min(mainCol.implicitHeight + 20, Math.min(620, parent.height - 24)))
         radius: 16
         color: centerWin.t.surface
         border.color: centerWin.t.border
@@ -401,15 +401,18 @@ PanelWindow {
                                             id: hIcon
                                             anchors.fill: parent
                                             source: {
-                                                const icon = groupCard.group.appIcon
+                                                const icon = groupCard.group.appIcon || ""
                                                 if (!icon) return ""
-                                                if (icon.startsWith("/") || icon.startsWith("file://") || icon.startsWith("http"))
+                                                if (icon.startsWith("file://") || icon.startsWith("http://") || icon.startsWith("https://") || icon.startsWith("image://"))
                                                     return icon
+                                                if (icon.startsWith("/"))
+                                                    return "file://" + icon
                                                 if (Services.SystemTheme) {
                                                     const res = Services.SystemTheme.getIcon(icon)
-                                                    if (res) return res
+                                                    if (res && res.length > 0) return res
                                                 }
-                                                return Quickshell.iconPath(icon, true)
+                                                const qp = Quickshell.iconPath(icon, false)
+                                                return (qp && qp.startsWith("/")) ? ("file://" + qp) : (qp || "")
                                             }
                                             fillMode: Image.PreserveAspectFit
                                             asynchronous: true
@@ -557,18 +560,25 @@ PanelWindow {
                                     id: primaryImg
                                     property string imgPath: (groupCard.primaryItem && groupCard.primaryItem.image) ? groupCard.primaryItem.image : ""
                                     visible: imgPath.length > 0 && status === Image.Ready
+                                    Layout.preferredWidth: visible ? 30 : 0
+                                    Layout.preferredHeight: visible ? 30 : 0
                                     source: {
                                         if (!imgPath) return ""
-                                        if (imgPath.startsWith("/") || imgPath.startsWith("file://") || imgPath.startsWith("http"))
+                                        if (imgPath.startsWith("file://") || imgPath.startsWith("http://") || imgPath.startsWith("https://") || imgPath.startsWith("image://"))
                                             return imgPath
-                                        return Quickshell.iconPath(imgPath, true)
+                                        if (imgPath.startsWith("/"))
+                                            return "file://" + imgPath
+                                        if (Services.SystemTheme) {
+                                            const res = Services.SystemTheme.getIcon(imgPath)
+                                            if (res && res.length > 0) return res
+                                        }
+                                        const qp = Quickshell.iconPath(imgPath, false)
+                                        return (qp && qp.startsWith("/")) ? ("file://" + qp) : (qp || "")
                                     }
-                                    Layout.preferredWidth: 38
-                                    Layout.preferredHeight: 38
                                     fillMode: Image.PreserveAspectCrop
                                     asynchronous: true
                                     cache: true
-                                    sourceSize: Qt.size(76, 76)
+                                    sourceSize: Qt.size(60, 60)
                                     clip: true
                                     Layout.alignment: Qt.AlignTop
                                 }
@@ -956,18 +966,25 @@ PanelWindow {
                                                 id: olderNotifImg
                                                 property string imgPath: olderItemDelegate.notifItem.image || ""
                                                 visible: imgPath.length > 0 && status === Image.Ready
+                                                Layout.preferredWidth: visible ? 26 : 0
+                                                Layout.preferredHeight: visible ? 26 : 0
                                                 source: {
                                                     if (!imgPath) return ""
-                                                    if (imgPath.startsWith("/") || imgPath.startsWith("file://") || imgPath.startsWith("http"))
+                                                    if (imgPath.startsWith("file://") || imgPath.startsWith("http://") || imgPath.startsWith("https://") || imgPath.startsWith("image://"))
                                                         return imgPath
-                                                    return Quickshell.iconPath(imgPath, true)
+                                                    if (imgPath.startsWith("/"))
+                                                        return "file://" + imgPath
+                                                    if (Services.SystemTheme) {
+                                                        const res = Services.SystemTheme.getIcon(imgPath)
+                                                        if (res && res.length > 0) return res
+                                                    }
+                                                    const qp = Quickshell.iconPath(imgPath, false)
+                                                    return (qp && qp.startsWith("/")) ? ("file://" + qp) : (qp || "")
                                                 }
-                                                Layout.preferredWidth: 34
-                                                Layout.preferredHeight: 34
                                                 fillMode: Image.PreserveAspectCrop
                                                 asynchronous: true
                                                 cache: true
-                                                sourceSize: Qt.size(68, 68)
+                                                sourceSize: Qt.size(52, 52)
                                                 clip: true
                                                 Layout.alignment: Qt.AlignTop
                                             }

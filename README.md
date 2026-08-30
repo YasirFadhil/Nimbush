@@ -1,67 +1,34 @@
 # Nimbush
 
-This repository contains a modern Wayland desktop environment configuration built with **Quickshell** by YasirFadhil.
+A sleek, modern, and highly modular Wayland desktop environment shell built with **Quickshell** by **YasirFadhil**.
 
-## What is this?
+---
 
-This is a Wayland UI shell built with **Quickshell**, providing status bars, dashboard, app launcher, system controls, notifications, wallpaper manager, clipboard history, and power/lock menus.
+## Highlights
 
-## Features & Highlights
+- **Dual Compositor Compatibility**: Seamless support for **Hyprland** (Lua & Classic `.conf` format) and **Niri** scrollable tiling compositor.
+- **Strict Modular Tree Structure**: Clean separation of configs (`conf/autostart`, `conf/keybinds`, `conf/rules`, `conf/quickshell`).
+- **Interactive App Launcher**: Fast, focused application runner with instant fuzzy search (`Super + Space`).
+- **Wallpaper Manager**: Dynamic visual wallpaper selector powered by `awww` / `swww` and Material You palette generator (`Super + Shift + W`).
+- **Emoji Picker**: Quick Unicode emoji search & clipboard inserter (`Super + Shift + E`).
+- **Clipboard History**: Integrated clipboard manager with pinning support (`Super + V`).
+- **Control Center & Dashboard**: Unified toggles for Wi-Fi, Bluetooth, Audio, Power Profiles, System Hardware Monitor, and Notifications.
 
-- **Universal Linux OS Support**: Distro detection for Arch Linux, Debian, Ubuntu, Fedora, NixOS, openSUSE, Gentoo, Void Linux, Alpine Linux, Solus, Manjaro, Pop!_OS, Linux Mint, EndeavourOS, Artix, Kali, SteamOS, and more.
-- **Standalone Wallpaper Selector**: Interactive visual wallpaper selector with live search, custom wallpaper adding, and dynamic theming via `qs ipc call wallpaper toggle` (Super + Shift + W).
-- **Standalone Emoji Picker**: High-performance Unicode emoji search and clipboard inserter with recent usage caching via `qs ipc call emoji toggle` (Super + Shift + E).
-- **Pure App Launcher**: Fast, focused application launcher with instant fuzzy searching via `qs ipc call launcher toggle` (Super + Space).
-- **Dual Compositor Compatibility**: First-class support for **Hyprland** (Lua & Classic `.conf` format) and **Niri** compositors.
+---
 
 ## Supported Linux Distributions
 
-The installer (`install.sh`) and system status modules automatically support detection and package management across:
-- **Arch Linux & Derivatives** (`yay`, `paru`, `pacman`)
-- **Debian / Ubuntu & Derivatives** (`apt`)
-- **Fedora / RHEL / CentOS / Alma / Rocky** (`dnf`)
-- **NixOS** (`nix-env` / Home Manager)
-- **openSUSE / SUSE** (`zypper`)
-- **Void Linux** (`xbps`)
-- **Alpine Linux** (`apk`)
+The installer and shell components are optimized specifically for:
+
+- **Arch Linux & Derivatives** (`pacman`, `yay`, `paru`)
+- **NixOS** (Flake & Home Manager Module)
 - **Gentoo Linux** (`emerge`)
-- **Solus** (`eopkg`)
 
 ---
 
-## Dependencies
+## Quick Installation
 
-Before running Quickshell, ensure the required dependencies are installed:
-
-### Core Framework & Compositors
-- **Quickshell** (`quickshell-git` / `quickshell`)
-- **Hyprland** (`hyprland`) or **Niri** (`niri`)
-
-### System Utilities & Services
-- **NetworkManager** (`networkmanager` / `nmcli`) – Network & Wi-Fi management
-- **BlueZ** (`bluez`, `bluez-utils` / `bluetoothctl`) – Bluetooth management
-- **PipeWire / PulseAudio** (`libpulse` / `pactl`, `paplay`) – Volume control & sound feedback
-- **Brightnessctl** (`brightnessctl`) – Screen brightness control
-- **Cliphist** & **wl-clipboard** (`cliphist`, `wl-clipboard`) – Clipboard history
-- **Power Profiles Daemon** (`power-profiles-daemon`) – Power mode switcher
-- **UPower** (`upower`) – Battery monitoring
-- **socat** (`socat`) – Hyprland socket IPC event listener (Hyprland mode)
-- **psmisc** (`psmisc` / `fuser`) – Camera detection for Dynamic Island
-- **procps** (`procps` / `pkill`) – Process cleanup & management
-- **libnotify** (`libnotify` / `notify-send`) – Desktop notifications
-- **git** (`git`) – Automatic shell update service
-- **D-Bus & GLib** (`dbus`, `glib` / `dbus-monitor`, `gdbus`) – Bluetooth live signal monitoring & XDG Portal file chooser
-- **Grim & Slurp** (`grim`, `slurp`, `swappy`) – Wayland screenshot capture & editing
-- **Python 3** (`python3`) & File Pickers (`zenity` / `kdialog` / `yad` / `gdbus`) – XDG wallpaper file picker backends
-
-### Fonts
-- **Nerd Fonts** (`ttf-nerd-fonts-symbols-mono` / `ttf-jetbrains-mono-nerd`) – Icons (`Symbols Nerd Font Mono`)
-
----
-
-## Installation & Setup
-
-### Automated Install
+### 1. Automated Installer (Arch / Gentoo / Generic)
 
 ```bash
 git clone https://github.com/YasirFadhil/Nimbush.git ~/.config/quickshell
@@ -69,34 +36,29 @@ cd ~/.config/quickshell
 ./install.sh
 ```
 
-The `install.sh` script automatically detects your package manager and distro, verifies dependencies, checks system services, and offers live installation.
+The interactive installer automatically verifies required dependencies, sets up system services, and configures your compositor without duplicating lines.
+
+#### Installer Options
+- `./install.sh` : Interactive installer with automated compositor injection.
+- `./install.sh --hyprland` : Auto-detect and configure Hyprland (Lua or Classic `.conf`).
+- `./install.sh --niri` : Configure Niri compositor.
+- `./install.sh --check-only` : Run real-time health and dependency diagnostics.
 
 ---
 
-### NixOS Flake & Home Manager Integration
+### 2. NixOS & Home Manager Setup
 
-This repository includes a `flake.nix` and a built-in **Home Manager module** ([nix/home-manager-module.nix](file:///home/yasirfadhil/.config/quickshell/nix/home-manager-module.nix)).
-
-#### 1. Instant Run (`nix run`)
-
-Run Quickshell directly via Flake without manual installation:
+#### Instant Test Run (`nix run`)
 
 ```bash
 nix run github:YasirFadhil/Nimbush
 ```
 
-Or from inside the cloned repository directory:
+#### Declarative Setup via Home Manager Module
 
-```bash
-nix run .
-```
-
-#### 2. Declarative Setup via Home Manager Module (`flake.nix` / `home.nix`)
-
-Add this repository to your system `flake.nix` inputs:
+Add Nimbush to your `flake.nix`:
 
 ```nix
-# Your system flake.nix
 {
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
@@ -114,10 +76,9 @@ Add this repository to your system `flake.nix` inputs:
 }
 ```
 
-Then enable and configure the module declaratively inside your `home.nix`:
+Enable and configure in your `home.nix`:
 
 ```nix
-# home.nix
 { pkgs, inputs, ... }:
 
 {
@@ -127,207 +88,74 @@ Then enable and configure the module declaratively inside your `home.nix`:
 
   programs.quickshell-shell = {
     enable = true;
-    enableSystemdService = true;      # Automatically runs Quickshell as a user background service
-    enableDefaultDependencies = true; # Installs runtime CLI tools (brightnessctl, cliphist, wl-clipboard, etc.)
+    enableSystemdService = true;      # Runs Quickshell as a user background service
+    enableDefaultDependencies = true; # Automatically installs required runtime tools
 
-    # ── Declarative Wallpaper Configuration ──────────────────────────────
+    # Declarative Wallpaper Configuration
     wallpaper = {
       current = "/home/username/Pictures/wallpapers/catppuccin.jpg";
       customWallpapers = [
         "/home/username/Pictures/wallpapers/wallpaper1.jpg"
-        "/home/username/Pictures/wallpapers/wallpaper2.png"
       ];
     };
 
-    # ── Declarative Compositor Integration ────────────────────────────────
-    # Automatically injects IPC keybindings, autostart, & blur layer rules
-    hyprland.enableIntegration = true; # If wayland.windowManager.hyprland.enable = true
-    niri.enableIntegration     = true; # If programs.niri.enable = true
+    # Declarative Compositor Integration
+    hyprland.enableIntegration = true; # If using Hyprland in Home Manager
+    niri.enableIntegration     = true; # If using Niri in Home Manager
   };
 }
 ```
 
 ---
 
-## Compositor Setup & Configuration
+## Modular Configuration Tree
 
-Example configuration files are provided in the [`examples/`](file:///home/yasirfadhil/.config/quickshell/examples) directory.
+Nimbush follows a clean, isolated directory structure for both Hyprland and Niri:
 
-### 1. Hyprland Configuration
-
-#### Option A: Hyprland Lua Configuration (`~/.config/hypr/hyprland.lua` - Hyprland 0.55+)
-
-```lua
-local mainMod = "SUPER"
-
--- Autostart Quickshell & Clipboard daemons
-hl.on("hyprland.start", function ()
-    hl.exec_cmd("qs -c ~/.config/quickshell")
-    hl.exec_cmd("wl-paste --type text --watch cliphist store")
-    hl.exec_cmd("wl-paste --type image --watch cliphist store")
-end)
-
--- Keybindings
-hl.bind(mainMod .. " + SPACE",         hl.dsp.exec_cmd("qs ipc call launcher toggle"))
-hl.bind(mainMod .. " + SHIFT + W",     hl.dsp.exec_cmd("qs ipc call wallpaper toggle"))
-hl.bind(mainMod .. " + SHIFT + E",     hl.dsp.exec_cmd("qs ipc call emoji toggle"))
-hl.bind(mainMod .. " + V",             hl.dsp.exec_cmd("qs ipc call clipboard toggle"))
-hl.bind(mainMod .. " + P",             hl.dsp.exec_cmd("qs ipc call powermenu toggle"))
-hl.bind(mainMod .. " + ALT + L",       hl.dsp.exec_cmd("qs ipc call lockscreen toggle"))
-hl.bind(mainMod .. " + D",             hl.dsp.exec_cmd("qs ipc call dashboard toggle"))
-hl.bind(mainMod .. " + N",             hl.dsp.exec_cmd("qs ipc call notifCenter toggle"))
-hl.bind(mainMod .. " + C",             hl.dsp.exec_cmd("qs ipc call controlCenter toggle"))
-hl.bind(mainMod .. " + B",             hl.dsp.exec_cmd("qs ipc call battery toggle"))
-
--- Layer Rules (Blur & Transparency)
-hl.layer_rule({ match = { namespace = "quickshell:bar" },               blur = true })
-hl.layer_rule({ match = { namespace = "quickshell:launcher" },          blur = true, ignore_alpha = 0 })
-hl.layer_rule({ match = { namespace = "quickshell:wallpaperselector" }, blur = true, ignore_alpha = 0 })
-hl.layer_rule({ match = { namespace = "quickshell:emojipicker" },       blur = true, ignore_alpha = 0 })
-hl.layer_rule({ match = { namespace = "quickshell:clipboard" },         blur = true, ignore_alpha = 0 })
-hl.layer_rule({ match = { namespace = "quickshell:controlcenter" },     blur = true, ignore_alpha = 0 })
-hl.layer_rule({ match = { namespace = "quickshell:notifcenter" },       blur = true, ignore_alpha = 0 })
-hl.layer_rule({ match = { namespace = "quickshell:dashboard" },         blur = true, ignore_alpha = 0 })
-hl.layer_rule({ match = { namespace = "quickshell:calendar" },          blur = true, ignore_alpha = 0 })
-hl.layer_rule({ match = { namespace = "quickshell:hud" },               blur = true, ignore_alpha = 0 })
-hl.layer_rule({ match = { namespace = "^quickshell:.*$" },              blur = true, ignore_alpha = 0 })
-```
-
-#### Option B: Hyprland Classic Configuration (`~/.config/hypr/hyprland.conf`)
-
-```ini
-$mainMod = SUPER
-
-# Autostart
-exec-once = qs -c ~/.config/quickshell
-exec-once = wl-paste --type text --watch cliphist store
-exec-once = wl-paste --type image --watch cliphist store
-
-# Keybindings
-bind = $mainMod, SPACE,         exec, qs ipc call launcher toggle
-bind = $mainMod SHIFT, W,       exec, qs ipc call wallpaper toggle
-bind = $mainMod SHIFT, E,       exec, qs ipc call emoji toggle
-bind = $mainMod, V,             exec, qs ipc call clipboard toggle
-bind = $mainMod, P,             exec, qs ipc call powermenu toggle
-bind = $mainMod ALT, L,         exec, qs ipc call lockscreen toggle
-bind = $mainMod, D,             exec, qs ipc call dashboard toggle
-bind = $mainMod, N,             exec, qs ipc call notifCenter toggle
-bind = $mainMod, C,             exec, qs ipc call controlCenter toggle
-bind = $mainMod, B,             exec, qs ipc call battery toggle
-
-# Layer Rules
-layerrule = blur, quickshell:bar
-layerrule = blur, quickshell:launcher
-layerrule = ignorezero, quickshell:launcher
-layerrule = blur, quickshell:wallpaperselector
-layerrule = ignorezero, quickshell:wallpaperselector
-layerrule = blur, quickshell:emojipicker
-layerrule = ignorezero, quickshell:emojipicker
-layerrule = blur, quickshell:clipboard
-layerrule = ignorezero, quickshell:clipboard
-layerrule = blur, quickshell:controlcenter
-layerrule = ignorezero, quickshell:controlcenter
-layerrule = blur, quickshell:notifcenter
-layerrule = ignorezero, quickshell:notifcenter
-layerrule = blur, quickshell:dashboard
-layerrule = ignorezero, quickshell:dashboard
-layerrule = blur, quickshell:calendar
-layerrule = ignorezero, quickshell:calendar
-layerrule = blur, quickshell:hud
-layerrule = ignorezero, quickshell:hud
-```
-
----
-
-### 1. Hyprland Modular Configuration Layout
-
-Quickshell includes a fully modular structure that separates autostart, keybinds, rules, and shell integration into dedicated files inside `~/.config/hypr/conf/`:
-
+### Hyprland (`~/.config/hypr/`)
 ```text
 ~/.config/hypr/
-├── hyprland.lua (or hyprland.conf)  # Main entry point (monitors, animations, look & feel)
+├── hyprland.lua (or hyprland.conf)  # Main entry point (monitors, look & feel, layouts)
 └── conf/
-    ├── autostart.lua               # Background daemons & services
-    ├── keybinds.lua                # General apps, window management & navigation binds
-    ├── rules.lua                   # Window & workspace rules
-    └── quickshell.lua              # Quickshell autostart, IPC shortcuts & layer blur rules
+    ├── autostart.lua (.conf)       # System daemons (hyprpolkitagent, wl-paste, cliphist)
+    ├── keybinds.lua (.conf)        # General navigation & application shortcuts
+    ├── rules.lua (.conf)           # Window & workspace rules
+    └── quickshell.lua (.conf)      # Quickshell autostart, IPC binds & layer blur rules
 ```
 
-**Loading in `hyprland.lua`:**
-```lua
-local home = os.getenv("HOME") or ""
-local confDir = home .. "/.config/hypr/conf"
-
-local function load_conf(module_name)
-    local module_path = confDir .. "/" .. module_name .. ".lua"
-    if io.open(module_path, "r") then
-        dofile(module_path)
-    end
-end
-
-load_conf("autostart")
-load_conf("keybinds")
-load_conf("rules")
-load_conf("quickshell")
-```
-
-**Loading in `hyprland.conf`:**
-```ini
-source = ~/.config/hypr/conf/autostart.conf
-source = ~/.config/hypr/conf/keybinds.conf
-source = ~/.config/hypr/conf/rules.conf
-source = ~/.config/hypr/conf/quickshell.conf
-```
-
----
-
-### 2. Niri Modular Configuration Layout (`~/.config/niri/`)
-
+### Niri (`~/.config/niri/`)
 ```text
 ~/.config/niri/
-├── config.kdl                      # Main entry point (layout, output, input)
+├── config.kdl                      # Main entry point (output, layout, input)
 └── conf/
-    ├── autostart.kdl               # Background daemons
-    ├── keybinds.kdl                # Window & workspace shortcuts
-    ├── rules.kdl                   # Window rules
-    └── quickshell.kdl              # Quickshell autostart & IPC keybindings
-```
-
-**Loading in `config.kdl`:**
-```kdl
-include "conf/autostart.kdl"
-include "conf/keybinds.kdl"
-include "conf/rules.kdl"
-include "conf/quickshell.kdl"
+    ├── autostart.kdl               # Clipboard & system daemons
+    ├── keybinds.kdl                # Window & workspace keybindings
+    ├── rules.kdl                   # Window & layer rules
+    └── quickshell.kdl              # Quickshell autostart & IPC binds
 ```
 
 ---
 
-## Quickshell IPC Commands
+## Default Shortcuts & IPC Commands
 
-You can trigger shell actions from the terminal or compositor keybindings using `qs ipc call`:
-
-| Component | Command |
-|---|---|
-| **App Launcher** | `qs ipc call launcher toggle` |
-| **Wallpaper Selector** | `qs ipc call wallpaper toggle` |
-| **Emoji Picker** | `qs ipc call emoji toggle` |
-| **Clipboard History** | `qs ipc call clipboard toggle` |
-| **Power Menu** | `qs ipc call powermenu toggle` |
-| **Lock Screen** | `qs ipc call lockscreen lock` |
-| **Dashboard** | `qs ipc call dashboard toggle` |
-| **Notification Center** | `qs ipc call notifCenter toggle` |
-| **Control Center** | `qs ipc call controlCenter toggle` |
-| **Settings GUI** | `qs ipc call settings toggle` |
+| Action | Default Keybind | IPC Command |
+|---|---|---|
+| **App Launcher** | `Super + Space` | `qs ipc call launcher toggle` |
+| **Wallpaper Selector** | `Super + Shift + W` | `qs ipc call wallpaper toggle` |
+| **Emoji Picker** | `Super + Shift + E` | `qs ipc call emoji toggle` |
+| **Clipboard History** | `Super + V` | `qs ipc call clipboard toggle` |
+| **Power Menu** | `Super + P` | `qs ipc call powermenu toggle` |
+| **Lock Screen** | `Super + Alt + L` | `qs ipc call lockscreen toggle` |
+| **Dashboard** | `Super + D` | `qs ipc call dashboard toggle` |
+| **Notification Center** | `Super + N` | `qs ipc call notifCenter toggle` |
+| **Control Center** | `Super + C` | `qs ipc call controlCenter toggle` |
+| **Battery & Power** | `Super + B` | `qs ipc call battery toggle` |
 
 ---
 
-## DISCLAIMER: FULL VIBE CODED
+## Disclaimer: Full Vibe Coded
 
 Please be warned: this entire repository is **full vibe coded**.
 
-- There are no strict architectural patterns.
-- Zero best practices are guaranteed.
-- The code was written purely based on what worked and looked good at the time.
-
-Use or copy this code at your own risk.
+- Written purely based on what worked, felt smooth, and looked good.
+- Use or adapt at your own risk.

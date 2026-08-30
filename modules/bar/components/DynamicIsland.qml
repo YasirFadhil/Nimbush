@@ -1099,9 +1099,16 @@ Item {
                             if (!root.currentNotif) return ""
                             const src = root.currentNotif.image || root.currentNotif.appIcon || ""
                             if (!src) return ""
-                            if (src.startsWith("/") || src.startsWith("file://") || src.startsWith("http"))
+                            if (src.startsWith("file://") || src.startsWith("http://") || src.startsWith("https://"))
                                 return src
-                            return Quickshell.iconPath(src, true)
+                            if (src.startsWith("/"))
+                                return "file://" + src
+                            if (Services.SystemTheme) {
+                                const res = Services.SystemTheme.getIcon(src)
+                                if (res && res.length > 0) return res
+                            }
+                            const qp = Quickshell.iconPath(src, false)
+                            return (qp && qp.startsWith("/")) ? ("file://" + qp) : (qp || "")
                         }
                         fillMode: Image.PreserveAspectFit
                         asynchronous: true

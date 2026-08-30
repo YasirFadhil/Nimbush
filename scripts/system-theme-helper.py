@@ -197,6 +197,101 @@ def update_xsettingsd(key_values):
     except Exception:
         pass
 
+def update_gtk2(key_values):
+    gtk2_path = os.path.join(HOME, ".gtkrc-2.0")
+    if is_nix_store_managed(gtk2_path):
+        return
+    lines = []
+    if os.path.exists(gtk2_path):
+        try:
+            with open(gtk2_path, "r", encoding="utf-8") as f:
+                lines = f.readlines()
+        except Exception:
+            lines = []
+    for k, v in key_values.items():
+        found = False
+        prefix = f"{k}="
+        new_line = f'{k}="{v}"\n'
+        for i in range(len(lines)):
+            if lines[i].strip().startswith(prefix):
+                lines[i] = new_line
+                found = True
+                break
+        if not found:
+            lines.append(new_line)
+    try:
+        if os.path.islink(gtk2_path):
+            os.unlink(gtk2_path)
+        with open(gtk2_path, "w", encoding="utf-8") as f:
+            f.writelines(lines)
+    except Exception:
+        pass
+
+def update_default_icon_theme(icon_theme, cursor_theme=None):
+    default_dir = os.path.join(HOME, ".icons/default")
+    idx_path = os.path.join(default_dir, "index.theme")
+    if is_nix_store_managed(idx_path):
+        return
+    try:
+        os.makedirs(default_dir, exist_ok=True)
+        cur_icon = icon_theme or get_gsettings("org.gnome.desktop.interface", "icon-theme") or "MacTahoe"
+        cur_cursor = cursor_theme or get_gsettings("org.gnome.desktop.interface", "cursor-theme") or "MacTahoe-dark"
+        inherits_parts = []
+        if cur_cursor:
+            inherits_parts.append(cur_cursor)
+        if cur_icon and cur_icon not in inherits_parts:
+            inherits_parts.append(cur_icon)
+        for fb in ["Adwaita", "hicolor"]:
+            if fb not in inherits_parts:
+                inherits_parts.append(fb)
+        inherits_val = ",".join(inherits_parts)
+        new_content = f"[Icon Theme]\nName=Default\nComment=Default Icon Theme\nInherits={inherits_val}\n"
+        if os.path.islink(idx_path):
+            os.unlink(idx_path)
+        with open(idx_path, "w", encoding="utf-8") as f:
+            f.write(new_content)
+    except Exception:
+        pass
+
+def apply_icon_theme_links(icon_theme_name):
+    if not icon_theme_name:
+        return
+
+    themes_to_link = [icon_theme_name]
+    if "MacTahoe" in icon_theme_name:
+        themes_to_link.extend(["MacTahoe", "MacTahoe-dark", "MacTahoe-light"])
+    elif "WhiteSur" in icon_theme_name:
+        themes_to_link.extend(["WhiteSur", "WhiteSur-dark", "WhiteSur-light"])
+    elif "breeze" in icon_theme_name.lower():
+        themes_to_link.extend(["breeze", "breeze-dark"])
+
+    for tname in set(themes_to_link):
+        src_dir = ""
+        for base in get_data_dirs("icons"):
+            p = os.path.join(base, tname)
+            if os.path.isdir(p) and p != os.path.join(HOME, ".icons", tname) and p != os.path.join(HOME, ".local/share/icons", tname):
+                src_dir = p
+                break
+        if not src_dir:
+            continue
+
+        # Link to ~/.icons/<theme_name> and ~/.local/share/icons/<theme_name>
+        for dest_base in [os.path.join(HOME, ".icons"), os.path.join(HOME, ".local/share/icons")]:
+            os.makedirs(dest_base, exist_ok=True)
+            dest_link = os.path.join(dest_base, tname)
+            if is_nix_store_managed(dest_link):
+                continue
+            if os.path.islink(dest_link):
+                try:
+                    os.unlink(dest_link)
+                except Exception:
+                    pass
+            if not os.path.exists(dest_link):
+                try:
+                    os.symlink(src_dir, dest_link)
+                except Exception:
+                    pass
+
 def get_gtk_themes():
     search_paths = get_data_dirs("themes")
     themes = set()
@@ -229,15 +324,21 @@ def get_icon_and_cursor_themes():
                     if os.path.exists(os.path.join(full, "cursors")):
                         cursors.add(d)
                     if os.path.exists(os.path.join(full, "index.theme")):
-                        icons.add(d)
+                        sub = os.listdir(full)
+                        has_real_icons = any(f in sub for f in [
+                            "apps", "apps@2x", "places", "places@2x", "mimes", "mimes@2x",
+                            "actions", "actions@2x", "categories", "categories@2x", "scalable"
+                        ])
+                        if has_real_icons:
+                            icons.add(d)
         except Exception:
             pass
     icon_list = sorted(list(icons))
     cursor_list = sorted(list(cursors))
     if not icon_list:
-        icon_list = ["Adwaita", "MacTahoe", "hicolor"]
+        icon_list = ["MacTahoe", "WhiteSur", "breeze", "hicolor"]
     if not cursor_list:
-        cursor_list = ["Adwaita", "MacTahoe-dark", "MacTahoe-light"]
+        cursor_list = ["MacTahoe-dark", "MacTahoe-light", "Bibata-Modern-Classic", "Adwaita"]
     return icon_list, cursor_list
 
 def get_fonts():
@@ -328,15 +429,29 @@ def get_theme_dirs_with_inheritance(theme_name):
                     except Exception:
                         pass
     add_theme(theme_name)
+    if "MacTahoe" in theme_name:
+        add_theme("MacTahoe")
+    if "WhiteSur" in theme_name:
+        add_theme("WhiteSur")
+    if "breeze" in theme_name.lower():
+        add_theme("breeze")
     add_theme("hicolor")
+    # Standard desktop theme fallbacks to ensure full icon coverage on NixOS
+    for fallback in ["Adwaita", "breeze", "breeze-dark", "gnome", "Pop", "WhiteSur", "WhiteSur-dark", "Cosmic", "locolor", "ubuntu-mono-dark"]:
+        add_theme(fallback)
     for pix in get_data_dirs("pixmaps"):
-        dirs.append(pix)
+        if os.path.isdir(pix) and pix not in dirs:
+            dirs.append(pix)
+    # Loose icons directories
+    for base in search_bases:
+        if os.path.isdir(base) and base not in dirs:
+            dirs.append(base)
     return dirs
 
 def get_icon_category_score(path):
     p = path.lower()
     score = 0
-    if "/apps/" in p or "/apps@2x/" in p or "/apps@3x/" in p:
+    if "/apps/" in p or "/apps@2x/" in p or "/apps@3x/" in p or "/applications/" in p:
         score += 1000
     elif "/categories/" in p or "/categories@2x/" in p:
         score += 800
@@ -369,15 +484,34 @@ def get_icon_category_score(path):
         
     return score
 
-def build_and_save_icon_cache(theme_name):
+def build_and_save_icon_cache(theme_name, force_rebuild=False):
+    cache_dir = os.path.join(HOME, ".cache/quickshell")
+    themes_dir = os.path.join(cache_dir, "themes")
+    os.makedirs(themes_dir, exist_ok=True)
+    cache_file = os.path.join(cache_dir, "icon_theme_cache.json")
+    theme_cache_file = os.path.join(themes_dir, f"{theme_name}.json")
+
+    if not force_rebuild and os.path.exists(theme_cache_file) and os.path.getsize(theme_cache_file) > 1000:
+        try:
+            with open(theme_cache_file, "r", encoding="utf-8") as tf:
+                cache = json.load(tf)
+            with open(cache_file, "w", encoding="utf-8") as f:
+                json.dump(cache, f)
+            return cache
+        except Exception:
+            pass
+
     cache = {}
     scores = {}
     search_dirs = get_theme_dirs_with_inheritance(theme_name)
+    search_bases = set(get_data_dirs("icons"))
     ext_order = [".svg", ".png", ".xpm"]
     
     for dir_idx, p in enumerate(search_dirs):
         dir_weight = max(0, (len(search_dirs) - dir_idx) * 2000)
-        for root, dirs, files in os.walk(p):
+        # If p is a top-level icons search base, only inspect loose files in top level
+        walk_iter = [(p, [], [f for f in os.listdir(p) if os.path.isfile(os.path.join(p, f))])] if p in search_bases else os.walk(p)
+        for root, dirs, files in walk_iter:
             for f in files:
                 name, ext = os.path.splitext(f)
                 ext = ext.lower()
@@ -388,11 +522,20 @@ def build_and_save_icon_cache(theme_name):
                     
                     keys_to_set = [name_lower]
                     if "." in name_lower:
-                        keys_to_set.append(name_lower.split(".")[-1])
+                        parts = name_lower.split(".")
+                        keys_to_set.append(parts[-1])
                         keys_to_set.append(name_lower.replace(".", "-"))
+                        if name_lower.startswith("org.gnome."):
+                            keys_to_set.append("gnome-" + name_lower[10:])
+                        if name_lower.startswith("org.kde."):
+                            keys_to_set.append(name_lower[8:])
+                    if "-" in name_lower:
+                        parts_dash = name_lower.split("-")
+                        keys_to_set.append(parts_dash[0])
+                        keys_to_set.append(parts_dash[-1])
                         
                     for k in keys_to_set:
-                        if k not in cache or sc > scores.get(k, 0):
+                        if k and (k not in cache or sc > scores.get(k, 0)):
                             cache[k] = full_path
                             scores[k] = sc
                             
@@ -403,6 +546,21 @@ def build_and_save_icon_cache(theme_name):
         "bvnc": "network-wired",
         "bssh": "network-wired",
         "avahi-discover": "network-wired",
+        "claude-desktop": "claude",
+        "claude": "com.anthropic.claude",
+        "com.anthropic.claude": "claude-desktop",
+        "com.mattjakeman.extensionmanager": "extensionmanager",
+        "com.mitchellh.ghostty": "ghostty",
+        "ghostty": "com.mitchellh.ghostty",
+        "com.obsproject.studio": "obs",
+        "obs": "com.obsproject.studio",
+        "dev.zed.zed": "zed",
+        "zed": "dev.zed.zed",
+        "org.gnome.tweaks": "gnome-tweaks",
+        "gnome-tweaks": "org.gnome.tweaks",
+        "org.gnome.texteditor": "gnome-text-editor",
+        "org.gnome.simplescan": "simple-scan",
+        "org.gnome.systemmonitor": "gnome-system-monitor",
         "org.kde.kdeconnect.app": "kdeconnect",
         "org.kde.kdeconnect.handler": "kdeconnect",
         "org.kde.kdeconnect.daemon": "kdeconnect",
@@ -410,16 +568,35 @@ def build_and_save_icon_cache(theme_name):
         "org.kde.kdeconnect.nonplasma": "kdeconnect",
         "kdeconnect-app": "kdeconnect",
         "kdeconnect-indicator": "kdeconnect",
-        "kdeconnect-sms": "kdeconnect"
+        "kdeconnect-sms": "kdeconnect",
+        "nwg-look": "preferences-desktop-theme",
+        "rofi": "system-search",
+        "rofi-theme-selector": "preferences-desktop-theme",
+        "preferences-system-network": "network-wired",
+        "preferences-desktop-theme": "preferences-desktop",
+        "antigravity-ide": "antigravity",
+        "helium": "web-browser",
+        "winbox": "/etc/profiles/per-user/" + (os.environ.get("USER") or "user") + "/share/icons/winbox.png"
     }
     for alias_k, target_k in aliases.items():
-        if alias_k not in cache and target_k in cache:
-            cache[alias_k] = cache[target_k]
+        if alias_k not in cache:
+            if target_k.startswith("/"):
+                if os.path.exists(target_k):
+                    cache[alias_k] = target_k
+            elif target_k in cache:
+                cache[alias_k] = cache[target_k]
+        if not target_k.startswith("/") and target_k not in cache and alias_k in cache:
+            cache[target_k] = cache[alias_k]
             
     cache_dir = os.path.join(HOME, ".cache/quickshell")
-    os.makedirs(cache_dir, exist_ok=True)
+    themes_dir = os.path.join(cache_dir, "themes")
+    os.makedirs(themes_dir, exist_ok=True)
     cache_file = os.path.join(cache_dir, "icon_theme_cache.json")
+    theme_cache_file = os.path.join(themes_dir, f"{theme_name}.json")
+
     try:
+        with open(theme_cache_file, "w", encoding="utf-8") as tf:
+            json.dump(cache, tf)
         with open(cache_file, "w", encoding="utf-8") as f:
             json.dump(cache, f)
     except Exception:
@@ -557,6 +734,7 @@ def set_gtk_theme(name):
     set_gsettings("org.gnome.desktop.interface", "gtk-theme", name)
     for p in [os.path.join(HOME, ".config/gtk-3.0/settings.ini"), os.path.join(HOME, ".config/gtk-4.0/settings.ini")]:
         update_gtk_ini(p, {"gtk-theme-name": name})
+    update_gtk2({"gtk-theme-name": name})
     update_xsettingsd({"Net/ThemeName": name})
     apply_gtk_theme_links(name)
     return {"status": "ok", "gtk_theme": name}
@@ -565,7 +743,10 @@ def set_icon_theme(name):
     set_gsettings("org.gnome.desktop.interface", "icon-theme", name)
     for p in [os.path.join(HOME, ".config/gtk-3.0/settings.ini"), os.path.join(HOME, ".config/gtk-4.0/settings.ini")]:
         update_gtk_ini(p, {"gtk-icon-theme-name": name})
+    update_gtk2({"gtk-icon-theme-name": name})
     update_xsettingsd({"Net/IconThemeName": name})
+    apply_icon_theme_links(name)
+    update_default_icon_theme(name)
     build_and_save_icon_cache(name)
     return {"status": "ok", "icon_theme": name}
 
@@ -582,10 +763,16 @@ def set_cursor(name, size):
             "gtk-cursor-theme-name": name,
             "gtk-cursor-theme-size": str(sz)
         })
+    update_gtk2({
+        "gtk-cursor-theme-name": name,
+        "gtk-cursor-theme-size": str(sz)
+    })
     update_xsettingsd({
         "Gtk/CursorThemeName": name,
         "Gtk/CursorThemeSize": sz
     })
+    apply_icon_theme_links(name)
+    update_default_icon_theme("", name)
     return {"status": "ok", "cursor_theme": name, "cursor_size": sz}
 
 def set_color_scheme(scheme):

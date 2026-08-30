@@ -84,7 +84,13 @@ in
       writeModularConfig = mkOption {
         type = types.bool;
         default = true;
-        description = "Write standalone modular Quickshell configuration files (quickshell.conf and quickshell.lua) into ~/.config/hypr/.";
+        description = "Write standalone modular Quickshell configuration files (conf/quickshell.conf and conf/quickshell.lua) into ~/.config/hypr/.";
+      };
+
+      writeModularTree = mkOption {
+        type = types.bool;
+        default = true;
+        description = "Write full modular tree files (conf/autostart, conf/keybinds, conf/rules) into ~/.config/hypr/.";
       };
     };
 
@@ -104,7 +110,13 @@ in
       writeModularConfig = mkOption {
         type = types.bool;
         default = true;
-        description = "Write standalone modular Quickshell configuration file (quickshell.kdl) into ~/.config/niri/.";
+        description = "Write standalone modular Quickshell configuration file (conf/quickshell.kdl) into ~/.config/niri/.";
+      };
+
+      writeModularTree = mkOption {
+        type = types.bool;
+        default = true;
+        description = "Write full modular tree files (conf/autostart.kdl, conf/keybinds.kdl, conf/rules.kdl) into ~/.config/niri/.";
       };
     };
   };
@@ -140,7 +152,7 @@ in
           sound-theme-freedesktop
           matugen
           wireplumber
-          swww
+          awww
           swaybg
           (python3.withPackages (ps: with ps; [
             pygobject3
@@ -164,13 +176,11 @@ in
         text = builtins.toJSON wallpaperConfig;
       };
 
-      # Standalone Modular Hyprland Configurations
-      xdg.configFile."hypr/quickshell.conf" = mkIf cfg.hyprland.writeModularConfig {
+      # Standalone Modular Hyprland Configurations (Conf format)
+      xdg.configFile."hypr/conf/quickshell.conf" = mkIf cfg.hyprland.writeModularConfig {
         text = ''
 # ── Quickshell Desktop Environment Integration (Hyprland Classic) ──
 exec-once = qs
-exec-once = wl-paste --type text --watch cliphist store
-exec-once = wl-paste --type image --watch cliphist store
 
 bind = SUPER, SPACE,         exec, qs ipc call launcher toggle
 bind = SUPER SHIFT, W,       exec, qs ipc call wallpaper toggle
@@ -182,10 +192,6 @@ bind = SUPER, D,             exec, qs ipc call dashboard toggle
 bind = SUPER, N,             exec, qs ipc call notifCenter toggle
 bind = SUPER, C,             exec, qs ipc call controlCenter toggle
 bind = SUPER, B,             exec, qs ipc call battery toggle
-
-bind = , PRINT,              exec, ~/.config/quickshell/scripts/screenshot.sh full
-bind = SHIFT, PRINT,         exec, ~/.config/quickshell/scripts/screenshot.sh region
-bind = SUPER, PRINT,         exec, ~/.config/quickshell/scripts/screenshot.sh window
 
 layerrule = blur, quickshell:bar
 layerrule = blur, quickshell:launcher
@@ -232,19 +238,64 @@ layerrule = ignorezero, ^quickshell:.*$
 '';
       };
 
-      xdg.configFile."hypr/conf/quickshell.conf" = mkIf cfg.hyprland.writeModularConfig {
-        text = config.xdg.configFile."hypr/quickshell.conf".text;
+      xdg.configFile."hypr/conf/autostart.conf" = mkIf (cfg.hyprland.writeModularConfig && cfg.hyprland.writeModularTree) {
+        text = ''
+# ── Autostart Daemons & Background Services (Hyprland Classic) ──
+exec-once = systemctl enable --now --user hyprpolkitagent
+exec-once = wl-paste --type text --watch cliphist store
+exec-once = wl-paste --type image --watch cliphist store
+'';
       };
 
-      xdg.configFile."hypr/quickshell.lua" = mkIf cfg.hyprland.writeModularConfig {
+      xdg.configFile."hypr/conf/keybinds.conf" = mkIf (cfg.hyprland.writeModularConfig && cfg.hyprland.writeModularTree) {
+        text = ''
+# ── Keybindings & Shortcuts (Hyprland Classic) ──
+$mainMod = SUPER
+$terminal = kitty
+$fileManager = nautilus
+
+bind = $mainMod, T, exec, $terminal
+bind = $mainMod, E, exec, $fileManager
+bind = $mainMod, Q, killactive,
+bind = $mainMod ALT, F, togglefloating,
+bind = $mainMod SHIFT, F, fullscreen, 0
+bind = $mainMod, J, togglesplit,
+
+bind = $mainMod, 1, workspace, 1
+bind = $mainMod, 2, workspace, 2
+bind = $mainMod, 3, workspace, 3
+bind = $mainMod, 4, workspace, 4
+bind = $mainMod, 5, workspace, 5
+bind = $mainMod, 6, workspace, 6
+bind = $mainMod, 7, workspace, 7
+bind = $mainMod, 8, workspace, 8
+bind = $mainMod, 9, workspace, 9
+bind = $mainMod, 0, workspace, 10
+
+bind = , PRINT, exec, ~/.config/quickshell/scripts/screenshot.sh full
+bind = SHIFT, PRINT, exec, ~/.config/quickshell/scripts/screenshot.sh region
+bind = $mainMod, PRINT, exec, ~/.config/quickshell/scripts/screenshot.sh window
+'';
+      };
+
+      xdg.configFile."hypr/conf/rules.conf" = mkIf (cfg.hyprland.writeModularConfig && cfg.hyprland.writeModularTree) {
+        text = ''
+# ── Window Rules (Hyprland Classic) ──
+windowrulev2 = suppressevent maximize, class:.*
+windowrulev2 = float, title:^(Picture-in-Picture|Picture in picture)$
+windowrulev2 = pin, title:^(Picture-in-Picture|Picture in picture)$
+windowrulev2 = float, class:^(pavucontrol|nm-connection-editor|blueman-manager|swappy)$
+'';
+      };
+
+      # Standalone Modular Hyprland Configurations (Lua format)
+      xdg.configFile."hypr/conf/quickshell.lua" = mkIf cfg.hyprland.writeModularConfig {
         text = ''
 -- ── Quickshell Desktop Environment Integration (Hyprland Lua) ──
 local mainMod = "SUPER"
 
 hl.on("hyprland.start", function ()
     hl.exec_cmd("qs")
-    hl.exec_cmd("wl-paste --type text --watch cliphist store")
-    hl.exec_cmd("wl-paste --type image --watch cliphist store")
 end)
 
 hl.bind(mainMod .. " + SPACE",         hl.dsp.exec_cmd("qs ipc call launcher toggle"))
@@ -257,10 +308,6 @@ hl.bind(mainMod .. " + D",             hl.dsp.exec_cmd("qs ipc call dashboard to
 hl.bind(mainMod .. " + N",             hl.dsp.exec_cmd("qs ipc call notifCenter toggle"))
 hl.bind(mainMod .. " + C",             hl.dsp.exec_cmd("qs ipc call controlCenter toggle"))
 hl.bind(mainMod .. " + B",             hl.dsp.exec_cmd("qs ipc call battery toggle"))
-
-hl.bind("print",               hl.dsp.exec_cmd("~/.config/quickshell/scripts/screenshot.sh full"),   { locked = true })
-hl.bind("SHIFT + print",       hl.dsp.exec_cmd("~/.config/quickshell/scripts/screenshot.sh region"), { locked = true })
-hl.bind(mainMod .. " + print", hl.dsp.exec_cmd("~/.config/quickshell/scripts/screenshot.sh window"), { locked = true })
 
 hl.layer_rule({ match = { namespace = "quickshell:bar" },               blur = true })
 hl.layer_rule({ match = { namespace = "quickshell:launcher" },          blur = true, ignore_alpha = 0 })
@@ -283,17 +330,72 @@ hl.layer_rule({ match = { namespace = "^quickshell:.*$" },              blur = t
 '';
       };
 
-      xdg.configFile."hypr/conf/quickshell.lua" = mkIf cfg.hyprland.writeModularConfig {
-        text = config.xdg.configFile."hypr/quickshell.lua".text;
+      xdg.configFile."hypr/conf/autostart.lua" = mkIf (cfg.hyprland.writeModularConfig && cfg.hyprland.writeModularTree) {
+        text = ''
+-- ── Autostart Daemons & Background Services (Hyprland Lua) ──
+hl.on("hyprland.start", function ()
+    hl.exec_cmd("systemctl enable --now --user hyprpolkitagent")
+    hl.exec_cmd("wl-paste --type text --watch cliphist store")
+    hl.exec_cmd("wl-paste --type image --watch cliphist store")
+end)
+'';
+      };
+
+      xdg.configFile."hypr/conf/keybinds.lua" = mkIf (cfg.hyprland.writeModularConfig && cfg.hyprland.writeModularTree) {
+        text = ''
+-- ── Keybindings & Shortcuts (Hyprland Lua) ──
+local mainMod = "SUPER"
+local terminal = "kitty"
+local fileManager = "nautilus"
+
+hl.bind(mainMod .. " + T", hl.dsp.exec_cmd(terminal), { repeating = true })
+hl.bind(mainMod .. " + E", hl.dsp.exec_cmd(fileManager))
+hl.bind(mainMod .. " + Q", hl.dsp.window.close(), { repeating = true })
+hl.bind(mainMod .. " + ALT + F", hl.dsp.window.float({ action = "toggle" }))
+hl.bind(mainMod .. " + SHIFT + F", hl.dsp.window.fullscreen({ mode = "fullscreen", action = "toggle" }))
+hl.bind(mainMod .. " + J", hl.dsp.layout("togglesplit"))
+
+for i = 1, 10 do
+    local key = i % 10
+    hl.bind(mainMod .. " + " .. key, hl.dsp.focus({ workspace = i }))
+    hl.bind(mainMod .. " + SHIFT + " .. key, hl.dsp.window.move({ workspace = i }))
+end
+
+hl.bind("print", hl.dsp.exec_cmd("~/.config/quickshell/scripts/screenshot.sh full"), { locked = true })
+hl.bind("SHIFT + print", hl.dsp.exec_cmd("~/.config/quickshell/scripts/screenshot.sh region"), { locked = true })
+hl.bind(mainMod .. " + print", hl.dsp.exec_cmd("~/.config/quickshell/scripts/screenshot.sh window"), { locked = true })
+'';
+      };
+
+      xdg.configFile."hypr/conf/rules.lua" = mkIf (cfg.hyprland.writeModularConfig && cfg.hyprland.writeModularTree) {
+        text = ''
+-- ── Window & Workspace Rules (Hyprland Lua) ──
+hl.window_rule({
+    name  = "suppress-maximize",
+    match = { class = ".*" },
+    suppress_event = "maximize",
+})
+
+hl.window_rule({
+    name  = "pip-float",
+    match = { title = "^(Picture-in-Picture|Picture in picture)$" },
+    float = true,
+    pin   = true,
+})
+
+hl.window_rule({
+    name  = "dialog-float",
+    match = { class = "(pavucontrol|nm-connection-editor|blueman-manager|swappy)" },
+    float = true,
+})
+'';
       };
 
       # Standalone Modular Niri Configuration
-      xdg.configFile."niri/quickshell.kdl" = mkIf cfg.niri.writeModularConfig {
+      xdg.configFile."niri/conf/quickshell.kdl" = mkIf cfg.niri.writeModularConfig {
         text = ''
 // ── Quickshell Desktop Environment Integration (Niri) ──
 spawn-at-startup "qs"
-spawn-at-startup "wl-paste" "--type" "text" "--watch" "cliphist" "store"
-spawn-at-startup "wl-paste" "--type" "image" "--watch" "cliphist" "store"
 
 binds {
     Mod+Space       { spawn "qs" "ipc" "call" "launcher" "toggle"; }
@@ -306,6 +408,41 @@ binds {
     Mod+N           { spawn "qs" "ipc" "call" "notifCenter" "toggle"; }
     Mod+C           { spawn "qs" "ipc" "call" "controlCenter" "toggle"; }
     Mod+B           { spawn "qs" "ipc" "call" "battery" "toggle"; }
+}
+'';
+      };
+
+      xdg.configFile."niri/conf/autostart.kdl" = mkIf (cfg.niri.writeModularConfig && cfg.niri.writeModularTree) {
+        text = ''
+// ── Autostart Daemons & Services (Niri) ──
+spawn-at-startup "wl-paste" "--type" "text" "--watch" "cliphist" "store"
+spawn-at-startup "wl-paste" "--type" "image" "--watch" "cliphist" "store"
+'';
+      };
+
+      xdg.configFile."niri/conf/keybinds.kdl" = mkIf (cfg.niri.writeModularConfig && cfg.niri.writeModularTree) {
+        text = ''
+// ── Keybindings & Shortcuts (Niri) ──
+binds {
+    Mod+Return { spawn "kitty"; }
+    Mod+E      { spawn "nautilus"; }
+    Mod+Q      { close-window; }
+    Mod+F      { fullscreen-window; }
+
+    Mod+Left   { focus-column-left; }
+    Mod+Right  { focus-column-right; }
+    Mod+Up     { focus-window-up; }
+    Mod+Down   { focus-window-down; }
+
+    Mod+1 { focus-workspace 1; }
+    Mod+2 { focus-workspace 2; }
+    Mod+3 { focus-workspace 3; }
+    Mod+4 { focus-workspace 4; }
+    Mod+5 { focus-workspace 5; }
+    Mod+6 { focus-workspace 6; }
+    Mod+7 { focus-workspace 7; }
+    Mod+8 { focus-workspace 8; }
+    Mod+9 { focus-workspace 9; }
 
     Print       { spawn "sh" "-c" "~/.config/quickshell/scripts/screenshot.sh full"; }
     Shift+Print { spawn "sh" "-c" "~/.config/quickshell/scripts/screenshot.sh region"; }
@@ -314,8 +451,19 @@ binds {
 '';
       };
 
-      xdg.configFile."niri/conf/quickshell.kdl" = mkIf cfg.niri.writeModularConfig {
-        text = config.xdg.configFile."niri/quickshell.kdl".text;
+      xdg.configFile."niri/conf/rules.kdl" = mkIf (cfg.niri.writeModularConfig && cfg.niri.writeModularTree) {
+        text = ''
+// ── Window & Layout Rules (Niri) ──
+window-rule {
+    match app-id=r#"^(pavucontrol|nm-connection-editor|blueman-manager|swappy)$"#
+    open-floating true
+}
+
+window-rule {
+    match title=r#"^(Picture-in-Picture|Picture in picture)$"#
+    open-floating true
+}
+'';
       };
 
       # Systemd user service for auto-launching Quickshell on Graphical Sessions
@@ -344,7 +492,7 @@ binds {
     # Declarative Hyprland Integration
     (mkIf (cfg.hyprland.enableIntegration && (cfg.hyprland.enablePackage || (config.wayland.windowManager ? hyprland && config.wayland.windowManager.hyprland ? enable && config.wayland.windowManager.hyprland.enable))) {
       wayland.windowManager.hyprland.settings = {
-        exec-once = [
+        exec-once = (optional (!cfg.enableSystemdService) "qs") ++ [
           "wl-paste --type text --watch cliphist store"
           "wl-paste --type image --watch cliphist store"
         ];
@@ -400,6 +548,12 @@ binds {
           "blur, quickshell:lockscreen"
           "blur, quickshell:osd"
           "ignorezero, quickshell:osd"
+          "blur, quickshell:volumeosd"
+          "ignorezero, quickshell:volumeosd"
+          "blur, quickshell:brightnessosd"
+          "ignorezero, quickshell:brightnessosd"
+          "blur, ^quickshell:.*$"
+          "ignorezero, ^quickshell:.*$"
         ];
       };
     })
@@ -407,7 +561,7 @@ binds {
     # Declarative Niri Integration
     (mkIf (cfg.niri.enableIntegration && (cfg.niri.enablePackage || (config.programs ? niri && config.programs.niri ? enable && config.programs.niri.enable))) {
       programs.niri.settings = {
-        spawn-at-startup = [
+        spawn-at-startup = (optional (!cfg.enableSystemdService) { command = [ "qs" ]; }) ++ [
           { command = [ "wl-paste" "--type" "text" "--watch" "cliphist" "store" ]; }
           { command = [ "wl-paste" "--type" "image" "--watch" "cliphist" "store" ]; }
         ];

@@ -297,7 +297,7 @@ PanelWindow {
                                 anchors.fill: parent
                                 radius: 8
                                 color: appItem.index === resultList.currentIndex ? Qt.rgba(255, 255, 255, 0.1) : Qt.rgba(255, 255, 255, 0.05)
-                                visible: !ico.source || ico.status === Image.Error
+                                visible: !ico.source || ico.status !== Image.Ready
 
                                 Text {
                                     anchors.centerIn: parent
@@ -313,24 +313,26 @@ PanelWindow {
                                 anchors.fill: parent
                                 source: {
                                     const rev = Services.SystemTheme ? Services.SystemTheme.iconThemeRev : 0
-                                    const s = appItem.modelData.icon ?? ""
-                                    if (!s) return ""
+                                    const rawIcon = appItem.modelData ? (typeof appItem.modelData.icon === "string" ? appItem.modelData.icon : (appItem.modelData.icon?.name || "")) : ""
+                                    if (!rawIcon) return ""
                                     if (Services.SystemTheme) {
-                                        const res = Services.SystemTheme.getIcon(s)
+                                        const res = Services.SystemTheme.getIcon(rawIcon)
                                         if (res && res.length > 0) return res
                                     }
-                                    if (s.startsWith("file://")) return s
-                                    if (s.startsWith("/")) return "file://" + s
-                                    const qp = Quickshell.iconPath(s, true)
-                                    return (qp && qp.startsWith("/")) ? ("file://" + qp) : (qp || "")
+                                    if (rawIcon.startsWith("file://") || rawIcon.startsWith("http://") || rawIcon.startsWith("https://")) return rawIcon
+                                    if (rawIcon.startsWith("/")) return "file://" + rawIcon
+                                    let s = rawIcon.startsWith("image://icon/") ? rawIcon.substring(13) : rawIcon
+                                    if (s.startsWith("image://")) return s
+                                    const qp = Quickshell.iconPath(s, false)
+                                    return (qp && qp.startsWith("/")) ? ("file://" + qp) : ""
                                 }
                                 fillMode: Image.PreserveAspectFit
-                                asynchronous: false
+                                asynchronous: true
                                 cache: true
                                 sourceSize: Qt.size(64, 64)
                                 mipmap: true
                                 smooth: true
-                                visible: ico.status !== Image.Error
+                                visible: ico.status === Image.Ready
                             }
                         }
 

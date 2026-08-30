@@ -93,9 +93,16 @@ PanelWindow {
                         source: {
                             const icon = root.activeItem ? (root.activeItem.icon || "") : ""
                             if (!icon) return ""
-                            if (icon.startsWith("/") || icon.startsWith("file://") || icon.startsWith("http") || icon.startsWith("image://"))
+                            if (Services.SystemTheme) {
+                                const res = Services.SystemTheme.getIcon(icon)
+                                if (res && res.length > 0) return res
+                            }
+                            if (icon.startsWith("file://") || icon.startsWith("http://") || icon.startsWith("https://") || icon.startsWith("image://"))
                                 return icon
-                            return Quickshell.iconPath(icon, true)
+                            if (icon.startsWith("/"))
+                                return "file://" + icon
+                            const qp = Quickshell.iconPath(icon, false)
+                            return (qp && qp.startsWith("/")) ? ("file://" + qp) : (qp || "")
                         }
                         fillMode: Image.PreserveAspectFit
                         asynchronous: true
@@ -183,23 +190,28 @@ PanelWindow {
 
                                     // Entry Icon
                                     Image {
-                                        visible: menuItem.modelData.icon && menuItem.modelData.icon.length > 0 && status === Image.Ready
-                                        Layout.preferredWidth: 14
-                                        Layout.preferredHeight: 14
-                                        source: {
-                                            const icon = menuItem.modelData.icon || ""
-                                            if (!icon) return ""
+                                        id: menuEntryImg
+                                        property var rawIco: menuItem.modelData.icon
+                                        property string iconSource: {
+                                            const rev = Services.SystemTheme ? Services.SystemTheme.iconThemeRev : 0
+                                            if (!rawIco) return ""
+                                            let s = typeof rawIco === "string" ? rawIco : (rawIco.name || rawIco.toString() || "")
+                                            if (!s) return ""
                                             if (Services.SystemTheme) {
-                                                const res = Services.SystemTheme.getIcon(icon)
+                                                const res = Services.SystemTheme.getIcon(s)
                                                 if (res && res.length > 0) return res
                                             }
-                                            if (icon.startsWith("file://") || icon.startsWith("http") || icon.startsWith("image://"))
-                                                return icon
-                                            if (icon.startsWith("/"))
-                                                return "file://" + icon
-                                            const qp = Quickshell.iconPath(icon, true)
-                                            return (qp && qp.startsWith("/")) ? ("file://" + qp) : qp
+                                            if (s.startsWith("file://") || s.startsWith("http://") || s.startsWith("https://")) return s
+                                            if (s.startsWith("/")) return "file://" + s
+                                            if (s.startsWith("image://icon/")) s = s.substring(13)
+                                            else if (s.startsWith("image://")) return s
+                                            const qp = Quickshell.iconPath(s, false)
+                                            return (qp && qp.startsWith("/")) ? ("file://" + qp) : ""
                                         }
+                                        source: iconSource
+                                        visible: iconSource.length > 0 && status === Image.Ready
+                                        Layout.preferredWidth: visible ? 14 : 0
+                                        Layout.preferredHeight: 14
                                         fillMode: Image.PreserveAspectFit
                                         asynchronous: true
                                         cache: true
@@ -298,23 +310,28 @@ PanelWindow {
                                                 }
 
                                                 Image {
-                                                    visible: subItem.modelData.icon && subItem.modelData.icon.length > 0 && status === Image.Ready
-                                                    Layout.preferredWidth: 12
-                                                    Layout.preferredHeight: 12
-                                                    source: {
-                                                        const icon = subItem.modelData.icon || ""
-                                                        if (!icon) return ""
+                                                    id: subMenuEntryImg
+                                                    property var rawIco: subItem.modelData.icon
+                                                    property string iconSource: {
+                                                        const rev = Services.SystemTheme ? Services.SystemTheme.iconThemeRev : 0
+                                                        if (!rawIco) return ""
+                                                        let s = typeof rawIco === "string" ? rawIco : (rawIco.name || rawIco.toString() || "")
+                                                        if (!s) return ""
                                                         if (Services.SystemTheme) {
-                                                            const res = Services.SystemTheme.getIcon(icon)
+                                                            const res = Services.SystemTheme.getIcon(s)
                                                             if (res && res.length > 0) return res
                                                         }
-                                                        if (icon.startsWith("file://") || icon.startsWith("http") || icon.startsWith("image://"))
-                                                            return icon
-                                                        if (icon.startsWith("/"))
-                                                            return "file://" + icon
-                                                        const qp = Quickshell.iconPath(icon, true)
-                                                        return (qp && qp.startsWith("/")) ? ("file://" + qp) : qp
+                                                        if (s.startsWith("file://") || s.startsWith("http://") || s.startsWith("https://")) return s
+                                                        if (s.startsWith("/")) return "file://" + s
+                                                        if (s.startsWith("image://icon/")) s = s.substring(13)
+                                                        else if (s.startsWith("image://")) return s
+                                                        const qp = Quickshell.iconPath(s, false)
+                                                        return (qp && qp.startsWith("/")) ? ("file://" + qp) : ""
                                                     }
+                                                    source: iconSource
+                                                    visible: iconSource.length > 0 && status === Image.Ready
+                                                    Layout.preferredWidth: visible ? 12 : 0
+                                                    Layout.preferredHeight: 12
                                                     fillMode: Image.PreserveAspectFit
                                                     asynchronous: true
                                                     cache: true
