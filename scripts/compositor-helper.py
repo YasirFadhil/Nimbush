@@ -1724,28 +1724,55 @@ hl.window_rule({
 
     current_section = 'main'
     section_keywords = {
-        'autostart': ['AUTOSTART'],
-        'keybinds': ['KEYBINDINGS'],
-        'rules': ['WINDOW / LAYER RULES', 'WINDOW RULES', 'LAYER RULES'],
-        'main': ['MONITORS', 'PROGRAMS / VARIABLES', 'ENVIRONMENT VARIABLES', 'PERMISSIONS', 'LOOK AND FEEL', 'ANIMATIONS', 'WORKSPACE RULES', 'LAYOUTS', 'MISC', 'INPUT']
+        'autostart': ['AUTOSTART', 'STARTUP', 'DAEMONS'],
+        'keybinds': ['KEYBINDINGS', 'KEYBINDINGSS', 'KEYBINDS', 'BINDS', 'SHORTCUTS'],
+        'rules': ['WINDOW / LAYER RULES', 'WINDOW RULES', 'LAYER RULES', 'WINDOWS AND WORKSPACES', 'WORKSPACE RULES', 'WINDOW & WORKSPACE RULES', 'RULES'],
+        'programs': ['MY PROGRAMS', 'PROGRAMS', 'PROGRAMS / VARIABLES', 'VARIABLES', 'USER PROGRAMS', 'APPS'],
+        'main': ['MONITORS', 'ENVIRONMENT VARIABLES', 'PERMISSIONS', 'LOOK AND FEEL', 'ANIMATIONS', 'WORKSPACE RULES', 'LAYOUTS', 'MISC', 'INPUT', 'GESTURES', 'DEVICES']
     }
 
-    var_defs = []
+    var_defs = {}
     qs_vars = set([
         'menu', 'clipboard', 'lockscreen', 'lockScreen', 'notifcenter', 'notifCenter',
         'powermenu', 'powerMenu', 'dashboard', 'controlcenter', 'controlCenter',
         'batterypanel', 'batteryPanel', 'settingsgui', 'settingsGui',
         'wallpaperselector', 'wallpaperSelector', 'emojipicker', 'emojiPicker'
     ])
+
     for line in lines:
         m = re.match(r'^\s*local\s+([A-Za-z0-9_]+)\s*=\s*(.*)', line)
         if m:
             vname = m.group(1).strip()
-            val = m.group(2).strip()
-            if 'qs ' in val or 'qs"' in val or "qs'" in val or 'quickshell' in val:
+            raw_val = m.group(2).strip()
+            if 'qs ' in raw_val or 'qs"' in raw_val or "qs'" in raw_val or 'quickshell' in raw_val:
                 qs_vars.add(vname)
-            elif vname in ['mainMod', 'terminal', 'fileManager', 'browser', 'editor']:
-                var_defs.append(line.strip())
+            else:
+                var_defs[vname] = line.strip()
+
+    # Provide safe fallback definitions if not found
+    if 'mainMod' not in var_defs:
+        var_defs['mainMod'] = 'local mainMod = "SUPER"'
+    if 'terminal' not in var_defs and 'myTerminal' not in var_defs and 'term' not in var_defs:
+        var_defs['terminal'] = 'local terminal = "kitty"'
+    if 'fileManager' not in var_defs and 'file_manager' not in var_defs and 'filemanager' not in var_defs:
+        var_defs['fileManager'] = 'local fileManager = "nautilus"'
+    if 'menu' not in var_defs and 'launcher' not in var_defs and 'appLauncher' not in var_defs:
+        var_defs['menu'] = 'local menu = "wofi --show drun"'
+    if 'browser' not in var_defs:
+        var_defs['browser'] = 'local browser = "xdg-open https://"'
+    if 'editor' not in var_defs:
+        var_defs['editor'] = 'local editor = "nano"'
+
+    # Build prioritized var definitions string
+    priority_order = ['mainMod', 'terminal', 'myTerminal', 'term', 'fileManager', 'file_manager', 'filemanager', 'menu', 'launcher', 'browser', 'editor']
+    vars_prefix_lines = []
+    for k in priority_order:
+        if k in var_defs and var_defs[k] not in vars_prefix_lines:
+            vars_prefix_lines.append(var_defs[k])
+    for k, v in var_defs.items():
+        if v not in vars_prefix_lines:
+            vars_prefix_lines.append(v)
+    vars_prefix = "\n".join(vars_prefix_lines)
 
     in_loader_block = False
     for line in lines:
@@ -1812,10 +1839,19 @@ hl.window_rule({
         with open(autostart_path, "r", encoding="utf-8") as f:
             existing_autostart = f.read()
 
+    autostart_vars = []
+    for v in ["terminal", "myTerminal", "term", "fileManager", "browser"]:
+        if v in var_defs and any(re.search(rf'\b{re.escape(v)}\b', l) for l in autostart_lines):
+            autostart_vars.append(var_defs[v])
+
     if autostart_lines:
-        autostart_content = strip_header_banner("".join(autostart_lines))
+        raw_as = strip_header_banner("".join(autostart_lines)).strip()
+        if autostart_vars and not any(f"local {v}" in raw_as for v in ["terminal", "myTerminal", "term"]):
+            autostart_content = "\n".join(autostart_vars) + "\n\n" + raw_as
+        else:
+            autostart_content = raw_as
     elif existing_autostart.strip():
-        autostart_content = strip_header_banner(existing_autostart)
+        autostart_content = strip_header_banner(existing_autostart).strip()
     else:
         autostart_content = """hl.on("hyprland.start", function ()
     hl.exec_cmd("systemctl enable --now --user hyprpolkitagent")
@@ -1832,14 +1868,24 @@ end)"""
 """)
 
     # Write conf/keybinds.lua
-    vars_prefix = "\n".join(var_defs) if var_defs else 'local mainMod = "SUPER"\nlocal terminal = "kitty"\nlocal fileManager = "nautilus"'
-    if keybind_lines:
-        keybind_content = strip_header_banner("".join(keybind_lines))
-        if not any("local mainMod" in l for l in keybind_lines):
-            keybind_content = f"{vars_prefix}\n\n{keybind_content}"
+    # Clean duplicate local variable declarations from keybind lines if already in vars_prefix
+    clean_keybind_lines = []
+    for line in keybind_lines:
+        m = re.match(r'^\s*local\s+([A-Za-z0-9_]+)\s*=\s*(.*)', line)
+        if m and m.group(1).strip() in var_defs:
+            continue
+        clean_keybind_lines.append(line)
+
+    if clean_keybind_lines:
+        keybind_body = strip_header_banner("".join(clean_keybind_lines)).strip()
+        keybind_content = f"{vars_prefix}\n\n{keybind_body}"
     elif os.path.exists(keybinds_path):
         with open(keybinds_path, "r", encoding="utf-8") as f:
-            keybind_content = strip_header_banner(f.read())
+            existing_kb = strip_header_banner(f.read()).strip()
+        if not any(f"local {k}" in existing_kb for k in ['terminal', 'fileManager']):
+            keybind_content = f"{vars_prefix}\n\n{existing_kb}"
+        else:
+            keybind_content = existing_kb
     else:
         keybind_content = vars_prefix + """
 
@@ -1915,7 +1961,9 @@ local confDir = home .. "/.config/hypr/conf"
 
 local function load_conf(module_name)
     local module_path = confDir .. "/" .. module_name .. ".lua"
-    if io.open(module_path, "r") then
+    local f = io.open(module_path, "r")
+    if f then
+        f:close()
         dofile(module_path)
     end
 end

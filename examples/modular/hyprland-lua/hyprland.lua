@@ -84,7 +84,9 @@ local confDir = home .. "/.config/hypr/conf"
 
 local function load_conf(module_name)
     local module_path = confDir .. "/" .. module_name .. ".lua"
-    if io.open(module_path, "r") then
+    local f = io.open(module_path, "r")
+    if f then
+        f:close()
         dofile(module_path)
     end
 end

@@ -945,6 +945,7 @@ EOF
 local mainMod = "SUPER"
 local terminal = "kitty"
 local fileManager = "nautilus"
+local menu = "wofi --show drun"
 
 hl.bind(mainMod .. " + T", hl.dsp.exec_cmd(terminal), { repeating = true })
 hl.bind(mainMod .. " + E", hl.dsp.exec_cmd(fileManager))
@@ -1002,7 +1003,7 @@ EOF
                 sed -i '/qs ipc call/d' "$HYPR_LUA"
                 sed -i '/quickshell:/d' "$HYPR_LUA"
                 sed -i '/load_conf(/d' "$HYPR_LUA"
-                echo -e "\n-- ── Load Modular Configuration Files ──\nlocal home = os.getenv(\"HOME\") or \"\"\nlocal confDir = home .. \"/.config/hypr/conf\"\n\nlocal function load_conf(module_name)\n    local module_path = confDir .. \"/\" .. module_name .. \".lua\"\n    if io.open(module_path, \"r\") then\n        dofile(module_path)\n    end\nend\n\nload_conf(\"autostart\")\nload_conf(\"keybinds\")\nload_conf(\"rules\")\nload_conf(\"quickshell\")" >> "$HYPR_LUA"
+                echo -e "\n-- ── Load Modular Configuration Files ──\nlocal home = os.getenv(\"HOME\") or \"\"\nlocal confDir = home .. \"/.config/hypr/conf\"\n\nlocal function load_conf(module_name)\n    local module_path = confDir .. \"/\" .. module_name .. \".lua\"\n    local f = io.open(module_path, \"r\")\n    if f then\n        f:close()\n        dofile(module_path)\n    end\nend\n\nload_conf(\"autostart\")\nload_conf(\"keybinds\")\nload_conf(\"rules\")\nload_conf(\"quickshell\")" >> "$HYPR_LUA"
                 success "Connected modular loader to $HYPR_LUA"
             else
                 info "Writing starter $HYPR_LUA with modular loader..."
@@ -1013,7 +1014,9 @@ local confDir = home .. "/.config/hypr/conf"
 
 local function load_conf(module_name)
     local module_path = confDir .. "/" .. module_name .. ".lua"
-    if io.open(module_path, "r") then
+    local f = io.open(module_path, "r")
+    if f then
+        f:close()
         dofile(module_path)
     end
 end

@@ -5,6 +5,7 @@
 local mainMod = "SUPER"
 local terminal = "kitty"
 local fileManager = "nautilus"
+local menu = "wofi --show drun"
 
 -- ── Application Launchers ────────────────────────────────────────────────────
 hl.bind(mainMod .. " + T", hl.dsp.exec_cmd(terminal), { repeating = true })
