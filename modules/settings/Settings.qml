@@ -14,7 +14,7 @@ FloatingWindow {
     visible: false
     implicitWidth: 980
     implicitHeight: 680
-    minimumSize: Qt.size(800, 560)
+    minimumSize: Qt.size(480, 400)
     color: Services.Theme.isDark ? "#16161a" : "#f4f5f8"
 
     property string overlayId: "settings"
@@ -690,6 +690,7 @@ FloatingWindow {
             ColumnLayout {
                 id: textCol
                 Layout.fillWidth: true
+                Layout.minimumWidth: 0
                 Layout.alignment: Qt.AlignVCenter
                 spacing: 1
 
@@ -714,7 +715,7 @@ FloatingWindow {
 
             Item {
                 id: controlSlot
-                Layout.alignment: Qt.AlignVCenter
+                Layout.alignment: Qt.AlignVCenter | Qt.AlignRight
                 implicitWidth: childrenRect.width
                 implicitHeight: childrenRect.height
             }
@@ -728,8 +729,9 @@ FloatingWindow {
         property var currentValue: null
         property bool searchable: false
         property string searchPlaceholder: "Search..."
-        property int maxPopupHeight: 260
-        property int minButtonWidth: 130
+        property int maxPopupHeight: 240
+        property int minButtonWidth: 90
+        property int maxButtonWidth: 175
         property string searchQuery: ""
         signal selected(var val)
 
@@ -753,7 +755,7 @@ FloatingWindow {
 
         Rectangle {
             id: dropBtn
-            implicitWidth: Math.max(dropRoot.minButtonWidth, dropBtnText.implicitWidth + 34)
+            implicitWidth: Math.min(dropRoot.maxButtonWidth, Math.max(dropRoot.minButtonWidth, dropBtnText.implicitWidth + 28))
             height: 26
             radius: 6
             color: dropMenu.visible 
@@ -808,10 +810,38 @@ FloatingWindow {
 
             Popup {
                 id: dropMenu
-                y: dropBtn.height + 4
-                x: Math.min(0, dropBtn.width - width)
-                width: Math.max(dropBtn.width, 190)
-                height: Math.min(dropRoot.maxPopupHeight, (dropRoot.searchable ? 36 : 0) + menuCol.implicitHeight + 12)
+                readonly property bool openUpwards: {
+                    var globalPos = dropBtn.mapToItem(rootWindow.contentItem || null, 0, 0)
+                    if (globalPos) {
+                        var spaceBelow = rootWindow.height - (globalPos.y + dropBtn.height)
+                        var popupH = Math.min(dropRoot.maxPopupHeight, (dropRoot.searchable ? 36 : 0) + menuCol.implicitHeight + 12)
+                        return (spaceBelow < popupH + 16) && (globalPos.y > popupH + 16)
+                    }
+                    return false
+                }
+                y: openUpwards ? (-height - 4) : (dropBtn.height + 4)
+                x: {
+                    var globalPos = dropBtn.mapToItem(rootWindow.contentItem || null, 0, 0)
+                    var targetW = Math.max(dropBtn.width, 175)
+                    if (globalPos) {
+                        var rightEdge = globalPos.x + targetW
+                        if (rightEdge > (rootWindow.width - 16)) {
+                            return -(rightEdge - (rootWindow.width - 16))
+                        }
+                    }
+                    return Math.min(0, dropBtn.width - targetW)
+                }
+                width: Math.max(dropBtn.width, 175)
+                height: {
+                    var targetH = (dropRoot.searchable ? 36 : 0) + menuCol.implicitHeight + 12
+                    var maxH = dropRoot.maxPopupHeight
+                    var globalPos = dropBtn.mapToItem(rootWindow.contentItem || null, 0, 0)
+                    if (globalPos) {
+                        var space = openUpwards ? (globalPos.y - 12) : (rootWindow.height - (globalPos.y + dropBtn.height) - 12)
+                        if (space > 60) maxH = Math.min(maxH, space)
+                    }
+                    return Math.min(maxH, targetH)
+                }
                 padding: 4
                 closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutsideParent
                 modal: false
@@ -1003,6 +1033,7 @@ FloatingWindow {
             ColumnLayout {
                 id: switchTextCol
                 Layout.fillWidth: true
+                Layout.minimumWidth: 0
                 Layout.alignment: Qt.AlignVCenter
                 spacing: 1
 
@@ -1032,7 +1063,7 @@ FloatingWindow {
                 height: 24
                 Layout.preferredWidth: 46
                 Layout.preferredHeight: 24
-                Layout.alignment: Qt.AlignVCenter
+                Layout.alignment: Qt.AlignVCenter | Qt.AlignRight
                 radius: 12
 
                 color: switchRoot.checked 
@@ -1281,10 +1312,12 @@ FloatingWindow {
         // Left: Title & Subtitle
         ColumnLayout {
             Layout.fillWidth: true
+            Layout.minimumWidth: 0
             Layout.alignment: Qt.AlignVCenter
             spacing: 1
 
             Text {
+                Layout.fillWidth: true
                 text: sliderRoot.title
                 font.pixelSize: Services.Theme.fontSizeMd
                 font.weight: Font.Medium
@@ -1293,6 +1326,7 @@ FloatingWindow {
             }
             Text {
                 visible: sliderRoot.subtitle.length > 0
+                Layout.fillWidth: true
                 text: sliderRoot.subtitle
                 font.pixelSize: Services.Theme.fontSizeXs
                 color: Services.Theme.textSecondary
@@ -1302,12 +1336,13 @@ FloatingWindow {
 
         // Right: Value Badge + Compact Tahoe Slider
         RowLayout {
-            Layout.alignment: Qt.AlignVCenter
+            Layout.alignment: Qt.AlignVCenter | Qt.AlignRight
+            Layout.fillWidth: false
             spacing: 8
 
             // Value Badge
             Text {
-                Layout.preferredWidth: 38
+                Layout.preferredWidth: 36
                 horizontalAlignment: Text.AlignRight
                 text: sliderRoot.valuePrefix + (sliderRoot.decimals > 0 ? Number(sliderRoot.value).toFixed(sliderRoot.decimals) : Math.round(sliderRoot.value)) + sliderRoot.valueSuffix
                 font.family: Services.Theme.fontMono
@@ -1319,7 +1354,9 @@ FloatingWindow {
             // Compact Tahoe Track Container
             Item {
                 id: trackContainer
-                Layout.preferredWidth: 150
+                Layout.preferredWidth: 120
+                Layout.minimumWidth: 60
+                Layout.maximumWidth: 150
                 height: 24
 
                 readonly property real valRatio: Math.max(0, Math.min(1, (sliderRoot.value - sliderRoot.from) / Math.max(0.0001, sliderRoot.to - sliderRoot.from)))
@@ -2193,9 +2230,9 @@ FloatingWindow {
             Layout.fillHeight: true
             spacing: 0
 
-            // ── LEFT SIDEBAR (236px) ─────────────────────────────────────────
+            // ── LEFT SIDEBAR (Adaptive 190px - 236px) ───────────────────────
             Rectangle {
-                Layout.preferredWidth: 236
+                Layout.preferredWidth: (rootWindow.width < 750) ? 190 : 236
                 Layout.fillHeight: true
                 color: Services.Theme.surfaceVariant
 
@@ -2458,7 +2495,7 @@ FloatingWindow {
                 Flickable {
                     id: contentFlick
                     anchors.fill: parent
-                    anchors.margins: 18
+                    anchors.margins: (rootWindow.width < 750) ? 12 : 18
                     contentHeight: Math.max(contentFlick.height, tabStack.currentContentHeight + 40)
                     contentWidth: width
                     clip: true
@@ -2897,7 +2934,8 @@ FloatingWindow {
                                                 model: Services.Wallpaper ? Services.Wallpaper.allWallpapers : []
                                                 delegate: Rectangle {
                                                     required property var modelData
-                                                    width: 116; height: 76
+                                                    width: (rootWindow.width < 750) ? 104 : 116
+                                                    height: (rootWindow.width < 750) ? 68 : 76
                                                     radius: 8
                                                     clip: true
                                                     readonly property bool isCur: Services.Wallpaper && Services.Wallpaper.currentWallpaper === modelData.path
@@ -3902,11 +3940,11 @@ FloatingWindow {
                                 title: "User Profile & Avatar"
                                 icon: Services.Icons.user
 
-                                // Interactive Profile Picture Card
+                                // Interactive Profile Picture Card (Minimal Clean Profile)
                                 Rectangle {
                                     Layout.fillWidth: true
                                     Layout.margins: 10
-                                    height: 100
+                                    height: 84
                                     radius: 8
                                     color: Services.Theme.bgElevated
                                     border.color: Services.Theme.border
@@ -3917,42 +3955,33 @@ FloatingWindow {
                                         anchors.margins: 12
                                         spacing: 14
 
-                                        // Live Avatar Frame with Shape & Glow
+                                        // Live Avatar Frame with Shape & Camera Hover
                                         Item {
                                             id: profilePreviewFrame
-                                            Layout.preferredWidth: 68
-                                            Layout.preferredHeight: 68
+                                            Layout.preferredWidth: 60
+                                            Layout.preferredHeight: 60
+                                            Layout.alignment: Qt.AlignVCenter
 
                                             Services.AvatarFrame {
                                                 anchors.fill: parent
                                                 source: Services.OsInfo.avatarPath
-                                                shapeRadius: {
-                                                    const s = Services.Config ? Services.Config.lockscreenAvatarShape : "circle"
-                                                    if (s === "circle") return 34
-                                                    if (s === "squircle") return 20
-                                                    return 14
-                                                }
+                                                shapeRadius: 16
                                                 backgroundColor: Services.Theme.surfaceVariant
-                                                borderColor: (Services.Config && Services.Config.lockscreenAvatarRing) ? Services.Theme.accent : Services.Theme.border
-                                                borderWidth: (Services.Config && Services.Config.lockscreenAvatarRing) ? 2 : 1
+                                                borderColor: Services.Theme.border
+                                                borderWidth: 1
                                                 fallbackText: {
                                                     const u = (Services.OsInfo.username || Quickshell.env("USER") || "user").toUpperCase()
                                                     return u.length > 0 ? u.charAt(0) : "󰌽"
                                                 }
                                                 fallbackFontFamily: Services.Theme.fontSymbols
-                                                fallbackFontSize: 26
+                                                fallbackFontSize: 24
                                                 fallbackColor: Services.Theme.accent
                                             }
 
                                             // Camera badge overlay on hover
                                             Rectangle {
                                                 anchors.fill: parent
-                                                radius: {
-                                                    const s = Services.Config ? Services.Config.lockscreenAvatarShape : "circle"
-                                                    if (s === "circle") return 34
-                                                    if (s === "squircle") return 20
-                                                    return 14
-                                                }
+                                                radius: 16
                                                 color: Qt.rgba(0, 0, 0, 0.45)
                                                 visible: previewCardMouse.containsMouse
                                                 antialiasing: true
@@ -3966,6 +3995,33 @@ FloatingWindow {
                                                 }
                                             }
 
+                                            // Reset custom photo icon on corner
+                                            Rectangle {
+                                                visible: Services.OsInfo.isCustomAvatar && previewCardMouse.containsMouse
+                                                anchors.top: parent.top
+                                                anchors.right: parent.right
+                                                anchors.topMargin: -3
+                                                anchors.rightMargin: -3
+                                                width: 18; height: 18
+                                                radius: 9
+                                                color: Services.Theme.danger || "#ef4444"
+                                                z: 10
+
+                                                Text {
+                                                    anchors.centerIn: parent
+                                                    text: "✕"
+                                                    font.pixelSize: 9
+                                                    font.weight: Font.Bold
+                                                    color: "#ffffff"
+                                                }
+
+                                                MouseArea {
+                                                    anchors.fill: parent
+                                                    cursorShape: Qt.PointingHandCursor
+                                                    onClicked: Services.OsInfo.clearCustomAvatar()
+                                                }
+                                            }
+
                                             MouseArea {
                                                 id: previewCardMouse
                                                 anchors.fill: parent
@@ -3975,180 +4031,36 @@ FloatingWindow {
                                             }
                                         }
 
-                                        // User Info & Status
+                                        // User Info & Status (hugging avatar)
                                         ColumnLayout {
-                                            Layout.fillWidth: true
+                                            spacing: 2
                                             Layout.alignment: Qt.AlignVCenter
-                                            spacing: 3
 
-                                            RowLayout {
-                                                spacing: 6
-                                                Text {
-                                                    text: Services.OsInfo.username || Quickshell.env("USER") || "User"
-                                                    font.pixelSize: 14
-                                                    font.weight: Font.DemiBold
-                                                    color: Services.Theme.textPrimary
-                                                }
-
-                                                // Status badge
-                                                Rectangle {
-                                                    height: 18
-                                                    implicitWidth: avatarStatusTxt.implicitWidth + 10
-                                                    radius: 4
-                                                    color: Services.OsInfo.isCustomAvatar ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.15) : (Services.Theme.isDark ? Qt.rgba(255, 255, 255, 0.06) : Qt.rgba(0, 0, 0, 0.05))
-                                                    border.color: Services.OsInfo.isCustomAvatar ? Services.Theme.accent : Services.Theme.border
-                                                    border.width: 1
-
-                                                    Text {
-                                                        id: avatarStatusTxt
-                                                        anchors.centerIn: parent
-                                                        text: Services.OsInfo.isCustomAvatar ? "Custom Photo" : "System Default"
-                                                        font.pixelSize: 9
-                                                        font.weight: Font.Medium
-                                                        color: Services.OsInfo.isCustomAvatar ? Services.Theme.accent : Services.Theme.textSecondary
-                                                    }
-                                                }
+                                            Text {
+                                                text: Services.OsInfo.username || Quickshell.env("USER") || "User"
+                                                font.pixelSize: 15
+                                                font.weight: Font.DemiBold
+                                                color: Services.Theme.textPrimary
                                             }
 
                                             Text {
-                                                text: (Services.OsInfo.username || "user") + "@" + (Services.OsInfo.hostname || "local") + " · " + (Services.OsInfo.shellName || "sh")
-                                                font.pixelSize: 10
+                                                text: (Services.OsInfo.username || "user") + "@" + (Services.OsInfo.hostname || "local") + "  ·  " + (Services.OsInfo.shellName || "sh")
+                                                font.pixelSize: 11
+                                                font.weight: Font.Medium
                                                 color: Services.Theme.textSecondary
                                             }
 
                                             Text {
-                                                Layout.fillWidth: true
-                                                text: Services.OsInfo.isCustomAvatar ? (Services.Config.customAvatar.replace("file://", "")) : "Using ~/.face or desktop accounts icon"
+                                                text: (Services.OsInfo.distroName || "Linux") + "  ·  Kernel " + (Services.OsInfo.kernel || "")
                                                 font.family: Services.Theme.fontMono
                                                 font.pixelSize: 9
                                                 color: Services.Theme.textDisabled
-                                                elide: Text.ElideMiddle
                                             }
                                         }
 
-                                        // Action Buttons (Choose / Reset)
-                                        RowLayout {
-                                            Layout.alignment: Qt.AlignVCenter
-                                            spacing: 6
-
-                                            // Choose Photo Button
-                                            Rectangle {
-                                                height: 32
-                                                implicitWidth: choosePhotoTxt.implicitWidth + 24
-                                                radius: 6
-                                                color: chooseBtnMouse.containsMouse ? Qt.lighter(Services.Theme.accent, 1.15) : Services.Theme.accent
-                                                border.color: Services.Theme.accent
-                                                border.width: 1
-
-                                                RowLayout {
-                                                    anchors.centerIn: parent
-                                                    spacing: 6
-                                                    Text {
-                                                        text: Services.Icons.image || "󰋩"
-                                                        font.family: Services.Theme.fontSymbols
-                                                        font.pixelSize: 11
-                                                        color: Services.Theme.bgOnAccent
-                                                    }
-                                                    Text {
-                                                        id: choosePhotoTxt
-                                                        text: "Choose Photo"
-                                                        font.pixelSize: 10
-                                                        font.weight: Font.DemiBold
-                                                        color: Services.Theme.bgOnAccent
-                                                    }
-                                                }
-
-                                                MouseArea {
-                                                    id: chooseBtnMouse
-                                                    anchors.fill: parent
-                                                    hoverEnabled: true
-                                                    cursorShape: Qt.PointingHandCursor
-                                                    onClicked: Services.OsInfo.pickCustomAvatar()
-                                                }
-                                            }
-
-                                            // Reset Button (Only visible if custom avatar is set)
-                                            Rectangle {
-                                                visible: Services.OsInfo.isCustomAvatar
-                                                height: 32
-                                                implicitWidth: resetPhotoTxt.implicitWidth + 20
-                                                radius: 6
-                                                color: resetBtnMouse.containsMouse ? Services.Theme.bgHover : Services.Theme.surfaceVariant
-                                                border.color: Services.Theme.border
-                                                border.width: 1
-
-                                                RowLayout {
-                                                    anchors.centerIn: parent
-                                                    spacing: 5
-                                                    Text {
-                                                        text: Services.Icons.undo || "󰁯"
-                                                        font.family: Services.Theme.fontSymbols
-                                                        font.pixelSize: 11
-                                                        color: Services.Theme.textSecondary
-                                                    }
-                                                    Text {
-                                                        id: resetPhotoTxt
-                                                        text: "Reset"
-                                                        font.pixelSize: 10
-                                                        font.weight: Font.Medium
-                                                        color: Services.Theme.textPrimary
-                                                    }
-                                                }
-
-                                                MouseArea {
-                                                    id: resetBtnMouse
-                                                    anchors.fill: parent
-                                                    hoverEnabled: true
-                                                    cursorShape: Qt.PointingHandCursor
-                                                    onClicked: Services.OsInfo.clearCustomAvatar()
-                                                }
-                                            }
-                                        }
+                                        // Spacer pushing content to the left
+                                        Item { Layout.fillWidth: true }
                                     }
-                                }
-
-                                SettingsDivider {}
-
-                                SettingsRow {
-                                    title: "Avatar Profile Shape"
-                                    subtitle: "Geometry and curvature of avatar frame"
-
-                                    SettingsDropdown {
-                                        currentValue: Services.Config ? Services.Config.lockscreenAvatarShape : "circle"
-                                        model: [
-                                            { id: "circle",   label: "Circular (Round 360°)" },
-                                            { id: "squircle", label: "Squircle (Smooth Curvature)" },
-                                            { id: "rounded",  label: "Rounded Square (Radius 16)" }
-                                        ]
-                                        onSelected: (val) => { if (Services.Config) Services.Config.setLockscreenAvatarShape(val) }
-                                    }
-                                }
-
-                                SettingsDivider {}
-
-                                SettingsSwitch {
-                                    title: "Accent Glow Focus Ring"
-                                    subtitle: "Outer breathing glow ring around avatar picture"
-                                    checked: Services.Config ? Services.Config.lockscreenAvatarRing : true
-                                    onToggled: (st) => { if (Services.Config) Services.Config.setLockscreenAvatarRing(st) }
-                                }
-
-                                SettingsDivider {}
-
-                                SettingsSwitch {
-                                    title: "Display Profile Picture"
-                                    subtitle: "Show user avatar or initials monogram"
-                                    checked: Services.Config ? Services.Config.lockscreenShowAvatar : true
-                                    onToggled: (st) => { if (Services.Config) Services.Config.setLockscreenShowAvatar(st) }
-                                }
-
-                                SettingsDivider {}
-
-                                SettingsSwitch {
-                                    title: "Display Greeting Subtitle"
-                                    subtitle: "Show greeting and user@hostname tag"
-                                    checked: Services.Config ? Services.Config.lockscreenShowGreeting : true
-                                    onToggled: (st) => { if (Services.Config) Services.Config.setLockscreenShowGreeting(st) }
                                 }
                             }
 
@@ -4189,6 +4101,145 @@ FloatingWindow {
                                             { id: "custom", label: "Custom Dedicated Image" }
                                         ]
                                         onSelected: (val) => { if (Services.Config) Services.Config.setLockscreenWallpaperMode(val) }
+                                    }
+                                }
+
+                                // Dedicated Lockscreen Wallpaper Selector (Visible when Custom is selected)
+                                ColumnLayout {
+                                    visible: Services.Config && Services.Config.lockscreenWallpaperMode === "custom"
+                                    Layout.fillWidth: true
+                                    Layout.leftMargin: 10
+                                    Layout.rightMargin: 10
+                                    Layout.topMargin: 2
+                                    Layout.bottomMargin: 6
+                                    spacing: 8
+
+                                    // Header with "Choose Image..." button
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 8
+
+                                        Text {
+                                            text: "Select Lockscreen Wallpaper"
+                                            font.pixelSize: 11
+                                            font.weight: Font.DemiBold
+                                            color: Services.Theme.textPrimary
+                                        }
+
+                                        Item { Layout.fillWidth: true }
+
+                                        // Choose File Button
+                                        Rectangle {
+                                            height: 26
+                                            implicitWidth: pickLwTxt.implicitWidth + 22
+                                            radius: 6
+                                            color: pickLwMouse.containsMouse 
+                                                ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.28)
+                                                : Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.15)
+                                            border.color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.45)
+                                            border.width: 1
+
+                                            RowLayout {
+                                                anchors.centerIn: parent
+                                                spacing: 5
+                                                Text {
+                                                    text: Services.Icons.image || "󰋩"
+                                                    font.family: Services.Theme.fontSymbols
+                                                    font.pixelSize: 10
+                                                    color: Services.Theme.accent
+                                                }
+                                                Text {
+                                                    id: pickLwTxt
+                                                    text: "Browse Image..."
+                                                    font.pixelSize: 10
+                                                    font.weight: Font.DemiBold
+                                                    color: Services.Theme.accent
+                                                }
+                                            }
+
+                                            MouseArea {
+                                                id: pickLwMouse
+                                                anchors.fill: parent
+                                                hoverEnabled: true
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: {
+                                                    if (Services.Wallpaper) {
+                                                        Services.Wallpaper.pickLockscreenWallpaper()
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    // Wallpaper thumbnails flickable row
+                                    Item {
+                                        Layout.fillWidth: true
+                                        implicitHeight: (rootWindow.width < 750) ? 72 : 80
+
+                                        Flickable {
+                                            anchors.fill: parent
+                                            contentWidth: lockWpListRow.implicitWidth
+                                            contentHeight: parent.height
+                                            clip: true
+                                            boundsBehavior: Flickable.StopAtBounds
+
+                                            RowLayout {
+                                                id: lockWpListRow
+                                                spacing: 8
+
+                                                Repeater {
+                                                    model: Services.Wallpaper ? Services.Wallpaper.allWallpapers : []
+                                                    delegate: Rectangle {
+                                                        required property var modelData
+                                                        width: (rootWindow.width < 750) ? 96 : 108
+                                                        height: (rootWindow.width < 750) ? 62 : 70
+                                                        radius: 7
+                                                        clip: true
+                                                        readonly property string curCustomWp: Services.Config ? Services.Config.lockscreenCustomWallpaper : ""
+                                                        readonly property bool isCur: curCustomWp === modelData.path || (curCustomWp === "" && Services.Wallpaper && Services.Wallpaper.currentWallpaper === modelData.path)
+                                                        border.color: isCur ? Services.Theme.accent : (lwCardMouse.containsMouse ? Services.Theme.borderHighlight : Services.Theme.border)
+                                                        border.width: isCur ? 2 : 1
+                                                        color: Services.Theme.bgDeep
+                                                        scale: isCur ? 1.02 : (lwCardMouse.pressed ? 0.96 : (lwCardMouse.containsMouse ? 1.02 : 1.0))
+                                                        Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutBack; easing.overshoot: 1.3 } }
+
+                                                        Image {
+                                                            anchors.fill: parent
+                                                            source: modelData.path.startsWith("/") ? ("file://" + modelData.path) : modelData.path
+                                                            sourceSize: Qt.size(216, 140)
+                                                            fillMode: Image.PreserveAspectCrop
+                                                            asynchronous: true
+                                                            cache: true
+                                                            smooth: true
+                                                            opacity: isCur || lwCardMouse.containsMouse ? 1.0 : 0.75
+                                                        }
+
+                                                        Rectangle {
+                                                            visible: isCur
+                                                            anchors.top: parent.top
+                                                            anchors.right: parent.right
+                                                            anchors.margins: 4
+                                                            width: 16; height: 16; radius: 8
+                                                            color: Services.Theme.accent
+                                                            Text { anchors.centerIn: parent; text: Services.Icons.check || "✓"; font.family: Services.Theme.fontSymbols; font.pixelSize: 8; color: Services.Theme.bgOnAccent }
+                                                        }
+
+                                                        MouseArea {
+                                                            id: lwCardMouse
+                                                            anchors.fill: parent
+                                                            hoverEnabled: true
+                                                            cursorShape: Qt.PointingHandCursor
+                                                            onClicked: {
+                                                                if (Services.Config) {
+                                                                    Services.Config.setLockscreenCustomWallpaper(modelData.path)
+                                                                    Services.Config.setLockscreenWallpaperMode("custom")
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
                                     }
                                 }
 
@@ -4425,44 +4476,47 @@ FloatingWindow {
 
                                     // Title & Version Column
                                     ColumnLayout {
-                                        spacing: 3
+                                        Layout.fillWidth: true
+                                        Layout.minimumWidth: 0
+                                        spacing: 2
                                         Layout.alignment: Qt.AlignVCenter
 
                                         RowLayout {
-                                            spacing: 8
+                                            Layout.fillWidth: true
+                                            spacing: 6
                                             Text {
                                                 text: Services.Compositor ? Services.Compositor.activeDisplayName : "Hyprland"
-                                                font.pixelSize: 15
+                                                font.pixelSize: 14
                                                 font.weight: Font.Bold
                                                 color: Services.Theme.textPrimary
                                             }
 
                                             // Config Type Pill
                                             Rectangle {
-                                                height: 20
-                                                implicitWidth: cfgTypeBadge.implicitWidth + 14
+                                                height: 18
+                                                implicitWidth: cfgTypeBadge.implicitWidth + 12
                                                 radius: 4
                                                 color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.15)
                                                 border.color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.40)
                                                 border.width: 1
                                                 RowLayout {
                                                     anchors.centerIn: parent; spacing: 4
-                                                    Text { text: Services.Icons.code || "󰅍"; font.family: Services.Theme.fontSymbols; font.pixelSize: 9; color: Services.Theme.accent }
+                                                    Text { text: Services.Icons.code || "󰅍"; font.family: Services.Theme.fontSymbols; font.pixelSize: 8; color: Services.Theme.accent }
                                                     Text { id: cfgTypeBadge; text: (Services.Compositor && Services.Compositor.configType ? Services.Compositor.configType.toUpperCase() : "LUA") + " CONFIG"; font.pixelSize: 8; font.weight: Font.Bold; color: Services.Theme.accent; font.letterSpacing: 0.5 }
                                                 }
                                             }
                                         }
 
                                         Text {
+                                            Layout.fillWidth: true
                                             text: {
                                                 const v = Services.Compositor ? Services.Compositor.activeVersion : ""
                                                 const cleanV = v.split(" built")[0].replace(/^hyprland\s*/i, "").trim()
                                                 return (cleanV ? ("v" + cleanV + " · ") : "") + "Wayland Session"
                                             }
-                                            font.pixelSize: 11
+                                            font.pixelSize: 10
                                             color: Services.Theme.textSecondary
                                             elide: Text.ElideRight
-                                            Layout.maximumWidth: 260
                                         }
                                     }
 
@@ -4470,49 +4524,50 @@ FloatingWindow {
 
                                     // Badges & Actions Group (Balanced Heights & Spacing)
                                     RowLayout {
-                                        spacing: 8
+                                        spacing: 6
                                         Layout.alignment: Qt.AlignVCenter
 
                                         // Display count badge
                                         Rectangle {
-                                            height: 32
-                                            implicitWidth: heroMonRow.implicitWidth + 16
+                                            height: 28
+                                            implicitWidth: heroMonRow.implicitWidth + 12
                                             radius: 6
                                             color: Services.Theme.bgElevated
                                             border.color: Services.Theme.border
                                             border.width: 1
                                             RowLayout {
                                                 id: heroMonRow
-                                                anchors.centerIn: parent; spacing: 5
-                                                Text { text: Services.Icons.display; font.family: Services.Theme.fontSymbols; font.pixelSize: 11; color: Services.Theme.textSecondary }
+                                                anchors.centerIn: parent; spacing: 4
+                                                Text { text: Services.Icons.display; font.family: Services.Theme.fontSymbols; font.pixelSize: 10; color: Services.Theme.textSecondary }
                                                 Text {
                                                     text: {
                                                         const c = Services.Compositor ? Services.Compositor.monitorsCount : 1
                                                         return c + (c > 1 ? " Displays" : " Display")
                                                     }
-                                                    font.pixelSize: 10; font.weight: Font.Medium; color: Services.Theme.textPrimary
+                                                    font.pixelSize: 9; font.weight: Font.Medium; color: Services.Theme.textPrimary
                                                 }
                                             }
                                         }
 
                                         // Workspace count badge
                                         Rectangle {
-                                            height: 32
-                                            implicitWidth: heroWsRow.implicitWidth + 16
+                                            visible: rootWindow.width > 700
+                                            height: 28
+                                            implicitWidth: heroWsRow.implicitWidth + 12
                                             radius: 6
                                             color: Services.Theme.bgElevated
                                             border.color: Services.Theme.border
                                             border.width: 1
                                             RowLayout {
                                                 id: heroWsRow
-                                                anchors.centerIn: parent; spacing: 5
-                                                Text { text: Services.Icons.grid; font.family: Services.Theme.fontSymbols; font.pixelSize: 11; color: Services.Theme.textSecondary }
+                                                anchors.centerIn: parent; spacing: 4
+                                                Text { text: Services.Icons.grid; font.family: Services.Theme.fontSymbols; font.pixelSize: 10; color: Services.Theme.textSecondary }
                                                 Text {
                                                     text: {
                                                         const c = Services.Compositor ? Services.Compositor.workspacesCount : 1
                                                         return c + (c > 1 ? " Workspaces" : " Workspace")
                                                     }
-                                                    font.pixelSize: 10; font.weight: Font.Medium; color: Services.Theme.textPrimary
+                                                    font.pixelSize: 9; font.weight: Font.Medium; color: Services.Theme.textPrimary
                                                 }
                                             }
                                         }
@@ -4662,10 +4717,10 @@ FloatingWindow {
 
                                     Repeater {
                                         model: [
-                                            { id: 0, label: "Window Styling",  icon: Services.Icons.sparkles },
-                                            { id: 1, label: "Displays",         icon: Services.Icons.display },
-                                            { id: 2, label: "Input & Gestures", icon: Services.Icons.sliders },
-                                            { id: 3, label: "Power & Gaming",   icon: Services.Icons.speed }
+                                            { id: 0, label: (compTabBar.width < 450 ? "Styling" : "Window Styling"),  icon: Services.Icons.sparkles },
+                                            { id: 1, label: "Displays",                                                icon: Services.Icons.display },
+                                            { id: 2, label: (compTabBar.width < 450 ? "Input" : "Input & Gestures"),   icon: Services.Icons.sliders },
+                                            { id: 3, label: (compTabBar.width < 450 ? "Power" : "Power & Gaming"),     icon: Services.Icons.speed }
                                         ]
 
                                         delegate: Item {
@@ -4685,7 +4740,8 @@ FloatingWindow {
 
                                             RowLayout {
                                                 anchors.centerIn: parent
-                                                spacing: 6
+                                                width: Math.min(parent.width - 6, implicitWidth)
+                                                spacing: 5
                                                 z: 2
                                                 Text {
                                                     text: modelData.icon
@@ -4694,10 +4750,12 @@ FloatingWindow {
                                                     Behavior on color { ColorAnimation { duration: 200 } }
                                                 }
                                                 Text {
+                                                    Layout.fillWidth: true
                                                     text: modelData.label
                                                     font.pixelSize: 11
                                                     font.weight: isCur ? Font.DemiBold : Font.Normal
                                                     color: isCur ? Services.Theme.textPrimary : (subMouse.containsMouse ? Services.Theme.textPrimary : Services.Theme.textSecondary)
+                                                    elide: Text.ElideRight
                                                     Behavior on color { ColorAnimation { duration: 200 } }
                                                 }
                                             }
@@ -4851,12 +4909,14 @@ FloatingWindow {
                                         subtitle: "Select active window tiling algorithm"
 
                                         SettingsDropdown {
-                                            currentValue: Services.Compositor ? Services.Compositor.hyprLayout : "scrolling"
-                                            model: [
-                                                { id: "scrolling", label: "Scrolling" },
-                                                { id: "dwindle",   label: "Dwindle" },
-                                                { id: "master",    label: "Master" }
-                                            ]
+                                            currentValue: Services.Compositor ? Services.Compositor.hyprLayout : "dwindle"
+                                            model: (Services.Compositor && Services.Compositor.activeCompositor === "niri")
+                                                ? [ { id: "scrolling", label: "Scrolling" } ]
+                                                : [
+                                                    { id: "dwindle",   label: "Dwindle" },
+                                                    { id: "master",    label: "Master" },
+                                                    { id: "scrolling", label: "Scrolling" }
+                                                ]
                                             onSelected: (val) => { if (Services.Compositor) Services.Compositor.setHyprLayout(val) }
                                         }
                                     }
@@ -6101,7 +6161,7 @@ FloatingWindow {
                                 }
                             }
 
-                            // ── Category Filter Pills Bar (Liquid Glass Elastic Tabs) ─────────────────────────
+                            // ── Category Filter Pills Bar (Horizontally Flickable Tahoe Bar) ─────────────
                             Rectangle {
                                 id: keyCatTabBar
                                 Layout.fillWidth: true
@@ -6118,151 +6178,96 @@ FloatingWindow {
                                     return allBinds.filter(k => k.category === catId).length
                                 }
 
-                                readonly property var catList: ["all", "quickshell", "nav", "apps", "screenshot", "media"]
-                                readonly property int curCatIdx: Math.max(0, catList.indexOf(rootWindow.keyCategory))
+                                readonly property var catModel: [
+                                    { id: "all",        label: "All",           icon: Services.Icons.keyboard || "󰌌" },
+                                    { id: "quickshell", label: "Quickshell",    icon: Services.Icons.sparkle || "󰀉" },
+                                    { id: "nav",        label: "Window & Nav",  icon: Services.Icons.layout || "󰕰" },
+                                    { id: "apps",       label: "Applications",  icon: Services.Icons.terminal || "󰞷" },
+                                    { id: "screenshot", label: "Screenshot",    icon: Services.Icons.camera || "󰄀" },
+                                    { id: "media",      label: "Media & Sound", icon: Services.Icons.music || "󰎈" }
+                                ]
 
-                                // Liquid Glass Sliding Indicator Pill
-                                Rectangle {
-                                    id: catLiquidPill
-                                    z: 1
-                                    y: 3
-                                    height: parent.height - 6
-                                    radius: 6
-
-                                    x: (keyCatRow.children[keyCatTabBar.curCatIdx] ? keyCatRow.children[keyCatTabBar.curCatIdx].x : 3) + 3
-                                    width: keyCatRow.children[keyCatTabBar.curCatIdx] ? keyCatRow.children[keyCatTabBar.curCatIdx].width : 60
-
-                                    // Liquid Transparent Glass Material
-                                    color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.22)
-                                    border.color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.55)
-                                    border.width: 1
-
-                                    property real stretchScaleX: 1.0
-                                    property real stretchScaleY: 1.0
-                                    transform: Scale {
-                                        origin.x: catLiquidPill.width / 2
-                                        origin.y: catLiquidPill.height / 2
-                                        xScale: catLiquidPill.stretchScaleX
-                                        yScale: catLiquidPill.stretchScaleY
-                                    }
-
-                                    // Top Specular Glass Highlight Line
-                                    Rectangle {
-                                        anchors.top: parent.top; anchors.left: parent.left; anchors.right: parent.right
-                                        anchors.topMargin: 1; anchors.leftMargin: 4; anchors.rightMargin: 4
-                                        height: 1; radius: 0.5
-                                        color: Qt.rgba(1, 1, 1, 0.40)
-                                    }
-
-                                    // Liquid Gloss Curved Sheen
-                                    Rectangle {
-                                        anchors.top: parent.top; anchors.left: parent.left; anchors.right: parent.right
-                                        anchors.topMargin: 1; anchors.leftMargin: 2; anchors.rightMargin: 2
-                                        height: parent.height * 0.46; radius: 5
-                                        gradient: Gradient {
-                                            GradientStop { position: 0.0; color: Qt.rgba(1, 1, 1, 0.16) }
-                                            GradientStop { position: 1.0; color: Qt.rgba(1, 1, 1, 0.0) }
-                                        }
-                                    }
-
-                                    // Fluid Sliding Transitions
-                                    Behavior on x {
-                                        NumberAnimation { duration: 320; easing.type: Easing.OutBack; easing.overshoot: 1.15 }
-                                    }
-                                    Behavior on width {
-                                        NumberAnimation { duration: 320; easing.type: Easing.OutBack; easing.overshoot: 1.15 }
-                                    }
-                                }
-
-                                // Fluid Elastic Squash & Stretch Animation
-                                SequentialAnimation {
-                                    id: catStretchAnim
-                                    ParallelAnimation {
-                                        NumberAnimation { target: catLiquidPill; property: "stretchScaleX"; to: 1.08; duration: 85; easing.type: Easing.OutQuad }
-                                        NumberAnimation { target: catLiquidPill; property: "stretchScaleY"; to: 0.92; duration: 85; easing.type: Easing.OutQuad }
-                                    }
-                                    ParallelAnimation {
-                                        NumberAnimation { target: catLiquidPill; property: "stretchScaleX"; to: 1.0; duration: 235; easing.type: Easing.OutBack; easing.overshoot: 1.28 }
-                                        NumberAnimation { target: catLiquidPill; property: "stretchScaleY"; to: 1.0; duration: 235; easing.type: Easing.OutBack; easing.overshoot: 1.28 }
-                                    }
-                                }
-
-                                Connections {
-                                    target: rootWindow
-                                    function onKeyCategoryChanged() {
-                                        catStretchAnim.restart()
-                                    }
-                                }
-
-                                RowLayout {
-                                    id: keyCatRow
+                                Flickable {
+                                    id: keyCatFlick
                                     anchors.fill: parent
-                                    anchors.margins: 3
-                                    spacing: 3
-                                    z: 2
+                                    anchors.leftMargin: 4
+                                    anchors.rightMargin: 4
+                                    contentWidth: keyCatRow.implicitWidth + 8
+                                    contentHeight: parent.height
+                                    clip: true
+                                    boundsBehavior: Flickable.StopAtBounds
 
-                                    Repeater {
-                                        model: [
-                                            { id: "all",        label: "All",           icon: Services.Icons.keyboard || "󰌌" },
-                                            { id: "quickshell", label: "Quickshell",    icon: Services.Icons.sparkle || "󰀉" },
-                                            { id: "nav",        label: "Window & Nav",  icon: Services.Icons.layout || "󰕰" },
-                                            { id: "apps",       label: "Applications",  icon: Services.Icons.terminal || "󰞷" },
-                                            { id: "screenshot", label: "Screenshot",    icon: Services.Icons.camera || "󰄀" },
-                                            { id: "media",      label: "Media & Sound", icon: Services.Icons.music || "󰎈" }
-                                        ]
+                                    RowLayout {
+                                        id: keyCatRow
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        spacing: 4
 
-                                        delegate: Item {
-                                            Layout.fillWidth: true
-                                            Layout.fillHeight: true
-                                            readonly property bool isCur: rootWindow.keyCategory === modelData.id
-                                            readonly property int count: keyCatTabBar.getCatCount(modelData.id)
+                                        Repeater {
+                                            model: keyCatTabBar.catModel
 
-                                            // Hover effect for unselected tabs
-                                            Rectangle {
-                                                anchors.fill: parent
-                                                radius: 5
-                                                color: catMouse.containsMouse && !isCur ? Qt.rgba(1, 1, 1, 0.05) : "transparent"
+                                            delegate: Rectangle {
+                                                id: catPillRoot
+                                                required property var modelData
+                                                required property int index
+                                                readonly property bool isCur: rootWindow.keyCategory === modelData.id
+                                                readonly property int count: keyCatTabBar.getCatCount(modelData.id)
+
+                                                implicitWidth: pillInnerRow.implicitWidth + 16
+                                                height: 28
+                                                radius: 6
+
+                                                color: isCur 
+                                                    ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.22)
+                                                    : (catMouse.containsMouse ? Qt.rgba(1, 1, 1, 0.06) : "transparent")
+                                                border.color: isCur 
+                                                    ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.55)
+                                                    : (catMouse.containsMouse ? Qt.rgba(1, 1, 1, 0.08) : "transparent")
+                                                border.width: 1
+
                                                 Behavior on color { ColorAnimation { duration: 150 } }
-                                            }
+                                                Behavior on border.color { ColorAnimation { duration: 150 } }
 
-                                            RowLayout {
-                                                anchors.centerIn: parent
-                                                spacing: 6
-                                                z: 2
-                                                Text {
-                                                    text: modelData.icon
-                                                    font.family: Services.Theme.fontSymbols
-                                                    font.pixelSize: 10
-                                                    color: isCur ? Services.Theme.accent : (catMouse.containsMouse ? Services.Theme.textPrimary : Services.Theme.textSecondary)
-                                                    Behavior on color { ColorAnimation { duration: 200 } }
-                                                }
-                                                Text {
-                                                    text: modelData.label
-                                                    font.pixelSize: 10
-                                                    font.weight: isCur ? Font.DemiBold : Font.Normal
-                                                    color: isCur ? Services.Theme.textPrimary : (catMouse.containsMouse ? Services.Theme.textPrimary : Services.Theme.textSecondary)
-                                                    Behavior on color { ColorAnimation { duration: 200 } }
-                                                }
-                                                // Count Badge
-                                                Rectangle {
-                                                    height: 15
-                                                    implicitWidth: catCountTxt.implicitWidth + 8
-                                                    radius: 7.5
-                                                    color: isCur ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.35) : Services.Theme.bgElevated
+                                                RowLayout {
+                                                    id: pillInnerRow
+                                                    anchors.centerIn: parent
+                                                    spacing: 5
+
                                                     Text {
-                                                        id: catCountTxt
-                                                        anchors.centerIn: parent
-                                                        text: String(count)
-                                                        font.pixelSize: 8
-                                                        font.weight: Font.Bold
-                                                        color: isCur ? "#ffffff" : Services.Theme.textDisabled
+                                                        text: modelData.icon
+                                                        font.family: Services.Theme.fontSymbols
+                                                        font.pixelSize: 10
+                                                        color: isCur ? Services.Theme.accent : (catMouse.containsMouse ? Services.Theme.textPrimary : Services.Theme.textSecondary)
+                                                    }
+                                                    Text {
+                                                        text: modelData.label
+                                                        font.pixelSize: 10
+                                                        font.weight: isCur ? Font.DemiBold : Font.Normal
+                                                        color: isCur ? Services.Theme.textPrimary : (catMouse.containsMouse ? Services.Theme.textPrimary : Services.Theme.textSecondary)
+                                                    }
+                                                    // Count Badge
+                                                    Rectangle {
+                                                        height: 14
+                                                        implicitWidth: catCountTxt.implicitWidth + 8
+                                                        radius: 7
+                                                        color: isCur ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.35) : Services.Theme.bgElevated
+                                                        Text {
+                                                            id: catCountTxt
+                                                            anchors.centerIn: parent
+                                                            text: String(count)
+                                                            font.pixelSize: 8
+                                                            font.weight: Font.Bold
+                                                            color: isCur ? "#ffffff" : Services.Theme.textDisabled
+                                                        }
                                                     }
                                                 }
-                                            }
 
-                                            MouseArea {
-                                                id: catMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
-                                                onClicked: rootWindow.keyCategory = modelData.id
+                                                MouseArea {
+                                                    id: catMouse
+                                                    anchors.fill: parent
+                                                    hoverEnabled: true
+                                                    cursorShape: Qt.PointingHandCursor
+                                                    onClicked: rootWindow.keyCategory = modelData.id
+                                                }
                                             }
                                         }
                                     }
@@ -6896,17 +6901,20 @@ FloatingWindow {
                                             ColumnLayout {
                                                 spacing: 2
                                                 Layout.fillWidth: true
+                                                Layout.minimumWidth: 0
                                                 Layout.alignment: Qt.AlignVCenter
 
                                                 RowLayout {
+                                                    Layout.fillWidth: true
                                                     spacing: 6
                                                     Text {
+                                                        Layout.fillWidth: true
+                                                        Layout.minimumWidth: 0
                                                         text: tab6.getHumanActionTitle(bindItemRoot.modelData.action)
                                                         font.pixelSize: 12
                                                         font.weight: Font.DemiBold
                                                         color: Services.Theme.textPrimary
                                                         elide: Text.ElideRight
-                                                        Layout.maximumWidth: 260
                                                     }
                                                     Rectangle {
                                                         height: 14
@@ -6927,12 +6935,12 @@ FloatingWindow {
                                                 }
 
                                                 Text {
+                                                    Layout.fillWidth: true
                                                     text: (bindItemRoot.modelData.action || "No action") + "  •  " + (bindItemRoot.modelData.fileName ? bindItemRoot.modelData.fileName + " · Line " + bindItemRoot.modelData.startLine : "Line " + bindItemRoot.modelData.startLine) + (bindItemRoot.modelData.opts ? " (" + bindItemRoot.modelData.opts + ")" : "")
                                                     font.family: Services.Theme.fontMono
                                                     font.pixelSize: 9
                                                     color: Services.Theme.textDisabled
-                                                    elide: Text.ElideMiddle
-                                                    Layout.maximumWidth: 320
+                                                    elide: Text.ElideRight
                                                 }
                                             }
 
@@ -7100,7 +7108,7 @@ FloatingWindow {
                                                             MouseArea {
                                                                 anchors.fill: parent; cursorShape: Qt.PointingHandCursor
                                                                 onClicked: {
-                                                                    if (Services.Compositor) Services.Compositor.deleteKeybind(bindItemRoot.modelData.startLine)
+                                                                    if (Services.Compositor) Services.Compositor.deleteKeybind(bindItemRoot.modelData.startLine, bindItemRoot.modelData.file)
                                                                     bindItemRoot.isConfirmingDelete = false
                                                                 }
                                                             }
@@ -7332,10 +7340,10 @@ FloatingWindow {
                             Layout.fillWidth: true
                             spacing: 12
 
-                            // ── User Profile Hero Banner (Refined Card) ────────────────
+                            // ── User Profile Hero Banner (Refined Minimal Card) ────────
                             Rectangle {
                                 Layout.fillWidth: true
-                                height: 96
+                                height: 84
                                 radius: Services.Theme.radiusSm || 8
                                 color: Services.Theme.surfaceVariant
                                 border.color: Services.Theme.border
@@ -7349,25 +7357,20 @@ FloatingWindow {
                                     anchors.bottomMargin: 12
                                     spacing: 16
 
-                                    // Interactive Avatar Frame with Live Photo & Shape
+                                    // Interactive Avatar Frame with Live Photo & Camera Hover
                                     Item {
                                         id: aboutHeroAvatarFrame
-                                        Layout.preferredWidth: 64
-                                        Layout.preferredHeight: 64
+                                        Layout.preferredWidth: 60
+                                        Layout.preferredHeight: 60
                                         Layout.alignment: Qt.AlignVCenter
 
                                         Services.AvatarFrame {
                                             anchors.fill: parent
                                             source: Services.OsInfo.avatarPath
-                                            shapeRadius: {
-                                                const s = Services.Config ? Services.Config.lockscreenAvatarShape : "circle"
-                                                if (s === "circle") return 32
-                                                if (s === "squircle") return 18
-                                                return 12
-                                            }
+                                            shapeRadius: 16
                                             backgroundColor: Services.Theme.bgElevated
-                                            borderColor: (Services.Config && Services.Config.lockscreenAvatarRing) ? Services.Theme.accent : Services.Theme.border
-                                            borderWidth: (Services.Config && Services.Config.lockscreenAvatarRing) ? 2 : 1
+                                            borderColor: Services.Theme.border
+                                            borderWidth: 1
                                             fallbackText: {
                                                 const u = (Services.OsInfo.username || Quickshell.env("USER") || "user").toUpperCase()
                                                 return u.length > 0 ? u.charAt(0) : "󰌽"
@@ -7377,15 +7380,10 @@ FloatingWindow {
                                             fallbackColor: Services.Theme.accent
                                         }
 
-                                        // Camera overlay on hover
+                                        // Camera overlay on hover (indicates clicking changes avatar)
                                         Rectangle {
                                             anchors.fill: parent
-                                            radius: {
-                                                const s = Services.Config ? Services.Config.lockscreenAvatarShape : "circle"
-                                                if (s === "circle") return 32
-                                                if (s === "squircle") return 18
-                                                return 12
-                                            }
+                                            radius: 16
                                             color: Qt.rgba(0, 0, 0, 0.45)
                                             visible: aboutHeroAvatarMouse.containsMouse
                                             antialiasing: true
@@ -7399,6 +7397,33 @@ FloatingWindow {
                                             }
                                         }
 
+                                        // Reset button if custom avatar
+                                        Rectangle {
+                                            visible: Services.OsInfo.isCustomAvatar && aboutHeroAvatarMouse.containsMouse
+                                            anchors.top: parent.top
+                                            anchors.right: parent.right
+                                            anchors.topMargin: -3
+                                            anchors.rightMargin: -3
+                                            width: 18; height: 18
+                                            radius: 9
+                                            color: Services.Theme.danger || "#ef4444"
+                                            z: 10
+
+                                            Text {
+                                                anchors.centerIn: parent
+                                                text: "✕"
+                                                font.pixelSize: 9
+                                                font.weight: Font.Bold
+                                                color: "#ffffff"
+                                            }
+
+                                            MouseArea {
+                                                anchors.fill: parent
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: Services.OsInfo.clearCustomAvatar()
+                                            }
+                                        }
+
                                         MouseArea {
                                             id: aboutHeroAvatarMouse
                                             anchors.fill: parent
@@ -7408,153 +7433,35 @@ FloatingWindow {
                                         }
                                     }
 
-                                    // User & Host Information Column
+                                    // User & Host Information Column (hugging avatar)
                                     ColumnLayout {
-                                        spacing: 3
+                                        spacing: 2
                                         Layout.alignment: Qt.AlignVCenter
-                                        Layout.fillWidth: true
 
-                                        RowLayout {
-                                            spacing: 8
-                                            Text {
-                                                text: Services.OsInfo.username || Quickshell.env("USER") || "User"
-                                                font.pixelSize: 15
-                                                font.weight: Font.DemiBold
-                                                color: Services.Theme.textPrimary
-                                            }
-
-                                            // Distro Badge Pill
-                                            Rectangle {
-                                                height: 18
-                                                implicitWidth: aboutHeroDistroTxt.implicitWidth + 10
-                                                radius: 4
-                                                color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.15)
-                                                border.color: Services.Theme.accent
-                                                border.width: 1
-
-                                                Text {
-                                                    id: aboutHeroDistroTxt
-                                                    anchors.centerIn: parent
-                                                    text: Services.OsInfo.distroName || "Linux"
-                                                    font.pixelSize: 9
-                                                    font.weight: Font.Medium
-                                                    color: Services.Theme.accent
-                                                }
-                                            }
-
-                                            // Avatar Status Badge Pill
-                                            Rectangle {
-                                                height: 18
-                                                implicitWidth: aboutHeroStatusTxt.implicitWidth + 10
-                                                radius: 4
-                                                color: Services.Theme.isDark ? Qt.rgba(255, 255, 255, 0.06) : Qt.rgba(0, 0, 0, 0.05)
-                                                border.color: Services.Theme.border
-                                                border.width: 1
-
-                                                Text {
-                                                    id: aboutHeroStatusTxt
-                                                    anchors.centerIn: parent
-                                                    text: Services.OsInfo.isCustomAvatar ? "Custom Photo" : "System Default"
-                                                    font.pixelSize: 9
-                                                    font.weight: Font.Medium
-                                                    color: Services.Theme.textSecondary
-                                                }
-                                            }
+                                        Text {
+                                            text: Services.OsInfo.username || Quickshell.env("USER") || "User"
+                                            font.pixelSize: 15
+                                            font.weight: Font.DemiBold
+                                            color: Services.Theme.textPrimary
                                         }
 
                                         Text {
                                             text: (Services.OsInfo.username || "user") + "@" + (Services.OsInfo.hostname || "local") + "  ·  " + (Services.OsInfo.shellName || "sh")
-                                            font.pixelSize: 10
+                                            font.pixelSize: 11
                                             font.weight: Font.Medium
                                             color: Services.Theme.textSecondary
                                         }
 
                                         Text {
-                                            text: "Host: " + (Services.OsInfo.hostname || "local") + "  ·  Kernel: " + (Services.OsInfo.kernel || "Linux")
+                                            text: (Services.OsInfo.distroName || "Linux") + "  ·  Kernel " + (Services.OsInfo.kernel || "")
                                             font.family: Services.Theme.fontMono
                                             font.pixelSize: 9
                                             color: Services.Theme.textDisabled
                                         }
                                     }
 
-                                    // Action Buttons: Choose Photo & Reset
-                                    RowLayout {
-                                        Layout.alignment: Qt.AlignVCenter
-                                        spacing: 6
-
-                                        // Choose Photo Button
-                                        Rectangle {
-                                            height: 32
-                                            implicitWidth: heroChooseTxt.implicitWidth + 22
-                                            radius: 6
-                                            color: heroChooseMouse.containsMouse ? Services.Theme.accentHover : Services.Theme.accent
-                                            border.color: Services.Theme.accent
-                                            border.width: 1
-
-                                            RowLayout {
-                                                anchors.centerIn: parent
-                                                spacing: 6
-                                                Text {
-                                                    text: Services.Icons.image || "󰋩"
-                                                    font.family: Services.Theme.fontSymbols
-                                                    font.pixelSize: 11
-                                                    color: Services.Theme.bgOnAccent
-                                                }
-                                                Text {
-                                                    id: heroChooseTxt
-                                                    text: "Choose Photo"
-                                                    font.pixelSize: 10
-                                                    font.weight: Font.DemiBold
-                                                    color: Services.Theme.bgOnAccent
-                                                }
-                                            }
-
-                                            MouseArea {
-                                                id: heroChooseMouse
-                                                anchors.fill: parent
-                                                hoverEnabled: true
-                                                cursorShape: Qt.PointingHandCursor
-                                                onClicked: Services.OsInfo.pickCustomAvatar()
-                                            }
-                                        }
-
-                                        // Reset Button
-                                        Rectangle {
-                                            visible: Services.OsInfo.isCustomAvatar
-                                            height: 32
-                                            implicitWidth: heroResetTxt.implicitWidth + 18
-                                            radius: 6
-                                            color: heroResetMouse.containsMouse ? Services.Theme.bgHover : Services.Theme.surfaceVariant
-                                            border.color: Services.Theme.border
-                                            border.width: 1
-
-                                            RowLayout {
-                                                anchors.centerIn: parent
-                                                spacing: 5
-                                                Text {
-                                                    text: Services.Icons.undo || "󰁯"
-                                                    font.family: Services.Theme.fontSymbols
-                                                    font.pixelSize: 11
-                                                    color: Services.Theme.textSecondary
-                                                }
-                                                Text {
-                                                    id: heroResetTxt
-                                                    text: "Reset"
-                                                    font.pixelSize: 10
-                                                    font.weight: Font.Medium
-                                                    color: Services.Theme.textPrimary
-                                                }
-                                            }
-
-                                            MouseArea {
-                                                id: heroResetMouse
-                                                anchors.fill: parent
-                                                hoverEnabled: true
-                                                cursorShape: Qt.PointingHandCursor
-                                                onClicked: Services.OsInfo.clearCustomAvatar()
-                                            }
-                                        }
-                                    }
+                                    // Spacer pushing content to the left
+                                    Item { Layout.fillWidth: true }
                                 }
                             }
 

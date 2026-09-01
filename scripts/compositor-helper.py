@@ -107,7 +107,7 @@ def query_all():
             ("inactive_opacity", "decoration:inactive_opacity", float, 0.95),
             ("dim_inactive", "decoration:dim_inactive", bool, False),
             ("dim_strength", "decoration:dim_strength", float, 0.50),
-            ("layout", "general:layout", str, "scrolling"),
+            ("layout", "general:layout", str, "dwindle"),
             ("touchpad_natural", "input:touchpad:natural_scroll", bool, True),
             ("touchpad_tap", "input:touchpad:tap-to-click", bool, True),
             ("touchpad_dwt", "input:touchpad:disable_while_typing", bool, True),
@@ -364,62 +364,65 @@ def query_all():
             "discoveredConfigFiles": found_files
         }
 
+LUA_MAP = {
+    "blur": lambda v: f"hl.config({{ decoration = {{ blur = {{ enabled = {str(v).lower()} }} }} }})",
+    "blur_size": lambda v: f"hl.config({{ decoration = {{ blur = {{ size = {int(v)} }} }} }})",
+    "blur_passes": lambda v: f"hl.config({{ decoration = {{ blur = {{ passes = {int(v)} }} }} }})",
+    "anim": lambda v: f"hl.config({{ animations = {{ enabled = {str(v).lower()} }} }})",
+    "shadow": lambda v: f"hl.config({{ decoration = {{ shadow = {{ enabled = {str(v).lower()} }} }} }})",
+    "shadow_range": lambda v: f"hl.config({{ decoration = {{ shadow = {{ range = {int(v)} }} }} }})",
+    "shadow_power": lambda v: f"hl.config({{ decoration = {{ shadow = {{ render_power = {int(v)} }} }} }})",
+    "rounding": lambda v: f"hl.config({{ decoration = {{ rounding = {int(v)} }} }})",
+    "border_size": lambda v: f"hl.config({{ general = {{ border_size = {int(v)} }} }})",
+    "gaps_in": lambda v: f"hl.config({{ general = {{ gaps_in = {int(v)} }} }})",
+    "gaps_out": lambda v: f"hl.config({{ general = {{ gaps_out = {int(v)} }} }})",
+    "active_opacity": lambda v: f"hl.config({{ decoration = {{ active_opacity = {float(v):.2f} }} }})",
+    "inactive_opacity": lambda v: f"hl.config({{ decoration = {{ inactive_opacity = {float(v):.2f} }} }})",
+    "dim_inactive": lambda v: f"hl.config({{ decoration = {{ dim_inactive = {str(v).lower()} }} }})",
+    "dim_strength": lambda v: f"hl.config({{ decoration = {{ dim_strength = {float(v):.2f} }} }})",
+    "layout": lambda v: f"hl.config({{ general = {{ layout = \"{str(v)}\" }} }})",
+    "touchpad_natural": lambda v: f"hl.config({{ input = {{ touchpad = {{ natural_scroll = {str(v).lower()} }} }} }})",
+    "touchpad_tap": lambda v: f"hl.config({{ input = {{ touchpad = {{ tap_to_click = {str(v).lower()} }} }} }})",
+    "touchpad_dwt": lambda v: f"hl.config({{ input = {{ touchpad = {{ disable_while_typing = {str(v).lower()} }} }} }})",
+    "sensitivity": lambda v: f"hl.config({{ input = {{ sensitivity = {float(v):.2f} }} }})",
+    "resize_border": lambda v: f"hl.config({{ general = {{ resize_on_border = {str(v).lower()} }} }})",
+    "disable_hyprland_logo": lambda v: f"hl.config({{ misc = {{ disable_hyprland_logo = {str(v).lower()} }} }})",
+    "border_color_preset": lambda v: f"hl.config({{ general = {{ col = {{ active_border = {v} }} }} }})"
+}
+
+KEYWORD_MAP = {
+    "blur": lambda v: ("decoration:blur:enabled", "1" if str(v).lower() in ("true", "1") else "0"),
+    "blur_size": lambda v: ("decoration:blur:size", str(v)),
+    "blur_passes": lambda v: ("decoration:blur:passes", str(v)),
+    "anim": lambda v: ("animations:enabled", "1" if str(v).lower() in ("true", "1") else "0"),
+    "shadow": lambda v: ("decoration:shadow:enabled", "1" if str(v).lower() in ("true", "1") else "0"),
+    "shadow_range": lambda v: ("decoration:shadow:range", str(v)),
+    "shadow_power": lambda v: ("decoration:shadow:render_power", str(v)),
+    "rounding": lambda v: ("decoration:rounding", str(v)),
+    "border_size": lambda v: ("general:border_size", str(v)),
+    "gaps_in": lambda v: ("general:gaps_in", str(v)),
+    "gaps_out": lambda v: ("general:gaps_out", str(v)),
+    "active_opacity": lambda v: ("decoration:active_opacity", str(v)),
+    "inactive_opacity": lambda v: ("decoration:inactive_opacity", str(v)),
+    "dim_inactive": lambda v: ("decoration:dim_inactive", "1" if str(v).lower() in ("true", "1") else "0"),
+    "dim_strength": lambda v: ("decoration:dim_strength", str(v)),
+    "layout": lambda v: ("general:layout", str(v)),
+    "touchpad_natural": lambda v: ("input:touchpad:natural_scroll", "1" if str(v).lower() in ("true", "1") else "0"),
+    "touchpad_tap": lambda v: ("input:touchpad:tap-to-click", "1" if str(v).lower() in ("true", "1") else "0"),
+    "touchpad_dwt": lambda v: ("input:touchpad:disable_while_typing", "1" if str(v).lower() in ("true", "1") else "0"),
+    "sensitivity": lambda v: ("input:sensitivity", str(v)),
+    "resize_border": lambda v: ("general:resize_on_border", "1" if str(v).lower() in ("true", "1") else "0"),
+    "disable_hyprland_logo": lambda v: ("misc:disable_hyprland_logo", "1" if str(v).lower() in ("true", "1") else "0"),
+}
+
+lua_map = LUA_MAP
+keyword_map = KEYWORD_MAP
+
 def set_option(opt_name, opt_val):
-    lua_map = {
-        "blur": lambda v: f"hl.config({{ decoration = {{ blur = {{ enabled = {str(v).lower()} }} }} }})",
-        "blur_size": lambda v: f"hl.config({{ decoration = {{ blur = {{ size = {int(v)} }} }} }})",
-        "blur_passes": lambda v: f"hl.config({{ decoration = {{ blur = {{ passes = {int(v)} }} }} }})",
-        "anim": lambda v: f"hl.config({{ animations = {{ enabled = {str(v).lower()} }} }})",
-        "shadow": lambda v: f"hl.config({{ decoration = {{ shadow = {{ enabled = {str(v).lower()} }} }} }})",
-        "shadow_range": lambda v: f"hl.config({{ decoration = {{ shadow = {{ range = {int(v)} }} }} }})",
-        "shadow_power": lambda v: f"hl.config({{ decoration = {{ shadow = {{ render_power = {int(v)} }} }} }})",
-        "rounding": lambda v: f"hl.config({{ decoration = {{ rounding = {int(v)} }} }})",
-        "border_size": lambda v: f"hl.config({{ general = {{ border_size = {int(v)} }} }})",
-        "gaps_in": lambda v: f"hl.config({{ general = {{ gaps_in = {int(v)} }} }})",
-        "gaps_out": lambda v: f"hl.config({{ general = {{ gaps_out = {int(v)} }} }})",
-        "active_opacity": lambda v: f"hl.config({{ decoration = {{ active_opacity = {float(v):.2f} }} }})",
-        "inactive_opacity": lambda v: f"hl.config({{ decoration = {{ inactive_opacity = {float(v):.2f} }} }})",
-        "dim_inactive": lambda v: f"hl.config({{ decoration = {{ dim_inactive = {str(v).lower()} }} }})",
-        "dim_strength": lambda v: f"hl.config({{ decoration = {{ dim_strength = {float(v):.2f} }} }})",
-        "layout": lambda v: f"hl.config({{ general = {{ layout = \"{str(v)}\" }} }})",
-        "touchpad_natural": lambda v: f"hl.config({{ input = {{ touchpad = {{ natural_scroll = {str(v).lower()} }} }} }})",
-        "touchpad_tap": lambda v: f"hl.config({{ input = {{ touchpad = {{ tap_to_click = {str(v).lower()} }} }} }})",
-        "touchpad_dwt": lambda v: f"hl.config({{ input = {{ touchpad = {{ disable_while_typing = {str(v).lower()} }} }} }})",
-        "sensitivity": lambda v: f"hl.config({{ input = {{ sensitivity = {float(v):.2f} }} }})",
-        "resize_border": lambda v: f"hl.config({{ general = {{ resize_on_border = {str(v).lower()} }} }})",
-        "disable_hyprland_logo": lambda v: f"hl.config({{ misc = {{ disable_hyprland_logo = {str(v).lower()} }} }})",
-        "border_color_preset": lambda v: f"hl.config({{ general = {{ col = {{ active_border = {v} }} }} }})"
-    }
-
-    keyword_map = {
-        "blur": lambda v: ("decoration:blur:enabled", "1" if str(v).lower() in ("true", "1") else "0"),
-        "blur_size": lambda v: ("decoration:blur:size", str(v)),
-        "blur_passes": lambda v: ("decoration:blur:passes", str(v)),
-        "anim": lambda v: ("animations:enabled", "1" if str(v).lower() in ("true", "1") else "0"),
-        "shadow": lambda v: ("decoration:shadow:enabled", "1" if str(v).lower() in ("true", "1") else "0"),
-        "shadow_range": lambda v: ("decoration:shadow:range", str(v)),
-        "shadow_power": lambda v: ("decoration:shadow:render_power", str(v)),
-        "rounding": lambda v: ("decoration:rounding", str(v)),
-        "border_size": lambda v: ("general:border_size", str(v)),
-        "gaps_in": lambda v: ("general:gaps_in", str(v)),
-        "gaps_out": lambda v: ("general:gaps_out", str(v)),
-        "active_opacity": lambda v: ("decoration:active_opacity", str(v)),
-        "inactive_opacity": lambda v: ("decoration:inactive_opacity", str(v)),
-        "dim_inactive": lambda v: ("decoration:dim_inactive", "1" if str(v).lower() in ("true", "1") else "0"),
-        "dim_strength": lambda v: ("decoration:dim_strength", str(v)),
-        "layout": lambda v: ("general:layout", str(v)),
-        "touchpad_natural": lambda v: ("input:touchpad:natural_scroll", "1" if str(v).lower() in ("true", "1") else "0"),
-        "touchpad_tap": lambda v: ("input:touchpad:tap-to-click", "1" if str(v).lower() in ("true", "1") else "0"),
-        "touchpad_dwt": lambda v: ("input:touchpad:disable_while_typing", "1" if str(v).lower() in ("true", "1") else "0"),
-        "sensitivity": lambda v: ("input:sensitivity", str(v)),
-        "resize_border": lambda v: ("general:resize_on_border", "1" if str(v).lower() in ("true", "1") else "0"),
-        "disable_hyprland_logo": lambda v: ("misc:disable_hyprland_logo", "1" if str(v).lower() in ("true", "1") else "0"),
-    }
-
     # If Lua mapper exists, try eval first
     res = None
-    if opt_name in lua_map:
-        lua_code = lua_map[opt_name](opt_val)
+    if opt_name in LUA_MAP:
+        lua_code = LUA_MAP[opt_name](opt_val)
         try:
             r = subprocess.run(["hyprctl", "eval", lua_code], capture_output=True, text=True, timeout=0.8)
             if r.returncode == 0 and "ok" in r.stdout.lower():
@@ -428,8 +431,8 @@ def set_option(opt_name, opt_val):
             pass
 
     # Fallback to keyword if eval not supported or returned error
-    if res is None and opt_name in keyword_map:
-        k_key, k_val = keyword_map[opt_name](opt_val)
+    if res is None and opt_name in KEYWORD_MAP:
+        k_key, k_val = KEYWORD_MAP[opt_name](opt_val)
         try:
             r = subprocess.run(["hyprctl", "keyword", k_key, str(k_val)], capture_output=True, text=True, timeout=0.8)
             if r.returncode == 0:
@@ -543,6 +546,55 @@ def update_lua_option(content, opt_name, opt_val):
 
     return content
 
+def update_hyprconf_option(content, opt_name, opt_val):
+    val_str = str(opt_val).lower() if isinstance(opt_val, bool) or str(opt_val).lower() in ("true", "false") else str(opt_val)
+
+    scalar_patterns = {
+        "layout": r'(?m)^(\s*layout\s*=\s*).*$',
+        "gaps_in": r'(?m)^(\s*gaps_in\s*=\s*).*$',
+        "gaps_out": r'(?m)^(\s*gaps_out\s*=\s*).*$',
+        "border_size": r'(?m)^(\s*border_size\s*=\s*).*$',
+        "rounding": r'(?m)^(\s*rounding\s*=\s*).*$',
+        "active_opacity": r'(?m)^(\s*active_opacity\s*=\s*).*$',
+        "inactive_opacity": r'(?m)^(\s*inactive_opacity\s*=\s*).*$',
+        "dim_inactive": r'(?m)^(\s*dim_inactive\s*=\s*).*$',
+        "dim_strength": r'(?m)^(\s*dim_strength\s*=\s*).*$',
+        "resize_border": r'(?m)^(\s*resize_on_border\s*=\s*).*$',
+        "allow_tearing": r'(?m)^(\s*allow_tearing\s*=\s*).*$',
+        "follow_mouse": r'(?m)^(\s*follow_mouse\s*=\s*).*$',
+        "sensitivity": r'(?m)^(\s*sensitivity\s*=\s*).*$',
+        "workspace_swipe": r'(?m)^(\s*workspace_swipe\s*=\s*).*$',
+        "workspace_swipe_invert": r'(?m)^(\s*workspace_swipe_invert\s*=\s*).*$',
+        "disable_hyprland_logo": r'(?m)^(\s*disable_hyprland_logo\s*=\s*).*$',
+        "vfr": r'(?m)^(\s*vfr\s*=\s*).*$',
+        "smart_gaps": r'(?m)^(\s*no_gaps_when_only\s*=\s*).*$',
+    }
+
+    if opt_name in scalar_patterns:
+        pat = scalar_patterns[opt_name]
+        if re.search(pat, content):
+            return re.sub(pat, r'\g<1>' + val_str, content, count=1)
+
+    nested_patterns = {
+        "anim": r'(animations\s*\{[\s\S]*?enabled\s*=\s*)(?:true|false|[0-1])',
+        "blur": r'(blur\s*\{[\s\S]*?enabled\s*=\s*)(?:true|false|[0-1])',
+        "blur_size": r'(blur\s*\{[\s\S]*?size\s*=\s*)[0-9]+',
+        "blur_passes": r'(blur\s*\{[\s\S]*?passes\s*=\s*)[0-9]+',
+        "shadow": r'(shadow\s*\{[\s\S]*?enabled\s*=\s*)(?:true|false|[0-1])',
+        "shadow_range": r'(shadow\s*\{[\s\S]*?range\s*=\s*)[0-9]+',
+        "shadow_power": r'(shadow\s*\{[\s\S]*?render_power\s*=\s*)[0-9]+',
+        "touchpad_natural": r'(touchpad\s*\{[\s\S]*?natural_scroll\s*=\s*)(?:true|false|[0-1])',
+        "touchpad_tap": r'(touchpad\s*\{[\s\S]*?tap-to-click\s*=\s*)(?:true|false|[0-1])',
+        "touchpad_dwt": r'(touchpad\s*\{[\s\S]*?disable_while_typing\s*=\s*)(?:true|false|[0-1])',
+    }
+
+    if opt_name in nested_patterns:
+        pat = nested_patterns[opt_name]
+        if re.search(pat, content):
+            return re.sub(pat, r'\g<1>' + val_str, content, count=1)
+
+    return content
+
 def save_general_options(changes):
     if not isinstance(changes, dict) or not changes:
         return {"ok": True, "saved": False}
@@ -576,13 +628,7 @@ def save_general_options(changes):
                     content = f.read()
                 modified = content
                 for k, v in changes.items():
-                    val_str = "1" if v is True else ("0" if v is False else str(v))
-                    if k in keyword_map:
-                        kw, _ = keyword_map[k](v)
-                        subkey = kw.split(":")[-1]
-                        pat = r'(?m)^(\s*' + re.escape(subkey) + r'\s*=\s*).*$'
-                        if re.search(pat, modified):
-                            modified = re.sub(pat, r'\g<1>' + val_str, modified, count=1)
+                    modified = update_hyprconf_option(modified, k, v)
                 if modified != content:
                     tmp_path = f"{conf_path}.tmp.{os.getpid()}"
                     with open(tmp_path, "w", encoding="utf-8") as f:
@@ -937,6 +983,122 @@ def parse_lua_binds(path):
             })
     return binds
 
+HYPR_DISPATCHERS = {
+    "killactive", "closewindow", "togglefloating", "fullscreen", "fakefullscreen",
+    "workspace", "movetoworkspace", "movetoworkspacesilent", "togglesplit", "swapsplit",
+    "pseudo", "pin", "movefocus", "movewindow", "movecurrentworkspacetomonitor",
+    "focusmonitor", "focuswindow", "splitratio", "toggleopaque", "dpms", "exit",
+    "submap", "layoutmsg"
+}
+
+def format_hyprconf_bind(keys, action):
+    parts = [p.strip() for p in keys.split("+") if p.strip()]
+    if not parts:
+        return ""
+    if len(parts) > 1:
+        raw_mods = parts[:-1]
+        k = parts[-1]
+        mod_tokens = []
+        for m in raw_mods:
+            mu = m.upper()
+            if mu in ("SUPER", "CTRL", "ALT", "SHIFT"):
+                mod_tokens.append(mu)
+            elif m.startswith("$"):
+                mod_tokens.append(m)
+            elif mu == "MOD4":
+                mod_tokens.append("SUPER")
+            elif mu == "MOD1":
+                mod_tokens.append("ALT")
+            else:
+                mod_tokens.append(m)
+        mod = " ".join(mod_tokens)
+    else:
+        mod = ""
+        k = parts[0]
+
+    act = action.strip()
+    act_low = act.lower()
+
+    if act_low in ("close window", "killactive"):
+        return f"bind = {mod}, {k}, killactive,\n"
+    elif act_low in ("toggle floating", "togglefloating"):
+        return f"bind = {mod}, {k}, togglefloating,\n"
+    elif act_low in ("toggle fullscreen", "fullscreen"):
+        return f"bind = {mod}, {k}, fullscreen, 0\n"
+    elif act_low in ("togglesplit", "layout togglesplit", "toggle split"):
+        return f"bind = {mod}, {k}, togglesplit,\n"
+    elif act_low.startswith("focus workspace ") or (act_low.startswith("workspace ") and not act_low.startswith("workspace =")):
+        ws_num = act.split()[-1]
+        return f"bind = {mod}, {k}, workspace, {ws_num}\n"
+    elif act_low.startswith("move window to workspace ") or act_low.startswith("movetoworkspace "):
+        ws_num = act.split()[-1]
+        return f"bind = {mod}, {k}, movetoworkspace, {ws_num}\n"
+    elif act_low.startswith("move window (silent) to workspace ") or act_low.startswith("movetoworkspacesilent "):
+        ws_num = act.split()[-1]
+        return f"bind = {mod}, {k}, movetoworkspacesilent, {ws_num}\n"
+
+    first_word = act.split()[0] if act.split() else ""
+    if first_word.lower() in HYPR_DISPATCHERS:
+        arg_part = act[len(first_word):].strip().lstrip(",").strip()
+        if arg_part:
+            return f"bind = {mod}, {k}, {first_word}, {arg_part}\n"
+        return f"bind = {mod}, {k}, {first_word},\n"
+
+    if act.startswith("exec, ") or act.startswith("exec "):
+        cmd = act[5:].strip()
+        return f"bind = {mod}, {k}, exec, {cmd}\n"
+
+    return f"bind = {mod}, {k}, exec, {act}\n"
+
+def format_lua_bind(keys, action):
+    act = action.strip()
+    act_low = act.lower()
+
+    if act_low in ("close window", "killactive"):
+        return f'hl.bind("{keys}", hl.dsp.window.close(), {{ repeating = true }})\n'
+    elif act_low in ("toggle floating", "togglefloating"):
+        return f'hl.bind("{keys}", hl.dsp.window.float())\n'
+    elif act_low in ("toggle fullscreen", "fullscreen"):
+        return f'hl.bind("{keys}", hl.dsp.window.fullscreen())\n'
+    elif act_low in ("togglesplit", "layout togglesplit", "toggle split"):
+        return f'hl.bind("{keys}", hl.dsp.layout("togglesplit"))\n'
+    elif act_low.startswith("focus workspace ") or (act_low.startswith("workspace ") and not act_low.startswith("workspace =")):
+        ws_num = act.split()[-1]
+        return f'hl.bind("{keys}", hl.dsp.focus({{ workspace = {ws_num} }}))\n'
+    elif act_low.startswith("move window to workspace ") or act_low.startswith("movetoworkspace "):
+        ws_num = act.split()[-1]
+        return f'hl.bind("{keys}", hl.dsp.window.move({{ workspace = {ws_num} }}))\n'
+    elif act.startswith("hl.dsp."):
+        return f'hl.bind("{keys}", {act})\n'
+    else:
+        escaped_action = act.replace('\\', '\\\\').replace('"', '\\"')
+        return f'hl.bind("{keys}", hl.dsp.exec_cmd("{escaped_action}"))\n'
+
+def format_niri_bind(keys, action):
+    clean_combo = keys.replace(" ", "")
+    act = action.strip()
+    act_low = act.lower()
+
+    if act_low in ("close window", "killactive", "close-window"):
+        return f'    {clean_combo} {{ close-window; }}\n'
+    elif act_low in ("toggle floating", "togglefloating", "toggle-window-floating"):
+        return f'    {clean_combo} {{ toggle-window-floating; }}\n'
+    elif act_low in ("toggle fullscreen", "fullscreen", "fullscreen-window"):
+        return f'    {clean_combo} {{ fullscreen-window; }}\n'
+    elif act_low.startswith("focus-workspace ") or act_low.startswith("focus workspace "):
+        ws_num = act.split()[-1]
+        return f'    {clean_combo} {{ focus-workspace {ws_num}; }}\n'
+    elif act_low.startswith("move-window-to-workspace ") or act_low.startswith("move window to workspace "):
+        ws_num = act.split()[-1]
+        return f'    {clean_combo} {{ move-window-to-workspace {ws_num}; }}\n'
+    elif act.startswith("niri:") or "(" in act or "-" in act or act.endswith(";"):
+        clean_act = act.rstrip(";")
+        return f'    {clean_combo} {{ {clean_act}; }}\n'
+    else:
+        parts = act.split()
+        quoted_parts = " ".join(f'"{p}"' for p in parts)
+        return f'    {clean_combo} {{ spawn {quoted_parts}; }}\n'
+
 def parse_hyprconf_binds(path):
     if not os.path.exists(path):
         return []
@@ -947,7 +1109,7 @@ def parse_hyprconf_binds(path):
         return []
 
     binds = []
-    bind_re = re.compile(r'^\s*bind[lrme]?\s*=\s*([^,]+),\s*([^,]+),\s*([^,]+)(?:,\s*(.*))?')
+    bind_re = re.compile(r'^\s*bind[a-zA-Z]*\s*=\s*([^,]*),\s*([^,]+),\s*([^,]+)(?:,\s*(.*))?')
     for idx, line in enumerate(lines):
         line_str = line.strip()
         if not line_str or line_str.startswith("#"):
@@ -971,7 +1133,7 @@ def parse_hyprconf_binds(path):
                 cat = "quickshell"
             elif any(x in ca_low for x in ["kitty", "alacritty", "foot", "ghostty", "nautilus", "thunar", "dolphin", "browser", "firefox"]):
                 cat = "apps"
-            elif any(x in ca_low for x in ["killactive", "fullscreen", "togglefloating", "workspace", "movetoworkspace", "splitratio"]):
+            elif any(x in ca_low for x in ["killactive", "fullscreen", "togglefloating", "workspace", "movetoworkspace", "splitratio", "movefocus", "movewindow"]):
                 cat = "nav"
             elif "screenshot" in ca_low or "grim" in ca_low or "print" in cb_low:
                 cat = "screenshot"
@@ -1110,41 +1272,20 @@ def add_keybind(keys, action, desc="", target_file=None):
         return {"ok": False, "error": str(e)}
 
     if cfg_type == "lua":
-        if action.startswith("hl.dsp."):
-            new_line = f'hl.bind("{keys}", {action})\n'
-        else:
-            escaped_action = action.replace('\\', '\\\\').replace('"', '\\"')
-            new_line = f'hl.bind("{keys}", hl.dsp.exec_cmd("{escaped_action}"))\n'
-
+        new_line = format_lua_bind(keys, action)
         insert_idx = len(lines)
         for i, l in enumerate(lines):
             if "WINDOW / LAYER RULES" in l or "WINDOW RULES" in l or "LAYER RULES" in l:
                 insert_idx = max(0, i - 1)
                 break
-
         lines.insert(insert_idx, new_line)
 
     elif cfg_type == "hyprconf":
-        parts = [p.strip() for p in keys.split("+") if p.strip()]
-        if len(parts) > 1:
-            mod = " ".join(parts[:-1])
-            k = parts[-1]
-        else:
-            mod = ""
-            k = parts[0]
-
-        new_line = f"bind = {mod}, {k}, exec, {action}\n"
+        new_line = format_hyprconf_bind(keys, action)
         lines.append(new_line)
 
     elif cfg_type == "niri":
-        clean_combo = keys.replace(" ", "")
-        if action.startswith("niri:") or "(" in action or "-" in action:
-            new_line = f'    {clean_combo} {{ {action}; }}\n'
-        else:
-            parts = action.split()
-            quoted_parts = " ".join(f'"{p}"' for p in parts)
-            new_line = f'    {clean_combo} {{ spawn {quoted_parts}; }}\n'
-
+        new_line = format_niri_bind(keys, action)
         insert_idx = len(lines)
         for i, l in enumerate(lines):
             if "binds {" in l:
@@ -1186,28 +1327,11 @@ def update_keybind(line_num, keys, action, desc="", target_file=None):
     action = action.strip()
 
     if cfg_type == "lua":
-        if action.startswith("hl.dsp."):
-            lines[line_idx] = f'hl.bind("{keys}", {action})\n'
-        else:
-            escaped_action = action.replace('\\', '\\\\').replace('"', '\\"')
-            lines[line_idx] = f'hl.bind("{keys}", hl.dsp.exec_cmd("{escaped_action}"))\n'
+        lines[line_idx] = format_lua_bind(keys, action)
     elif cfg_type == "hyprconf":
-        parts = [p.strip() for p in keys.split("+") if p.strip()]
-        if len(parts) > 1:
-            mod = " ".join(parts[:-1])
-            k = parts[-1]
-        else:
-            mod = ""
-            k = parts[0]
-        lines[line_idx] = f"bind = {mod}, {k}, exec, {action}\n"
+        lines[line_idx] = format_hyprconf_bind(keys, action)
     elif cfg_type == "niri":
-        clean_combo = keys.replace(" ", "")
-        if action.startswith("niri:") or "(" in action or "-" in action:
-            lines[line_idx] = f'    {clean_combo} {{ {action}; }}\n'
-        else:
-            parts = action.split()
-            quoted_parts = " ".join(f'"{p}"' for p in parts)
-            lines[line_idx] = f'    {clean_combo} {{ spawn {quoted_parts}; }}\n'
+        lines[line_idx] = format_niri_bind(keys, action)
 
     content = "".join(lines)
     res = _write_and_validate(cfg_path, content)

@@ -60,7 +60,7 @@ Singleton {
     property int hyprBorderSize: 0
     property int hyprGapsIn: 5
     property int hyprGapsOut: 10
-    property string hyprLayout: "scrolling"
+    property string hyprLayout: "dwindle"
     property bool hyprResizeOnBorder: false
     property string hyprBorderColorPreset: "cyan_emerald"
 

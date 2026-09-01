@@ -37,25 +37,25 @@ def get_data_dirs(subfolder=""):
     if subfolder in ["themes", "icons", "fonts", "pixmaps"]:
         add_dir(os.path.join(HOME, f".{subfolder}"))
 
-    # 3. Directories from XDG_DATA_DIRS
-    xdg_dirs = [x.strip() for x in os.environ.get("XDG_DATA_DIRS", "").split(":") if x.strip()]
-    for d in xdg_dirs:
-        add_dir(os.path.join(d, subfolder) if subfolder else d)
-
-    # 4. Nix and System profiles
+    # 3. Nix and System aggregated profiles (contain full package merges)
     user = os.environ.get("USER") or os.path.basename(HOME)
     standard_bases = [
+        f"/etc/profiles/per-user/{user}/share",
+        "/run/current-system/sw/share",
         os.path.join(HOME, ".nix-profile/share"),
         os.path.join(HOME, ".local/state/nix/profile/share"),
-        f"/etc/profiles/per-user/{user}/share",
         "/nix/profile/share",
         "/nix/var/nix/profiles/default/share",
-        "/run/current-system/sw/share",
         "/usr/local/share",
         "/usr/share"
     ]
     for b in standard_bases:
         add_dir(os.path.join(b, subfolder) if subfolder else b)
+
+    # 4. Directories from XDG_DATA_DIRS
+    xdg_dirs = [x.strip() for x in os.environ.get("XDG_DATA_DIRS", "").split(":") if x.strip()]
+    for d in xdg_dirs:
+        add_dir(os.path.join(d, subfolder) if subfolder else d)
 
     return dirs
 
@@ -91,14 +91,26 @@ def set_gsettings(schema, key, val):
 
 def is_nix_store_managed(path):
     """
-    Checks if a file or symlink is managed by Home Manager / Nix store.
+    Checks if a file or directory is managed directly by Home Manager / NixOS read-only store.
+    Guarantees that nix store files, profiles, and home-manager-files links are never modified.
     """
-    if os.path.islink(path):
-        target = os.readlink(path)
-        if target.startswith("/nix/store") or "/nix/store" in os.path.realpath(path):
+    try:
+        if not os.path.exists(path) and not os.path.islink(path):
+            return False
+        # If the parent directory itself is in a read-only system or nix path
+        parent_real = os.path.realpath(os.path.dirname(path))
+        if parent_real.startswith("/nix/store") or parent_real.startswith("/run/current-system") or parent_real.startswith("/etc/profiles"):
             return True
-    if os.path.exists(path) and os.path.realpath(path).startswith("/nix/store"):
-        return True
+        if os.path.islink(path):
+            target = os.readlink(path)
+            if "home-manager-files" in target or (target.startswith("/nix/store") and "home-manager" in target):
+                return True
+        elif os.path.exists(path):
+            real = os.path.realpath(path)
+            if "home-manager-files" in real:
+                return True
+    except Exception:
+        pass
     return False
 
 def update_gtk_ini(file_path, key_values):
@@ -241,7 +253,7 @@ def update_default_icon_theme(icon_theme, cursor_theme=None):
             inherits_parts.append(cur_cursor)
         if cur_icon and cur_icon not in inherits_parts:
             inherits_parts.append(cur_icon)
-        for fb in ["Adwaita", "hicolor"]:
+        for fb in ["MacTahoe", "WhiteSur", "Adwaita", "Pop", "breeze", "hicolor"]:
             if fb not in inherits_parts:
                 inherits_parts.append(fb)
         inherits_val = ",".join(inherits_parts)
@@ -253,40 +265,83 @@ def update_default_icon_theme(icon_theme, cursor_theme=None):
     except Exception:
         pass
 
-def apply_icon_theme_links(icon_theme_name):
-    if not icon_theme_name:
-        return
+def apply_icon_theme_links(icon_theme_name=None):
+    search_bases = get_data_dirs("icons")
+    themes_found = set()
+    for base in search_bases:
+        if base in [os.path.join(HOME, ".icons"), os.path.join(HOME, ".local/share/icons")]:
+            continue
+        try:
+            for item in os.listdir(base):
+                p = os.path.join(base, item)
+                if os.path.isdir(p) or (os.path.islink(p) and os.path.exists(p)):
+                    themes_found.add(item)
+        except Exception:
+            pass
 
-    themes_to_link = [icon_theme_name]
-    if "MacTahoe" in icon_theme_name:
-        themes_to_link.extend(["MacTahoe", "MacTahoe-dark", "MacTahoe-light"])
-    elif "WhiteSur" in icon_theme_name:
-        themes_to_link.extend(["WhiteSur", "WhiteSur-dark", "WhiteSur-light"])
-    elif "breeze" in icon_theme_name.lower():
-        themes_to_link.extend(["breeze", "breeze-dark"])
+    if icon_theme_name:
+        themes_found.add(icon_theme_name)
+        if "MacTahoe" in icon_theme_name:
+            themes_found.update(["MacTahoe", "MacTahoe-dark", "MacTahoe-light"])
+        elif "WhiteSur" in icon_theme_name:
+            themes_found.update(["WhiteSur", "WhiteSur-dark", "WhiteSur-light"])
+        elif "breeze" in icon_theme_name.lower():
+            themes_found.update(["breeze", "breeze-dark", "Breeze_Light", "breeze_cursors"])
 
-    for tname in set(themes_to_link):
+    themes_found.update(["hicolor", "Adwaita", "Pop", "breeze", "Cosmic"])
+
+    user = os.environ.get("USER") or os.path.basename(HOME)
+    candidate_bases = []
+    user_profile = f"/etc/profiles/per-user/{user}/share/icons"
+    sys_profile = "/run/current-system/sw/share/icons"
+    if os.path.isdir(user_profile):
+        candidate_bases.append(user_profile)
+    if os.path.isdir(sys_profile):
+        candidate_bases.append(sys_profile)
+    for base in search_bases:
+        if base not in candidate_bases and base not in [os.path.join(HOME, ".icons"), os.path.join(HOME, ".local/share/icons")]:
+            candidate_bases.append(base)
+
+    for tname in themes_found:
+        if not tname:
+            continue
         src_dir = ""
-        for base in get_data_dirs("icons"):
+        for base in candidate_bases:
             p = os.path.join(base, tname)
-            if os.path.isdir(p) and p != os.path.join(HOME, ".icons", tname) and p != os.path.join(HOME, ".local/share/icons", tname):
+            if (os.path.isdir(p) or os.path.islink(p)) and os.path.exists(p):
                 src_dir = p
                 break
         if not src_dir:
             continue
 
-        # Link to ~/.icons/<theme_name> and ~/.local/share/icons/<theme_name>
         for dest_base in [os.path.join(HOME, ".icons"), os.path.join(HOME, ".local/share/icons")]:
             os.makedirs(dest_base, exist_ok=True)
             dest_link = os.path.join(dest_base, tname)
+            
+            # NEVER modify or delete files/symlinks managed by Nix store / Home Manager
             if is_nix_store_managed(dest_link):
                 continue
-            if os.path.islink(dest_link):
+                
+            if os.path.isdir(dest_link) and not os.path.islink(dest_link):
                 try:
-                    os.unlink(dest_link)
+                    is_empty = True
+                    for root_d, d_list, f_list in os.walk(dest_link):
+                        if f_list:
+                            is_empty = False
+                            break
+                    if is_empty:
+                        shutil.rmtree(dest_link)
                 except Exception:
                     pass
-            if not os.path.exists(dest_link):
+
+            if os.path.islink(dest_link):
+                try:
+                    if not os.path.exists(dest_link) or os.path.realpath(dest_link) != os.path.realpath(src_dir):
+                        os.unlink(dest_link)
+                except Exception:
+                    pass
+                    
+            if not os.path.exists(dest_link) and not os.path.islink(dest_link):
                 try:
                     os.symlink(src_dir, dest_link)
                 except Exception:
@@ -506,8 +561,14 @@ def build_and_save_icon_cache(theme_name, force_rebuild=False):
     search_dirs = get_theme_dirs_with_inheritance(theme_name)
     search_bases = set(get_data_dirs("icons"))
     ext_order = [".svg", ".png", ".xpm"]
+    scanned_real_paths = set()
     
     for dir_idx, p in enumerate(search_dirs):
+        real_p = os.path.realpath(p)
+        if real_p in scanned_real_paths:
+            continue
+        scanned_real_paths.add(real_p)
+
         dir_weight = max(0, (len(search_dirs) - dir_idx) * 2000)
         # If p is a top-level icons search base, only inspect loose files in top level
         walk_iter = [(p, [], [f for f in os.listdir(p) if os.path.isfile(os.path.join(p, f))])] if p in search_bases else os.walk(p)
@@ -529,10 +590,16 @@ def build_and_save_icon_cache(theme_name, force_rebuild=False):
                             keys_to_set.append("gnome-" + name_lower[10:])
                         if name_lower.startswith("org.kde."):
                             keys_to_set.append(name_lower[8:])
+                        if name_lower.startswith("com.system76."):
+                            keys_to_set.append(name_lower[13:])
                     if "-" in name_lower:
                         parts_dash = name_lower.split("-")
                         keys_to_set.append(parts_dash[0])
                         keys_to_set.append(parts_dash[-1])
+                        if "-symbolic" in name_lower:
+                            keys_to_set.append(name_lower.replace("-symbolic", ""))
+                    if "_symbolic" in name_lower:
+                        keys_to_set.append(name_lower.replace("_symbolic", ""))
                         
                     for k in keys_to_set:
                         if k and (k not in cache or sc > scores.get(k, 0)):
@@ -541,6 +608,15 @@ def build_and_save_icon_cache(theme_name, force_rebuild=False):
                             
     # Common desktop app aliases for specialized entries
     aliases = {
+        "preferences-system": "preferences-desktop",
+        "preferences-desktop": "preferences-system",
+        "system-settings": "preferences-system",
+        "settings": "preferences-system",
+        "quickshell-settings": "preferences-system",
+        "gnome-control-center": "preferences-system",
+        "org.gnome.settings": "preferences-system",
+        "org.kde.systemsettings": "preferences-system",
+        "systemsettings": "preferences-system",
         "blueman-manager": "blueman",
         "blueman-adapters": "blueman-device",
         "bvnc": "network-wired",

@@ -172,7 +172,7 @@ Singleton {
     FileView {
         id: iconCacheFileView
         path: (Quickshell.env("HOME") || "/home/" + (Quickshell.env("USER") || "user")) + "/.cache/quickshell/icon_theme_cache.json"
-        blockLoading: false
+        blockLoading: true
         printErrors: false
         onLoaded: {
             try {
@@ -209,6 +209,14 @@ Singleton {
         if (iconCacheMap && iconCacheMap[clean]) {
             return "file://" + iconCacheMap[clean]
         }
+
+        // Try stripping -symbolic or _symbolic
+        if (clean.indexOf("-symbolic") !== -1 || clean.indexOf("_symbolic") !== -1) {
+            var nonSym = clean.replace("-symbolic", "").replace("_symbolic", "")
+            if (iconCacheMap && iconCacheMap[nonSym]) {
+                return "file://" + iconCacheMap[nonSym]
+            }
+        }
         
         // Try fallback with dot suffix or app name (e.g. org.gnome.Nautilus -> nautilus)
         if (clean.indexOf(".") !== -1) {
@@ -231,6 +239,18 @@ Singleton {
         if (clean.indexOf("org.kde.") === 0) {
             var kde = clean.substring(8)
             if (iconCacheMap && iconCacheMap[kde]) return "file://" + iconCacheMap[kde]
+        }
+        if (clean.indexOf("com.system76.") === 0) {
+            var sys76 = clean.substring(13)
+            if (iconCacheMap && iconCacheMap[sys76]) return "file://" + iconCacheMap[sys76]
+        }
+
+        // Try common system settings fallbacks
+        if (clean === "preferences-system" || clean === "preferences-desktop" || clean === "systemsettings") {
+            for (var i = 0; i < ["preferences-system", "preferences-desktop", "system-settings", "settings", "gnome-control-center"].length; i++) {
+                var cand = ["preferences-system", "preferences-desktop", "system-settings", "settings", "gnome-control-center"][i]
+                if (iconCacheMap && iconCacheMap[cand]) return "file://" + iconCacheMap[cand]
+            }
         }
         
         var qp = Quickshell.iconPath(s, false)
