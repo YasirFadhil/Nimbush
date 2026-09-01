@@ -1478,14 +1478,16 @@ def strip_header_banner(content: str) -> str:
             start_idx += 1
             continue
         if (s.startswith("# ═══") or s.startswith("// ═══") or s.startswith("-- ═══") or
+            s.startswith("# ───") or s.startswith("-- ───") or s.startswith("// ───") or
+            s.startswith("----") or s.startswith("---") or
             s.startswith("#  Autostart") or s.startswith("--  Autostart") or s.startswith("//  Autostart") or
             s.startswith("#  Keybindings") or s.startswith("--  Keybindings") or s.startswith("//  Keybindings") or
             s.startswith("#  Window") or s.startswith("--  Window") or s.startswith("//  Window") or
             s.startswith("#  Quickshell") or s.startswith("--  Quickshell") or s.startswith("//  Quickshell") or
-            s.startswith("#  KEYBINDINGS") or s.startswith("--  KEYBINDINGS") or
-            s.startswith("#  AUTOSTART") or s.startswith("--  AUTOSTART") or
-            s.startswith("#  WINDOW RULES") or s.startswith("--  WINDOW RULES") or
-            s.startswith("# ───") or s.startswith("-- ───") or s.startswith("// ───")):
+            s.startswith("#  KEYBINDINGS") or s.startswith("--  KEYBINDINGS") or "KEYBINDING" in s or
+            s.startswith("#  AUTOSTART") or s.startswith("--  AUTOSTART") or "AUTOSTART" in s or
+            s.startswith("#  WINDOW RULES") or s.startswith("--  WINDOW RULES") or "WINDOWS AND WORKSPACES" in s or
+            s.startswith("#  RULES") or s.startswith("--  RULES")):
             start_idx += 1
             continue
         break
@@ -1634,7 +1636,9 @@ local confDir = home .. "/.config/hypr/conf"
 
 local function load_conf(module_name)
     local module_path = confDir .. "/" .. module_name .. ".lua"
-    if io.open(module_path, "r") then
+    local f = io.open(module_path, "r")
+    if f then
+        f:close()
         dofile(module_path)
     end
 end
@@ -1666,6 +1670,7 @@ end)
 local mainMod = "SUPER"
 local terminal = "kitty"
 local fileManager = "nautilus"
+local menu = "wofi --show drun"
 
 hl.bind(mainMod .. " + T", hl.dsp.exec_cmd(terminal), { repeating = true })
 hl.bind(mainMod .. " + E", hl.dsp.exec_cmd(fileManager))
@@ -1731,19 +1736,15 @@ hl.window_rule({
         'main': ['MONITORS', 'ENVIRONMENT VARIABLES', 'PERMISSIONS', 'LOOK AND FEEL', 'ANIMATIONS', 'WORKSPACE RULES', 'LAYOUTS', 'MISC', 'INPUT', 'GESTURES', 'DEVICES']
     }
 
+    var_re = re.compile(r'^\s*local\s+([A-Za-z0-9_]+)\s*=\s*(?:([\"\'\`])(.*?)\2|([0-9]+|true|false))\s*(?:--.*)?$')
     var_defs = {}
-    qs_vars = set([
-        'menu', 'clipboard', 'lockscreen', 'lockScreen', 'notifcenter', 'notifCenter',
-        'powermenu', 'powerMenu', 'dashboard', 'controlcenter', 'controlCenter',
-        'batterypanel', 'batteryPanel', 'settingsgui', 'settingsGui',
-        'wallpaperselector', 'wallpaperSelector', 'emojipicker', 'emojiPicker'
-    ])
+    qs_vars = set()
 
     for line in lines:
-        m = re.match(r'^\s*local\s+([A-Za-z0-9_]+)\s*=\s*(.*)', line)
+        m = var_re.match(line)
         if m:
             vname = m.group(1).strip()
-            raw_val = m.group(2).strip()
+            raw_val = (m.group(3) if m.group(3) is not None else m.group(4)).strip()
             if 'qs ' in raw_val or 'qs"' in raw_val or "qs'" in raw_val or 'quickshell' in raw_val:
                 qs_vars.add(vname)
             else:
@@ -1775,6 +1776,12 @@ hl.window_rule({
     vars_prefix = "\n".join(vars_prefix_lines)
 
     in_loader_block = False
+    current_section = 'main'
+    active_target = 'main'
+    paren_depth = 0
+    brace_depth = 0
+    in_for_loop = False
+
     for line in lines:
         stripped = line.strip()
 
@@ -1796,11 +1803,6 @@ hl.window_rule({
             else:
                 in_loader_block = False
 
-        for sec, kws in section_keywords.items():
-            if any(re.search(rf'--\s*{re.escape(kw)}\b', stripped, re.IGNORECASE) for kw in kws):
-                current_section = sec
-                break
-
         if any(marker in stripped for marker in [
             'Load Modular Configuration Files',
             'Quickshell Desktop Environment Integration',
@@ -1819,16 +1821,69 @@ hl.window_rule({
 
         if 'qs ipc call' in stripped or 'quickshell:' in stripped:
             continue
-        if current_section == 'keybinds' and any(re.search(rf'\b{re.escape(v)}\b', stripped) for v in qs_vars):
-            continue
-        if current_section == 'autostart' and re.search(r'hl\.exec_cmd\(\s*[\"\']\s*qs(?:\s+-[a-zA-Z0-9_/~\.]+)?\s*[\"\']\s*\)', stripped):
-            continue
 
-        if current_section == 'autostart':
+        # If not inside a multiline statement or loop, update section and statement target
+        if paren_depth == 0 and brace_depth == 0 and not in_for_loop:
+            for sec, kws in section_keywords.items():
+                if any(re.search(rf'--\s*{re.escape(kw)}\b', stripped, re.IGNORECASE) for kw in kws):
+                    current_section = sec
+                    break
+
+            if current_section == 'keybinds':
+                active_target = 'keybinds'
+            elif current_section == 'autostart':
+                if stripped.startswith(('hl.env', 'hl.config', 'hl.general', 'hl.decoration', 'hl.animation', 'hl.curve', 'hl.monitor', 'hl.dwindle', 'hl.master', 'hl.input', 'hl.gesture', 'hl.device', 'local ')):
+                    active_target = 'main'
+                    current_section = 'main'
+                else:
+                    active_target = 'autostart'
+            elif current_section == 'rules':
+                if stripped.startswith(('hl.env', 'hl.config', 'hl.general', 'hl.decoration', 'hl.animation', 'hl.curve', 'hl.monitor', 'hl.dwindle', 'hl.master', 'hl.input', 'hl.gesture', 'hl.device')):
+                    active_target = 'main'
+                    current_section = 'main'
+                else:
+                    active_target = 'rules'
+            else:
+                if (stripped.startswith('hl.on(') or stripped.startswith('hl.on (')) and ('hyprland.start' in stripped or 'start' in stripped):
+                    active_target = 'autostart'
+                elif 'hl.bind(' in stripped or 'hl.bind (' in stripped:
+                    active_target = 'keybinds'
+                elif 'hl.window_rule(' in stripped or 'hl.layer_rule(' in stripped:
+                    active_target = 'rules'
+                else:
+                    active_target = 'main'
+
+        # Track bracket & string depths across multiline blocks
+        in_str = False
+        str_ch = ''
+        for idx, ch in enumerate(stripped):
+            if ch in ('"', "'") and not in_str:
+                in_str = True
+                str_ch = ch
+            elif in_str and ch == str_ch and (idx == 0 or stripped[idx-1] != '\\'):
+                in_str = False
+            elif not in_str:
+                if ch == '-' and idx + 1 < len(stripped) and stripped[idx+1] == '-':
+                    break
+                elif ch == '(':
+                    paren_depth += 1
+                elif ch == ')':
+                    paren_depth = max(0, paren_depth - 1)
+                elif ch == '{':
+                    brace_depth += 1
+                elif ch == '}':
+                    brace_depth = max(0, brace_depth - 1)
+
+        if stripped.startswith('for ') and ' do' in stripped:
+            in_for_loop = True
+        elif in_for_loop and stripped == 'end':
+            in_for_loop = False
+
+        if active_target == 'autostart':
             autostart_lines.append(line)
-        elif current_section == 'keybinds':
+        elif active_target == 'keybinds':
             keybind_lines.append(line)
-        elif current_section == 'rules':
+        elif active_target == 'rules':
             rule_lines.append(line)
         else:
             main_lines.append(line)
@@ -1868,10 +1923,10 @@ end)"""
 """)
 
     # Write conf/keybinds.lua
-    # Clean duplicate local variable declarations from keybind lines if already in vars_prefix
+    # Clean duplicate local literal variable declarations from keybind lines if already in vars_prefix
     clean_keybind_lines = []
     for line in keybind_lines:
-        m = re.match(r'^\s*local\s+([A-Za-z0-9_]+)\s*=\s*(.*)', line)
+        m = var_re.match(line)
         if m and m.group(1).strip() in var_defs:
             continue
         clean_keybind_lines.append(line)
