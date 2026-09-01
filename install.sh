@@ -936,6 +936,64 @@ EOF
                 success "Wrote $HYPR_CONF_DIR/autostart.lua"
             fi
 
+            if [ ! -f "$HYPR_CONF_DIR/keybinds.lua" ]; then
+                cat << 'EOF' > "$HYPR_CONF_DIR/keybinds.lua"
+-- ══════════════════════════════════════════════════════════════════════════════
+--  Keybindings & Shortcuts (~/.config/hypr/conf/keybinds.lua)
+-- ══════════════════════════════════════════════════════════════════════════════
+
+local mainMod = "SUPER"
+local terminal = "kitty"
+local fileManager = "nautilus"
+
+hl.bind(mainMod .. " + T", hl.dsp.exec_cmd(terminal), { repeating = true })
+hl.bind(mainMod .. " + E", hl.dsp.exec_cmd(fileManager))
+hl.bind(mainMod .. " + Q", hl.dsp.window.close(), { repeating = true })
+hl.bind(mainMod .. " + ALT + F", hl.dsp.window.float({ action = "toggle" }))
+hl.bind(mainMod .. " + SHIFT + F", hl.dsp.window.fullscreen({ mode = "fullscreen", action = "toggle" }))
+hl.bind(mainMod .. " + J", hl.dsp.layout("togglesplit"))
+
+for i = 1, 10 do
+    local key = i % 10
+    hl.bind(mainMod .. " + " .. key, hl.dsp.focus({ workspace = i }))
+    hl.bind(mainMod .. " + SHIFT + " .. key, hl.dsp.window.move({ workspace = i }))
+end
+
+hl.bind("print", hl.dsp.exec_cmd("~/.config/quickshell/scripts/screenshot.sh full"), { locked = true })
+hl.bind("SHIFT + print", hl.dsp.exec_cmd("~/.config/quickshell/scripts/screenshot.sh region"), { locked = true })
+hl.bind(mainMod .. " + print", hl.dsp.exec_cmd("~/.config/quickshell/scripts/screenshot.sh window"), { locked = true })
+EOF
+                success "Wrote $HYPR_CONF_DIR/keybinds.lua"
+            fi
+
+            if [ ! -f "$HYPR_CONF_DIR/rules.lua" ]; then
+                cat << 'EOF' > "$HYPR_CONF_DIR/rules.lua"
+-- ══════════════════════════════════════════════════════════════════════════════
+--  Window & Workspace Rules (~/.config/hypr/conf/rules.lua)
+-- ══════════════════════════════════════════════════════════════════════════════
+
+hl.window_rule({
+    name = "suppress-maximize",
+    match = { class = ".*" },
+    suppress_event = "maximize",
+})
+
+hl.window_rule({
+    name = "pip-float",
+    match = { title = "^(Picture-in-Picture|Picture in picture)$" },
+    float = true,
+    pin = true,
+})
+
+hl.window_rule({
+    name = "dialog-float",
+    match = { class = "(pavucontrol|nm-connection-editor|blueman-manager|swappy)" },
+    float = true,
+})
+EOF
+                success "Wrote $HYPR_CONF_DIR/rules.lua"
+            fi
+
             if [ -f "$HYPR_LUA" ]; then
                 local backup_lua="${HYPR_LUA}.bak.$(date +%Y%m%d_%H%M%S)"
                 cp "$HYPR_LUA" "$backup_lua"

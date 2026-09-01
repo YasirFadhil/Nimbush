@@ -1450,11 +1450,18 @@ def reload_compositor():
 def deduplicate_lines(lines):
     seen = set()
     result = []
+    PROTECTED_TOKENS = {
+        "end", "end)", "end);", "end,", "}", "})", "});", "},", ")", ");", "),", "]", "];",
+        "then", "do", "else", "elseif"
+    }
     for line in lines:
         stripped = line.strip()
         if not stripped:
             if result and result[-1].strip():
                 result.append(line)
+            continue
+        if stripped in PROTECTED_TOKENS or stripped.startswith("--") or stripped.startswith("//") or stripped.startswith("#"):
+            result.append(line)
             continue
         if stripped in seen:
             continue
@@ -1464,22 +1471,25 @@ def deduplicate_lines(lines):
 
 def strip_header_banner(content: str) -> str:
     lines = content.splitlines()
-    res = []
-    in_banner = False
-    for line in lines:
-        s = line.strip()
-        if s.startswith("# ═══") or s.startswith("// ═══") or s.startswith("-- ═══"):
-            in_banner = not in_banner
+    start_idx = 0
+    while start_idx < len(lines):
+        s = lines[start_idx].strip()
+        if not s:
+            start_idx += 1
             continue
-        if in_banner:
-            continue
-        if (s.startswith("#  Autostart") or s.startswith("--  Autostart") or s.startswith("//  Autostart") or
+        if (s.startswith("# ═══") or s.startswith("// ═══") or s.startswith("-- ═══") or
+            s.startswith("#  Autostart") or s.startswith("--  Autostart") or s.startswith("//  Autostart") or
             s.startswith("#  Keybindings") or s.startswith("--  Keybindings") or s.startswith("//  Keybindings") or
             s.startswith("#  Window") or s.startswith("--  Window") or s.startswith("//  Window") or
-            s.startswith("#  Quickshell") or s.startswith("--  Quickshell") or s.startswith("//  Quickshell")):
+            s.startswith("#  Quickshell") or s.startswith("--  Quickshell") or s.startswith("//  Quickshell") or
+            s.startswith("#  KEYBINDINGS") or s.startswith("--  KEYBINDINGS") or
+            s.startswith("#  AUTOSTART") or s.startswith("--  AUTOSTART") or
+            s.startswith("#  WINDOW RULES") or s.startswith("--  WINDOW RULES") or
+            s.startswith("# ───") or s.startswith("-- ───") or s.startswith("// ───")):
+            start_idx += 1
             continue
-        res.append(line)
-    return "\n".join(res).strip()
+        break
+    return "\n".join(lines[start_idx:]).strip()
 
 def modularize_hypr_lua():
     hypr_dir = os.path.join(HOME, ".config/hypr")
@@ -1775,8 +1785,6 @@ hl.window_rule({
             'Load separated modules',
         ]):
             continue
-        if stripped in ['end', 'end)', 'end);'] and current_section in ['rules', 'main']:
-            continue
         if ('dofile(' in stripped and ('quickshell' in stripped or 'conf/' in stripped or 'module_path' in stripped)):
             continue
         if 'local home = os.getenv("HOME")' in stripped or 'io.open(module_path' in stripped or 'local function load_conf' in stripped:
@@ -1798,15 +1806,14 @@ hl.window_rule({
         else:
             main_lines.append(line)
 
-    # Write conf/autostart.lua (Deduplicated)
+    # Write conf/autostart.lua
     existing_autostart = ""
     if os.path.exists(autostart_path):
         with open(autostart_path, "r", encoding="utf-8") as f:
             existing_autostart = f.read()
 
     if autostart_lines:
-        combined_autostart = deduplicate_lines(autostart_lines)
-        autostart_content = strip_header_banner("".join(combined_autostart))
+        autostart_content = strip_header_banner("".join(autostart_lines))
     elif existing_autostart.strip():
         autostart_content = strip_header_banner(existing_autostart)
     else:
@@ -1824,11 +1831,12 @@ end)"""
 {autostart_content}
 """)
 
-    # Write conf/keybinds.lua (Deduplicated)
+    # Write conf/keybinds.lua
     vars_prefix = "\n".join(var_defs) if var_defs else 'local mainMod = "SUPER"\nlocal terminal = "kitty"\nlocal fileManager = "nautilus"'
     if keybind_lines:
-        combined_keybinds = deduplicate_lines(keybind_lines)
-        keybind_content = f"{vars_prefix}\n\n" + strip_header_banner("".join(combined_keybinds))
+        keybind_content = strip_header_banner("".join(keybind_lines))
+        if not any("local mainMod" in l for l in keybind_lines):
+            keybind_content = f"{vars_prefix}\n\n{keybind_content}"
     elif os.path.exists(keybinds_path):
         with open(keybinds_path, "r", encoding="utf-8") as f:
             keybind_content = strip_header_banner(f.read())
@@ -1862,8 +1870,7 @@ hl.bind(mainMod .. " + print", hl.dsp.exec_cmd("~/.config/quickshell/scripts/scr
 
     # Write conf/rules.lua
     if rule_lines:
-        combined_rules = deduplicate_lines(rule_lines)
-        rules_content = strip_header_banner("".join(combined_rules))
+        rules_content = strip_header_banner("".join(rule_lines))
     elif os.path.exists(rules_path):
         with open(rules_path, "r", encoding="utf-8") as f:
             rules_content = strip_header_banner(f.read())
@@ -2501,11 +2508,15 @@ spawn-at-startup "wl-paste" "--type" "image" "--watch" "cliphist" "store\""""
 
     # Write conf/keybinds.kdl
     if clean_binds_lines:
-        combined_binds = deduplicate_lines(clean_binds_lines)
-        keybinds_content = strip_header_banner("\n".join(combined_binds))
+        keybinds_content = strip_header_banner("\n".join(clean_binds_lines))
+        final_binds_block = f"binds {{\n{keybinds_content}\n}}"
     elif os.path.exists(keybinds_path):
         with open(keybinds_path, "r", encoding="utf-8") as f:
-            keybinds_content = strip_header_banner(f.read())
+            raw_existing = strip_header_banner(f.read())
+        if raw_existing.strip().startswith("binds {") and raw_existing.strip().endswith("}"):
+            final_binds_block = raw_existing.strip()
+        else:
+            final_binds_block = f"binds {{\n{raw_existing}\n}}"
     else:
         keybinds_content = """    Mod+Return { spawn "kitty"; }
     Mod+E      { spawn "nautilus"; }
@@ -2530,15 +2541,14 @@ spawn-at-startup "wl-paste" "--type" "image" "--watch" "cliphist" "store\""""
     Print       { spawn "sh" "-c" "~/.config/quickshell/scripts/screenshot.sh full"; }
     Shift+Print { spawn "sh" "-c" "~/.config/quickshell/scripts/screenshot.sh region"; }
     Mod+Print   { spawn "sh" "-c" "~/.config/quickshell/scripts/screenshot.sh window"; }"""
+        final_binds_block = f"binds {{\n{keybinds_content}\n}}"
 
     with open(keybinds_path, "w", encoding="utf-8") as f:
         f.write(f"""// ══════════════════════════════════════════════════════════════════════════════
 //  Keybindings & Shortcuts (~/.config/niri/conf/keybinds.kdl)
 // ══════════════════════════════════════════════════════════════════════════════
 
-binds {{
-{keybinds_content}
-}}
+{final_binds_block}
 """)
 
     # Write conf/rules.kdl
