@@ -256,12 +256,14 @@ setup_target_directory() {
                     BACKUP_DIR="${TARGET_DIR}_backup_$(date +%Y%m%d_%H%M%S)"
                     mv "$TARGET_DIR" "$BACKUP_DIR"
                     info "Backed up existing config to $BACKUP_DIR"
-                    cp -r "$SCRIPT_DIR" "$TARGET_DIR"
+                    mkdir -p "$TARGET_DIR"
+                    cp -r "$SCRIPT_DIR/." "$TARGET_DIR/"
                     success "Installed fresh configuration to $TARGET_DIR"
                     ;;
                 overwrite)
                     rm -rf "$TARGET_DIR"
-                    cp -r "$SCRIPT_DIR" "$TARGET_DIR"
+                    mkdir -p "$TARGET_DIR"
+                    cp -r "$SCRIPT_DIR/." "$TARGET_DIR/"
                     success "Overwrote configuration in $TARGET_DIR"
                     ;;
                 symlink)
@@ -275,8 +277,8 @@ setup_target_directory() {
                     ;;
             esac
         else
-            mkdir -p "$(dirname "$TARGET_DIR")"
-            cp -r "$SCRIPT_DIR" "$TARGET_DIR"
+            mkdir -p "$TARGET_DIR"
+            cp -r "$SCRIPT_DIR/." "$TARGET_DIR/"
             success "Copied configuration to $TARGET_DIR"
         fi
     fi
@@ -295,7 +297,7 @@ setup_target_directory() {
 # Format: "command_to_check|category|arch_pkg|debian_pkg|fedora_pkg|nix_pkg|description|required_type"
 DEPENDENCIES_DB=(
     # Core Framework & Compositors
-    "qs|Core|quickshell-git|quickshell|quickshell|quickshell|Quickshell UI framework (qs)|req"
+    "qs|Core|quickshell|quickshell|quickshell|quickshell|Quickshell UI framework (qs)|req"
     "hyprland|Compositor|hyprland|hyprland|hyprland|hyprland|Hyprland Wayland compositor|comp"
     "niri|Compositor|niri|niri|niri|niri|Niri Scrollable Wayland compositor|comp"
 
@@ -316,7 +318,7 @@ DEPENDENCIES_DB=(
 
     # Theming, Thematic Colors & Wallpaper
     "swww|Theming|swww|swww|swww|awww|Wayland animated wallpaper daemon (awww / swww)|opt"
-    "matugen|Theming|matugen-bin|matugen|matugen|matugen|Material You dynamic color palette generator from wallpaper|opt"
+    "matugen|Theming|matugen|matugen|matugen|matugen|Material You dynamic color palette generator from wallpaper|opt"
     "swaybg|Theming|swaybg|swaybg|swaybg|swaybg|Wayland wallpaper daemon (fallback)|opt"
 
     # System Utilities & IPC

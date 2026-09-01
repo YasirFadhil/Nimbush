@@ -61,6 +61,8 @@ Singleton {
     property int hyprGapsIn: 5
     property int hyprGapsOut: 10
     property string hyprLayout: "dwindle"
+    property real hyprScrollingColumnWidth: 0.89
+    property bool hyprScrollingFullscreenOnOneColumn: false
     property bool hyprResizeOnBorder: false
     property string hyprBorderColorPreset: "cyan_emerald"
 
@@ -464,6 +466,21 @@ Singleton {
     function setHyprLayout(val) {
         hyprLayout = String(val)
         setOption("layout", hyprLayout)
+    }
+
+    function setHyprScrollingColumnWidth(val) {
+        hyprScrollingColumnWidth = Number(val)
+        setOption("scrolling_column_width", hyprScrollingColumnWidth)
+    }
+
+    function toggleHyprScrollingFullscreenOnOneColumn() {
+        hyprScrollingFullscreenOnOneColumn = !hyprScrollingFullscreenOnOneColumn
+        setOption("scrolling_fullscreen_on_one_column", hyprScrollingFullscreenOnOneColumn)
+    }
+
+    function setHyprScrollingFullscreenOnOneColumn(val) {
+        hyprScrollingFullscreenOnOneColumn = Boolean(val)
+        setOption("scrolling_fullscreen_on_one_column", hyprScrollingFullscreenOnOneColumn)
     }
 
     function toggleHyprTouchpadNatural() {
@@ -1034,6 +1051,8 @@ Singleton {
                     if (data.dim_inactive !== undefined) root.hyprDimInactive = data.dim_inactive
                     if (data.dim_strength !== undefined) root.hyprDimStrength = data.dim_strength
                     if (data.layout !== undefined) root.hyprLayout = data.layout
+                    if (data.scrolling_column_width !== undefined) root.hyprScrollingColumnWidth = data.scrolling_column_width
+                    if (data.scrolling_fullscreen_on_one_column !== undefined) root.hyprScrollingFullscreenOnOneColumn = data.scrolling_fullscreen_on_one_column
                     if (data.touchpad_natural !== undefined) root.hyprTouchpadNatural = data.touchpad_natural
                     if (data.touchpad_tap !== undefined) root.hyprTouchpadTap = data.touchpad_tap
                     if (data.touchpad_dwt !== undefined) root.hyprTouchpadDwt = data.touchpad_dwt

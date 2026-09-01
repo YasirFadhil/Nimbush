@@ -62,6 +62,13 @@ hl.dwindle({
     preserve_split = true,
 })
 
+hl.config({
+    scrolling = {
+        column_width             = 0.89,
+        fullscreen_on_one_column = false,
+    },
+})
+
 hl.input({
     kb_layout     = "us",
     follow_mouse  = 1,

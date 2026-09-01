@@ -4920,6 +4920,31 @@ FloatingWindow {
                                             onSelected: (val) => { if (Services.Compositor) Services.Compositor.setHyprLayout(val) }
                                         }
                                     }
+
+                                    SettingsDivider {
+                                        visible: Services.Compositor && (Services.Compositor.hyprLayout === "scrolling" || Services.Compositor.activeCompositor === "niri")
+                                    }
+
+                                    SettingsSlider {
+                                        visible: Services.Compositor && (Services.Compositor.hyprLayout === "scrolling" || Services.Compositor.activeCompositor === "niri")
+                                        title: "Scrolling Column Width"
+                                        subtitle: "Default viewport ratio allocated per window column"
+                                        from: 0.30; to: 1.00; stepSize: 0.01; decimals: 2
+                                        value: Services.Compositor ? Services.Compositor.hyprScrollingColumnWidth : 0.89
+                                        onMoved: (v) => { if (Services.Compositor) Services.Compositor.setHyprScrollingColumnWidth(Number(v.toFixed(2))) }
+                                    }
+
+                                    SettingsDivider {
+                                        visible: Services.Compositor && (Services.Compositor.hyprLayout === "scrolling" || Services.Compositor.activeCompositor === "niri")
+                                    }
+
+                                    SettingsSwitch {
+                                        visible: Services.Compositor && (Services.Compositor.hyprLayout === "scrolling" || Services.Compositor.activeCompositor === "niri")
+                                        title: "Fullscreen Single Column"
+                                        subtitle: "Automatically expand column to fullscreen if only one column exists"
+                                        checked: Services.Compositor ? Services.Compositor.hyprScrollingFullscreenOnOneColumn : false
+                                        onToggled: () => { if (Services.Compositor) Services.Compositor.toggleHyprScrollingFullscreenOnOneColumn() }
+                                    }
                                 }
                             }
 

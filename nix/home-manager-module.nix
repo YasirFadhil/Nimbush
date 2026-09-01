@@ -167,7 +167,7 @@ in
 
       # Automatically place files into ~/.config/quickshell if not using wrapped package
       xdg.configFile."quickshell" = mkIf (cfg.package == null) {
-        source = ../.;
+        source = self;
         recursive = true;
       };
 
@@ -490,7 +490,7 @@ window-rule {
     }
 
     # Declarative Hyprland Integration
-    (mkIf (cfg.hyprland.enableIntegration && (cfg.hyprland.enablePackage || (config.wayland.windowManager ? hyprland && config.wayland.windowManager.hyprland ? enable && config.wayland.windowManager.hyprland.enable))) {
+    (mkIf (cfg.hyprland.enableIntegration && (cfg.hyprland.enablePackage || (lib.attrByPath [ "wayland" "windowManager" "hyprland" "enable" ] false config))) {
       wayland.windowManager.hyprland.settings = {
         exec-once = (optional (!cfg.enableSystemdService) "qs") ++ [
           "wl-paste --type text --watch cliphist store"
@@ -559,7 +559,7 @@ window-rule {
     })
 
     # Declarative Niri Integration
-    (mkIf (cfg.niri.enableIntegration && (cfg.niri.enablePackage || (config.programs ? niri && config.programs.niri ? enable && config.programs.niri.enable))) {
+    (mkIf (cfg.niri.enableIntegration && (cfg.niri.enablePackage || (lib.attrByPath [ "programs" "niri" "enable" ] false config))) {
       programs.niri.settings = {
         spawn-at-startup = (optional (!cfg.enableSystemdService) { command = [ "qs" ]; }) ++ [
           { command = [ "wl-paste" "--type" "text" "--watch" "cliphist" "store" ]; }

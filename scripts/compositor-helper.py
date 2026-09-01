@@ -108,6 +108,8 @@ def query_all():
             ("dim_inactive", "decoration:dim_inactive", bool, False),
             ("dim_strength", "decoration:dim_strength", float, 0.50),
             ("layout", "general:layout", str, "dwindle"),
+            ("scrolling_column_width", "scrolling:column_width", float, 0.89),
+            ("scrolling_fullscreen_on_one_column", "scrolling:fullscreen_on_one_column", bool, False),
             ("touchpad_natural", "input:touchpad:natural_scroll", bool, True),
             ("touchpad_tap", "input:touchpad:tap-to-click", bool, True),
             ("touchpad_dwt", "input:touchpad:disable_while_typing", bool, True),
@@ -315,6 +317,8 @@ def query_all():
             "dim_inactive": False,
             "dim_strength": 0.5,
             "layout": "scrolling",
+            "scrolling_column_width": 0.89,
+            "scrolling_fullscreen_on_one_column": False,
             "touchpad_natural": True,
             "touchpad_tap": True,
             "touchpad_dwt": False,
@@ -350,6 +354,8 @@ def query_all():
             "dim_inactive": False,
             "dim_strength": 0.5,
             "layout": "default",
+            "scrolling_column_width": 0.89,
+            "scrolling_fullscreen_on_one_column": False,
             "touchpad_natural": True,
             "touchpad_tap": True,
             "touchpad_dwt": False,
@@ -381,6 +387,10 @@ LUA_MAP = {
     "dim_inactive": lambda v: f"hl.config({{ decoration = {{ dim_inactive = {str(v).lower()} }} }})",
     "dim_strength": lambda v: f"hl.config({{ decoration = {{ dim_strength = {float(v):.2f} }} }})",
     "layout": lambda v: f"hl.config({{ general = {{ layout = \"{str(v)}\" }} }})",
+    "scrolling_column_width": lambda v: f"hl.config({{ scrolling = {{ column_width = {float(v):.2f} }} }})",
+    "scrolling_fullscreen_on_one_column": lambda v: f"hl.config({{ scrolling = {{ fullscreen_on_one_column = {str(v).lower()} }} }})",
+    "column_width": lambda v: f"hl.config({{ scrolling = {{ column_width = {float(v):.2f} }} }})",
+    "fullscreen_on_one_column": lambda v: f"hl.config({{ scrolling = {{ fullscreen_on_one_column = {str(v).lower()} }} }})",
     "touchpad_natural": lambda v: f"hl.config({{ input = {{ touchpad = {{ natural_scroll = {str(v).lower()} }} }} }})",
     "touchpad_tap": lambda v: f"hl.config({{ input = {{ touchpad = {{ tap_to_click = {str(v).lower()} }} }} }})",
     "touchpad_dwt": lambda v: f"hl.config({{ input = {{ touchpad = {{ disable_while_typing = {str(v).lower()} }} }} }})",
@@ -407,6 +417,10 @@ KEYWORD_MAP = {
     "dim_inactive": lambda v: ("decoration:dim_inactive", "1" if str(v).lower() in ("true", "1") else "0"),
     "dim_strength": lambda v: ("decoration:dim_strength", str(v)),
     "layout": lambda v: ("general:layout", str(v)),
+    "scrolling_column_width": lambda v: ("scrolling:column_width", str(v)),
+    "scrolling_fullscreen_on_one_column": lambda v: ("scrolling:fullscreen_on_one_column", "1" if str(v).lower() in ("true", "1") else "0"),
+    "column_width": lambda v: ("scrolling:column_width", str(v)),
+    "fullscreen_on_one_column": lambda v: ("scrolling:fullscreen_on_one_column", "1" if str(v).lower() in ("true", "1") else "0"),
     "touchpad_natural": lambda v: ("input:touchpad:natural_scroll", "1" if str(v).lower() in ("true", "1") else "0"),
     "touchpad_tap": lambda v: ("input:touchpad:tap-to-click", "1" if str(v).lower() in ("true", "1") else "0"),
     "touchpad_dwt": lambda v: ("input:touchpad:disable_while_typing", "1" if str(v).lower() in ("true", "1") else "0"),
@@ -483,6 +497,28 @@ def update_lua_option(content, opt_name, opt_val):
         pat = r'(layout\s*=\s*)"[^"]+"'
         if re.search(pat, content):
             return re.sub(pat, r'\g<1>"' + str(opt_val) + '"', content, count=1)
+
+    if opt_name in ("scrolling_column_width", "column_width"):
+        pat = r'(scrolling\s*=\s*\{[\s\S]*?column_width\s*=\s*)[0-9.]+'
+        if re.search(pat, content):
+            return re.sub(pat, r'\g<1>' + f"{float(opt_val):.2f}", content, count=1)
+        pat2 = r'(hl\.scrolling\s*\(\s*\{[\s\S]*?column_width\s*=\s*)[0-9.]+'
+        if re.search(pat2, content):
+            return re.sub(pat2, r'\g<1>' + f"{float(opt_val):.2f}", content, count=1)
+        pat_tbl = r'(scrolling\s*=\s*\{)'
+        if re.search(pat_tbl, content):
+            return re.sub(pat_tbl, r'\g<1>\n        column_width = ' + f"{float(opt_val):.2f},", content, count=1)
+
+    if opt_name in ("scrolling_fullscreen_on_one_column", "fullscreen_on_one_column"):
+        pat = r'(scrolling\s*=\s*\{[\s\S]*?fullscreen_on_one_column\s*=\s*)(?:true|false)'
+        if re.search(pat, content):
+            return re.sub(pat, r'\g<1>' + val_str, content, count=1)
+        pat2 = r'(hl\.scrolling\s*\(\s*\{[\s\S]*?fullscreen_on_one_column\s*=\s*)(?:true|false)'
+        if re.search(pat2, content):
+            return re.sub(pat2, r'\g<1>' + val_str, content, count=1)
+        pat_tbl = r'(scrolling\s*=\s*\{)'
+        if re.search(pat_tbl, content):
+            return re.sub(pat_tbl, r'\g<1>\n        fullscreen_on_one_column = ' + val_str + ',', content, count=1)
 
     if opt_name == "anim":
         pat = r'(animations\s*=\s*\{[\s\S]*?enabled\s*=\s*)(?:true|false)'
@@ -574,6 +610,28 @@ def update_hyprconf_option(content, opt_name, opt_val):
         pat = scalar_patterns[opt_name]
         if re.search(pat, content):
             return re.sub(pat, r'\g<1>' + val_str, content, count=1)
+
+    if opt_name in ("scrolling_column_width", "column_width"):
+        pat = r'(scrolling\s*\{[\s\S]*?column_width\s*=\s*)[0-9.]+'
+        if re.search(pat, content):
+            return re.sub(pat, r'\g<1>' + str(opt_val), content, count=1)
+        pat_sec = r'(scrolling\s*\{)'
+        if re.search(pat_sec, content):
+            return re.sub(pat_sec, r'\g<1>\n    column_width = ' + str(opt_val), content, count=1)
+        pat_scalar = r'(?m)^(\s*scrolling:column_width\s*=\s*).*$'
+        if re.search(pat_scalar, content):
+            return re.sub(pat_scalar, r'\g<1>' + str(opt_val), content, count=1)
+
+    if opt_name in ("scrolling_fullscreen_on_one_column", "fullscreen_on_one_column"):
+        pat = r'(scrolling\s*\{[\s\S]*?fullscreen_on_one_column\s*=\s*)(?:true|false|[0-1])'
+        if re.search(pat, content):
+            return re.sub(pat, r'\g<1>' + val_str, content, count=1)
+        pat_sec = r'(scrolling\s*\{)'
+        if re.search(pat_sec, content):
+            return re.sub(pat_sec, r'\g<1>\n    fullscreen_on_one_column = ' + val_str, content, count=1)
+        pat_scalar = r'(?m)^(\s*scrolling:fullscreen_on_one_column\s*=\s*).*$'
+        if re.search(pat_scalar, content):
+            return re.sub(pat_scalar, r'\g<1>' + val_str, content, count=1)
 
     nested_patterns = {
         "anim": r'(animations\s*\{[\s\S]*?enabled\s*=\s*)(?:true|false|[0-1])',
@@ -1544,6 +1602,13 @@ hl.dwindle({
     preserve_split = true,
 })
 
+hl.config({
+    scrolling = {
+        column_width             = 0.89,
+        fullscreen_on_one_column = false,
+    },
+})
+
 hl.input({
     kb_layout     = "us",
     follow_mouse  = 1,
@@ -2007,6 +2072,11 @@ animations {
 dwindle {
     pseudotile = true
     preserve_split = true
+}
+
+scrolling {
+    column_width = 0.89
+    fullscreen_on_one_column = false
 }
 
 input {
