@@ -44,6 +44,8 @@ Singleton {
     // ── Live Options for Hyprland ─────────────────────────────────────────────
     // Visual & Effects
     property bool hyprAnim: true
+    property string hyprAnimStyle: "fluid"
+    property var hyprAnimStyles: []
     property bool hyprBlur: true
     property int hyprBlurSize: 4
     property int hyprBlurPasses: 2
@@ -384,13 +386,35 @@ Singleton {
     }
 
     // ── Live Setting Updates & Helpers ────────────────────────────────────────
+    Process {
+        id: animStyleProc
+        property string targetStyle: ""
+        command: [root.helperScript, "anim-style-set", targetStyle]
+    }
+
+    function setHyprAnimStyle(styleId) {
+        if (!styleId) return
+        hyprAnimStyle = styleId
+        if (styleId === "disabled") {
+            hyprAnim = false
+        } else {
+            hyprAnim = true
+        }
+        animStyleProc.targetStyle = styleId
+        animStyleProc.running = true
+    }
+
     function setHyprOption(optKey, optVal) {
         setOption(optKey, optVal)
     }
 
     function toggleHyprAnim() {
         hyprAnim = !hyprAnim
-        setOption("anim", hyprAnim)
+        if (!hyprAnim) {
+            setHyprAnimStyle("disabled")
+        } else {
+            setHyprAnimStyle(hyprAnimStyle === "disabled" ? "fluid" : hyprAnimStyle)
+        }
     }
 
     function toggleHyprBlur() {
@@ -1039,6 +1063,8 @@ Singleton {
                     if (data.blur_size !== undefined) root.hyprBlurSize = data.blur_size
                     if (data.blur_passes !== undefined) root.hyprBlurPasses = data.blur_passes
                     if (data.anim !== undefined) root.hyprAnim = data.anim
+                    if (data.animStyle !== undefined) root.hyprAnimStyle = data.animStyle
+                    if (data.animStyles !== undefined) root.hyprAnimStyles = data.animStyles
                     if (data.shadow !== undefined) root.hyprShadow = data.shadow
                     if (data.shadow_range !== undefined) root.hyprShadowRange = data.shadow_range
                     if (data.shadow_power !== undefined) root.hyprShadowPower = data.shadow_power

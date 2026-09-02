@@ -684,14 +684,16 @@ exec-once = qs
 
 # ── 2. Quickshell IPC Keybindings ─────────────────────────────────────────────
 bind = SUPER, SPACE,         exec, qs ipc call launcher toggle
-bind = SUPER SHIFT, W,       exec, qs ipc call wallpaper toggle
-bind = SUPER SHIFT, E,       exec, qs ipc call emoji toggle
-bind = SUPER, V,             exec, qs ipc call clipboard toggle
-bind = SUPER, P,             exec, qs ipc call powermenu toggle
-bind = SUPER ALT, L,         exec, qs ipc call lockscreen toggle
+bind = SUPER, C,             exec, qs ipc call controlCenter toggle
 bind = SUPER, D,             exec, qs ipc call dashboard toggle
 bind = SUPER, N,             exec, qs ipc call notifCenter toggle
-bind = SUPER, C,             exec, qs ipc call controlCenter toggle
+bind = SUPER, V,             exec, qs ipc call clipboard toggle
+bind = SUPER SHIFT, E,       exec, qs ipc call emoji toggle
+bind = SUPER SHIFT, W,       exec, qs ipc call wallpaper toggle
+bind = SUPER, P,             exec, qs ipc call powermenu toggle
+bind = SUPER ALT, L,         exec, qs ipc call lockscreen toggle
+bind = SUPER, comma,         exec, qs ipc call settings toggle
+bind = SUPER, M,             exec, qs ipc call sysmon toggle
 bind = SUPER, B,             exec, qs ipc call battery toggle
 
 # ── 3. Quickshell Layer Rules (Blur & Transparency) ───────────────────────────
@@ -810,7 +812,7 @@ EOF
 
             # 5. Clean & Connect Main hyprland.conf
             if [ -f "$HYPR_CONF" ]; then
-                local backup_conf="${HYPR_CONF}.bak.$(date +%Y%m%d_%H%M%S)"
+                local backup_conf="${HYPR_CONF}.bak"
                 cp "$HYPR_CONF" "$backup_conf"
                 info "Created backup: $backup_conf"
                 sed -i '/quickshell\.conf/d' "$HYPR_CONF"
@@ -889,14 +891,16 @@ end)
 
 -- ── 2. Quickshell IPC Keybindings ─────────────────────────────────────────────
 hl.bind(mainMod .. " + SPACE",         hl.dsp.exec_cmd("qs ipc call launcher toggle"))
-hl.bind(mainMod .. " + SHIFT + W",     hl.dsp.exec_cmd("qs ipc call wallpaper toggle"))
-hl.bind(mainMod .. " + SHIFT + E",     hl.dsp.exec_cmd("qs ipc call emoji toggle"))
-hl.bind(mainMod .. " + V",             hl.dsp.exec_cmd("qs ipc call clipboard toggle"))
-hl.bind(mainMod .. " + P",             hl.dsp.exec_cmd("qs ipc call powermenu toggle"))
-hl.bind(mainMod .. " + ALT + L",       hl.dsp.exec_cmd("qs ipc call lockscreen toggle"))
+hl.bind(mainMod .. " + C",             hl.dsp.exec_cmd("qs ipc call controlCenter toggle"))
 hl.bind(mainMod .. " + D",             hl.dsp.exec_cmd("qs ipc call dashboard toggle"))
 hl.bind(mainMod .. " + N",             hl.dsp.exec_cmd("qs ipc call notifCenter toggle"))
-hl.bind(mainMod .. " + C",             hl.dsp.exec_cmd("qs ipc call controlCenter toggle"))
+hl.bind(mainMod .. " + V",             hl.dsp.exec_cmd("qs ipc call clipboard toggle"))
+hl.bind(mainMod .. " + SHIFT + E",     hl.dsp.exec_cmd("qs ipc call emoji toggle"))
+hl.bind(mainMod .. " + SHIFT + W",     hl.dsp.exec_cmd("qs ipc call wallpaper toggle"))
+hl.bind(mainMod .. " + P",             hl.dsp.exec_cmd("qs ipc call powermenu toggle"))
+hl.bind(mainMod .. " + ALT + L",       hl.dsp.exec_cmd("qs ipc call lockscreen toggle"))
+hl.bind(mainMod .. " + COMMA",         hl.dsp.exec_cmd("qs ipc call settings toggle"))
+hl.bind(mainMod .. " + M",             hl.dsp.exec_cmd("qs ipc call sysmon toggle"))
 hl.bind(mainMod .. " + B",             hl.dsp.exec_cmd("qs ipc call battery toggle"))
 
 -- ── 3. Quickshell Layer Rules (Blur & Transparency) ───────────────────────────
@@ -996,7 +1000,7 @@ EOF
             fi
 
             if [ -f "$HYPR_LUA" ]; then
-                local backup_lua="${HYPR_LUA}.bak.$(date +%Y%m%d_%H%M%S)"
+                local backup_lua="${HYPR_LUA}.bak"
                 cp "$HYPR_LUA" "$backup_lua"
                 info "Created backup: $backup_lua"
                 sed -i '/quickshell\.lua/d' "$HYPR_LUA"
@@ -1067,14 +1071,16 @@ spawn-at-startup "qs"
 // ── 2. Quickshell IPC Keybindings ─────────────────────────────────────────────
 binds {
     Mod+Space       { spawn "qs" "ipc" "call" "launcher" "toggle"; }
-    Mod+Shift+W     { spawn "qs" "ipc" "call" "wallpaper" "toggle"; }
-    Mod+Shift+E     { spawn "qs" "ipc" "call" "emoji" "toggle"; }
-    Mod+V           { spawn "qs" "ipc" "call" "clipboard" "toggle"; }
-    Mod+P           { spawn "qs" "ipc" "call" "powermenu" "toggle"; }
-    Mod+Alt+L       { spawn "qs" "ipc" "call" "lockscreen" "toggle"; }
+    Mod+C           { spawn "qs" "ipc" "call" "controlCenter" "toggle"; }
     Mod+D           { spawn "qs" "ipc" "call" "dashboard" "toggle"; }
     Mod+N           { spawn "qs" "ipc" "call" "notifCenter" "toggle"; }
-    Mod+C           { spawn "qs" "ipc" "call" "controlCenter" "toggle"; }
+    Mod+V           { spawn "qs" "ipc" "call" "clipboard" "toggle"; }
+    Mod+Shift+E     { spawn "qs" "ipc" "call" "emoji" "toggle"; }
+    Mod+Shift+W     { spawn "qs" "ipc" "call" "wallpaper" "toggle"; }
+    Mod+P           { spawn "qs" "ipc" "call" "powermenu" "toggle"; }
+    Mod+Alt+L       { spawn "qs" "ipc" "call" "lockscreen" "toggle"; }
+    Mod+Comma       { spawn "qs" "ipc" "call" "settings" "toggle"; }
+    Mod+M           { spawn "qs" "ipc" "call" "sysmon" "toggle"; }
     Mod+B           { spawn "qs" "ipc" "call" "battery" "toggle"; }
 }
 EOF
@@ -1093,7 +1099,7 @@ EOF
             fi
 
             if [ -f "$NIRI_CONF" ]; then
-                local backup_niri="${NIRI_CONF}.bak.$(date +%Y%m%d_%H%M%S)"
+                local backup_niri="${NIRI_CONF}.bak"
                 cp "$NIRI_CONF" "$backup_niri"
                 info "Created backup: $backup_niri"
                 sed -i '/quickshell\.kdl/d' "$NIRI_CONF"

@@ -218,6 +218,8 @@ def query_all():
             "activeDisplayName": "Hyprland",
             "configType": "lua" if is_lua_config() else "conf",
             "version": ver,
+            "animStyle": get_animation_style(),
+            "animStyles": get_animation_styles_list(),
             "monitorsCount": max(1, len(clean_monitors)),
             "monitors": clean_monitors,
             "workspacesCount": max(1, workspaces_count),
@@ -698,6 +700,241 @@ def save_general_options(changes):
                 return {"ok": False, "error": str(e)}
         return {"ok": True, "saved": False}
 
+ANIMATION_STYLES = [
+    {
+        "id": "fluid",
+        "name": "Fluid",
+        "desc": "Natural ease-out curves with smooth momentum",
+        "icon": "󰀉",
+        "lua_curves": [
+            ("fluid", "{ {0.16, 1}, {0.3, 1} }"),
+            ("winIn", "{ {0.1, 1.1}, {0.1, 1.05} }"),
+            ("winOut", "{ {0.3, -0.2}, {0, 1} }")
+        ],
+        "lua_anims": [
+            ("windows", 5.0, "winIn", "slide"),
+            ("workspaces", 4.5, "fluid", "slide"),
+            ("fade", 4.5, "fluid", "")
+        ],
+        "beziers": [
+            ("fluid", "0.16, 1, 0.3, 1"),
+            ("winIn", "0.1, 1.1, 0.1, 1.05"),
+            ("winOut", "0.3, -0.2, 0, 1")
+        ],
+        "animations": [
+            ("windows", "1, 5, winIn, slide"),
+            ("windowsIn", "1, 5, winIn, slide"),
+            ("windowsOut", "1, 4, winOut, slide"),
+            ("windowsMove", "1, 5, fluid, slide"),
+            ("workspaces", "1, 4.5, fluid, slide"),
+            ("fade", "1, 4.5, fluid"),
+            ("border", "1, 4, fluid")
+        ]
+    },
+    {
+        "id": "snappy",
+        "name": "Snappy",
+        "desc": "Fast pop-in transitions without delay",
+        "icon": "󰓅",
+        "lua_curves": [
+            ("snappy", "{ {0.05, 0.9}, {0.1, 1.0} }")
+        ],
+        "lua_anims": [
+            ("windows", 2.2, "snappy", "popin 80%"),
+            ("workspaces", 2.0, "snappy", "slide"),
+            ("fade", 2.0, "snappy", "")
+        ],
+        "beziers": [
+            ("snappy", "0.05, 0.9, 0.1, 1.0")
+        ],
+        "animations": [
+            ("windows", "1, 2.2, snappy, popin 80%"),
+            ("windowsIn", "1, 2.2, snappy, popin 80%"),
+            ("windowsOut", "1, 1.8, snappy, popin 80%"),
+            ("windowsMove", "1, 2.2, snappy, slide"),
+            ("workspaces", "1, 2.0, snappy, slide"),
+            ("fade", "1, 2.0, snappy"),
+            ("border", "1, 2, snappy")
+        ]
+    },
+    {
+        "id": "bouncy",
+        "name": "Bouncy",
+        "desc": "Elastic bounce with lively overshoot",
+        "icon": "󰁝",
+        "lua_curves": [
+            ("overshoot", "{ {0.05, 0.9}, {0.1, 1.3} }"),
+            ("bounceIn", "{ {0.1, 1.3}, {0.1, 1.15} }"),
+            ("bounceOut", "{ {0.3, -0.4}, {0, 1} }")
+        ],
+        "lua_anims": [
+            ("windows", 6.5, "bounceIn", "popin 65%"),
+            ("workspaces", 5.5, "overshoot", "slide"),
+            ("fade", 4.5, "overshoot", "")
+        ],
+        "beziers": [
+            ("overshoot", "0.05, 0.9, 0.1, 1.3"),
+            ("bounceIn", "0.1, 1.3, 0.1, 1.15"),
+            ("bounceOut", "0.3, -0.4, 0, 1")
+        ],
+        "animations": [
+            ("windows", "1, 6.5, bounceIn, popin 65%"),
+            ("windowsIn", "1, 6.5, bounceIn, popin 65%"),
+            ("windowsOut", "1, 5.0, bounceOut, popin 75%"),
+            ("windowsMove", "1, 5.5, overshoot, slide"),
+            ("workspaces", "1, 5.5, overshoot, slide"),
+            ("fade", "1, 4.5, default"),
+            ("border", "1, 5, overshoot")
+        ]
+    },
+    {
+        "id": "gentle",
+        "name": "Gentle",
+        "desc": "Slow and smooth easing transitions",
+        "icon": "󰾆",
+        "lua_curves": [
+            ("smooth", "{ {0.25, 1}, {0.5, 1} }")
+        ],
+        "lua_anims": [
+            ("windows", 8.5, "smooth", "slide"),
+            ("workspaces", 8.0, "smooth", "slide"),
+            ("fade", 8.0, "smooth", "")
+        ],
+        "beziers": [
+            ("smooth", "0.25, 1, 0.5, 1")
+        ],
+        "animations": [
+            ("windows", "1, 8.5, smooth, slide"),
+            ("windowsIn", "1, 8.5, smooth, slide"),
+            ("windowsOut", "1, 7.0, smooth, slide"),
+            ("windowsMove", "1, 8.0, smooth, slide"),
+            ("workspaces", "1, 8.0, smooth, slide"),
+            ("fade", "1, 8.0, smooth"),
+            ("border", "1, 6, smooth")
+        ]
+    },
+    {
+        "id": "linear",
+        "name": "Linear",
+        "desc": "Constant speed fade transitions",
+        "icon": "󰋙",
+        "lua_curves": [
+            ("linear", "{ {0, 0}, {1, 1} }")
+        ],
+        "lua_anims": [
+            ("windows", 3.0, "linear", "fade"),
+            ("workspaces", 3.0, "linear", "fade"),
+            ("fade", 3.0, "linear", "")
+        ],
+        "beziers": [
+            ("linear", "0, 0, 1, 1")
+        ],
+        "animations": [
+            ("windows", "1, 3, linear, fade"),
+            ("windowsIn", "1, 3, linear, fade"),
+            ("windowsOut", "1, 2.5, linear, fade"),
+            ("windowsMove", "1, 3, linear, fade"),
+            ("workspaces", "1, 3, linear, fade"),
+            ("fade", "1, 3, linear"),
+            ("border", "1, 2, linear")
+        ]
+    },
+    {
+        "id": "disabled",
+        "name": "Disabled",
+        "desc": "Instant zero-duration window switching",
+        "icon": "󰅖",
+        "lua_curves": [],
+        "lua_anims": [],
+        "beziers": [],
+        "animations": []
+    }
+]
+
+def get_animation_styles_list():
+    return [{"id": s["id"], "name": s["name"], "desc": s["desc"], "icon": s.get("icon", "")} for s in ANIMATION_STYLES]
+
+def get_animation_style():
+    anim_cache = os.path.join(HOME, ".cache/quickshell/hypr_anim_style.json")
+    if os.path.exists(anim_cache):
+        try:
+            with open(anim_cache, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                if "style" in data:
+                    return data["style"]
+        except Exception:
+            pass
+    return "fluid"
+
+def set_animation_style(style_id):
+    matched = None
+    for s in ANIMATION_STYLES:
+        if s["id"] == style_id:
+            matched = s
+            break
+    if not matched:
+        return {"ok": False, "error": f"Unknown animation style: {style_id}"}
+
+    anim_cache_dir = os.path.join(HOME, ".cache/quickshell")
+    os.makedirs(anim_cache_dir, exist_ok=True)
+    anim_cache = os.path.join(anim_cache_dir, "hypr_anim_style.json")
+    try:
+        with open(anim_cache, "w", encoding="utf-8") as f:
+            json.dump({"style": style_id}, f)
+    except Exception:
+        pass
+
+    if is_lua_config():
+        if style_id == "disabled":
+            subprocess.run(["hyprctl", "eval", 'hl.config({ animations = { enabled = false } })'], capture_output=True, text=True, timeout=1.5)
+            set_option("anim", False)
+            return {"ok": True, "style": style_id, "enabled": False}
+
+        lua_statements = [
+            'hl.config({ animations = { enabled = true } })'
+        ]
+        for bname, bpoints in matched.get("lua_curves", []):
+            lua_statements.append(f'hl.curve("{bname}", {{ type = "bezier", points = {bpoints} }})')
+        for aname, aspeed, acurve, astyle in matched.get("lua_anims", []):
+            style_str = f', style = "{astyle}"' if astyle else ''
+            lua_statements.append(f'hl.animation({{ leaf = "{aname}", enabled = true, speed = {aspeed}, bezier = "{acurve}"{style_str} }})')
+            if aname == "windows":
+                lua_statements.append(f'hl.animation({{ leaf = "windowsIn", enabled = true, speed = {aspeed}, bezier = "{acurve}"{style_str} }})')
+                lua_statements.append(f'hl.animation({{ leaf = "windowsOut", enabled = true, speed = max(1.5, {aspeed} - 0.8), bezier = "{acurve}"{style_str} }})')
+                lua_statements.append(f'hl.animation({{ leaf = "windowsMove", enabled = true, speed = {aspeed}, bezier = "{acurve}"{style_str} }})')
+            elif aname == "workspaces":
+                lua_statements.append(f'hl.animation({{ leaf = "workspacesIn", enabled = true, speed = {aspeed}, bezier = "{acurve}"{style_str} }})')
+                lua_statements.append(f'hl.animation({{ leaf = "workspacesOut", enabled = true, speed = {aspeed}, bezier = "{acurve}"{style_str} }})')
+            elif aname == "fade":
+                lua_statements.append(f'hl.animation({{ leaf = "fadeIn", enabled = true, speed = {aspeed}, bezier = "{acurve}" }})')
+                lua_statements.append(f'hl.animation({{ leaf = "fadeOut", enabled = true, speed = max(1.5, {aspeed} - 0.8), bezier = "{acurve}" }})')
+                lua_statements.append(f'hl.animation({{ leaf = "fadeLayersIn", enabled = true, speed = {aspeed}, bezier = "{acurve}" }})')
+                lua_statements.append(f'hl.animation({{ leaf = "fadeLayersOut", enabled = true, speed = max(1.5, {aspeed} - 0.8), bezier = "{acurve}" }})')
+
+        full_lua = " ; ".join(lua_statements)
+        subprocess.run(["hyprctl", "eval", full_lua], capture_output=True, text=True, timeout=1.5)
+        set_option("anim", True)
+        return {"ok": True, "style": style_id, "enabled": True}
+    else:
+        if style_id == "disabled":
+            run_proc(["hyprctl", "keyword", "animations:enabled", "0"], timeout=1.0)
+            set_option("anim", False)
+            return {"ok": True, "style": style_id, "enabled": False}
+
+        batch_cmds = ["keyword animations:enabled 1"]
+        for bname, bval in matched.get("beziers", []):
+            batch_cmds.append(f"keyword bezier {bname},{bval}")
+        for aname, aval in matched.get("animations", []):
+            batch_cmds.append(f"keyword animation {aname},{aval}")
+
+        try:
+            subprocess.run(["hyprctl", "--batch", " ; ".join(batch_cmds)], capture_output=True, text=True, timeout=1.5)
+        except Exception:
+            pass
+
+        set_option("anim", True)
+        return {"ok": True, "style": style_id, "enabled": True}
+
 def _write_and_validate(target_path, content):
     if not target_path:
         return {"ok": False, "error": "No target path provided"}
@@ -720,18 +957,12 @@ def _write_and_validate(target_path, content):
             pass
 
     try:
-        if os.path.exists(target_path):
-            backup_path = f"{target_path}.bak.{int(time.time())}"
-            shutil.copy2(target_path, backup_path)
-        else:
-            backup_path = None
-
         os.makedirs(os.path.dirname(target_path), exist_ok=True)
         tmp_target = f"{target_path}.tmp.{os.getpid()}"
         with open(tmp_target, "w", encoding="utf-8") as f:
             f.write(content)
         os.replace(tmp_target, target_path)
-        return {"ok": True, "backup": backup_path}
+        return {"ok": True}
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
@@ -1716,11 +1947,19 @@ hl.window_rule({
 """)
         return {"ok": True, "created_main": True, "conf_dir": conf_dir}
 
-    backup_path = f"{lua_path}.bak.{int(time.time())}"
-    shutil.copy2(lua_path, backup_path)
-
     with open(lua_path, "r", encoding="utf-8") as f:
-        lines = f.readlines()
+        full_content = f.read()
+
+    # Pre-clean any existing loader blocks, quickshell integrations, or dofile loaders
+    clean_content = re.sub(r'(?s)--\s*──+\s*Load Modular Configuration Files[\s\S]*', '', full_content)
+    clean_content = re.sub(r'(?s)local\s+function\s+load_conf\s*\([\s\S]*?load_conf\s*\(\s*["\']quickshell["\']\s*\)', '', clean_content)
+    clean_content = re.sub(r'(?s)local\s+home\s*=\s*os\.getenv\("HOME"\)[\s\S]*?load_conf\s*\(\s*["\']quickshell["\']\s*\)', '', clean_content)
+    clean_content = re.sub(r'(?m)^\s*if\s+f\s+then\s*$', '', clean_content)
+    clean_content = re.sub(r'(?m)^\s*f:close\(\)\s*$', '', clean_content)
+    clean_content = re.sub(r'(?m)^\s*dofile\(.*?\)\s*$', '', clean_content)
+    clean_content = re.sub(r'(?m)^\s*load_conf\(.*?\)\s*$', '', clean_content)
+
+    lines = clean_content.splitlines(keepends=True)
 
     autostart_lines = []
     keybind_lines = []
@@ -2003,8 +2242,8 @@ hl.window_rule({
 {rules_content}
 """)
 
-    # Clean up main hyprland.lua
-    while main_lines and (not main_lines[-1].strip() or main_lines[-1].strip() in ['end', 'end)', 'end);', 'end}']):
+    # Clean up main hyprland.lua trailing whitespace
+    while main_lines and not main_lines[-1].strip():
         main_lines.pop()
 
     cleaned_main = "".join(main_lines).strip()
@@ -2034,7 +2273,6 @@ load_conf("quickshell")
 
     return {
         "ok": True,
-        "backup": backup_path,
         "conf_dir": conf_dir,
         "extracted_autostart": len(autostart_lines),
         "extracted_keybinds": len(keybind_lines),
@@ -2262,9 +2500,6 @@ windowrulev2 = float, class:^(pavucontrol|nm-connection-editor|blueman-manager|s
 """)
         return {"ok": True, "created_main": True, "conf_dir": conf_dir}
 
-    backup_path = f"{conf_path}.bak.{int(time.time())}"
-    shutil.copy2(conf_path, backup_path)
-
     with open(conf_path, "r", encoding="utf-8") as f:
         lines = f.readlines()
 
@@ -2404,7 +2639,6 @@ source = ~/.config/hypr/conf/quickshell.conf
 
     return {
         "ok": True,
-        "backup": backup_path,
         "conf_dir": conf_dir,
         "extracted_autostart": len(autostart_lines),
         "extracted_keybinds": len(keybind_lines),
@@ -2563,9 +2797,6 @@ window-rule {
 """)
         return {"ok": True, "created_main": True, "conf_dir": conf_dir}
 
-    backup_path = f"{niri_path}.bak.{int(time.time())}"
-    shutil.copy2(niri_path, backup_path)
-
     with open(niri_path, "r", encoding="utf-8") as f:
         content = f.read()
 
@@ -2703,7 +2934,6 @@ include "conf/quickshell.kdl"
 
     return {
         "ok": True,
-        "backup": backup_path,
         "conf_dir": conf_dir
     }
 
@@ -2761,9 +2991,6 @@ def save_monitors_to_file(monitors_data, is_lua=True):
         lua_path = os.path.join(hypr_dir, "hyprland.lua")
         if not os.path.exists(lua_path):
             return {"ok": False, "error": "hyprland.lua does not exist"}
-
-        backup_path = f"{lua_path}.bak.{int(time.time())}"
-        shutil.copy2(lua_path, backup_path)
 
         with open(lua_path, "r", encoding="utf-8") as f:
             content = f.read()
@@ -2826,15 +3053,12 @@ def save_monitors_to_file(monitors_data, is_lua=True):
         with open(lua_path, "w", encoding="utf-8") as f:
             f.write(new_content)
 
-        return {"ok": True, "file": lua_path, "backup": backup_path}
+        return {"ok": True, "file": lua_path}
 
     else:
         conf_path = os.path.join(hypr_dir, "hyprland.conf")
         if not os.path.exists(conf_path):
             return {"ok": False, "error": "hyprland.conf does not exist"}
-
-        backup_path = f"{conf_path}.bak.{int(time.time())}"
-        shutil.copy2(conf_path, backup_path)
 
         with open(conf_path, "r", encoding="utf-8") as f:
             content = f.read()
@@ -2867,16 +3091,13 @@ def save_monitors_to_file(monitors_data, is_lua=True):
         with open(conf_path, "w", encoding="utf-8") as f:
             f.write(new_content)
 
-        return {"ok": True, "file": conf_path, "backup": backup_path}
+        return {"ok": True, "file": conf_path}
 
 def save_niri_monitors(monitors_data):
     niri_dir = os.path.join(HOME, ".config/niri")
     kdl_path = os.path.join(niri_dir, "config.kdl")
     if not os.path.exists(kdl_path):
         return {"ok": False, "error": "config.kdl does not exist"}
-
-    backup_path = f"{kdl_path}.bak.{int(time.time())}"
-    shutil.copy2(kdl_path, backup_path)
 
     with open(kdl_path, "r", encoding="utf-8") as f:
         content = f.read()
@@ -2906,7 +3127,7 @@ def save_niri_monitors(monitors_data):
     with open(kdl_path, "w", encoding="utf-8") as f:
         f.write(new_content)
 
-    return {"ok": True, "file": kdl_path, "backup": backup_path}
+    return {"ok": True, "file": kdl_path}
 
 def apply_monitors_layout(monitors_data, save_config=True):
     if not isinstance(monitors_data, list):
@@ -3084,6 +3305,17 @@ def main():
         b64_str = sys.argv[3]
         res = save_config_b64(target, b64_str)
         print(json.dumps(res))
+    elif cmd == "anim-style-set":
+        if len(sys.argv) < 3:
+            print(json.dumps({"ok": False, "error": "Usage: anim-style-set <style_id>"}))
+            sys.exit(1)
+        style_id = sys.argv[2]
+        res = set_animation_style(style_id)
+        print(json.dumps(res))
+    elif cmd == "anim-style-get":
+        print(json.dumps({"ok": True, "style": get_animation_style()}))
+    elif cmd == "anim-styles-list":
+        print(json.dumps({"ok": True, "styles": get_animation_styles_list(), "current": get_animation_style()}))
     elif cmd == "reload":
         res = reload_compositor()
         print(json.dumps(res))

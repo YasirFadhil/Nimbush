@@ -92,6 +92,7 @@ def set_gsettings(schema, key, val):
 def is_nix_store_managed(path):
     """
     Checks if a file or directory is managed directly by Home Manager / NixOS read-only store.
+    Follows deep symlink chains to detect indirect Home Manager links.
     Guarantees that nix store files, profiles, and home-manager-files links are never modified.
     """
     try:
@@ -101,14 +102,21 @@ def is_nix_store_managed(path):
         parent_real = os.path.realpath(os.path.dirname(path))
         if parent_real.startswith("/nix/store") or parent_real.startswith("/run/current-system") or parent_real.startswith("/etc/profiles"):
             return True
-        if os.path.islink(path):
-            target = os.readlink(path)
-            if "home-manager-files" in target or (target.startswith("/nix/store") and "home-manager" in target):
+        # Follow symlink chains (up to 8 levels) to detect indirect Home Manager links
+        current = path
+        for _ in range(8):
+            if not os.path.islink(current):
+                break
+            target = os.readlink(current)
+            if not os.path.isabs(target):
+                target = os.path.join(os.path.dirname(current), target)
+            if "home-manager-files" in target or "/nix/store" in target:
                 return True
-        elif os.path.exists(path):
-            real = os.path.realpath(path)
-            if "home-manager-files" in real:
-                return True
+            current = target
+        # Check resolved real path
+        real = os.path.realpath(path)
+        if "home-manager-files" in real or real.startswith("/nix/store"):
+            return True
     except Exception:
         pass
     return False
@@ -266,6 +274,11 @@ def update_default_icon_theme(icon_theme, cursor_theme=None):
         pass
 
 def apply_icon_theme_links(icon_theme_name=None):
+    """
+    Creates symlinks for icon themes in ~/.icons and ~/.local/share/icons.
+    SAFE: only creates missing/broken symlinks. Never unlinks existing valid symlinks.
+    This protects NixOS/Home-Manager-managed symlinks from being disrupted.
+    """
     search_bases = get_data_dirs("icons")
     themes_found = set()
     for base in search_bases:
@@ -317,12 +330,26 @@ def apply_icon_theme_links(icon_theme_name=None):
         for dest_base in [os.path.join(HOME, ".icons"), os.path.join(HOME, ".local/share/icons")]:
             os.makedirs(dest_base, exist_ok=True)
             dest_link = os.path.join(dest_base, tname)
-            
+
             # NEVER modify or delete files/symlinks managed by Nix store / Home Manager
             if is_nix_store_managed(dest_link):
                 continue
-                
-            if os.path.isdir(dest_link) and not os.path.islink(dest_link):
+
+            # If dest already exists and is valid (not broken), leave it alone.
+            # This is the key safety rule: we never unlink an existing valid symlink
+            # because it may be managed by NixOS or another tool.
+            if os.path.exists(dest_link):
+                continue
+
+            # Only act on broken symlinks (dangling) or truly absent paths
+            if os.path.islink(dest_link):
+                # Symlink exists but is broken — safe to replace
+                try:
+                    os.unlink(dest_link)
+                except Exception:
+                    pass
+            elif os.path.isdir(dest_link) and not os.path.islink(dest_link):
+                # Real directory — only remove if empty
                 try:
                     is_empty = True
                     for root_d, d_list, f_list in os.walk(dest_link):
@@ -334,13 +361,6 @@ def apply_icon_theme_links(icon_theme_name=None):
                 except Exception:
                     pass
 
-            if os.path.islink(dest_link):
-                try:
-                    if not os.path.exists(dest_link) or os.path.realpath(dest_link) != os.path.realpath(src_dir):
-                        os.unlink(dest_link)
-                except Exception:
-                    pass
-                    
             if not os.path.exists(dest_link) and not os.path.islink(dest_link):
                 try:
                     os.symlink(src_dir, dest_link)
@@ -375,23 +395,36 @@ def get_icon_and_cursor_themes():
         try:
             for d in os.listdir(p):
                 full = os.path.join(p, d)
-                if os.path.isdir(full):
-                    if os.path.exists(os.path.join(full, "cursors")):
-                        cursors.add(d)
-                    if os.path.exists(os.path.join(full, "index.theme")):
-                        sub = os.listdir(full)
-                        has_real_icons = any(f in sub for f in [
-                            "apps", "apps@2x", "places", "places@2x", "mimes", "mimes@2x",
-                            "actions", "actions@2x", "categories", "categories@2x", "scalable"
-                        ])
-                        if has_real_icons:
-                            icons.add(d)
+                if not os.path.isdir(full):
+                    continue
+                if os.path.isdir(os.path.join(full, "cursors")):
+                    cursors.add(d)
+                idx = os.path.join(full, "index.theme")
+                if os.path.exists(idx):
+                    # Check if it has icon directories definition or actual icon subfolders
+                    has_dirs = False
+                    try:
+                        with open(idx, "r", encoding="utf-8", errors="ignore") as f:
+                            for line in f:
+                                if line.strip().startswith("Directories="):
+                                    has_dirs = True
+                                    break
+                    except Exception:
+                        pass
+                    sub = os.listdir(full)
+                    has_real_icons = has_dirs or any(f in sub for f in [
+                        "apps", "apps@2x", "places", "places@2x", "mimes", "mimes@2x",
+                        "actions", "actions@2x", "categories", "categories@2x", "scalable",
+                        "48x48", "64x64", "128x128", "256x256", "16x16", "22x22", "24x24", "32x32"
+                    ])
+                    if has_real_icons:
+                        icons.add(d)
         except Exception:
             pass
     icon_list = sorted(list(icons))
     cursor_list = sorted(list(cursors))
     if not icon_list:
-        icon_list = ["MacTahoe", "WhiteSur", "breeze", "hicolor"]
+        icon_list = ["WhiteSur-dark", "WhiteSur", "MacTahoe", "breeze", "hicolor"]
     if not cursor_list:
         cursor_list = ["MacTahoe-dark", "MacTahoe-light", "Bibata-Modern-Classic", "Adwaita"]
     return icon_list, cursor_list
@@ -459,85 +492,61 @@ def parse_font_spec(font_str, default_family="Liga SFMonoNerdFont", default_size
     return font_str, default_size
 
 def get_theme_dirs_with_inheritance(theme_name):
-    dirs = []
-    seen = set()
+    ordered_themes = []
+    seen_themes = set()
     search_bases = get_data_dirs("icons")
-    
-    def add_theme(tname):
-        if not tname or tname in seen:
-            return
-        seen.add(tname)
-        for base in search_bases:
-            tdir = os.path.join(base, tname)
-            if os.path.isdir(tdir):
-                dirs.append(tdir)
-                idx = os.path.join(tdir, "index.theme")
-                if os.path.exists(idx):
-                    try:
-                        with open(idx, "r", encoding="utf-8", errors="ignore") as f:
-                            for line in f:
-                                if line.strip().startswith("Inherits="):
-                                    for inh in line.strip()[9:].split(","):
-                                        inh_clean = inh.strip()
-                                        if inh_clean:
-                                            add_theme(inh_clean)
-                    except Exception:
-                        pass
-    add_theme(theme_name)
-    if "MacTahoe" in theme_name:
-        add_theme("MacTahoe")
-    if "WhiteSur" in theme_name:
-        add_theme("WhiteSur")
-    if "breeze" in theme_name.lower():
-        add_theme("breeze")
-    add_theme("hicolor")
-    # Standard desktop theme fallbacks to ensure full icon coverage on NixOS
-    for fallback in ["Adwaita", "breeze", "breeze-dark", "gnome", "Pop", "WhiteSur", "WhiteSur-dark", "Cosmic", "locolor", "ubuntu-mono-dark"]:
-        add_theme(fallback)
-    for pix in get_data_dirs("pixmaps"):
-        if os.path.isdir(pix) and pix not in dirs:
-            dirs.append(pix)
-    # Loose icons directories
-    for base in search_bases:
-        if os.path.isdir(base) and base not in dirs:
-            dirs.append(base)
-    return dirs
 
-def get_icon_category_score(path):
-    p = path.lower()
-    score = 0
-    if "/apps/" in p or "/apps@2x/" in p or "/apps@3x/" in p or "/applications/" in p:
-        score += 1000
-    elif "/categories/" in p or "/categories@2x/" in p:
-        score += 800
-    elif "/devices/" in p or "/devices@2x/" in p:
-        score += 600
-    elif "/places/" in p:
-        score += 500
-    elif "/preferences/" in p:
-        score += 400
-    elif "/actions/" in p:
-        score += 200
-    elif "/status/" in p:
-        score += 100
-        
-    if "scalable" in p:
-        score += 50
-    elif "256" in p or "128" in p:
-        score += 45
-    elif "64" in p or "48" in p:
-        score += 40
-    elif "32" in p:
-        score += 30
-    elif "24" in p or "22" in p:
-        score += 20
-    elif "16" in p:
-        score += 10
-        
-    if "symbolic" in p:
-        score -= 150
-        
-    return score
+    def push_theme(tname):
+        if not tname or tname in seen_themes:
+            return
+        seen_themes.add(tname)
+        ordered_themes.append(tname)
+
+    push_theme(theme_name)
+    # If dark or light variant, push base theme immediately after
+    for suffix in ["-dark", "-light", "_dark", "_light", "-Dark", "-Light"]:
+        if theme_name.endswith(suffix):
+            push_theme(theme_name[:-len(suffix)])
+            break
+
+    # Read Inherits from index.theme of theme and base
+    for t in list(ordered_themes):
+        for base in search_bases:
+            idx = os.path.join(base, t, "index.theme")
+            if os.path.isfile(idx):
+                try:
+                    with open(idx, "r", encoding="utf-8", errors="ignore") as f:
+                        for line in f:
+                            if line.strip().startswith("Inherits="):
+                                for inh in line.strip()[9:].split(","):
+                                    inh_clean = inh.strip()
+                                    if inh_clean and inh_clean.lower() != "hicolor":
+                                        push_theme(inh_clean)
+                except Exception:
+                    pass
+
+    # Common desktop fallbacks
+    for fb in ["Adwaita", "breeze", "breeze-dark", "gnome", "Pop", "WhiteSur", "MacTahoe", "Cosmic"]:
+        push_theme(fb)
+    # Hicolor universal fallback
+    push_theme("hicolor")
+
+    # Convert theme names to directory paths
+    dirs = []
+    seen_dirs = set()
+    for t in ordered_themes:
+        for base in search_bases:
+            tdir = os.path.join(base, t)
+            if os.path.isdir(tdir) and tdir not in seen_dirs:
+                seen_dirs.add(tdir)
+                dirs.append((t, tdir))
+
+    for pix in get_data_dirs("pixmaps"):
+        if os.path.isdir(pix) and pix not in seen_dirs:
+            seen_dirs.add(pix)
+            dirs.append(("pixmaps", pix))
+
+    return dirs
 
 def build_and_save_icon_cache(theme_name, force_rebuild=False):
     cache_dir = os.path.join(HOME, ".cache/quickshell")
@@ -556,59 +565,106 @@ def build_and_save_icon_cache(theme_name, force_rebuild=False):
         except Exception:
             pass
 
+    theme_dirs = get_theme_dirs_with_inheritance(theme_name)
     cache = {}
     scores = {}
-    search_dirs = get_theme_dirs_with_inheritance(theme_name)
-    search_bases = set(get_data_dirs("icons"))
+
+    total_themes = len(set(t for t, _ in theme_dirs))
+    theme_order_map = {}
+    idx = 0
+    for t, _ in theme_dirs:
+        if t not in theme_order_map:
+            theme_order_map[t] = idx
+            idx += 1
+
     ext_order = [".svg", ".png", ".xpm"]
     scanned_real_paths = set()
-    
-    for dir_idx, p in enumerate(search_dirs):
+
+    for theme_tag, p in theme_dirs:
         real_p = os.path.realpath(p)
         if real_p in scanned_real_paths:
             continue
         scanned_real_paths.add(real_p)
 
-        dir_weight = max(0, (len(search_dirs) - dir_idx) * 2000)
-        # If p is a top-level icons search base, only inspect loose files in top level
-        walk_iter = [(p, [], [f for f in os.listdir(p) if os.path.isfile(os.path.join(p, f))])] if p in search_bases else os.walk(p)
-        for root, dirs, files in walk_iter:
+        t_idx = theme_order_map.get(theme_tag, 99)
+        dir_weight = max(1000, (total_themes - t_idx) * 10000)
+
+        for root, dirs, files in os.walk(p):
             for f in files:
                 name, ext = os.path.splitext(f)
                 ext = ext.lower()
-                if ext in ext_order:
-                    full_path = os.path.join(root, f)
-                    sc = dir_weight + get_icon_category_score(full_path)
-                    name_lower = name.lower()
-                    
-                    keys_to_set = [name_lower]
-                    if "." in name_lower:
-                        parts = name_lower.split(".")
-                        keys_to_set.append(parts[-1])
-                        keys_to_set.append(name_lower.replace(".", "-"))
-                        if name_lower.startswith("org.gnome."):
-                            keys_to_set.append("gnome-" + name_lower[10:])
-                        if name_lower.startswith("org.kde."):
-                            keys_to_set.append(name_lower[8:])
-                        if name_lower.startswith("com.system76."):
-                            keys_to_set.append(name_lower[13:])
-                    if "-" in name_lower:
-                        parts_dash = name_lower.split("-")
-                        keys_to_set.append(parts_dash[0])
-                        keys_to_set.append(parts_dash[-1])
-                        if "-symbolic" in name_lower:
-                            keys_to_set.append(name_lower.replace("-symbolic", ""))
-                    if "_symbolic" in name_lower:
-                        keys_to_set.append(name_lower.replace("_symbolic", ""))
-                        
-                    for k in keys_to_set:
-                        if k and (k not in cache or sc > scores.get(k, 0)):
-                            cache[k] = full_path
-                            scores[k] = sc
+                if ext not in ext_order:
+                    continue
+
+                full_path = os.path.join(root, f)
+                p_low = full_path.lower()
+                is_file_symbolic = "symbolic" in p_low or name.lower().endswith("-symbolic") or name.lower().endswith("_symbolic")
+
+                cat_score = 0
+                if "/apps/" in p_low or "/apps@2x/" in p_low or "/applications/" in p_low:
+                    cat_score += 15000
+                elif "/categories/" in p_low or "/categories@2x/" in p_low:
+                    cat_score += 10000
+                elif "/devices/" in p_low or "/places/" in p_low:
+                    cat_score += 8000
+                elif "/preferences/" in p_low:
+                    cat_score += 6000
+                elif "/actions/" in p_low:
+                    cat_score += 4000
+                elif "/status/" in p_low:
+                    cat_score += 2000
+
+                size_score = 0
+                if "scalable" in p_low or ext == ".svg":
+                    size_score += 4000
+                elif any(s in p_low for s in ["512", "256", "128", "96", "64", "48"]):
+                    size_score += 3000
+                elif any(s in p_low for s in ["32", "24", "22"]):
+                    size_score += 1500
+                elif "16" in p_low:
+                    size_score += 500
+
+                base_score = dir_weight + cat_score + size_score
+                name_low = name.lower()
+
+                # List of (key, score)
+                entries = []
+                # 1. Exact name
+                exact_score = base_score if (not is_file_symbolic or "symbolic" in name_low) else (base_score - 80000)
+                entries.append((name_low, exact_score))
+
+                # 2. If symbolic, also provide stripped fallback with severe penalty
+                if is_file_symbolic:
+                    clean_sym = name_low.replace("-symbolic", "").replace("_symbolic", "")
+                    if clean_sym != name_low:
+                        entries.append((clean_sym, base_score - 80000))
+
+                # 3. Dotted / Reverse-DNS aliases
+                if "." in name_low:
+                    parts = name_low.split(".")
+                    last_part = parts[-1]
+                    clean_last = last_part.replace("-symbolic", "").replace("_symbolic", "")
+                    alias_pen = 80000 if is_file_symbolic else 0
+                    entries.append((clean_last, base_score - 500 - alias_pen))
+                    entries.append((name_low.replace(".", "-"), base_score - 200 - alias_pen))
+                    if name_low.startswith("org.gnome."):
+                        entries.append(("gnome-" + name_low[10:].replace("-symbolic", ""), base_score - 300 - alias_pen))
+                    if name_low.startswith("org.kde."):
+                        entries.append((name_low[8:].replace("-symbolic", ""), base_score - 300 - alias_pen))
+                    if name_low.startswith("com.system76."):
+                        sys76 = name_low[13:].replace("-symbolic", "")
+                        entries.append((sys76, base_score - 300 - alias_pen))
+                        if sys76.startswith("cosmic") and len(sys76) > 6:
+                            entries.append(("cosmic-" + sys76[6:], base_score - 300 - alias_pen))
+                    if len(parts) >= 2:
+                        entries.append((parts[-2], base_score - 800 - alias_pen))
+
+                for k, sc in entries:
+                    if k and (k not in cache or sc > scores.get(k, -999999)):
+                        cache[k] = full_path
+                        scores[k] = sc
                             
-    # Common desktop app aliases for specialized entries
-    aliases = {
-        "preferences-system": "preferences-desktop",
+    priority_aliases = {
         "preferences-desktop": "preferences-system",
         "system-settings": "preferences-system",
         "settings": "preferences-system",
@@ -654,15 +710,17 @@ def build_and_save_icon_cache(theme_name, force_rebuild=False):
         "helium": "web-browser",
         "winbox": "/etc/profiles/per-user/" + (os.environ.get("USER") or "user") + "/share/icons/winbox.png"
     }
-    for alias_k, target_k in aliases.items():
-        if alias_k not in cache:
-            if target_k.startswith("/"):
-                if os.path.exists(target_k):
-                    cache[alias_k] = target_k
-            elif target_k in cache:
+    for alias_k, target_k in priority_aliases.items():
+        if target_k.startswith("/"):
+            if os.path.exists(target_k):
+                cache[alias_k] = target_k
+        elif target_k in cache:
+            # If target exists, overwrite or fill alias
+            if alias_k not in cache or alias_k in ["settings", "quickshell-settings", "system-settings", "helium", "antigravity-ide"]:
                 cache[alias_k] = cache[target_k]
-        if not target_k.startswith("/") and target_k not in cache and alias_k in cache:
-            cache[target_k] = cache[alias_k]
+        elif alias_k in cache and not target_k.startswith("/"):
+            if target_k not in cache:
+                cache[target_k] = cache[alias_k]
             
     cache_dir = os.path.join(HOME, ".cache/quickshell")
     themes_dir = os.path.join(cache_dir, "themes")
@@ -680,6 +738,7 @@ def build_and_save_icon_cache(theme_name, force_rebuild=False):
     return cache
 
 def query_all():
+    ensure_session_portal_ready()
     gtk_themes = get_gtk_themes()
     icon_themes, cursor_themes = get_icon_and_cursor_themes()
     system_fonts, mono_fonts = get_fonts()
@@ -760,10 +819,13 @@ def apply_gtk_theme_links(theme_name):
     gtk4_theme_dir = os.path.join(theme_path, "gtk-4.0") if theme_path else ""
     gtk3_theme_dir = os.path.join(theme_path, "gtk-3.0") if theme_path else ""
 
-    # 1. Update GTK4 links
+    # 1. Update GTK4 links — skip entirely if gtk4_dir itself is nix-managed
     for f in ["gtk.css", "gtk-dark.css"]:
         target_link = os.path.join(gtk4_dir, f)
         if is_nix_store_managed(target_link):
+            continue
+        # Also skip if the parent settings.ini is nix-managed (whole dir is controlled)
+        if is_nix_store_managed(os.path.join(gtk4_dir, "settings.ini")):
             continue
         src_file = ""
         if gtk4_theme_dir and os.path.exists(os.path.join(gtk4_theme_dir, f)):
@@ -784,10 +846,13 @@ def apply_gtk_theme_links(theme_name):
             except Exception:
                 pass
 
-    # 2. Update GTK3 links
+    # 2. Update GTK3 links — protect any file already managed by NixOS
     for f in ["assets", "libadwaita.css", "libadwaita-tweaks.css"]:
         target_link = os.path.join(gtk3_dir, f)
         if is_nix_store_managed(target_link):
+            continue
+        # Also skip if gtk-3.0/settings.ini is nix-managed (whole dir is controlled)
+        if is_nix_store_managed(os.path.join(gtk3_dir, "settings.ini")):
             continue
         src_file = os.path.join(gtk3_theme_dir, f) if (gtk3_theme_dir and os.path.exists(os.path.join(gtk3_theme_dir, f))) else ""
         if os.path.islink(target_link) or os.path.exists(target_link):
@@ -821,9 +886,12 @@ def set_icon_theme(name):
         update_gtk_ini(p, {"gtk-icon-theme-name": name})
     update_gtk2({"gtk-icon-theme-name": name})
     update_xsettingsd({"Net/IconThemeName": name})
-    apply_icon_theme_links(name)
+    # NOTE: apply_icon_theme_links is intentionally NOT called here.
+    # It is only called during initial setup or explicit link repair,
+    # to avoid disrupting NixOS/Home-Manager-managed symlinks in
+    # ~/.icons and ~/.local/share/icons on every icon theme switch.
     update_default_icon_theme(name)
-    build_and_save_icon_cache(name)
+    build_and_save_icon_cache(name, force_rebuild=True)
     return {"status": "ok", "icon_theme": name}
 
 def set_cursor(name, size):
@@ -851,18 +919,103 @@ def set_cursor(name, size):
     update_default_icon_theme("", name)
     return {"status": "ok", "cursor_theme": name, "cursor_size": sz}
 
+def ensure_session_portal_ready():
+    """
+    Ensures that on NixOS/Hyprland, the session targets and environment
+    are exported to systemd/dbus so xdg-desktop-portal services operate properly.
+    """
+    try:
+        run_proc(["systemctl", "--user", "start", "nixos-fake-graphical-session.target"], timeout=1.0)
+        run_proc([
+            "dbus-update-activation-environment", "--systemd",
+            "WAYLAND_DISPLAY", "XDG_CURRENT_DESKTOP", "DISPLAY", "QT_QPA_PLATFORM", "XDG_SESSION_TYPE"
+        ], timeout=1.0)
+    except Exception:
+        pass
+
+def notify_gtk_color_scheme(scheme):
+    """
+    Broadcasts the color scheme change to all running GTK/libadwaita/Chromium/Electron applications
+    via multiple mechanisms for maximum compatibility, especially on NixOS.
+    """
+    is_dark = scheme == "prefer-dark"
+
+    # 0. Ensure systemd graphical session target & environment are active for XDG portal on NixOS
+    ensure_session_portal_ready()
+
+    # 1. gsettings + dconf (most reliable for GNOME/GTK/portal-based apps)
+    set_gsettings("org.gnome.desktop.interface", "color-scheme", scheme)
+
+    # 2. XDG Desktop Portal - org.freedesktop.portal.Settings
+    # This is the standard Wayland/portal mechanism that Chromium/Helium/Firefox/GTK4/libadwaita apps listen to
+    portal_val = "1" if is_dark else "2"  # 1=dark, 2=light (XDG portal spec)
+    run_proc([
+        "gdbus", "call", "--session",
+        "--dest", "org.freedesktop.portal.Desktop",
+        "--object-path", "/org/freedesktop/portal/desktop",
+        "--method", "org.freedesktop.portal.Settings.ReadOne",
+        "org.freedesktop.appearance", "color-scheme"
+    ], timeout=1.0)  # activates portal if dormant
+
+    # Emit the change signal via gdbus and dbus-send for portals that listen
+    run_proc([
+        "gdbus", "emit", "--session",
+        "--path", "/org/freedesktop/portal/desktop",
+        "--interface", "org.freedesktop.portal.Settings",
+        "--signal", "SettingChanged",
+        "org.freedesktop.appearance", "color-scheme", f"<uint32 {portal_val}>"
+    ], timeout=1.0)
+
+    run_proc([
+        "dbus-send", "--session", "--type=signal",
+        "/org/freedesktop/portal/desktop",
+        "org.freedesktop.portal.Settings.SettingChanged",
+        "string:org.freedesktop.appearance",
+        "string:color-scheme",
+        f"variant:uint32:{portal_val}"
+    ], timeout=1.0)
+
+    # 3. Notify via GNOME Shell D-Bus if available (for running shell extensions)
+    run_proc([
+        "gdbus", "call", "--session",
+        "--dest", "org.gnome.Shell",
+        "--object-path", "/org/gnome/Shell",
+        "--method", "org.gnome.Shell.Eval",
+        "global.reloadTheme ? global.reloadTheme() : null"
+    ], timeout=0.5)
+
+    # 4. Notify xsettingsd if present (forces X11 / GTK2/3 clients to update)
+    run_proc(["pkill", "-HUP", "xsettingsd"], timeout=0.5)
+
+
 def set_color_scheme(scheme):
     if scheme in ["true", "True", True]:
         scheme = "prefer-dark"
     elif scheme in ["false", "False", False]:
         scheme = "prefer-light"
-        
+
     is_dark = "1" if scheme == "prefer-dark" else "0"
-    set_gsettings("org.gnome.desktop.interface", "color-scheme", scheme)
-    
-    for p in [os.path.join(HOME, ".config/gtk-3.0/settings.ini"), os.path.join(HOME, ".config/gtk-4.0/settings.ini")]:
-        update_gtk_ini(p, {"gtk-application-prefer-dark-theme": is_dark})
-        
+
+    # Apply to GTK ini files - for NixOS, write to override dirs if primary is managed
+    for gtk_ver in ["gtk-3.0", "gtk-4.0"]:
+        primary_path = os.path.join(HOME, f".config/{gtk_ver}/settings.ini")
+        if is_nix_store_managed(primary_path):
+            # On NixOS, write a separate override config that GTK picks up
+            # GTK looks for settings in multiple locations; write to per-user override
+            override_dir = os.path.join(HOME, f".config/{gtk_ver}")
+            os.makedirs(override_dir, exist_ok=True)
+            override_path = os.path.join(override_dir, "qs-theme-override.ini")
+            try:
+                with open(override_path, "w", encoding="utf-8") as f:
+                    f.write(f"[Settings]\ngtk-application-prefer-dark-theme={is_dark}\n")
+            except Exception:
+                pass
+        else:
+            update_gtk_ini(primary_path, {"gtk-application-prefer-dark-theme": is_dark})
+
+    # Broadcast change to all running apps
+    notify_gtk_color_scheme(scheme)
+
     return {"status": "ok", "color_scheme": scheme}
 
 def set_font(kind, font_spec):

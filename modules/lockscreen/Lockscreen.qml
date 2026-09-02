@@ -752,7 +752,7 @@ Scope {
                                 styleColor: Services.Theme.overlayDim
                             }
 
-                            // Style 1: Hero Clock (Single horizontal huge display - macOS Sonoma Style)
+                            // Style 1: Hero Clock (Single horizontal huge display)
                             Text {
                                 visible: topClockColumn.clockStyle === "hero"
                                 Layout.alignment: Qt.AlignHCenter
@@ -1080,7 +1080,7 @@ Scope {
                             }
                         }
 
-                        // ── 2. Bottom macOS-Style Profile Picture & Password Input System ───────
+                        // ── 2. Bottom Profile Picture & Password Input System ────────────────────────
                         Item {
                             id: centerAuthCard
                             anchors.horizontalCenter: parent.horizontalCenter
@@ -1423,7 +1423,7 @@ Scope {
                                 styleColor: Services.Theme.overlayDim
                             }
 
-                            // ── 5. macOS-Style Idle Prompt (Fixed at Y: 160 - Fades smoothly without shifting layout) ──
+                            // ── 5. Idle Prompt (Fixed at Y: 160 - Fades smoothly without shifting layout) ──
                             Item {
                                 id: authPrompt
                                 visible: opacity > 0.01

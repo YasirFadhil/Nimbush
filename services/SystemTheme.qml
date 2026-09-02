@@ -154,16 +154,10 @@ Singleton {
     property int iconThemeRev: 0
 
     function reloadIconCache() {
-        if (iconCacheFileView) {
-            iconCacheFileView.reload()
-            try {
-                var raw = iconCacheFileView.text()
-                if (raw && raw.trim().startsWith("{")) {
-                    root.iconCacheMap = JSON.parse(raw.trim())
-                    root.iconThemeRev++
-                }
-            } catch (e) {}
-        }
+        // Kick off the async cat process to reload the cache from disk.
+        // We do NOT try to read iconCacheFileView.text() synchronously here
+        // because FileView.reload() is async — the text would be stale.
+        // The loadCacheProc onExited handler is the reliable update path.
         loadCacheProc.running = false
         loadCacheProc.rawOutput = ""
         loadCacheProc.running = true
@@ -205,15 +199,21 @@ Singleton {
         if (clean.endsWith(".svg") || clean.endsWith(".png") || clean.endsWith(".xpm")) {
             clean = clean.substring(0, clean.lastIndexOf("."))
         }
+
+        // Helper: validate a cached path is accessible
+        function validCachePath(p) {
+            // Accept all paths from cache — let QML Image verify existence
+            return p && p.length > 0
+        }
         
-        if (iconCacheMap && iconCacheMap[clean]) {
+        if (iconCacheMap && iconCacheMap[clean] && validCachePath(iconCacheMap[clean])) {
             return "file://" + iconCacheMap[clean]
         }
 
         // Try stripping -symbolic or _symbolic
         if (clean.indexOf("-symbolic") !== -1 || clean.indexOf("_symbolic") !== -1) {
             var nonSym = clean.replace("-symbolic", "").replace("_symbolic", "")
-            if (iconCacheMap && iconCacheMap[nonSym]) {
+            if (iconCacheMap && iconCacheMap[nonSym] && validCachePath(iconCacheMap[nonSym])) {
                 return "file://" + iconCacheMap[nonSym]
             }
         }
@@ -222,40 +222,67 @@ Singleton {
         if (clean.indexOf(".") !== -1) {
             var parts = clean.split(".")
             var lastPart = parts[parts.length - 1]
-            if (iconCacheMap && iconCacheMap[lastPart]) {
+            if (iconCacheMap && iconCacheMap[lastPart] && validCachePath(iconCacheMap[lastPart])) {
                 return "file://" + iconCacheMap[lastPart]
             }
             var dashed = clean.replace(/\./g, "-")
-            if (iconCacheMap && iconCacheMap[dashed]) {
+            if (iconCacheMap && iconCacheMap[dashed] && validCachePath(iconCacheMap[dashed])) {
                 return "file://" + iconCacheMap[dashed]
+            }
+            // Try second-to-last part (e.g. com.mitchellh.ghostty -> ghostty)
+            if (parts.length >= 2) {
+                var secondLast = parts[parts.length - 2]
+                if (iconCacheMap && iconCacheMap[secondLast] && validCachePath(iconCacheMap[secondLast])) {
+                    return "file://" + iconCacheMap[secondLast]
+                }
             }
         }
 
         // Try reverse-DNS stripped prefixes (e.g. org.gnome.tweaks -> gnome-tweaks)
         if (clean.indexOf("org.gnome.") === 0) {
             var gn = "gnome-" + clean.substring(10)
-            if (iconCacheMap && iconCacheMap[gn]) return "file://" + iconCacheMap[gn]
+            if (iconCacheMap && iconCacheMap[gn] && validCachePath(iconCacheMap[gn])) return "file://" + iconCacheMap[gn]
+            // also try just the last part
+            var gnLast = clean.split(".").pop()
+            if (iconCacheMap && iconCacheMap[gnLast] && validCachePath(iconCacheMap[gnLast])) return "file://" + iconCacheMap[gnLast]
         }
         if (clean.indexOf("org.kde.") === 0) {
             var kde = clean.substring(8)
-            if (iconCacheMap && iconCacheMap[kde]) return "file://" + iconCacheMap[kde]
+            if (iconCacheMap && iconCacheMap[kde] && validCachePath(iconCacheMap[kde])) return "file://" + iconCacheMap[kde]
         }
         if (clean.indexOf("com.system76.") === 0) {
             var sys76 = clean.substring(13)
-            if (iconCacheMap && iconCacheMap[sys76]) return "file://" + iconCacheMap[sys76]
+            if (iconCacheMap && iconCacheMap[sys76] && validCachePath(iconCacheMap[sys76])) return "file://" + iconCacheMap[sys76]
+        }
+        // Generic reverse-DNS: try last segment for any vendor namespace
+        if (clean.indexOf(".") !== -1) {
+            var segments = clean.split(".")
+            var lastName = segments[segments.length - 1]
+            if (lastName && iconCacheMap && iconCacheMap[lastName] && validCachePath(iconCacheMap[lastName])) {
+                return "file://" + iconCacheMap[lastName]
+            }
         }
 
         // Try common system settings fallbacks
         if (clean === "preferences-system" || clean === "preferences-desktop" || clean === "systemsettings") {
-            for (var i = 0; i < ["preferences-system", "preferences-desktop", "system-settings", "settings", "gnome-control-center"].length; i++) {
-                var cand = ["preferences-system", "preferences-desktop", "system-settings", "settings", "gnome-control-center"][i]
-                if (iconCacheMap && iconCacheMap[cand]) return "file://" + iconCacheMap[cand]
+            var settingsCands = ["preferences-system", "preferences-desktop", "system-settings", "settings", "gnome-control-center"]
+            for (var i = 0; i < settingsCands.length; i++) {
+                var cand = settingsCands[i]
+                if (iconCacheMap && iconCacheMap[cand] && validCachePath(iconCacheMap[cand])) return "file://" + iconCacheMap[cand]
             }
         }
         
-        var qp = Quickshell.iconPath(s, false)
+        // Quickshell native icon lookup as final fallback
+        var qp = Quickshell.iconPath(clean, false)
         if (qp && qp.length > 0) {
             return qp.startsWith("file://") ? qp : (qp.startsWith("/") ? ("file://" + qp) : qp)
+        }
+        // Try original s as well in case clean lost something
+        if (s !== clean) {
+            var qp2 = Quickshell.iconPath(s, false)
+            if (qp2 && qp2.length > 0) {
+                return qp2.startsWith("file://") ? qp2 : (qp2.startsWith("/") ? ("file://" + qp2) : qp2)
+            }
         }
         return ""
     }
