@@ -181,6 +181,8 @@ in
         text = ''
 # ── Quickshell Desktop Environment Integration (Hyprland Classic) ──
 exec-once = qs
+exec-once = wl-paste --type text --watch cliphist store
+exec-once = wl-paste --type image --watch cliphist store
 
 bind = SUPER, SPACE,         exec, qs ipc call launcher toggle
 bind = SUPER SHIFT, W,       exec, qs ipc call wallpaper toggle
@@ -296,6 +298,8 @@ local mainMod = "SUPER"
 
 hl.on("hyprland.start", function ()
     hl.exec_cmd("qs")
+    hl.exec_cmd("wl-paste --type text --watch cliphist store")
+    hl.exec_cmd("wl-paste --type image --watch cliphist store")
 end)
 
 hl.bind(mainMod .. " + SPACE",         hl.dsp.exec_cmd("qs ipc call launcher toggle"))

@@ -37,8 +37,22 @@ Singleton {
 
     Process { id: savePinnedProc }
 
+    // Automatic Clipboard Daemon Watchers (Ensures cliphist stores text & images automatically)
+    Process {
+        id: clipWatcherText
+        command: ["sh", "-c", "pgrep -f 'wl-paste --type text --watch cliphist store' >/dev/null 2>&1 || exec wl-paste --type text --watch cliphist store"]
+    }
+
+    Process {
+        id: clipWatcherImage
+        command: ["sh", "-c", "pgrep -f 'wl-paste --type image --watch cliphist store' >/dev/null 2>&1 || exec wl-paste --type image --watch cliphist store"]
+    }
+
     Component.onCompleted: {
         loadPinnedProc.running = true
+        clipWatcherText.running = true
+        clipWatcherImage.running = true
+        refresh()
     }
 
     Process {

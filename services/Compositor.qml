@@ -90,6 +90,12 @@ Singleton {
     property string keybindStatus: ""
     property string keybindError: ""
 
+    // ── Autostart Programs from Compositor Config ─────────────────────────────
+    property var autostartList: []
+    property bool isLoadingAutostart: false
+    property string autostartStatus: ""
+    property string autostartError: ""
+
     // ── Discovered Compositors & Configs ──────────────────────────────────────
     property var installedCompositors: []
     property var discoveredConfigFiles: []
@@ -292,6 +298,7 @@ Singleton {
     Component.onCompleted: {
         refreshState()
         loadKeybinds()
+        loadAutostart()
     }
 
     function refreshState() {
@@ -893,6 +900,52 @@ Singleton {
         bindsDeleteProc.running = true
     }
 
+    // ── Autostart Programs Management ─────────────────────────────────────────
+    function loadAutostart() {
+        isLoadingAutostart = true
+        autostartListProc.qOutput = ""
+        autostartListProc.command = [root.helperScript, "autostart-list"]
+        autostartListProc.running = true
+    }
+
+    function addAutostart(cmd, type, file) {
+        if (!cmd) return
+        autostartStatus = "Adding autostart program..."
+        autostartAddProc.qOutput = ""
+        var cmdArgs = [root.helperScript, "autostart-add", "--cmd", cmd]
+        if (type) { cmdArgs.push("--type", type) }
+        if (file) { cmdArgs.push("--file", file) }
+        autostartAddProc.command = cmdArgs
+        autostartAddProc.running = true
+    }
+
+    function toggleAutostart(file, lineNum, enabled) {
+        if (!file || !lineNum) return
+        autostartStatus = enabled ? "Enabling program..." : "Disabling program..."
+        autostartToggleProc.qOutput = ""
+        var cmdArgs = [root.helperScript, "autostart-toggle", "--file", file, "--line", String(lineNum)]
+        if (enabled) { cmdArgs.push("--enable") }
+        else { cmdArgs.push("--disable") }
+        autostartToggleProc.command = cmdArgs
+        autostartToggleProc.running = true
+    }
+
+    function deleteAutostart(file, lineNum) {
+        if (!file || !lineNum) return
+        autostartStatus = "Removing autostart program..."
+        autostartDeleteProc.qOutput = ""
+        var cmdArgs = [root.helperScript, "autostart-delete", "--file", file, "--line", String(lineNum)]
+        autostartDeleteProc.command = cmdArgs
+        autostartDeleteProc.running = true
+    }
+
+    function runAutostart(cmd) {
+        if (!cmd) return
+        autostartRunProc.qOutput = ""
+        autostartRunProc.command = [root.helperScript, "autostart-run", "--cmd", cmd]
+        autostartRunProc.running = true
+    }
+
     // ── Config File Management ────────────────────────────────────────────────
     function loadFile(filePath) {
         if (!filePath) return
@@ -1198,6 +1251,86 @@ Singleton {
                 root.loadKeybinds()
             }
             bindsDeleteProc.qOutput = ""
+        }
+    }
+
+    // ── Autostart Background Processes ────────────────────────────────────────
+    Process {
+        id: autostartListProc
+        property string qOutput: ""
+        stdout: SplitParser {
+            onRead: chunk => { autostartListProc.qOutput += chunk }
+        }
+        onExited: (exitCode) => {
+            root.isLoadingAutostart = false
+            if (exitCode === 0 && autostartListProc.qOutput.length > 0) {
+                try {
+                    var data = JSON.parse(autostartListProc.qOutput.trim())
+                    if (data && data.ok && data.items) {
+                        root.autostartList = data.items
+                    }
+                } catch(e) {}
+            }
+            autostartListProc.qOutput = ""
+        }
+    }
+
+    Process {
+        id: autostartAddProc
+        property string qOutput: ""
+        stdout: SplitParser {
+            onRead: chunk => { autostartAddProc.qOutput += chunk }
+        }
+        onExited: (exitCode) => {
+            if (exitCode === 0 && autostartAddProc.qOutput.length > 0) {
+                try {
+                    var res = JSON.parse(autostartAddProc.qOutput.trim())
+                    if (res && res.ok) {
+                        root.autostartStatus = "Autostart added successfully"
+                        root.loadAutostart()
+                    } else {
+                        root.autostartError = (res && res.error) ? res.error : "Failed to add autostart"
+                    }
+                } catch(e) { root.loadAutostart() }
+            } else {
+                root.loadAutostart()
+            }
+            autostartAddProc.qOutput = ""
+        }
+    }
+
+    Process {
+        id: autostartToggleProc
+        property string qOutput: ""
+        stdout: SplitParser {
+            onRead: chunk => { autostartToggleProc.qOutput += chunk }
+        }
+        onExited: (exitCode) => {
+            root.loadAutostart()
+            autostartToggleProc.qOutput = ""
+        }
+    }
+
+    Process {
+        id: autostartDeleteProc
+        property string qOutput: ""
+        stdout: SplitParser {
+            onRead: chunk => { autostartDeleteProc.qOutput += chunk }
+        }
+        onExited: (exitCode) => {
+            root.loadAutostart()
+            autostartDeleteProc.qOutput = ""
+        }
+    }
+
+    Process {
+        id: autostartRunProc
+        property string qOutput: ""
+        stdout: SplitParser {
+            onRead: chunk => { autostartRunProc.qOutput += chunk }
+        }
+        onExited: (exitCode) => {
+            autostartRunProc.qOutput = ""
         }
     }
 }

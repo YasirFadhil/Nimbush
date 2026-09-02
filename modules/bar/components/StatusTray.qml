@@ -6,22 +6,36 @@ import "." as Components
 
 RowLayout {
     id: root
-    spacing: isMinimal ? 4 : 8
+    spacing: 0
 
     property real barWidth: 1920
     property real islandRightEdge: 0
+    property real islandCollapsedRightEdge: 0
     property bool isIslandExpanded: false
 
-    // Available space between the Dynamic Island's right edge and the right screen margin
+    readonly property int itemSpacing: isMinimal ? 4 : 8
+
+    // Push delta = how many px the island right edge grew from collapsed baseline.
+    readonly property real islandPushDelta: {
+        if (!isIslandExpanded || islandRightEdge <= 0 || islandCollapsedRightEdge <= 0) return 0
+        return Math.max(0, islandRightEdge - islandCollapsedRightEdge)
+    }
+
+    // Available space from island right edge to screen edge
     readonly property real availableRightSpace: (barWidth > 0 && islandRightEdge > 0) ? (barWidth - islandRightEdge) : 9999
 
-    // Adaptively hide only the elements that the island's expansion physically reaches
-    readonly property bool hideTrayIcons: isIslandExpanded && (availableRightSpace < 540)
-    readonly property bool hideSysmon: isIslandExpanded && (availableRightSpace < 510)
-    readonly property bool hideVolume: isIslandExpanded && (availableRightSpace < 460)
-    readonly property bool hideBattery: isIslandExpanded && (availableRightSpace < 310)
-    readonly property bool hideControl: isIslandExpanded && (availableRightSpace < 220)
-    readonly property bool hideClock: isIslandExpanded && (availableRightSpace < 130)
+    // Adaptively collapse items in cascade as Island expands:
+    // 1. Volume yields on standard expansions (HUD, Notif, Media) -> CPU & SysTray slide right smoothly
+    readonly property bool hideVolume: isIslandExpanded && ((availableRightSpace < 560 && islandPushDelta >= 35) || islandPushDelta >= 160)
+    // 2. Sysmon (CPU) only yields on large expansions (e.g. Wallpaper Studio 480px) -> SysTray slides next to Battery
+    readonly property bool hideSysmon: isIslandExpanded && ((availableRightSpace < 460 && islandPushDelta >= 140) || islandPushDelta >= 160)
+    // 3. SysTray only yields on extreme small-screen space constraints
+    readonly property bool hideTrayIcons: isIslandExpanded && (availableRightSpace < 380 && islandPushDelta >= 160)
+
+    // Right anchor items only hide on extreme screen constraints
+    readonly property bool hideBattery: isIslandExpanded && (availableRightSpace < 160)
+    readonly property bool hideControl: isIslandExpanded && (availableRightSpace < 110)
+    readonly property bool hideClock: isIslandExpanded && (availableRightSpace < 60)
 
     readonly property string barStyle: Services.Config ? Services.Config.barStyle : "islands"
     readonly property bool isIslands: barStyle === "islands"
@@ -57,22 +71,26 @@ RowLayout {
         return trayW + 370
     }
 
-    // System Tray App Icons (Hides on Lock or when colliding with Island)
+    // ── 1. System Tray App Icons ───────────────────────────────────────────
     Components.SystemTrayIcons {
         id: sysTrayIcons
         trayMenuPopup: trayMenuPopup
         trayOverflowPopup: trayOverflowPopup
 
-        opacity: (Services.OverlayManager.isLocked || root.hideTrayIcons) ? 0 : 1
+        readonly property bool shouldHide: Services.OverlayManager.isLocked || root.hideTrayIcons
+
+        Layout.preferredWidth: shouldHide ? 0 : implicitWidth
+        Layout.preferredHeight: implicitHeight
+        Layout.rightMargin: shouldHide ? 0 : root.itemSpacing
+        Layout.alignment: Qt.AlignVCenter
+        clip: true
+        opacity: shouldHide ? 0.0 : 1.0
         visible: Services.Config ? Services.Config.showSysTray : true
         enabled: opacity > 0.5
 
-        transform: Translate {
-            x: (Services.OverlayManager.isLocked || root.hideTrayIcons) ? 35 : 0
-            Behavior on x { NumberAnimation { duration: 350; easing.type: (Services.OverlayManager.isLocked || root.hideTrayIcons) ? Easing.OutCubic : Easing.InCubic } }
-        }
-
-        Behavior on opacity { NumberAnimation { duration: 350; easing.type: (Services.OverlayManager.isLocked || root.hideTrayIcons) ? Easing.OutCubic : Easing.InCubic } }
+        Behavior on Layout.preferredWidth { NumberAnimation { duration: 350; easing.type: Easing.OutCubic } }
+        Behavior on Layout.rightMargin { NumberAnimation { duration: 350; easing.type: Easing.OutCubic } }
+        Behavior on opacity { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
     }
 
     Components.TrayMenuPopup {
@@ -85,45 +103,57 @@ RowLayout {
         maxVisibleCount: sysTrayIcons.maxVisibleCount
     }
 
-    // CPU Usage (Hides on Lock or when colliding with Island)
+    // ── 2. CPU / Sysmon Indicator ─────────────────────────────────────────
     Components.SysmonIndicator {
         id: sysmonInd
-        opacity: (Services.OverlayManager.isLocked || root.hideSysmon) ? 0.0 : 1.0
+        readonly property bool shouldHide: Services.OverlayManager.isLocked || root.hideSysmon
+
+        Layout.preferredWidth: shouldHide ? 0 : implicitWidth
+        Layout.preferredHeight: implicitHeight
+        Layout.rightMargin: shouldHide ? 0 : root.itemSpacing
+        Layout.alignment: Qt.AlignVCenter
+        clip: true
+        opacity: shouldHide ? 0.0 : 1.0
         visible: Services.Config ? Services.Config.showSysmonTray : true
         enabled: opacity > 0.5
-        transform: Translate {
-            x: (Services.OverlayManager.isLocked || root.hideSysmon) ? 35 : 0
-            Behavior on x { NumberAnimation { duration: 350; easing.type: (Services.OverlayManager.isLocked || root.hideSysmon) ? Easing.OutCubic : Easing.InCubic } }
-        }
-        Behavior on opacity { NumberAnimation { duration: 350; easing.type: (Services.OverlayManager.isLocked || root.hideSysmon) ? Easing.OutCubic : Easing.InCubic } }
+
+        Behavior on Layout.preferredWidth { NumberAnimation { duration: 350; easing.type: Easing.OutCubic } }
+        Behavior on Layout.rightMargin { NumberAnimation { duration: 350; easing.type: Easing.OutCubic } }
+        Behavior on opacity { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
     }
 
-    // Volume Pill (Hides on Lock or when colliding with Island)
+    // ── 3. Volume Pill ────────────────────────────────────────────────────
     Rectangle {
         id: volPill
+        readonly property bool shouldHide: Services.OverlayManager.isLocked || root.hideVolume
+
         implicitHeight: root.pillHeight
         implicitWidth: volLayout.implicitWidth + (root.isMinimal ? 12 : 20)
+        Layout.preferredWidth: shouldHide ? 0 : implicitWidth
+        Layout.preferredHeight: implicitHeight
+        Layout.rightMargin: shouldHide ? 0 : root.itemSpacing
+        Layout.alignment: Qt.AlignVCenter
+        clip: true
         radius: root.pillRadius
         color: root.getPillBg(volMouse.containsMouse || Services.OverlayManager.volumePanelVisible)
         border.color: root.getPillBorder(volMouse.containsMouse || Services.OverlayManager.volumePanelVisible)
         border.width: root.isMinimal ? 0 : 1
         
-        opacity: (Services.OverlayManager.isLocked || root.hideVolume) ? 0.0 : 1.0
+        opacity: shouldHide ? 0.0 : 1.0
         visible: Services.Config ? Services.Config.showVolumeTray : true
         enabled: opacity > 0.5
 
         Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
         Behavior on border.color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
-
-        transform: Translate {
-            x: (Services.OverlayManager.isLocked || root.hideVolume) ? 35 : 0
-            Behavior on x { NumberAnimation { duration: 350; easing.type: (Services.OverlayManager.isLocked || root.hideVolume) ? Easing.OutCubic : Easing.InCubic } }
-        }
-        Behavior on opacity { NumberAnimation { duration: 350; easing.type: (Services.OverlayManager.isLocked || root.hideVolume) ? Easing.OutCubic : Easing.InCubic } }
+        Behavior on Layout.preferredWidth { NumberAnimation { duration: 350; easing.type: Easing.OutCubic } }
+        Behavior on Layout.rightMargin { NumberAnimation { duration: 350; easing.type: Easing.OutCubic } }
+        Behavior on opacity { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
         RowLayout {
             id: volLayout
-            anchors.centerIn: parent
+            anchors.right: parent.right
+            anchors.rightMargin: root.isMinimal ? 6 : 10
+            anchors.verticalCenter: parent.verticalCenter
             spacing: root.isMinimal ? 4 : 6
 
             Item {
@@ -198,28 +228,32 @@ RowLayout {
         }
     }
 
-    // Battery Pill (Stays Visible & Morphs Seamlessly into Lockscreen)
+    // ── 4. Battery Pill (Anchor) ──────────────────────────────────────────
     Rectangle {
         id: batPill
+        readonly property bool shouldHide: Services.OverlayManager.isLocked || root.hideBattery
+
         implicitHeight: root.pillHeight
         implicitWidth: batLayout.implicitWidth + (root.isMinimal ? 12 : 20)
+        Layout.preferredWidth: shouldHide ? 0 : implicitWidth
+        Layout.preferredHeight: implicitHeight
+        Layout.rightMargin: shouldHide ? 0 : root.itemSpacing
+        Layout.alignment: Qt.AlignVCenter
+        clip: true
         radius: root.pillRadius
         color: root.getPillBg(batMouse.containsMouse || Services.OverlayManager.batteryPanelVisible)
         border.color: root.getPillBorder(batMouse.containsMouse || Services.OverlayManager.batteryPanelVisible)
         border.width: root.isMinimal ? 0 : 1
 
-        opacity: (Services.OverlayManager.isLocked || root.hideBattery) ? 0.0 : 1.0
+        opacity: shouldHide ? 0.0 : 1.0
         visible: Services.Config ? Services.Config.showBatteryTray : true
         enabled: opacity > 0.5
 
         Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
         Behavior on border.color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
-
-        transform: Translate {
-            x: (Services.OverlayManager.isLocked || root.hideBattery) ? 35 : 0
-            Behavior on x { NumberAnimation { duration: 350; easing.type: (Services.OverlayManager.isLocked || root.hideBattery) ? Easing.OutCubic : Easing.InCubic } }
-        }
-        Behavior on opacity { NumberAnimation { duration: 350; easing.type: (Services.OverlayManager.isLocked || root.hideBattery) ? Easing.OutCubic : Easing.InCubic } }
+        Behavior on Layout.preferredWidth { NumberAnimation { duration: 350; easing.type: Easing.OutCubic } }
+        Behavior on Layout.rightMargin { NumberAnimation { duration: 350; easing.type: Easing.OutCubic } }
+        Behavior on opacity { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
         RowLayout {
             id: batLayout
@@ -275,28 +309,32 @@ RowLayout {
         }
     }
 
-    // Notification Bell & Control Center Pill (Stays Visible & Morphs Seamlessly into Lockscreen)
+    // ── 5. Notification Bell & Control Center Pill ────────────────────────
     Rectangle {
         id: ctrlPill
+        readonly property bool shouldHide: Services.OverlayManager.isLocked || root.hideControl
+
         implicitHeight: root.pillHeight
         implicitWidth: ctrlLayout.implicitWidth + (root.isMinimal ? 12 : 20)
+        Layout.preferredWidth: shouldHide ? 0 : implicitWidth
+        Layout.preferredHeight: implicitHeight
+        Layout.rightMargin: shouldHide ? 0 : root.itemSpacing
+        Layout.alignment: Qt.AlignVCenter
+        clip: true
         radius: root.pillRadius
         color: root.getPillBg(Services.OverlayManager.controlCenterVisible || Services.Notifications.centerVisible)
         border.color: root.getPillBorder(Services.OverlayManager.controlCenterVisible || Services.Notifications.centerVisible)
         border.width: root.isMinimal ? 0 : 1
 
-        opacity: (Services.OverlayManager.isLocked || root.hideControl) ? 0.0 : 1.0
+        opacity: shouldHide ? 0.0 : 1.0
         visible: Services.Config ? Services.Config.showControlCenterTray : true
         enabled: opacity > 0.5
 
         Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
         Behavior on border.color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
-
-        transform: Translate {
-            x: (Services.OverlayManager.isLocked || root.hideControl) ? 35 : 0
-            Behavior on x { NumberAnimation { duration: 350; easing.type: (Services.OverlayManager.isLocked || root.hideControl) ? Easing.OutCubic : Easing.InCubic } }
-        }
-        Behavior on opacity { NumberAnimation { duration: 350; easing.type: (Services.OverlayManager.isLocked || root.hideControl) ? Easing.OutCubic : Easing.InCubic } }
+        Behavior on Layout.preferredWidth { NumberAnimation { duration: 350; easing.type: Easing.OutCubic } }
+        Behavior on Layout.rightMargin { NumberAnimation { duration: 350; easing.type: Easing.OutCubic } }
+        Behavior on opacity { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
         RowLayout {
             id: ctrlLayout
@@ -316,16 +354,21 @@ RowLayout {
         }
     }
 
-    // Clock & Date Pill (Shown in Tray when in islands mode; in floating/unified/minimal clock is centered)
+    // ── 6. Clock & Date Pill ──────────────────────────────────────────────
     Components.ClockCenter {
         id: clockCenterPill
-        opacity: (Services.OverlayManager.isLocked || root.hideClock) ? 0.0 : 1.0
+        readonly property bool shouldHide: Services.OverlayManager.isLocked || root.hideClock
+
+        Layout.preferredWidth: shouldHide ? 0 : implicitWidth
+        Layout.preferredHeight: implicitHeight
+        Layout.rightMargin: 0
+        Layout.alignment: Qt.AlignVCenter
+        clip: true
+        opacity: shouldHide ? 0.0 : 1.0
         visible: root.isIslands && (Services.Config ? Services.Config.showClockTray : true)
         enabled: opacity > 0.5
-        transform: Translate {
-            x: (Services.OverlayManager.isLocked || root.hideClock) ? 35 : 0
-            Behavior on x { NumberAnimation { duration: 350; easing.type: (Services.OverlayManager.isLocked || root.hideClock) ? Easing.OutCubic : Easing.InCubic } }
-        }
-        Behavior on opacity { NumberAnimation { duration: 350; easing.type: (Services.OverlayManager.isLocked || root.hideClock) ? Easing.OutCubic : Easing.InCubic } }
+
+        Behavior on Layout.preferredWidth { NumberAnimation { duration: 350; easing.type: Easing.OutCubic } }
+        Behavior on opacity { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
     }
 }

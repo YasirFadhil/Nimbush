@@ -164,8 +164,9 @@ Variants {
                     id: statusTray
                     Layout.alignment: Qt.AlignVCenter
                     barWidth: root.width
-                    islandRightEdge: root.showDynamicIsland ? ((root.width + (dynamicIsland.expanded ? dynamicIsland.calculatedExpandedWidth : dynamicIsland.calculatedCollapsedWidth)) / 2) : 0
-                    isIslandExpanded: root.showDynamicIsland && dynamicIsland.expanded
+                    islandRightEdge: root.showDynamicIsland ? (((root.width + (dynamicIsland.expanded ? dynamicIsland.calculatedExpandedWidth : dynamicIsland.calculatedCollapsedWidth)) / 2) + dynamicIsland.satelliteExtraWidth) : 0
+                    islandCollapsedRightEdge: root.showDynamicIsland ? ((root.width + dynamicIsland.calculatedCollapsedWidth) / 2) : 0
+                    isIslandExpanded: root.showDynamicIsland && (dynamicIsland.expanded || dynamicIsland.satelliteExtraWidth > 0)
                 }
             }
         }

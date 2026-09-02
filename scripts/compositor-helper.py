@@ -13,6 +13,7 @@ import shutil
 import base64
 import re
 import bisect
+import shlex
 from concurrent.futures import ThreadPoolExecutor
 
 HOME = os.path.expanduser("~")
@@ -1659,6 +1660,402 @@ def delete_keybind(line_num, target_file=None):
         reload_compositor()
     return res
 
+# ==================== Autostart Management ====================
+
+def get_autostart_files():
+    hypr_dir = os.path.join(HOME, ".config/hypr")
+    niri_dir = os.path.join(HOME, ".config/niri")
+    files = []
+
+    candidates = [
+        (os.path.join(hypr_dir, "conf", "autostart.lua"), "lua"),
+        (os.path.join(hypr_dir, "conf", "autostart.conf"), "hyprconf"),
+        (os.path.join(hypr_dir, "conf", "quickshell.lua"), "lua"),
+        (os.path.join(hypr_dir, "conf", "quickshell.conf"), "hyprconf"),
+        (os.path.join(hypr_dir, "hyprland.lua"), "lua"),
+        (os.path.join(hypr_dir, "hyprland.conf"), "hyprconf"),
+        (os.path.join(niri_dir, "conf", "autostart.kdl"), "niri"),
+        (os.path.join(niri_dir, "config.kdl"), "niri"),
+    ]
+    for p, t in candidates:
+        if os.path.exists(p):
+            files.append((p, t))
+    return files
+
+def get_primary_autostart_file():
+    hypr_dir = os.path.join(HOME, ".config/hypr")
+    niri_dir = os.path.join(HOME, ".config/niri")
+    if is_niri():
+        p = os.path.join(niri_dir, "conf", "autostart.kdl")
+        if os.path.exists(p): return p, "niri"
+        return os.path.join(niri_dir, "config.kdl"), "niri"
+
+    if is_lua_config():
+        p = os.path.join(hypr_dir, "conf", "autostart.lua")
+        if os.path.exists(p): return p, "lua"
+        return os.path.join(hypr_dir, "hyprland.lua"), "lua"
+    else:
+        p = os.path.join(hypr_dir, "conf", "autostart.conf")
+        if os.path.exists(p): return p, "hyprconf"
+        return os.path.join(hypr_dir, "hyprland.conf"), "hyprconf"
+
+def detect_app_meta(command):
+    cmd_lower = command.lower()
+    
+    if ("cliphist" in cmd_lower or "wl-paste" in cmd_lower) and "image" in cmd_lower:
+        return {
+            "name": "Clipboard Images & Screenshots (Cliphist)",
+            "desc": "Records copied images and screenshots into clipboard history",
+            "icon": "󰄄",
+            "category": "Service"
+        }
+    if "cliphist" in cmd_lower or "wl-paste" in cmd_lower:
+        return {
+            "name": "Clipboard Text (Cliphist)",
+            "desc": "Records copied text entries into clipboard history",
+            "icon": "󰅍",
+            "category": "Service"
+        }
+    if "polkit" in cmd_lower:
+        return {
+            "name": "Polkit Authentication Agent",
+            "desc": "Handles privilege escalation and security authentication dialogs",
+            "icon": "󰌋",
+            "category": "System"
+        }
+    if "quickshell" in cmd_lower or cmd_lower.strip() == "qs" or cmd_lower.startswith("qs "):
+        return {
+            "name": "Quickshell Desktop Shell",
+            "desc": "Wayland status bar, app launcher, widgets, and dynamic island",
+            "icon": "󱗼",
+            "category": "Shell"
+        }
+    if "hyprpaper" in cmd_lower or "awww" in cmd_lower or "swaybg" in cmd_lower or "mpvpaper" in cmd_lower:
+        return {
+            "name": "Wallpaper Daemon",
+            "desc": "Manages desktop wallpaper backgrounds across monitors",
+            "icon": "󰸉",
+            "category": "Personalization"
+        }
+    if "hypridle" in cmd_lower or "swayidle" in cmd_lower:
+        return {
+            "name": "Hypridle Daemon",
+            "desc": "Automates screen locking, sleep, and backlight power saving",
+            "icon": "󰒲",
+            "category": "Power"
+        }
+    if "nm-applet" in cmd_lower:
+        return {
+            "name": "NetworkManager Applet",
+            "desc": "System tray icon and connection manager for Wi-Fi and Ethernet",
+            "icon": "󰤨",
+            "category": "Network"
+        }
+    if "blueman" in cmd_lower:
+        return {
+            "name": "Bluetooth Manager Applet",
+            "desc": "System tray applet for pairing and managing Bluetooth devices",
+            "icon": "󰂯",
+            "category": "Bluetooth"
+        }
+    if "pipewire" in cmd_lower or "wireplumber" in cmd_lower:
+        return {
+            "name": "Audio Server (PipeWire)",
+            "desc": "Low-latency sound server and media pipeline engine",
+            "icon": "󰓃",
+            "category": "Audio"
+        }
+    if "vesktop" in cmd_lower or "discord" in cmd_lower:
+        return {
+            "name": "Discord / Vesktop",
+            "desc": "Voice, video, and text communication platform",
+            "icon": "󰙯",
+            "category": "Application"
+        }
+    if "spotify" in cmd_lower:
+        return {
+            "name": "Spotify",
+            "desc": "Music and podcast streaming player",
+            "icon": "󰓇",
+            "category": "Application"
+        }
+    if "steam" in cmd_lower:
+        return {
+            "name": "Steam",
+            "desc": "Digital video game distribution platform",
+            "icon": "󰓓",
+            "category": "Application"
+        }
+    if "dunst" in cmd_lower or "mako" in cmd_lower or "swaync" in cmd_lower:
+        return {
+            "name": "Notification Daemon",
+            "desc": "Desktop notification server daemon",
+            "icon": "󰂚",
+            "category": "Service"
+        }
+
+    raw_bin = command.strip().split()[0] if command.strip() else "app"
+    bin_name = os.path.basename(raw_bin)
+    clean_name = bin_name.replace("-", " ").replace("_", " ").title()
+    return {
+        "name": clean_name,
+        "desc": f"Startup command: {command}",
+        "icon": "󰐥",
+        "category": "Custom"
+    }
+
+def parse_autostart_from_file(file_path, file_type):
+    entries = []
+    if not os.path.exists(file_path):
+        return entries
+
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+    except Exception:
+        return entries
+
+    for idx, line in enumerate(lines):
+        line_num = idx + 1
+        stripped = line.strip()
+        if not stripped:
+            continue
+
+        if file_type == "hyprconf":
+            m = re.match(r'^(#\s*)?(exec-once|exec)\s*=\s*(.+)$', stripped)
+            if m:
+                is_commented = bool(m.group(1))
+                exec_type = m.group(2)
+                cmd = m.group(3).strip()
+                meta = detect_app_meta(cmd)
+                entries.append({
+                    "id": f"{file_path}:{line_num}",
+                    "name": meta["name"],
+                    "desc": meta["desc"],
+                    "icon": meta["icon"],
+                    "category": meta["category"],
+                    "command": cmd,
+                    "type": exec_type,
+                    "enabled": not is_commented,
+                    "file": file_path,
+                    "fileName": os.path.basename(file_path),
+                    "line": line_num,
+                    "raw": stripped
+                })
+
+        elif file_type == "lua":
+            m = re.match(r'^(--\s*)?(?:hl\.(?:exec_cmd|exec)\(\s*["\'](.+?)["\']\s*\)|hl\.on\(\s*["\']hyprland\.start["\'].*?hl\.exec_cmd\(\s*["\'](.+?)["\']\s*\))', stripped)
+            if not m:
+                m2 = re.search(r'hl\.exec_cmd\(\s*["\'](.+?)["\']\s*\)', stripped)
+                if m2:
+                    is_commented = stripped.startswith("--")
+                    cmd = m2.group(1).strip()
+                    meta = detect_app_meta(cmd)
+                    entries.append({
+                        "id": f"{file_path}:{line_num}",
+                        "name": meta["name"],
+                        "desc": meta["desc"],
+                        "icon": meta["icon"],
+                        "category": meta["category"],
+                        "command": cmd,
+                        "type": "exec-once",
+                        "enabled": not is_commented,
+                        "file": file_path,
+                        "fileName": os.path.basename(file_path),
+                        "line": line_num,
+                        "raw": stripped
+                    })
+            else:
+                is_commented = bool(m.group(1))
+                cmd = (m.group(2) or m.group(3) or "").strip()
+                if cmd:
+                    meta = detect_app_meta(cmd)
+                    entries.append({
+                        "id": f"{file_path}:{line_num}",
+                        "name": meta["name"],
+                        "desc": meta["desc"],
+                        "icon": meta["icon"],
+                        "category": meta["category"],
+                        "command": cmd,
+                        "type": "exec-once",
+                        "enabled": not is_commented,
+                        "file": file_path,
+                        "fileName": os.path.basename(file_path),
+                        "line": line_num,
+                        "raw": stripped
+                    })
+
+        elif file_type == "niri":
+            m = re.match(r'^(//\s*)?spawn-at-startup\s+(.+)$', stripped)
+            if m:
+                is_commented = bool(m.group(1))
+                raw_args = m.group(2).strip()
+                parts = re.findall(r'"([^"]*)"', raw_args)
+                cmd = " ".join(parts) if parts else raw_args
+                meta = detect_app_meta(cmd)
+                entries.append({
+                    "id": f"{file_path}:{line_num}",
+                    "name": meta["name"],
+                    "desc": meta["desc"],
+                    "icon": meta["icon"],
+                    "category": meta["category"],
+                    "command": cmd,
+                    "type": "spawn-at-startup",
+                    "enabled": not is_commented,
+                    "file": file_path,
+                    "fileName": os.path.basename(file_path),
+                    "line": line_num,
+                    "raw": stripped
+                })
+
+    return entries
+
+def list_autostart():
+    files = get_autostart_files()
+    all_entries = []
+    seen = set()
+
+    for fpath, ftype in files:
+        entries = parse_autostart_from_file(fpath, ftype)
+        for e in entries:
+            key = (e["command"], e["file"])
+            if key not in seen:
+                seen.add(key)
+                all_entries.append(e)
+
+    pri_path, pri_type = get_primary_autostart_file()
+    return {
+        "ok": True,
+        "items": all_entries,
+        "primaryFile": pri_path,
+        "primaryType": pri_type,
+        "total": len(all_entries)
+    }
+
+def add_autostart(command, autostart_type="exec-once", target_file=None):
+    command = command.strip()
+    if not command:
+        return {"ok": False, "error": "Command cannot be empty"}
+
+    if target_file and os.path.exists(target_file):
+        cfg_path = target_file
+        cfg_type = "lua" if target_file.endswith(".lua") else ("niri" if target_file.endswith(".kdl") else "hyprconf")
+    else:
+        cfg_path, cfg_type = get_primary_autostart_file()
+
+    if not cfg_path:
+        return {"ok": False, "error": "No autostart config found"}
+
+    os.makedirs(os.path.dirname(cfg_path), exist_ok=True)
+    if not os.path.exists(cfg_path):
+        lines = []
+    else:
+        try:
+            with open(cfg_path, "r", encoding="utf-8") as f:
+                lines = f.readlines()
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    if cfg_type == "lua":
+        new_line = f'    hl.exec_cmd("{command}")\n'
+        inserted = False
+        for i, l in enumerate(lines):
+            if 'hl.on("hyprland.start"' in l or "hl.on('hyprland.start'" in l:
+                lines.insert(i + 1, new_line)
+                inserted = True
+                break
+        if not inserted:
+            lines.append(f'\nhl.on("hyprland.start", function ()\n{new_line}end)\n')
+
+    elif cfg_type == "hyprconf":
+        new_line = f"{autostart_type} = {command}\n"
+        lines.append(new_line)
+
+    elif cfg_type == "niri":
+        parts = shlex.split(command)
+        quoted = " ".join(f'"{p}"' for p in parts)
+        new_line = f"spawn-at-startup {quoted}\n"
+        lines.append(new_line)
+
+    content = "".join(lines)
+    res = _write_and_validate(cfg_path, content)
+    return res
+
+def toggle_autostart(file_path, line_num, enable=True):
+    if not os.path.exists(file_path):
+        return {"ok": False, "error": "File does not exist"}
+
+    try:
+        line_idx = int(line_num) - 1
+    except Exception:
+        return {"ok": False, "error": "Invalid line number"}
+
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+    if line_idx < 0 or line_idx >= len(lines):
+        return {"ok": False, "error": f"Line {line_num} out of range"}
+
+    line = lines[line_idx]
+    stripped = line.strip()
+
+    if file_path.endswith(".lua"):
+        if enable:
+            lines[line_idx] = re.sub(r'^\s*--\s*', '', line)
+        else:
+            if not stripped.startswith("--"):
+                lines[line_idx] = "-- " + line
+    elif file_path.endswith(".kdl"):
+        if enable:
+            lines[line_idx] = re.sub(r'^\s*//\s*', '', line)
+        else:
+            if not stripped.startswith("//"):
+                lines[line_idx] = "// " + line
+    else: # hyprconf
+        if enable:
+            lines[line_idx] = re.sub(r'^\s*#\s*', '', line)
+        else:
+            if not stripped.startswith("#"):
+                lines[line_idx] = "# " + line
+
+    content = "".join(lines)
+    return _write_and_validate(file_path, content)
+
+def delete_autostart(file_path, line_num):
+    if not os.path.exists(file_path):
+        return {"ok": False, "error": "File does not exist"}
+
+    try:
+        line_idx = int(line_num) - 1
+    except Exception:
+        return {"ok": False, "error": "Invalid line number"}
+
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+    if line_idx < 0 or line_idx >= len(lines):
+        return {"ok": False, "error": f"Line {line_num} out of range"}
+
+    del lines[line_idx]
+    content = "".join(lines)
+    return _write_and_validate(file_path, content)
+
+def run_autostart_cmd(command):
+    command = command.strip()
+    if not command:
+        return {"ok": False, "error": "Empty command"}
+    try:
+        subprocess.Popen(command, shell=True, start_new_session=True)
+        return {"ok": True, "command": command}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
 def reload_compositor():
     comp = "hyprland"
     if is_niri():
@@ -1738,9 +2135,11 @@ def modularize_hypr_lua():
 
 local mainMod = "SUPER"
 
--- ── 1. Autostart Quickshell Desktop Environment ──────────────────────────────
+-- ── 1. Autostart Quickshell Desktop Environment & Clipboard Daemons ─────────
 hl.on("hyprland.start", function ()
     hl.exec_cmd("qs")
+    hl.exec_cmd("wl-paste --type text --watch cliphist store")
+    hl.exec_cmd("wl-paste --type image --watch cliphist store")
 end)
 
 -- ── 2. Quickshell IPC Keybindings ─────────────────────────────────────────────
@@ -2291,8 +2690,10 @@ def modularize_hypr_conf():
 #  Quickshell Desktop Environment Integration (~/.config/hypr/conf/quickshell.conf)
 # ══════════════════════════════════════════════════════════════════════════════
 
-# ── 1. Autostart Quickshell Desktop Environment ──────────────────────────────
+# ── 1. Autostart Quickshell Desktop Environment & Clipboard Daemons ─────────
 exec-once = qs
+exec-once = wl-paste --type text --watch cliphist store
+exec-once = wl-paste --type image --watch cliphist store
 
 # ── 2. Quickshell IPC Keybindings ─────────────────────────────────────────────
 bind = SUPER, SPACE,         exec, qs ipc call launcher toggle
@@ -3270,6 +3671,44 @@ def main():
         parser.add_argument("--file", default=None)
         args = parser.parse_args(sys.argv[2:])
         res = delete_keybind(args.line, target_file=args.file)
+        print(json.dumps(res))
+    elif cmd == "autostart-list":
+        data = list_autostart()
+        print(json.dumps(data))
+    elif cmd == "autostart-add":
+        import argparse
+        parser = argparse.ArgumentParser()
+        parser.add_argument("--cmd", required=True)
+        parser.add_argument("--type", default="exec-once")
+        parser.add_argument("--file", default=None)
+        args = parser.parse_args(sys.argv[2:])
+        res = add_autostart(args.cmd, autostart_type=args.type, target_file=args.file)
+        print(json.dumps(res))
+    elif cmd == "autostart-toggle":
+        import argparse
+        parser = argparse.ArgumentParser()
+        parser.add_argument("--file", required=True)
+        parser.add_argument("--line", required=True)
+        parser.add_argument("--enable", action="store_true", default=False)
+        parser.add_argument("--disable", action="store_true", default=False)
+        args = parser.parse_args(sys.argv[2:])
+        enable_val = True if args.enable else (False if args.disable else True)
+        res = toggle_autostart(args.file, args.line, enable=enable_val)
+        print(json.dumps(res))
+    elif cmd == "autostart-delete":
+        import argparse
+        parser = argparse.ArgumentParser()
+        parser.add_argument("--file", required=True)
+        parser.add_argument("--line", required=True)
+        args = parser.parse_args(sys.argv[2:])
+        res = delete_autostart(args.file, args.line)
+        print(json.dumps(res))
+    elif cmd == "autostart-run":
+        import argparse
+        parser = argparse.ArgumentParser()
+        parser.add_argument("--cmd", required=True)
+        args = parser.parse_args(sys.argv[2:])
+        res = run_autostart_cmd(args.cmd)
         print(json.dumps(res))
     elif cmd in ("options-apply", "save-options"):
         import argparse

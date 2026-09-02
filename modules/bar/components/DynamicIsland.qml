@@ -72,6 +72,9 @@ Item {
 
     // Camera Active State & Monitoring
     property bool cameraActive: false
+    readonly property bool isMediaSatellite: !Services.OverlayManager.isLocked && mediaPlaying && (notifActive || sysHudActive || wallpaperMode)
+    readonly property bool isCameraSatellite: cameraActive && (mediaPlaying || (mediaStopping && !mediaTextCollapsed) || showCollapsedText || expanded)
+    readonly property int satelliteExtraWidth: (isMediaSatellite ? 40 : 0) + (isCameraSatellite ? 40 : 0) + ((capsLockActive && !expanded) ? 40 : 0)
 
     // CapsLock Active State & Monitoring
     property bool capsLockActive: false
@@ -806,7 +809,7 @@ Item {
 
 
 
-        // ==================== Camera Privacy Indicator (Right Edge) ====================
+        // ==================== Camera Privacy Indicator (Right Edge when not detached) ====================
         Item {
             id: cameraIndicator
             anchors.right: island.right
@@ -815,8 +818,8 @@ Item {
             implicitWidth: 14
             implicitHeight: 14
             z: 2
-            visible: (root.cameraActive && root.showCollapsedText) || opacity > 0
-            opacity: (root.cameraActive && root.showCollapsedText) ? 1 : 0
+            visible: (root.cameraActive && root.showCollapsedText && !root.isCameraSatellite) || opacity > 0
+            opacity: (root.cameraActive && root.showCollapsedText && !root.isCameraSatellite) ? 1 : 0
 
             Behavior on opacity { NumberAnimation { duration: 350; easing.type: Easing.OutQuad } }
 
@@ -2231,12 +2234,127 @@ Item {
 
     }
 
-    // ==================== CapsLock Satellite Dot (Right of Island) ====================
+    // ==================== Media Player Satellite Dot (Right of Island when Notif/HUD Active) ====================
+    Rectangle {
+        id: mediaSatelliteDot
+        readonly property bool isSatellite: root.isMediaSatellite
+        anchors.left: island.right
+        anchors.leftMargin: isSatellite ? 8 : -32
+        anchors.top: island.top
+        anchors.topMargin: Math.max(0, (root.collapsedHeight - implicitHeight) / 2)
+        implicitWidth: 32
+        implicitHeight: 32
+        radius: 16
+        color: Services.Theme.bgPure
+        border.color: Services.Theme.borderSubtle
+        border.width: 1
+        z: 1
+        visible: isSatellite || opacity > 0 || scale > 0
+
+        opacity: isSatellite ? 1 : 0
+        scale: isSatellite ? 1 : 0
+
+        Behavior on opacity { NumberAnimation { duration: 350; easing.type: Easing.OutCubic } }
+        Behavior on scale   { NumberAnimation { duration: 500; easing.type: Easing.OutBack } }
+        Behavior on anchors.leftMargin { NumberAnimation { duration: 550; easing.type: Easing.OutBack } }
+
+        // Mini Audio Wave Visualizer inside Media Satellite Dot
+        Row {
+            anchors.centerIn: parent
+            spacing: 2.5
+            Repeater {
+                model: 3
+                Rectangle {
+                    required property int index
+                    width: 2.5
+                    height: 10
+                    radius: 1.25
+                    color: Services.Theme.success
+                    anchors.verticalCenter: parent.verticalCenter
+
+                    SequentialAnimation on height {
+                        running: mediaSatelliteDot.isSatellite
+                        loops: Animation.Infinite
+                        NumberAnimation {
+                            to: index === 0 ? 14 : (index === 1 ? 6 : 12)
+                            duration: index === 0 ? 280 : (index === 1 ? 400 : 340)
+                            easing.type: Easing.InOutSine
+                        }
+                        NumberAnimation {
+                            to: index === 0 ? 4 : (index === 1 ? 14 : 4)
+                            duration: index === 0 ? 320 : (index === 1 ? 300 : 380)
+                            easing.type: Easing.InOutSine
+                        }
+                    }
+                }
+            }
+        }
+
+        MouseArea {
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onClicked: {
+                if (Services.Media) Services.Media.playPause()
+            }
+        }
+    }
+
+    // ==================== Camera Satellite Dot (Right of Island / Media) ====================
+    Rectangle {
+        id: cameraSatelliteDot
+        readonly property bool isSatellite: root.isCameraSatellite
+        anchors.left: (mediaSatelliteDot.isSatellite && mediaSatelliteDot.visible) ? mediaSatelliteDot.right : island.right
+        anchors.leftMargin: isSatellite ? 8 : -32
+        anchors.top: island.top
+        anchors.topMargin: Math.max(0, (root.collapsedHeight - implicitHeight) / 2)
+        implicitWidth: 32
+        implicitHeight: 32
+        radius: 16
+        color: Services.Theme.bgPure
+        border.color: Services.Theme.borderSubtle
+        border.width: 1
+        z: 1
+        visible: root.cameraActive || opacity > 0 || scale > 0
+
+        opacity: isSatellite ? 1 : 0
+        scale: isSatellite ? 1 : 0
+
+        Behavior on opacity { NumberAnimation { duration: 350; easing.type: Easing.OutCubic } }
+        Behavior on scale   { NumberAnimation { duration: 500; easing.type: Easing.OutBack } }
+        Behavior on anchors.leftMargin { NumberAnimation { duration: 550; easing.type: Easing.OutBack } }
+
+        // Camera Icon with blinking green privacy effect
+        Item {
+            anchors.centerIn: parent
+            width: 16
+            height: 16
+
+            Text {
+                id: camSatIcon
+                anchors.centerIn: parent
+                text: "󰄀"
+                font.family: Services.Theme.fontSymbols
+                font.pixelSize: 13
+                color: Services.Theme.success
+            }
+
+            SequentialAnimation on opacity {
+                running: cameraSatelliteDot.isSatellite
+                loops: Animation.Infinite
+                NumberAnimation { from: 1.0; to: 0.25; duration: 650; easing.type: Easing.InOutSine }
+                NumberAnimation { from: 0.25; to: 1.0; duration: 650; easing.type: Easing.InOutSine }
+            }
+        }
+    }
+
+    // ==================== CapsLock Satellite Dot (Right of Island / Camera / Media) ====================
     Rectangle {
         id: capsLockDot
-        anchors.left: island.right
+        anchors.left: (cameraSatelliteDot.isSatellite && cameraSatelliteDot.visible) ? cameraSatelliteDot.right : ((mediaSatelliteDot.isSatellite && mediaSatelliteDot.visible) ? mediaSatelliteDot.right : island.right)
         anchors.leftMargin: (root.capsLockActive && !root.expanded) ? 8 : -32
-        anchors.verticalCenter: island.verticalCenter
+        anchors.top: island.top
+        anchors.topMargin: Math.max(0, (root.collapsedHeight - implicitHeight) / 2)
         implicitWidth: 32
         implicitHeight: 32
         radius: 16
