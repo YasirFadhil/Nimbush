@@ -125,21 +125,32 @@ PanelWindow {
                     Layout.fillWidth: true
                     spacing: 10
 
-                    // Avatar with active ring
+                    // User Profile Avatar with shape & online status dot
                     Item {
+                        id: dashboardAvatarItem
                         width: 44
                         height: 44
+
+                        readonly property string avatarShape: Services.Config ? Services.Config.lockscreenAvatarShape : "squircle"
+                        readonly property real avatarRadius: {
+                            if (avatarShape === "circle") return width / 2
+                            if (avatarShape === "squircle") return 12
+                            return 8
+                        }
 
                         Services.AvatarFrame {
                             anchors.fill: parent
                             source: Services.OsInfo.avatarPath
-                            shapeRadius: 22
+                            shapeRadius: dashboardAvatarItem.avatarRadius
                             backgroundColor: Services.Theme.surfaceVariant
-                            borderColor: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.4)
+                            borderColor: (Services.Config && Services.Config.lockscreenAvatarRing) ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.4) : Services.Theme.border
                             borderWidth: 1.5
-                            fallbackText: Services.OsInfo.logoGlyph || "\uf17c"
-                            fallbackFontFamily: Services.Theme.fontSymbols
-                            fallbackFontSize: 20
+                            fallbackText: {
+                                const u = (Services.OsInfo.username || Quickshell.env("USER") || "user").toUpperCase()
+                                return u.length > 0 ? u.charAt(0) : "󰌽"
+                            }
+                            fallbackFontFamily: Services.Theme.fontDisplay || Services.Theme.fontSymbols
+                            fallbackFontSize: 18
                             fallbackColor: Services.Theme.accent
                         }
 

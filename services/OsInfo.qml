@@ -85,6 +85,12 @@ Singleton {
         return "\u{f17c}" // generic Tux fallback
     }
 
+    readonly property string avatarHelperScript: {
+        var u = Qt.resolvedUrl("../scripts/avatar-helper.py").toString()
+        var p = u.startsWith("file://") ? u.substring(7) : u
+        return p.length > 0 ? p : (homeDir + "/.config/quickshell/scripts/avatar-helper.py")
+    }
+
     FileDialog {
         id: nativeAvatarDialog
         title: "Select Profile Picture"
@@ -94,7 +100,7 @@ Singleton {
             var urlStr = nativeAvatarDialog.selectedFile.toString()
             var pathStr = urlStr.startsWith("file://") ? urlStr.substring(7) : urlStr
             if (pathStr.length > 0) {
-                if (Services.Config) Services.Config.setCustomAvatar(pathStr)
+                root.setCustomAvatar(pathStr)
             }
             root.isPickingAvatar = false
         }
@@ -110,13 +116,39 @@ Singleton {
             onRead: data => {
                 var selected = data.trim()
                 if (selected.length > 0) {
-                    if (Services.Config) Services.Config.setCustomAvatar(selected)
+                    root.setCustomAvatar(selected)
                 }
             }
         }
         onExited: (exitCode, exitStatus) => {
             root.isPickingAvatar = false
         }
+    }
+
+    Process {
+        id: avatarSyncProc
+        command: ["python3", root.avatarHelperScript, "sync", (Services.Config && Services.Config.customAvatar) ? Services.Config.customAvatar : ""]
+        stdout: SplitParser {
+            onRead: data => {
+                try {
+                    var obj = JSON.parse(data.trim())
+                    if (obj.fileUrl) {
+                        root.systemAvatarPath = obj.fileUrl
+                    } else if (obj.cleared) {
+                        root.systemAvatarPath = ""
+                    }
+                } catch (e) {}
+            }
+        }
+    }
+
+    function setCustomAvatar(pathStr) {
+        var clean = pathStr.startsWith("file://") ? pathStr.substring(7) : pathStr
+        if (clean.length === 0) return
+        if (Services.Config) Services.Config.setCustomAvatar(clean)
+        avatarSyncProc.command = ["python3", root.avatarHelperScript, "set", clean]
+        avatarSyncProc.running = false
+        avatarSyncProc.running = true
     }
 
     function pickCustomAvatar() {
@@ -131,6 +163,9 @@ Singleton {
 
     function clearCustomAvatar() {
         if (Services.Config) Services.Config.clearCustomAvatar()
+        avatarSyncProc.command = ["python3", root.avatarHelperScript, "clear"]
+        avatarSyncProc.running = false
+        avatarSyncProc.running = true
     }
 
     function refreshAvatar() {
@@ -170,12 +205,19 @@ Singleton {
 
     Process {
         id: avatarProc
-        command: ["sh", "-c", "u=$(id -un); home=$(eval echo ~$u); f=\"/tmp/quickshell_avatar_${u}.jpg\"; for p in \"$home/.face\" \"$home/.face.icon\" \"$home/.face.jpg\" \"$home/.face.png\" \"/var/lib/AccountsService/icons/$u\"; do if [ -f \"$p\" ]; then ln -sf \"$p\" \"$f\"; echo \"file://$f\"; break; fi; done"]
+        command: ["python3", root.avatarHelperScript, "sync", (Services.Config && Services.Config.customAvatar) ? Services.Config.customAvatar : ""]
         running: true
         stdout: SplitParser {
             onRead: data => {
-                const p = data.trim()
-                if (p.length > 0) root.systemAvatarPath = p
+                try {
+                    var obj = JSON.parse(data.trim())
+                    if (obj.fileUrl && obj.fileUrl.length > 0) {
+                        root.systemAvatarPath = obj.fileUrl
+                    }
+                } catch (e) {
+                    const p = data.trim()
+                    if (p.length > 0) root.systemAvatarPath = p
+                }
             }
         }
     }
