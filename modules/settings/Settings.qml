@@ -3078,23 +3078,6 @@ FloatingWindow {
                                 SettingsDivider {}
 
                                 SettingsRow {
-                                    title: "Icon Theme"
-                                    subtitle: "System-wide icon set for launcher, file manager, and docks"
-
-                                    SettingsDropdown {
-                                        minButtonWidth: 160
-                                        searchable: true
-                                        currentValue: Services.SystemTheme ? Services.SystemTheme.currentIconTheme : "MacTahoe"
-                                        model: Services.SystemTheme ? Services.SystemTheme.iconThemes : []
-                                        onSelected: (val) => {
-                                            if (Services.SystemTheme) Services.SystemTheme.setIconTheme(val)
-                                        }
-                                    }
-                                }
-
-                                SettingsDivider {}
-
-                                SettingsRow {
                                     title: "Cursor Theme"
                                     subtitle: "Mouse pointer theme for Wayland session and apps"
 

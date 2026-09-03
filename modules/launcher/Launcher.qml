@@ -312,7 +312,6 @@ PanelWindow {
                                 id: ico
                                 anchors.fill: parent
                                 source: {
-                                    const rev = Services.SystemTheme ? Services.SystemTheme.iconThemeRev : 0
                                     const rawIcon = appItem.modelData ? (typeof appItem.modelData.icon === "string" ? appItem.modelData.icon : (appItem.modelData.icon?.name || "")) : ""
                                     if (!rawIcon) return ""
                                     if (Services.SystemTheme) {
