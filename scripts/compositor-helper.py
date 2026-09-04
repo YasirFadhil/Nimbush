@@ -13,6 +13,7 @@ import shutil
 import base64
 import re
 import bisect
+import shlex
 from concurrent.futures import ThreadPoolExecutor
 
 HOME = os.path.expanduser("~")
@@ -107,7 +108,9 @@ def query_all():
             ("inactive_opacity", "decoration:inactive_opacity", float, 0.95),
             ("dim_inactive", "decoration:dim_inactive", bool, False),
             ("dim_strength", "decoration:dim_strength", float, 0.50),
-            ("layout", "general:layout", str, "scrolling"),
+            ("layout", "general:layout", str, "dwindle"),
+            ("scrolling_column_width", "scrolling:column_width", float, 0.89),
+            ("scrolling_fullscreen_on_one_column", "scrolling:fullscreen_on_one_column", bool, False),
             ("touchpad_natural", "input:touchpad:natural_scroll", bool, True),
             ("touchpad_tap", "input:touchpad:tap-to-click", bool, True),
             ("touchpad_dwt", "input:touchpad:disable_while_typing", bool, True),
@@ -216,6 +219,8 @@ def query_all():
             "activeDisplayName": "Hyprland",
             "configType": "lua" if is_lua_config() else "conf",
             "version": ver,
+            "animStyle": get_animation_style(),
+            "animStyles": get_animation_styles_list(),
             "monitorsCount": max(1, len(clean_monitors)),
             "monitors": clean_monitors,
             "workspacesCount": max(1, workspaces_count),
@@ -315,6 +320,8 @@ def query_all():
             "dim_inactive": False,
             "dim_strength": 0.5,
             "layout": "scrolling",
+            "scrolling_column_width": 0.89,
+            "scrolling_fullscreen_on_one_column": False,
             "touchpad_natural": True,
             "touchpad_tap": True,
             "touchpad_dwt": False,
@@ -350,6 +357,8 @@ def query_all():
             "dim_inactive": False,
             "dim_strength": 0.5,
             "layout": "default",
+            "scrolling_column_width": 0.89,
+            "scrolling_fullscreen_on_one_column": False,
             "touchpad_natural": True,
             "touchpad_tap": True,
             "touchpad_dwt": False,
@@ -364,62 +373,73 @@ def query_all():
             "discoveredConfigFiles": found_files
         }
 
+LUA_MAP = {
+    "blur": lambda v: f"hl.config({{ decoration = {{ blur = {{ enabled = {str(v).lower()} }} }} }})",
+    "blur_size": lambda v: f"hl.config({{ decoration = {{ blur = {{ size = {int(v)} }} }} }})",
+    "blur_passes": lambda v: f"hl.config({{ decoration = {{ blur = {{ passes = {int(v)} }} }} }})",
+    "anim": lambda v: f"hl.config({{ animations = {{ enabled = {str(v).lower()} }} }})",
+    "shadow": lambda v: f"hl.config({{ decoration = {{ shadow = {{ enabled = {str(v).lower()} }} }} }})",
+    "shadow_range": lambda v: f"hl.config({{ decoration = {{ shadow = {{ range = {int(v)} }} }} }})",
+    "shadow_power": lambda v: f"hl.config({{ decoration = {{ shadow = {{ render_power = {int(v)} }} }} }})",
+    "rounding": lambda v: f"hl.config({{ decoration = {{ rounding = {int(v)} }} }})",
+    "border_size": lambda v: f"hl.config({{ general = {{ border_size = {int(v)} }} }})",
+    "gaps_in": lambda v: f"hl.config({{ general = {{ gaps_in = {int(v)} }} }})",
+    "gaps_out": lambda v: f"hl.config({{ general = {{ gaps_out = {int(v)} }} }})",
+    "active_opacity": lambda v: f"hl.config({{ decoration = {{ active_opacity = {float(v):.2f} }} }})",
+    "inactive_opacity": lambda v: f"hl.config({{ decoration = {{ inactive_opacity = {float(v):.2f} }} }})",
+    "dim_inactive": lambda v: f"hl.config({{ decoration = {{ dim_inactive = {str(v).lower()} }} }})",
+    "dim_strength": lambda v: f"hl.config({{ decoration = {{ dim_strength = {float(v):.2f} }} }})",
+    "layout": lambda v: f"hl.config({{ general = {{ layout = \"{str(v)}\" }} }})",
+    "scrolling_column_width": lambda v: f"hl.config({{ scrolling = {{ column_width = {float(v):.2f} }} }})",
+    "scrolling_fullscreen_on_one_column": lambda v: f"hl.config({{ scrolling = {{ fullscreen_on_one_column = {str(v).lower()} }} }})",
+    "column_width": lambda v: f"hl.config({{ scrolling = {{ column_width = {float(v):.2f} }} }})",
+    "fullscreen_on_one_column": lambda v: f"hl.config({{ scrolling = {{ fullscreen_on_one_column = {str(v).lower()} }} }})",
+    "touchpad_natural": lambda v: f"hl.config({{ input = {{ touchpad = {{ natural_scroll = {str(v).lower()} }} }} }})",
+    "touchpad_tap": lambda v: f"hl.config({{ input = {{ touchpad = {{ tap_to_click = {str(v).lower()} }} }} }})",
+    "touchpad_dwt": lambda v: f"hl.config({{ input = {{ touchpad = {{ disable_while_typing = {str(v).lower()} }} }} }})",
+    "sensitivity": lambda v: f"hl.config({{ input = {{ sensitivity = {float(v):.2f} }} }})",
+    "resize_border": lambda v: f"hl.config({{ general = {{ resize_on_border = {str(v).lower()} }} }})",
+    "disable_hyprland_logo": lambda v: f"hl.config({{ misc = {{ disable_hyprland_logo = {str(v).lower()} }} }})",
+    "border_color_preset": lambda v: f"hl.config({{ general = {{ col = {{ active_border = {v} }} }} }})"
+}
+
+KEYWORD_MAP = {
+    "blur": lambda v: ("decoration:blur:enabled", "1" if str(v).lower() in ("true", "1") else "0"),
+    "blur_size": lambda v: ("decoration:blur:size", str(v)),
+    "blur_passes": lambda v: ("decoration:blur:passes", str(v)),
+    "anim": lambda v: ("animations:enabled", "1" if str(v).lower() in ("true", "1") else "0"),
+    "shadow": lambda v: ("decoration:shadow:enabled", "1" if str(v).lower() in ("true", "1") else "0"),
+    "shadow_range": lambda v: ("decoration:shadow:range", str(v)),
+    "shadow_power": lambda v: ("decoration:shadow:render_power", str(v)),
+    "rounding": lambda v: ("decoration:rounding", str(v)),
+    "border_size": lambda v: ("general:border_size", str(v)),
+    "gaps_in": lambda v: ("general:gaps_in", str(v)),
+    "gaps_out": lambda v: ("general:gaps_out", str(v)),
+    "active_opacity": lambda v: ("decoration:active_opacity", str(v)),
+    "inactive_opacity": lambda v: ("decoration:inactive_opacity", str(v)),
+    "dim_inactive": lambda v: ("decoration:dim_inactive", "1" if str(v).lower() in ("true", "1") else "0"),
+    "dim_strength": lambda v: ("decoration:dim_strength", str(v)),
+    "layout": lambda v: ("general:layout", str(v)),
+    "scrolling_column_width": lambda v: ("scrolling:column_width", str(v)),
+    "scrolling_fullscreen_on_one_column": lambda v: ("scrolling:fullscreen_on_one_column", "1" if str(v).lower() in ("true", "1") else "0"),
+    "column_width": lambda v: ("scrolling:column_width", str(v)),
+    "fullscreen_on_one_column": lambda v: ("scrolling:fullscreen_on_one_column", "1" if str(v).lower() in ("true", "1") else "0"),
+    "touchpad_natural": lambda v: ("input:touchpad:natural_scroll", "1" if str(v).lower() in ("true", "1") else "0"),
+    "touchpad_tap": lambda v: ("input:touchpad:tap-to-click", "1" if str(v).lower() in ("true", "1") else "0"),
+    "touchpad_dwt": lambda v: ("input:touchpad:disable_while_typing", "1" if str(v).lower() in ("true", "1") else "0"),
+    "sensitivity": lambda v: ("input:sensitivity", str(v)),
+    "resize_border": lambda v: ("general:resize_on_border", "1" if str(v).lower() in ("true", "1") else "0"),
+    "disable_hyprland_logo": lambda v: ("misc:disable_hyprland_logo", "1" if str(v).lower() in ("true", "1") else "0"),
+}
+
+lua_map = LUA_MAP
+keyword_map = KEYWORD_MAP
+
 def set_option(opt_name, opt_val):
-    lua_map = {
-        "blur": lambda v: f"hl.config({{ decoration = {{ blur = {{ enabled = {str(v).lower()} }} }} }})",
-        "blur_size": lambda v: f"hl.config({{ decoration = {{ blur = {{ size = {int(v)} }} }} }})",
-        "blur_passes": lambda v: f"hl.config({{ decoration = {{ blur = {{ passes = {int(v)} }} }} }})",
-        "anim": lambda v: f"hl.config({{ animations = {{ enabled = {str(v).lower()} }} }})",
-        "shadow": lambda v: f"hl.config({{ decoration = {{ shadow = {{ enabled = {str(v).lower()} }} }} }})",
-        "shadow_range": lambda v: f"hl.config({{ decoration = {{ shadow = {{ range = {int(v)} }} }} }})",
-        "shadow_power": lambda v: f"hl.config({{ decoration = {{ shadow = {{ render_power = {int(v)} }} }} }})",
-        "rounding": lambda v: f"hl.config({{ decoration = {{ rounding = {int(v)} }} }})",
-        "border_size": lambda v: f"hl.config({{ general = {{ border_size = {int(v)} }} }})",
-        "gaps_in": lambda v: f"hl.config({{ general = {{ gaps_in = {int(v)} }} }})",
-        "gaps_out": lambda v: f"hl.config({{ general = {{ gaps_out = {int(v)} }} }})",
-        "active_opacity": lambda v: f"hl.config({{ decoration = {{ active_opacity = {float(v):.2f} }} }})",
-        "inactive_opacity": lambda v: f"hl.config({{ decoration = {{ inactive_opacity = {float(v):.2f} }} }})",
-        "dim_inactive": lambda v: f"hl.config({{ decoration = {{ dim_inactive = {str(v).lower()} }} }})",
-        "dim_strength": lambda v: f"hl.config({{ decoration = {{ dim_strength = {float(v):.2f} }} }})",
-        "layout": lambda v: f"hl.config({{ general = {{ layout = \"{str(v)}\" }} }})",
-        "touchpad_natural": lambda v: f"hl.config({{ input = {{ touchpad = {{ natural_scroll = {str(v).lower()} }} }} }})",
-        "touchpad_tap": lambda v: f"hl.config({{ input = {{ touchpad = {{ tap_to_click = {str(v).lower()} }} }} }})",
-        "touchpad_dwt": lambda v: f"hl.config({{ input = {{ touchpad = {{ disable_while_typing = {str(v).lower()} }} }} }})",
-        "sensitivity": lambda v: f"hl.config({{ input = {{ sensitivity = {float(v):.2f} }} }})",
-        "resize_border": lambda v: f"hl.config({{ general = {{ resize_on_border = {str(v).lower()} }} }})",
-        "disable_hyprland_logo": lambda v: f"hl.config({{ misc = {{ disable_hyprland_logo = {str(v).lower()} }} }})",
-        "border_color_preset": lambda v: f"hl.config({{ general = {{ col = {{ active_border = {v} }} }} }})"
-    }
-
-    keyword_map = {
-        "blur": lambda v: ("decoration:blur:enabled", "1" if str(v).lower() in ("true", "1") else "0"),
-        "blur_size": lambda v: ("decoration:blur:size", str(v)),
-        "blur_passes": lambda v: ("decoration:blur:passes", str(v)),
-        "anim": lambda v: ("animations:enabled", "1" if str(v).lower() in ("true", "1") else "0"),
-        "shadow": lambda v: ("decoration:shadow:enabled", "1" if str(v).lower() in ("true", "1") else "0"),
-        "shadow_range": lambda v: ("decoration:shadow:range", str(v)),
-        "shadow_power": lambda v: ("decoration:shadow:render_power", str(v)),
-        "rounding": lambda v: ("decoration:rounding", str(v)),
-        "border_size": lambda v: ("general:border_size", str(v)),
-        "gaps_in": lambda v: ("general:gaps_in", str(v)),
-        "gaps_out": lambda v: ("general:gaps_out", str(v)),
-        "active_opacity": lambda v: ("decoration:active_opacity", str(v)),
-        "inactive_opacity": lambda v: ("decoration:inactive_opacity", str(v)),
-        "dim_inactive": lambda v: ("decoration:dim_inactive", "1" if str(v).lower() in ("true", "1") else "0"),
-        "dim_strength": lambda v: ("decoration:dim_strength", str(v)),
-        "layout": lambda v: ("general:layout", str(v)),
-        "touchpad_natural": lambda v: ("input:touchpad:natural_scroll", "1" if str(v).lower() in ("true", "1") else "0"),
-        "touchpad_tap": lambda v: ("input:touchpad:tap-to-click", "1" if str(v).lower() in ("true", "1") else "0"),
-        "touchpad_dwt": lambda v: ("input:touchpad:disable_while_typing", "1" if str(v).lower() in ("true", "1") else "0"),
-        "sensitivity": lambda v: ("input:sensitivity", str(v)),
-        "resize_border": lambda v: ("general:resize_on_border", "1" if str(v).lower() in ("true", "1") else "0"),
-        "disable_hyprland_logo": lambda v: ("misc:disable_hyprland_logo", "1" if str(v).lower() in ("true", "1") else "0"),
-    }
-
     # If Lua mapper exists, try eval first
     res = None
-    if opt_name in lua_map:
-        lua_code = lua_map[opt_name](opt_val)
+    if opt_name in LUA_MAP:
+        lua_code = LUA_MAP[opt_name](opt_val)
         try:
             r = subprocess.run(["hyprctl", "eval", lua_code], capture_output=True, text=True, timeout=0.8)
             if r.returncode == 0 and "ok" in r.stdout.lower():
@@ -428,8 +448,8 @@ def set_option(opt_name, opt_val):
             pass
 
     # Fallback to keyword if eval not supported or returned error
-    if res is None and opt_name in keyword_map:
-        k_key, k_val = keyword_map[opt_name](opt_val)
+    if res is None and opt_name in KEYWORD_MAP:
+        k_key, k_val = KEYWORD_MAP[opt_name](opt_val)
         try:
             r = subprocess.run(["hyprctl", "keyword", k_key, str(k_val)], capture_output=True, text=True, timeout=0.8)
             if r.returncode == 0:
@@ -480,6 +500,28 @@ def update_lua_option(content, opt_name, opt_val):
         pat = r'(layout\s*=\s*)"[^"]+"'
         if re.search(pat, content):
             return re.sub(pat, r'\g<1>"' + str(opt_val) + '"', content, count=1)
+
+    if opt_name in ("scrolling_column_width", "column_width"):
+        pat = r'(scrolling\s*=\s*\{[\s\S]*?column_width\s*=\s*)[0-9.]+'
+        if re.search(pat, content):
+            return re.sub(pat, r'\g<1>' + f"{float(opt_val):.2f}", content, count=1)
+        pat2 = r'(hl\.scrolling\s*\(\s*\{[\s\S]*?column_width\s*=\s*)[0-9.]+'
+        if re.search(pat2, content):
+            return re.sub(pat2, r'\g<1>' + f"{float(opt_val):.2f}", content, count=1)
+        pat_tbl = r'(scrolling\s*=\s*\{)'
+        if re.search(pat_tbl, content):
+            return re.sub(pat_tbl, r'\g<1>\n        column_width = ' + f"{float(opt_val):.2f},", content, count=1)
+
+    if opt_name in ("scrolling_fullscreen_on_one_column", "fullscreen_on_one_column"):
+        pat = r'(scrolling\s*=\s*\{[\s\S]*?fullscreen_on_one_column\s*=\s*)(?:true|false)'
+        if re.search(pat, content):
+            return re.sub(pat, r'\g<1>' + val_str, content, count=1)
+        pat2 = r'(hl\.scrolling\s*\(\s*\{[\s\S]*?fullscreen_on_one_column\s*=\s*)(?:true|false)'
+        if re.search(pat2, content):
+            return re.sub(pat2, r'\g<1>' + val_str, content, count=1)
+        pat_tbl = r'(scrolling\s*=\s*\{)'
+        if re.search(pat_tbl, content):
+            return re.sub(pat_tbl, r'\g<1>\n        fullscreen_on_one_column = ' + val_str + ',', content, count=1)
 
     if opt_name == "anim":
         pat = r'(animations\s*=\s*\{[\s\S]*?enabled\s*=\s*)(?:true|false)'
@@ -543,6 +585,77 @@ def update_lua_option(content, opt_name, opt_val):
 
     return content
 
+def update_hyprconf_option(content, opt_name, opt_val):
+    val_str = str(opt_val).lower() if isinstance(opt_val, bool) or str(opt_val).lower() in ("true", "false") else str(opt_val)
+
+    scalar_patterns = {
+        "layout": r'(?m)^(\s*layout\s*=\s*).*$',
+        "gaps_in": r'(?m)^(\s*gaps_in\s*=\s*).*$',
+        "gaps_out": r'(?m)^(\s*gaps_out\s*=\s*).*$',
+        "border_size": r'(?m)^(\s*border_size\s*=\s*).*$',
+        "rounding": r'(?m)^(\s*rounding\s*=\s*).*$',
+        "active_opacity": r'(?m)^(\s*active_opacity\s*=\s*).*$',
+        "inactive_opacity": r'(?m)^(\s*inactive_opacity\s*=\s*).*$',
+        "dim_inactive": r'(?m)^(\s*dim_inactive\s*=\s*).*$',
+        "dim_strength": r'(?m)^(\s*dim_strength\s*=\s*).*$',
+        "resize_border": r'(?m)^(\s*resize_on_border\s*=\s*).*$',
+        "allow_tearing": r'(?m)^(\s*allow_tearing\s*=\s*).*$',
+        "follow_mouse": r'(?m)^(\s*follow_mouse\s*=\s*).*$',
+        "sensitivity": r'(?m)^(\s*sensitivity\s*=\s*).*$',
+        "workspace_swipe": r'(?m)^(\s*workspace_swipe\s*=\s*).*$',
+        "workspace_swipe_invert": r'(?m)^(\s*workspace_swipe_invert\s*=\s*).*$',
+        "disable_hyprland_logo": r'(?m)^(\s*disable_hyprland_logo\s*=\s*).*$',
+        "vfr": r'(?m)^(\s*vfr\s*=\s*).*$',
+        "smart_gaps": r'(?m)^(\s*no_gaps_when_only\s*=\s*).*$',
+    }
+
+    if opt_name in scalar_patterns:
+        pat = scalar_patterns[opt_name]
+        if re.search(pat, content):
+            return re.sub(pat, r'\g<1>' + val_str, content, count=1)
+
+    if opt_name in ("scrolling_column_width", "column_width"):
+        pat = r'(scrolling\s*\{[\s\S]*?column_width\s*=\s*)[0-9.]+'
+        if re.search(pat, content):
+            return re.sub(pat, r'\g<1>' + str(opt_val), content, count=1)
+        pat_sec = r'(scrolling\s*\{)'
+        if re.search(pat_sec, content):
+            return re.sub(pat_sec, r'\g<1>\n    column_width = ' + str(opt_val), content, count=1)
+        pat_scalar = r'(?m)^(\s*scrolling:column_width\s*=\s*).*$'
+        if re.search(pat_scalar, content):
+            return re.sub(pat_scalar, r'\g<1>' + str(opt_val), content, count=1)
+
+    if opt_name in ("scrolling_fullscreen_on_one_column", "fullscreen_on_one_column"):
+        pat = r'(scrolling\s*\{[\s\S]*?fullscreen_on_one_column\s*=\s*)(?:true|false|[0-1])'
+        if re.search(pat, content):
+            return re.sub(pat, r'\g<1>' + val_str, content, count=1)
+        pat_sec = r'(scrolling\s*\{)'
+        if re.search(pat_sec, content):
+            return re.sub(pat_sec, r'\g<1>\n    fullscreen_on_one_column = ' + val_str, content, count=1)
+        pat_scalar = r'(?m)^(\s*scrolling:fullscreen_on_one_column\s*=\s*).*$'
+        if re.search(pat_scalar, content):
+            return re.sub(pat_scalar, r'\g<1>' + val_str, content, count=1)
+
+    nested_patterns = {
+        "anim": r'(animations\s*\{[\s\S]*?enabled\s*=\s*)(?:true|false|[0-1])',
+        "blur": r'(blur\s*\{[\s\S]*?enabled\s*=\s*)(?:true|false|[0-1])',
+        "blur_size": r'(blur\s*\{[\s\S]*?size\s*=\s*)[0-9]+',
+        "blur_passes": r'(blur\s*\{[\s\S]*?passes\s*=\s*)[0-9]+',
+        "shadow": r'(shadow\s*\{[\s\S]*?enabled\s*=\s*)(?:true|false|[0-1])',
+        "shadow_range": r'(shadow\s*\{[\s\S]*?range\s*=\s*)[0-9]+',
+        "shadow_power": r'(shadow\s*\{[\s\S]*?render_power\s*=\s*)[0-9]+',
+        "touchpad_natural": r'(touchpad\s*\{[\s\S]*?natural_scroll\s*=\s*)(?:true|false|[0-1])',
+        "touchpad_tap": r'(touchpad\s*\{[\s\S]*?tap-to-click\s*=\s*)(?:true|false|[0-1])',
+        "touchpad_dwt": r'(touchpad\s*\{[\s\S]*?disable_while_typing\s*=\s*)(?:true|false|[0-1])',
+    }
+
+    if opt_name in nested_patterns:
+        pat = nested_patterns[opt_name]
+        if re.search(pat, content):
+            return re.sub(pat, r'\g<1>' + val_str, content, count=1)
+
+    return content
+
 def save_general_options(changes):
     if not isinstance(changes, dict) or not changes:
         return {"ok": True, "saved": False}
@@ -576,13 +689,7 @@ def save_general_options(changes):
                     content = f.read()
                 modified = content
                 for k, v in changes.items():
-                    val_str = "1" if v is True else ("0" if v is False else str(v))
-                    if k in keyword_map:
-                        kw, _ = keyword_map[k](v)
-                        subkey = kw.split(":")[-1]
-                        pat = r'(?m)^(\s*' + re.escape(subkey) + r'\s*=\s*).*$'
-                        if re.search(pat, modified):
-                            modified = re.sub(pat, r'\g<1>' + val_str, modified, count=1)
+                    modified = update_hyprconf_option(modified, k, v)
                 if modified != content:
                     tmp_path = f"{conf_path}.tmp.{os.getpid()}"
                     with open(tmp_path, "w", encoding="utf-8") as f:
@@ -593,6 +700,241 @@ def save_general_options(changes):
             except Exception as e:
                 return {"ok": False, "error": str(e)}
         return {"ok": True, "saved": False}
+
+ANIMATION_STYLES = [
+    {
+        "id": "fluid",
+        "name": "Fluid",
+        "desc": "Natural ease-out curves with smooth momentum",
+        "icon": "󰀉",
+        "lua_curves": [
+            ("fluid", "{ {0.16, 1}, {0.3, 1} }"),
+            ("winIn", "{ {0.1, 1.1}, {0.1, 1.05} }"),
+            ("winOut", "{ {0.3, -0.2}, {0, 1} }")
+        ],
+        "lua_anims": [
+            ("windows", 5.0, "winIn", "slide"),
+            ("workspaces", 4.5, "fluid", "slide"),
+            ("fade", 4.5, "fluid", "")
+        ],
+        "beziers": [
+            ("fluid", "0.16, 1, 0.3, 1"),
+            ("winIn", "0.1, 1.1, 0.1, 1.05"),
+            ("winOut", "0.3, -0.2, 0, 1")
+        ],
+        "animations": [
+            ("windows", "1, 5, winIn, slide"),
+            ("windowsIn", "1, 5, winIn, slide"),
+            ("windowsOut", "1, 4, winOut, slide"),
+            ("windowsMove", "1, 5, fluid, slide"),
+            ("workspaces", "1, 4.5, fluid, slide"),
+            ("fade", "1, 4.5, fluid"),
+            ("border", "1, 4, fluid")
+        ]
+    },
+    {
+        "id": "snappy",
+        "name": "Snappy",
+        "desc": "Fast pop-in transitions without delay",
+        "icon": "󰓅",
+        "lua_curves": [
+            ("snappy", "{ {0.05, 0.9}, {0.1, 1.0} }")
+        ],
+        "lua_anims": [
+            ("windows", 2.2, "snappy", "popin 80%"),
+            ("workspaces", 2.0, "snappy", "slide"),
+            ("fade", 2.0, "snappy", "")
+        ],
+        "beziers": [
+            ("snappy", "0.05, 0.9, 0.1, 1.0")
+        ],
+        "animations": [
+            ("windows", "1, 2.2, snappy, popin 80%"),
+            ("windowsIn", "1, 2.2, snappy, popin 80%"),
+            ("windowsOut", "1, 1.8, snappy, popin 80%"),
+            ("windowsMove", "1, 2.2, snappy, slide"),
+            ("workspaces", "1, 2.0, snappy, slide"),
+            ("fade", "1, 2.0, snappy"),
+            ("border", "1, 2, snappy")
+        ]
+    },
+    {
+        "id": "bouncy",
+        "name": "Bouncy",
+        "desc": "Elastic bounce with lively overshoot",
+        "icon": "󰁝",
+        "lua_curves": [
+            ("overshoot", "{ {0.05, 0.9}, {0.1, 1.3} }"),
+            ("bounceIn", "{ {0.1, 1.3}, {0.1, 1.15} }"),
+            ("bounceOut", "{ {0.3, -0.4}, {0, 1} }")
+        ],
+        "lua_anims": [
+            ("windows", 6.5, "bounceIn", "popin 65%"),
+            ("workspaces", 5.5, "overshoot", "slide"),
+            ("fade", 4.5, "overshoot", "")
+        ],
+        "beziers": [
+            ("overshoot", "0.05, 0.9, 0.1, 1.3"),
+            ("bounceIn", "0.1, 1.3, 0.1, 1.15"),
+            ("bounceOut", "0.3, -0.4, 0, 1")
+        ],
+        "animations": [
+            ("windows", "1, 6.5, bounceIn, popin 65%"),
+            ("windowsIn", "1, 6.5, bounceIn, popin 65%"),
+            ("windowsOut", "1, 5.0, bounceOut, popin 75%"),
+            ("windowsMove", "1, 5.5, overshoot, slide"),
+            ("workspaces", "1, 5.5, overshoot, slide"),
+            ("fade", "1, 4.5, default"),
+            ("border", "1, 5, overshoot")
+        ]
+    },
+    {
+        "id": "gentle",
+        "name": "Gentle",
+        "desc": "Slow and smooth easing transitions",
+        "icon": "󰾆",
+        "lua_curves": [
+            ("smooth", "{ {0.25, 1}, {0.5, 1} }")
+        ],
+        "lua_anims": [
+            ("windows", 8.5, "smooth", "slide"),
+            ("workspaces", 8.0, "smooth", "slide"),
+            ("fade", 8.0, "smooth", "")
+        ],
+        "beziers": [
+            ("smooth", "0.25, 1, 0.5, 1")
+        ],
+        "animations": [
+            ("windows", "1, 8.5, smooth, slide"),
+            ("windowsIn", "1, 8.5, smooth, slide"),
+            ("windowsOut", "1, 7.0, smooth, slide"),
+            ("windowsMove", "1, 8.0, smooth, slide"),
+            ("workspaces", "1, 8.0, smooth, slide"),
+            ("fade", "1, 8.0, smooth"),
+            ("border", "1, 6, smooth")
+        ]
+    },
+    {
+        "id": "linear",
+        "name": "Linear",
+        "desc": "Constant speed fade transitions",
+        "icon": "󰋙",
+        "lua_curves": [
+            ("linear", "{ {0, 0}, {1, 1} }")
+        ],
+        "lua_anims": [
+            ("windows", 3.0, "linear", "fade"),
+            ("workspaces", 3.0, "linear", "fade"),
+            ("fade", 3.0, "linear", "")
+        ],
+        "beziers": [
+            ("linear", "0, 0, 1, 1")
+        ],
+        "animations": [
+            ("windows", "1, 3, linear, fade"),
+            ("windowsIn", "1, 3, linear, fade"),
+            ("windowsOut", "1, 2.5, linear, fade"),
+            ("windowsMove", "1, 3, linear, fade"),
+            ("workspaces", "1, 3, linear, fade"),
+            ("fade", "1, 3, linear"),
+            ("border", "1, 2, linear")
+        ]
+    },
+    {
+        "id": "disabled",
+        "name": "Disabled",
+        "desc": "Instant zero-duration window switching",
+        "icon": "󰅖",
+        "lua_curves": [],
+        "lua_anims": [],
+        "beziers": [],
+        "animations": []
+    }
+]
+
+def get_animation_styles_list():
+    return [{"id": s["id"], "name": s["name"], "desc": s["desc"], "icon": s.get("icon", "")} for s in ANIMATION_STYLES]
+
+def get_animation_style():
+    anim_cache = os.path.join(HOME, ".cache/quickshell/hypr_anim_style.json")
+    if os.path.exists(anim_cache):
+        try:
+            with open(anim_cache, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                if "style" in data:
+                    return data["style"]
+        except Exception:
+            pass
+    return "fluid"
+
+def set_animation_style(style_id):
+    matched = None
+    for s in ANIMATION_STYLES:
+        if s["id"] == style_id:
+            matched = s
+            break
+    if not matched:
+        return {"ok": False, "error": f"Unknown animation style: {style_id}"}
+
+    anim_cache_dir = os.path.join(HOME, ".cache/quickshell")
+    os.makedirs(anim_cache_dir, exist_ok=True)
+    anim_cache = os.path.join(anim_cache_dir, "hypr_anim_style.json")
+    try:
+        with open(anim_cache, "w", encoding="utf-8") as f:
+            json.dump({"style": style_id}, f)
+    except Exception:
+        pass
+
+    if is_lua_config():
+        if style_id == "disabled":
+            subprocess.run(["hyprctl", "eval", 'hl.config({ animations = { enabled = false } })'], capture_output=True, text=True, timeout=1.5)
+            set_option("anim", False)
+            return {"ok": True, "style": style_id, "enabled": False}
+
+        lua_statements = [
+            'hl.config({ animations = { enabled = true } })'
+        ]
+        for bname, bpoints in matched.get("lua_curves", []):
+            lua_statements.append(f'hl.curve("{bname}", {{ type = "bezier", points = {bpoints} }})')
+        for aname, aspeed, acurve, astyle in matched.get("lua_anims", []):
+            style_str = f', style = "{astyle}"' if astyle else ''
+            lua_statements.append(f'hl.animation({{ leaf = "{aname}", enabled = true, speed = {aspeed}, bezier = "{acurve}"{style_str} }})')
+            if aname == "windows":
+                lua_statements.append(f'hl.animation({{ leaf = "windowsIn", enabled = true, speed = {aspeed}, bezier = "{acurve}"{style_str} }})')
+                lua_statements.append(f'hl.animation({{ leaf = "windowsOut", enabled = true, speed = max(1.5, {aspeed} - 0.8), bezier = "{acurve}"{style_str} }})')
+                lua_statements.append(f'hl.animation({{ leaf = "windowsMove", enabled = true, speed = {aspeed}, bezier = "{acurve}"{style_str} }})')
+            elif aname == "workspaces":
+                lua_statements.append(f'hl.animation({{ leaf = "workspacesIn", enabled = true, speed = {aspeed}, bezier = "{acurve}"{style_str} }})')
+                lua_statements.append(f'hl.animation({{ leaf = "workspacesOut", enabled = true, speed = {aspeed}, bezier = "{acurve}"{style_str} }})')
+            elif aname == "fade":
+                lua_statements.append(f'hl.animation({{ leaf = "fadeIn", enabled = true, speed = {aspeed}, bezier = "{acurve}" }})')
+                lua_statements.append(f'hl.animation({{ leaf = "fadeOut", enabled = true, speed = max(1.5, {aspeed} - 0.8), bezier = "{acurve}" }})')
+                lua_statements.append(f'hl.animation({{ leaf = "fadeLayersIn", enabled = true, speed = {aspeed}, bezier = "{acurve}" }})')
+                lua_statements.append(f'hl.animation({{ leaf = "fadeLayersOut", enabled = true, speed = max(1.5, {aspeed} - 0.8), bezier = "{acurve}" }})')
+
+        full_lua = " ; ".join(lua_statements)
+        subprocess.run(["hyprctl", "eval", full_lua], capture_output=True, text=True, timeout=1.5)
+        set_option("anim", True)
+        return {"ok": True, "style": style_id, "enabled": True}
+    else:
+        if style_id == "disabled":
+            run_proc(["hyprctl", "keyword", "animations:enabled", "0"], timeout=1.0)
+            set_option("anim", False)
+            return {"ok": True, "style": style_id, "enabled": False}
+
+        batch_cmds = ["keyword animations:enabled 1"]
+        for bname, bval in matched.get("beziers", []):
+            batch_cmds.append(f"keyword bezier {bname},{bval}")
+        for aname, aval in matched.get("animations", []):
+            batch_cmds.append(f"keyword animation {aname},{aval}")
+
+        try:
+            subprocess.run(["hyprctl", "--batch", " ; ".join(batch_cmds)], capture_output=True, text=True, timeout=1.5)
+        except Exception:
+            pass
+
+        set_option("anim", True)
+        return {"ok": True, "style": style_id, "enabled": True}
 
 def _write_and_validate(target_path, content):
     if not target_path:
@@ -616,18 +958,12 @@ def _write_and_validate(target_path, content):
             pass
 
     try:
-        if os.path.exists(target_path):
-            backup_path = f"{target_path}.bak.{int(time.time())}"
-            shutil.copy2(target_path, backup_path)
-        else:
-            backup_path = None
-
         os.makedirs(os.path.dirname(target_path), exist_ok=True)
         tmp_target = f"{target_path}.tmp.{os.getpid()}"
         with open(tmp_target, "w", encoding="utf-8") as f:
             f.write(content)
         os.replace(tmp_target, target_path)
-        return {"ok": True, "backup": backup_path}
+        return {"ok": True}
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
@@ -937,6 +1273,122 @@ def parse_lua_binds(path):
             })
     return binds
 
+HYPR_DISPATCHERS = {
+    "killactive", "closewindow", "togglefloating", "fullscreen", "fakefullscreen",
+    "workspace", "movetoworkspace", "movetoworkspacesilent", "togglesplit", "swapsplit",
+    "pseudo", "pin", "movefocus", "movewindow", "movecurrentworkspacetomonitor",
+    "focusmonitor", "focuswindow", "splitratio", "toggleopaque", "dpms", "exit",
+    "submap", "layoutmsg"
+}
+
+def format_hyprconf_bind(keys, action):
+    parts = [p.strip() for p in keys.split("+") if p.strip()]
+    if not parts:
+        return ""
+    if len(parts) > 1:
+        raw_mods = parts[:-1]
+        k = parts[-1]
+        mod_tokens = []
+        for m in raw_mods:
+            mu = m.upper()
+            if mu in ("SUPER", "CTRL", "ALT", "SHIFT"):
+                mod_tokens.append(mu)
+            elif m.startswith("$"):
+                mod_tokens.append(m)
+            elif mu == "MOD4":
+                mod_tokens.append("SUPER")
+            elif mu == "MOD1":
+                mod_tokens.append("ALT")
+            else:
+                mod_tokens.append(m)
+        mod = " ".join(mod_tokens)
+    else:
+        mod = ""
+        k = parts[0]
+
+    act = action.strip()
+    act_low = act.lower()
+
+    if act_low in ("close window", "killactive"):
+        return f"bind = {mod}, {k}, killactive,\n"
+    elif act_low in ("toggle floating", "togglefloating"):
+        return f"bind = {mod}, {k}, togglefloating,\n"
+    elif act_low in ("toggle fullscreen", "fullscreen"):
+        return f"bind = {mod}, {k}, fullscreen, 0\n"
+    elif act_low in ("togglesplit", "layout togglesplit", "toggle split"):
+        return f"bind = {mod}, {k}, togglesplit,\n"
+    elif act_low.startswith("focus workspace ") or (act_low.startswith("workspace ") and not act_low.startswith("workspace =")):
+        ws_num = act.split()[-1]
+        return f"bind = {mod}, {k}, workspace, {ws_num}\n"
+    elif act_low.startswith("move window to workspace ") or act_low.startswith("movetoworkspace "):
+        ws_num = act.split()[-1]
+        return f"bind = {mod}, {k}, movetoworkspace, {ws_num}\n"
+    elif act_low.startswith("move window (silent) to workspace ") or act_low.startswith("movetoworkspacesilent "):
+        ws_num = act.split()[-1]
+        return f"bind = {mod}, {k}, movetoworkspacesilent, {ws_num}\n"
+
+    first_word = act.split()[0] if act.split() else ""
+    if first_word.lower() in HYPR_DISPATCHERS:
+        arg_part = act[len(first_word):].strip().lstrip(",").strip()
+        if arg_part:
+            return f"bind = {mod}, {k}, {first_word}, {arg_part}\n"
+        return f"bind = {mod}, {k}, {first_word},\n"
+
+    if act.startswith("exec, ") or act.startswith("exec "):
+        cmd = act[5:].strip()
+        return f"bind = {mod}, {k}, exec, {cmd}\n"
+
+    return f"bind = {mod}, {k}, exec, {act}\n"
+
+def format_lua_bind(keys, action):
+    act = action.strip()
+    act_low = act.lower()
+
+    if act_low in ("close window", "killactive"):
+        return f'hl.bind("{keys}", hl.dsp.window.close(), {{ repeating = true }})\n'
+    elif act_low in ("toggle floating", "togglefloating"):
+        return f'hl.bind("{keys}", hl.dsp.window.float())\n'
+    elif act_low in ("toggle fullscreen", "fullscreen"):
+        return f'hl.bind("{keys}", hl.dsp.window.fullscreen())\n'
+    elif act_low in ("togglesplit", "layout togglesplit", "toggle split"):
+        return f'hl.bind("{keys}", hl.dsp.layout("togglesplit"))\n'
+    elif act_low.startswith("focus workspace ") or (act_low.startswith("workspace ") and not act_low.startswith("workspace =")):
+        ws_num = act.split()[-1]
+        return f'hl.bind("{keys}", hl.dsp.focus({{ workspace = {ws_num} }}))\n'
+    elif act_low.startswith("move window to workspace ") or act_low.startswith("movetoworkspace "):
+        ws_num = act.split()[-1]
+        return f'hl.bind("{keys}", hl.dsp.window.move({{ workspace = {ws_num} }}))\n'
+    elif act.startswith("hl.dsp."):
+        return f'hl.bind("{keys}", {act})\n'
+    else:
+        escaped_action = act.replace('\\', '\\\\').replace('"', '\\"')
+        return f'hl.bind("{keys}", hl.dsp.exec_cmd("{escaped_action}"))\n'
+
+def format_niri_bind(keys, action):
+    clean_combo = keys.replace(" ", "")
+    act = action.strip()
+    act_low = act.lower()
+
+    if act_low in ("close window", "killactive", "close-window"):
+        return f'    {clean_combo} {{ close-window; }}\n'
+    elif act_low in ("toggle floating", "togglefloating", "toggle-window-floating"):
+        return f'    {clean_combo} {{ toggle-window-floating; }}\n'
+    elif act_low in ("toggle fullscreen", "fullscreen", "fullscreen-window"):
+        return f'    {clean_combo} {{ fullscreen-window; }}\n'
+    elif act_low.startswith("focus-workspace ") or act_low.startswith("focus workspace "):
+        ws_num = act.split()[-1]
+        return f'    {clean_combo} {{ focus-workspace {ws_num}; }}\n'
+    elif act_low.startswith("move-window-to-workspace ") or act_low.startswith("move window to workspace "):
+        ws_num = act.split()[-1]
+        return f'    {clean_combo} {{ move-window-to-workspace {ws_num}; }}\n'
+    elif act.startswith("niri:") or "(" in act or "-" in act or act.endswith(";"):
+        clean_act = act.rstrip(";")
+        return f'    {clean_combo} {{ {clean_act}; }}\n'
+    else:
+        parts = act.split()
+        quoted_parts = " ".join(f'"{p}"' for p in parts)
+        return f'    {clean_combo} {{ spawn {quoted_parts}; }}\n'
+
 def parse_hyprconf_binds(path):
     if not os.path.exists(path):
         return []
@@ -947,7 +1399,7 @@ def parse_hyprconf_binds(path):
         return []
 
     binds = []
-    bind_re = re.compile(r'^\s*bind[lrme]?\s*=\s*([^,]+),\s*([^,]+),\s*([^,]+)(?:,\s*(.*))?')
+    bind_re = re.compile(r'^\s*bind[a-zA-Z]*\s*=\s*([^,]*),\s*([^,]+),\s*([^,]+)(?:,\s*(.*))?')
     for idx, line in enumerate(lines):
         line_str = line.strip()
         if not line_str or line_str.startswith("#"):
@@ -971,7 +1423,7 @@ def parse_hyprconf_binds(path):
                 cat = "quickshell"
             elif any(x in ca_low for x in ["kitty", "alacritty", "foot", "ghostty", "nautilus", "thunar", "dolphin", "browser", "firefox"]):
                 cat = "apps"
-            elif any(x in ca_low for x in ["killactive", "fullscreen", "togglefloating", "workspace", "movetoworkspace", "splitratio"]):
+            elif any(x in ca_low for x in ["killactive", "fullscreen", "togglefloating", "workspace", "movetoworkspace", "splitratio", "movefocus", "movewindow"]):
                 cat = "nav"
             elif "screenshot" in ca_low or "grim" in ca_low or "print" in cb_low:
                 cat = "screenshot"
@@ -1110,41 +1562,20 @@ def add_keybind(keys, action, desc="", target_file=None):
         return {"ok": False, "error": str(e)}
 
     if cfg_type == "lua":
-        if action.startswith("hl.dsp."):
-            new_line = f'hl.bind("{keys}", {action})\n'
-        else:
-            escaped_action = action.replace('\\', '\\\\').replace('"', '\\"')
-            new_line = f'hl.bind("{keys}", hl.dsp.exec_cmd("{escaped_action}"))\n'
-
+        new_line = format_lua_bind(keys, action)
         insert_idx = len(lines)
         for i, l in enumerate(lines):
             if "WINDOW / LAYER RULES" in l or "WINDOW RULES" in l or "LAYER RULES" in l:
                 insert_idx = max(0, i - 1)
                 break
-
         lines.insert(insert_idx, new_line)
 
     elif cfg_type == "hyprconf":
-        parts = [p.strip() for p in keys.split("+") if p.strip()]
-        if len(parts) > 1:
-            mod = " ".join(parts[:-1])
-            k = parts[-1]
-        else:
-            mod = ""
-            k = parts[0]
-
-        new_line = f"bind = {mod}, {k}, exec, {action}\n"
+        new_line = format_hyprconf_bind(keys, action)
         lines.append(new_line)
 
     elif cfg_type == "niri":
-        clean_combo = keys.replace(" ", "")
-        if action.startswith("niri:") or "(" in action or "-" in action:
-            new_line = f'    {clean_combo} {{ {action}; }}\n'
-        else:
-            parts = action.split()
-            quoted_parts = " ".join(f'"{p}"' for p in parts)
-            new_line = f'    {clean_combo} {{ spawn {quoted_parts}; }}\n'
-
+        new_line = format_niri_bind(keys, action)
         insert_idx = len(lines)
         for i, l in enumerate(lines):
             if "binds {" in l:
@@ -1186,28 +1617,11 @@ def update_keybind(line_num, keys, action, desc="", target_file=None):
     action = action.strip()
 
     if cfg_type == "lua":
-        if action.startswith("hl.dsp."):
-            lines[line_idx] = f'hl.bind("{keys}", {action})\n'
-        else:
-            escaped_action = action.replace('\\', '\\\\').replace('"', '\\"')
-            lines[line_idx] = f'hl.bind("{keys}", hl.dsp.exec_cmd("{escaped_action}"))\n'
+        lines[line_idx] = format_lua_bind(keys, action)
     elif cfg_type == "hyprconf":
-        parts = [p.strip() for p in keys.split("+") if p.strip()]
-        if len(parts) > 1:
-            mod = " ".join(parts[:-1])
-            k = parts[-1]
-        else:
-            mod = ""
-            k = parts[0]
-        lines[line_idx] = f"bind = {mod}, {k}, exec, {action}\n"
+        lines[line_idx] = format_hyprconf_bind(keys, action)
     elif cfg_type == "niri":
-        clean_combo = keys.replace(" ", "")
-        if action.startswith("niri:") or "(" in action or "-" in action:
-            lines[line_idx] = f'    {clean_combo} {{ {action}; }}\n'
-        else:
-            parts = action.split()
-            quoted_parts = " ".join(f'"{p}"' for p in parts)
-            lines[line_idx] = f'    {clean_combo} {{ spawn {quoted_parts}; }}\n'
+        lines[line_idx] = format_niri_bind(keys, action)
 
     content = "".join(lines)
     res = _write_and_validate(cfg_path, content)
@@ -1246,6 +1660,402 @@ def delete_keybind(line_num, target_file=None):
         reload_compositor()
     return res
 
+# ==================== Autostart Management ====================
+
+def get_autostart_files():
+    hypr_dir = os.path.join(HOME, ".config/hypr")
+    niri_dir = os.path.join(HOME, ".config/niri")
+    files = []
+
+    candidates = [
+        (os.path.join(hypr_dir, "conf", "autostart.lua"), "lua"),
+        (os.path.join(hypr_dir, "conf", "autostart.conf"), "hyprconf"),
+        (os.path.join(hypr_dir, "conf", "quickshell.lua"), "lua"),
+        (os.path.join(hypr_dir, "conf", "quickshell.conf"), "hyprconf"),
+        (os.path.join(hypr_dir, "hyprland.lua"), "lua"),
+        (os.path.join(hypr_dir, "hyprland.conf"), "hyprconf"),
+        (os.path.join(niri_dir, "conf", "autostart.kdl"), "niri"),
+        (os.path.join(niri_dir, "config.kdl"), "niri"),
+    ]
+    for p, t in candidates:
+        if os.path.exists(p):
+            files.append((p, t))
+    return files
+
+def get_primary_autostart_file():
+    hypr_dir = os.path.join(HOME, ".config/hypr")
+    niri_dir = os.path.join(HOME, ".config/niri")
+    if is_niri():
+        p = os.path.join(niri_dir, "conf", "autostart.kdl")
+        if os.path.exists(p): return p, "niri"
+        return os.path.join(niri_dir, "config.kdl"), "niri"
+
+    if is_lua_config():
+        p = os.path.join(hypr_dir, "conf", "autostart.lua")
+        if os.path.exists(p): return p, "lua"
+        return os.path.join(hypr_dir, "hyprland.lua"), "lua"
+    else:
+        p = os.path.join(hypr_dir, "conf", "autostart.conf")
+        if os.path.exists(p): return p, "hyprconf"
+        return os.path.join(hypr_dir, "hyprland.conf"), "hyprconf"
+
+def detect_app_meta(command):
+    cmd_lower = command.lower()
+    
+    if ("cliphist" in cmd_lower or "wl-paste" in cmd_lower) and "image" in cmd_lower:
+        return {
+            "name": "Clipboard Images & Screenshots (Cliphist)",
+            "desc": "Records copied images and screenshots into clipboard history",
+            "icon": "󰄄",
+            "category": "Service"
+        }
+    if "cliphist" in cmd_lower or "wl-paste" in cmd_lower:
+        return {
+            "name": "Clipboard Text (Cliphist)",
+            "desc": "Records copied text entries into clipboard history",
+            "icon": "󰅍",
+            "category": "Service"
+        }
+    if "polkit" in cmd_lower:
+        return {
+            "name": "Polkit Authentication Agent",
+            "desc": "Handles privilege escalation and security authentication dialogs",
+            "icon": "󰌋",
+            "category": "System"
+        }
+    if "quickshell" in cmd_lower or cmd_lower.strip() == "qs" or cmd_lower.startswith("qs "):
+        return {
+            "name": "Quickshell Desktop Shell",
+            "desc": "Wayland status bar, app launcher, widgets, and dynamic island",
+            "icon": "󱗼",
+            "category": "Shell"
+        }
+    if "hyprpaper" in cmd_lower or "awww" in cmd_lower or "swaybg" in cmd_lower or "mpvpaper" in cmd_lower:
+        return {
+            "name": "Wallpaper Daemon",
+            "desc": "Manages desktop wallpaper backgrounds across monitors",
+            "icon": "󰸉",
+            "category": "Personalization"
+        }
+    if "hypridle" in cmd_lower or "swayidle" in cmd_lower:
+        return {
+            "name": "Hypridle Daemon",
+            "desc": "Automates screen locking, sleep, and backlight power saving",
+            "icon": "󰒲",
+            "category": "Power"
+        }
+    if "nm-applet" in cmd_lower:
+        return {
+            "name": "NetworkManager Applet",
+            "desc": "System tray icon and connection manager for Wi-Fi and Ethernet",
+            "icon": "󰤨",
+            "category": "Network"
+        }
+    if "blueman" in cmd_lower:
+        return {
+            "name": "Bluetooth Manager Applet",
+            "desc": "System tray applet for pairing and managing Bluetooth devices",
+            "icon": "󰂯",
+            "category": "Bluetooth"
+        }
+    if "pipewire" in cmd_lower or "wireplumber" in cmd_lower:
+        return {
+            "name": "Audio Server (PipeWire)",
+            "desc": "Low-latency sound server and media pipeline engine",
+            "icon": "󰓃",
+            "category": "Audio"
+        }
+    if "vesktop" in cmd_lower or "discord" in cmd_lower:
+        return {
+            "name": "Discord / Vesktop",
+            "desc": "Voice, video, and text communication platform",
+            "icon": "󰙯",
+            "category": "Application"
+        }
+    if "spotify" in cmd_lower:
+        return {
+            "name": "Spotify",
+            "desc": "Music and podcast streaming player",
+            "icon": "󰓇",
+            "category": "Application"
+        }
+    if "steam" in cmd_lower:
+        return {
+            "name": "Steam",
+            "desc": "Digital video game distribution platform",
+            "icon": "󰓓",
+            "category": "Application"
+        }
+    if "dunst" in cmd_lower or "mako" in cmd_lower or "swaync" in cmd_lower:
+        return {
+            "name": "Notification Daemon",
+            "desc": "Desktop notification server daemon",
+            "icon": "󰂚",
+            "category": "Service"
+        }
+
+    raw_bin = command.strip().split()[0] if command.strip() else "app"
+    bin_name = os.path.basename(raw_bin)
+    clean_name = bin_name.replace("-", " ").replace("_", " ").title()
+    return {
+        "name": clean_name,
+        "desc": f"Startup command: {command}",
+        "icon": "󰐥",
+        "category": "Custom"
+    }
+
+def parse_autostart_from_file(file_path, file_type):
+    entries = []
+    if not os.path.exists(file_path):
+        return entries
+
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+    except Exception:
+        return entries
+
+    for idx, line in enumerate(lines):
+        line_num = idx + 1
+        stripped = line.strip()
+        if not stripped:
+            continue
+
+        if file_type == "hyprconf":
+            m = re.match(r'^(#\s*)?(exec-once|exec)\s*=\s*(.+)$', stripped)
+            if m:
+                is_commented = bool(m.group(1))
+                exec_type = m.group(2)
+                cmd = m.group(3).strip()
+                meta = detect_app_meta(cmd)
+                entries.append({
+                    "id": f"{file_path}:{line_num}",
+                    "name": meta["name"],
+                    "desc": meta["desc"],
+                    "icon": meta["icon"],
+                    "category": meta["category"],
+                    "command": cmd,
+                    "type": exec_type,
+                    "enabled": not is_commented,
+                    "file": file_path,
+                    "fileName": os.path.basename(file_path),
+                    "line": line_num,
+                    "raw": stripped
+                })
+
+        elif file_type == "lua":
+            m = re.match(r'^(--\s*)?(?:hl\.(?:exec_cmd|exec)\(\s*["\'](.+?)["\']\s*\)|hl\.on\(\s*["\']hyprland\.start["\'].*?hl\.exec_cmd\(\s*["\'](.+?)["\']\s*\))', stripped)
+            if not m:
+                m2 = re.search(r'hl\.exec_cmd\(\s*["\'](.+?)["\']\s*\)', stripped)
+                if m2:
+                    is_commented = stripped.startswith("--")
+                    cmd = m2.group(1).strip()
+                    meta = detect_app_meta(cmd)
+                    entries.append({
+                        "id": f"{file_path}:{line_num}",
+                        "name": meta["name"],
+                        "desc": meta["desc"],
+                        "icon": meta["icon"],
+                        "category": meta["category"],
+                        "command": cmd,
+                        "type": "exec-once",
+                        "enabled": not is_commented,
+                        "file": file_path,
+                        "fileName": os.path.basename(file_path),
+                        "line": line_num,
+                        "raw": stripped
+                    })
+            else:
+                is_commented = bool(m.group(1))
+                cmd = (m.group(2) or m.group(3) or "").strip()
+                if cmd:
+                    meta = detect_app_meta(cmd)
+                    entries.append({
+                        "id": f"{file_path}:{line_num}",
+                        "name": meta["name"],
+                        "desc": meta["desc"],
+                        "icon": meta["icon"],
+                        "category": meta["category"],
+                        "command": cmd,
+                        "type": "exec-once",
+                        "enabled": not is_commented,
+                        "file": file_path,
+                        "fileName": os.path.basename(file_path),
+                        "line": line_num,
+                        "raw": stripped
+                    })
+
+        elif file_type == "niri":
+            m = re.match(r'^(//\s*)?spawn-at-startup\s+(.+)$', stripped)
+            if m:
+                is_commented = bool(m.group(1))
+                raw_args = m.group(2).strip()
+                parts = re.findall(r'"([^"]*)"', raw_args)
+                cmd = " ".join(parts) if parts else raw_args
+                meta = detect_app_meta(cmd)
+                entries.append({
+                    "id": f"{file_path}:{line_num}",
+                    "name": meta["name"],
+                    "desc": meta["desc"],
+                    "icon": meta["icon"],
+                    "category": meta["category"],
+                    "command": cmd,
+                    "type": "spawn-at-startup",
+                    "enabled": not is_commented,
+                    "file": file_path,
+                    "fileName": os.path.basename(file_path),
+                    "line": line_num,
+                    "raw": stripped
+                })
+
+    return entries
+
+def list_autostart():
+    files = get_autostart_files()
+    all_entries = []
+    seen = set()
+
+    for fpath, ftype in files:
+        entries = parse_autostart_from_file(fpath, ftype)
+        for e in entries:
+            key = (e["command"], e["file"])
+            if key not in seen:
+                seen.add(key)
+                all_entries.append(e)
+
+    pri_path, pri_type = get_primary_autostart_file()
+    return {
+        "ok": True,
+        "items": all_entries,
+        "primaryFile": pri_path,
+        "primaryType": pri_type,
+        "total": len(all_entries)
+    }
+
+def add_autostart(command, autostart_type="exec-once", target_file=None):
+    command = command.strip()
+    if not command:
+        return {"ok": False, "error": "Command cannot be empty"}
+
+    if target_file and os.path.exists(target_file):
+        cfg_path = target_file
+        cfg_type = "lua" if target_file.endswith(".lua") else ("niri" if target_file.endswith(".kdl") else "hyprconf")
+    else:
+        cfg_path, cfg_type = get_primary_autostart_file()
+
+    if not cfg_path:
+        return {"ok": False, "error": "No autostart config found"}
+
+    os.makedirs(os.path.dirname(cfg_path), exist_ok=True)
+    if not os.path.exists(cfg_path):
+        lines = []
+    else:
+        try:
+            with open(cfg_path, "r", encoding="utf-8") as f:
+                lines = f.readlines()
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    if cfg_type == "lua":
+        new_line = f'    hl.exec_cmd("{command}")\n'
+        inserted = False
+        for i, l in enumerate(lines):
+            if 'hl.on("hyprland.start"' in l or "hl.on('hyprland.start'" in l:
+                lines.insert(i + 1, new_line)
+                inserted = True
+                break
+        if not inserted:
+            lines.append(f'\nhl.on("hyprland.start", function ()\n{new_line}end)\n')
+
+    elif cfg_type == "hyprconf":
+        new_line = f"{autostart_type} = {command}\n"
+        lines.append(new_line)
+
+    elif cfg_type == "niri":
+        parts = shlex.split(command)
+        quoted = " ".join(f'"{p}"' for p in parts)
+        new_line = f"spawn-at-startup {quoted}\n"
+        lines.append(new_line)
+
+    content = "".join(lines)
+    res = _write_and_validate(cfg_path, content)
+    return res
+
+def toggle_autostart(file_path, line_num, enable=True):
+    if not os.path.exists(file_path):
+        return {"ok": False, "error": "File does not exist"}
+
+    try:
+        line_idx = int(line_num) - 1
+    except Exception:
+        return {"ok": False, "error": "Invalid line number"}
+
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+    if line_idx < 0 or line_idx >= len(lines):
+        return {"ok": False, "error": f"Line {line_num} out of range"}
+
+    line = lines[line_idx]
+    stripped = line.strip()
+
+    if file_path.endswith(".lua"):
+        if enable:
+            lines[line_idx] = re.sub(r'^\s*--\s*', '', line)
+        else:
+            if not stripped.startswith("--"):
+                lines[line_idx] = "-- " + line
+    elif file_path.endswith(".kdl"):
+        if enable:
+            lines[line_idx] = re.sub(r'^\s*//\s*', '', line)
+        else:
+            if not stripped.startswith("//"):
+                lines[line_idx] = "// " + line
+    else: # hyprconf
+        if enable:
+            lines[line_idx] = re.sub(r'^\s*#\s*', '', line)
+        else:
+            if not stripped.startswith("#"):
+                lines[line_idx] = "# " + line
+
+    content = "".join(lines)
+    return _write_and_validate(file_path, content)
+
+def delete_autostart(file_path, line_num):
+    if not os.path.exists(file_path):
+        return {"ok": False, "error": "File does not exist"}
+
+    try:
+        line_idx = int(line_num) - 1
+    except Exception:
+        return {"ok": False, "error": "Invalid line number"}
+
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+    if line_idx < 0 or line_idx >= len(lines):
+        return {"ok": False, "error": f"Line {line_num} out of range"}
+
+    del lines[line_idx]
+    content = "".join(lines)
+    return _write_and_validate(file_path, content)
+
+def run_autostart_cmd(command):
+    command = command.strip()
+    if not command:
+        return {"ok": False, "error": "Empty command"}
+    try:
+        subprocess.Popen(command, shell=True, start_new_session=True)
+        return {"ok": True, "command": command}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
 def reload_compositor():
     comp = "hyprland"
     if is_niri():
@@ -1268,11 +2078,18 @@ def reload_compositor():
 def deduplicate_lines(lines):
     seen = set()
     result = []
+    PROTECTED_TOKENS = {
+        "end", "end)", "end);", "end,", "}", "})", "});", "},", ")", ");", "),", "]", "];",
+        "then", "do", "else", "elseif"
+    }
     for line in lines:
         stripped = line.strip()
         if not stripped:
             if result and result[-1].strip():
                 result.append(line)
+            continue
+        if stripped in PROTECTED_TOKENS or stripped.startswith("--") or stripped.startswith("//") or stripped.startswith("#"):
+            result.append(line)
             continue
         if stripped in seen:
             continue
@@ -1282,22 +2099,27 @@ def deduplicate_lines(lines):
 
 def strip_header_banner(content: str) -> str:
     lines = content.splitlines()
-    res = []
-    in_banner = False
-    for line in lines:
-        s = line.strip()
-        if s.startswith("# ═══") or s.startswith("// ═══") or s.startswith("-- ═══"):
-            in_banner = not in_banner
+    start_idx = 0
+    while start_idx < len(lines):
+        s = lines[start_idx].strip()
+        if not s:
+            start_idx += 1
             continue
-        if in_banner:
-            continue
-        if (s.startswith("#  Autostart") or s.startswith("--  Autostart") or s.startswith("//  Autostart") or
+        if (s.startswith("# ═══") or s.startswith("// ═══") or s.startswith("-- ═══") or
+            s.startswith("# ───") or s.startswith("-- ───") or s.startswith("// ───") or
+            s.startswith("----") or s.startswith("---") or
+            s.startswith("#  Autostart") or s.startswith("--  Autostart") or s.startswith("//  Autostart") or
             s.startswith("#  Keybindings") or s.startswith("--  Keybindings") or s.startswith("//  Keybindings") or
             s.startswith("#  Window") or s.startswith("--  Window") or s.startswith("//  Window") or
-            s.startswith("#  Quickshell") or s.startswith("--  Quickshell") or s.startswith("//  Quickshell")):
+            s.startswith("#  Quickshell") or s.startswith("--  Quickshell") or s.startswith("//  Quickshell") or
+            s.startswith("#  KEYBINDINGS") or s.startswith("--  KEYBINDINGS") or "KEYBINDING" in s or
+            s.startswith("#  AUTOSTART") or s.startswith("--  AUTOSTART") or "AUTOSTART" in s or
+            s.startswith("#  WINDOW RULES") or s.startswith("--  WINDOW RULES") or "WINDOWS AND WORKSPACES" in s or
+            s.startswith("#  RULES") or s.startswith("--  RULES")):
+            start_idx += 1
             continue
-        res.append(line)
-    return "\n".join(res).strip()
+        break
+    return "\n".join(lines[start_idx:]).strip()
 
 def modularize_hypr_lua():
     hypr_dir = os.path.join(HOME, ".config/hypr")
@@ -1313,9 +2135,11 @@ def modularize_hypr_lua():
 
 local mainMod = "SUPER"
 
--- ── 1. Autostart Quickshell Desktop Environment ──────────────────────────────
+-- ── 1. Autostart Quickshell Desktop Environment & Clipboard Daemons ─────────
 hl.on("hyprland.start", function ()
     hl.exec_cmd("qs")
+    hl.exec_cmd("wl-paste --type text --watch cliphist store")
+    hl.exec_cmd("wl-paste --type image --watch cliphist store")
 end)
 
 -- ── 2. Quickshell IPC Keybindings ─────────────────────────────────────────────
@@ -1420,6 +2244,13 @@ hl.dwindle({
     preserve_split = true,
 })
 
+hl.config({
+    scrolling = {
+        column_width             = 0.89,
+        fullscreen_on_one_column = false,
+    },
+})
+
 hl.input({
     kb_layout     = "us",
     follow_mouse  = 1,
@@ -1435,7 +2266,9 @@ local confDir = home .. "/.config/hypr/conf"
 
 local function load_conf(module_name)
     local module_path = confDir .. "/" .. module_name .. ".lua"
-    if io.open(module_path, "r") then
+    local f = io.open(module_path, "r")
+    if f then
+        f:close()
         dofile(module_path)
     end
 end
@@ -1467,6 +2300,7 @@ end)
 local mainMod = "SUPER"
 local terminal = "kitty"
 local fileManager = "nautilus"
+local menu = "wofi --show drun"
 
 hl.bind(mainMod .. " + T", hl.dsp.exec_cmd(terminal), { repeating = true })
 hl.bind(mainMod .. " + E", hl.dsp.exec_cmd(fileManager))
@@ -1512,11 +2346,19 @@ hl.window_rule({
 """)
         return {"ok": True, "created_main": True, "conf_dir": conf_dir}
 
-    backup_path = f"{lua_path}.bak.{int(time.time())}"
-    shutil.copy2(lua_path, backup_path)
-
     with open(lua_path, "r", encoding="utf-8") as f:
-        lines = f.readlines()
+        full_content = f.read()
+
+    # Pre-clean any existing loader blocks, quickshell integrations, or dofile loaders
+    clean_content = re.sub(r'(?s)--\s*──+\s*Load Modular Configuration Files[\s\S]*', '', full_content)
+    clean_content = re.sub(r'(?s)local\s+function\s+load_conf\s*\([\s\S]*?load_conf\s*\(\s*["\']quickshell["\']\s*\)', '', clean_content)
+    clean_content = re.sub(r'(?s)local\s+home\s*=\s*os\.getenv\("HOME"\)[\s\S]*?load_conf\s*\(\s*["\']quickshell["\']\s*\)', '', clean_content)
+    clean_content = re.sub(r'(?m)^\s*if\s+f\s+then\s*$', '', clean_content)
+    clean_content = re.sub(r'(?m)^\s*f:close\(\)\s*$', '', clean_content)
+    clean_content = re.sub(r'(?m)^\s*dofile\(.*?\)\s*$', '', clean_content)
+    clean_content = re.sub(r'(?m)^\s*load_conf\(.*?\)\s*$', '', clean_content)
+
+    lines = clean_content.splitlines(keepends=True)
 
     autostart_lines = []
     keybind_lines = []
@@ -1525,30 +2367,59 @@ hl.window_rule({
 
     current_section = 'main'
     section_keywords = {
-        'autostart': ['AUTOSTART'],
-        'keybinds': ['KEYBINDINGS'],
-        'rules': ['WINDOW / LAYER RULES', 'WINDOW RULES', 'LAYER RULES'],
-        'main': ['MONITORS', 'PROGRAMS / VARIABLES', 'ENVIRONMENT VARIABLES', 'PERMISSIONS', 'LOOK AND FEEL', 'ANIMATIONS', 'WORKSPACE RULES', 'LAYOUTS', 'MISC', 'INPUT']
+        'autostart': ['AUTOSTART', 'STARTUP', 'DAEMONS'],
+        'keybinds': ['KEYBINDINGS', 'KEYBINDINGSS', 'KEYBINDS', 'BINDS', 'SHORTCUTS'],
+        'rules': ['WINDOW / LAYER RULES', 'WINDOW RULES', 'LAYER RULES', 'WINDOWS AND WORKSPACES', 'WORKSPACE RULES', 'WINDOW & WORKSPACE RULES', 'RULES'],
+        'programs': ['MY PROGRAMS', 'PROGRAMS', 'PROGRAMS / VARIABLES', 'VARIABLES', 'USER PROGRAMS', 'APPS'],
+        'main': ['MONITORS', 'ENVIRONMENT VARIABLES', 'PERMISSIONS', 'LOOK AND FEEL', 'ANIMATIONS', 'WORKSPACE RULES', 'LAYOUTS', 'MISC', 'INPUT', 'GESTURES', 'DEVICES']
     }
 
-    var_defs = []
-    qs_vars = set([
-        'menu', 'clipboard', 'lockscreen', 'lockScreen', 'notifcenter', 'notifCenter',
-        'powermenu', 'powerMenu', 'dashboard', 'controlcenter', 'controlCenter',
-        'batterypanel', 'batteryPanel', 'settingsgui', 'settingsGui',
-        'wallpaperselector', 'wallpaperSelector', 'emojipicker', 'emojiPicker'
-    ])
+    var_re = re.compile(r'^\s*local\s+([A-Za-z0-9_]+)\s*=\s*(?:([\"\'\`])(.*?)\2|([0-9]+|true|false))\s*(?:--.*)?$')
+    var_defs = {}
+    qs_vars = set()
+
     for line in lines:
-        m = re.match(r'^\s*local\s+([A-Za-z0-9_]+)\s*=\s*(.*)', line)
+        m = var_re.match(line)
         if m:
             vname = m.group(1).strip()
-            val = m.group(2).strip()
-            if 'qs ' in val or 'qs"' in val or "qs'" in val or 'quickshell' in val:
+            raw_val = (m.group(3) if m.group(3) is not None else m.group(4)).strip()
+            if 'qs ' in raw_val or 'qs"' in raw_val or "qs'" in raw_val or 'quickshell' in raw_val:
                 qs_vars.add(vname)
-            elif vname in ['mainMod', 'terminal', 'fileManager', 'browser', 'editor']:
-                var_defs.append(line.strip())
+            else:
+                var_defs[vname] = line.strip()
+
+    # Provide safe fallback definitions if not found
+    if 'mainMod' not in var_defs:
+        var_defs['mainMod'] = 'local mainMod = "SUPER"'
+    if 'terminal' not in var_defs and 'myTerminal' not in var_defs and 'term' not in var_defs:
+        var_defs['terminal'] = 'local terminal = "kitty"'
+    if 'fileManager' not in var_defs and 'file_manager' not in var_defs and 'filemanager' not in var_defs:
+        var_defs['fileManager'] = 'local fileManager = "nautilus"'
+    if 'menu' not in var_defs and 'launcher' not in var_defs and 'appLauncher' not in var_defs:
+        var_defs['menu'] = 'local menu = "wofi --show drun"'
+    if 'browser' not in var_defs:
+        var_defs['browser'] = 'local browser = "xdg-open https://"'
+    if 'editor' not in var_defs:
+        var_defs['editor'] = 'local editor = "nano"'
+
+    # Build prioritized var definitions string
+    priority_order = ['mainMod', 'terminal', 'myTerminal', 'term', 'fileManager', 'file_manager', 'filemanager', 'menu', 'launcher', 'browser', 'editor']
+    vars_prefix_lines = []
+    for k in priority_order:
+        if k in var_defs and var_defs[k] not in vars_prefix_lines:
+            vars_prefix_lines.append(var_defs[k])
+    for k, v in var_defs.items():
+        if v not in vars_prefix_lines:
+            vars_prefix_lines.append(v)
+    vars_prefix = "\n".join(vars_prefix_lines)
 
     in_loader_block = False
+    current_section = 'main'
+    active_target = 'main'
+    paren_depth = 0
+    brace_depth = 0
+    in_for_loop = False
+
     for line in lines:
         stripped = line.strip()
 
@@ -1570,11 +2441,6 @@ hl.window_rule({
             else:
                 in_loader_block = False
 
-        for sec, kws in section_keywords.items():
-            if any(re.search(rf'--\s*{re.escape(kw)}\b', stripped, re.IGNORECASE) for kw in kws):
-                current_section = sec
-                break
-
         if any(marker in stripped for marker in [
             'Load Modular Configuration Files',
             'Quickshell Desktop Environment Integration',
@@ -1586,8 +2452,6 @@ hl.window_rule({
             'Load separated modules',
         ]):
             continue
-        if stripped in ['end', 'end)', 'end);'] and current_section in ['rules', 'main']:
-            continue
         if ('dofile(' in stripped and ('quickshell' in stripped or 'conf/' in stripped or 'module_path' in stripped)):
             continue
         if 'local home = os.getenv("HOME")' in stripped or 'io.open(module_path' in stripped or 'local function load_conf' in stripped:
@@ -1595,31 +2459,92 @@ hl.window_rule({
 
         if 'qs ipc call' in stripped or 'quickshell:' in stripped:
             continue
-        if current_section == 'keybinds' and any(re.search(rf'\b{re.escape(v)}\b', stripped) for v in qs_vars):
-            continue
-        if current_section == 'autostart' and re.search(r'hl\.exec_cmd\(\s*[\"\']\s*qs(?:\s+-[a-zA-Z0-9_/~\.]+)?\s*[\"\']\s*\)', stripped):
-            continue
 
-        if current_section == 'autostart':
+        # If not inside a multiline statement or loop, update section and statement target
+        if paren_depth == 0 and brace_depth == 0 and not in_for_loop:
+            for sec, kws in section_keywords.items():
+                if any(re.search(rf'--\s*{re.escape(kw)}\b', stripped, re.IGNORECASE) for kw in kws):
+                    current_section = sec
+                    break
+
+            if current_section == 'keybinds':
+                active_target = 'keybinds'
+            elif current_section == 'autostart':
+                if stripped.startswith(('hl.env', 'hl.config', 'hl.general', 'hl.decoration', 'hl.animation', 'hl.curve', 'hl.monitor', 'hl.dwindle', 'hl.master', 'hl.input', 'hl.gesture', 'hl.device', 'local ')):
+                    active_target = 'main'
+                    current_section = 'main'
+                else:
+                    active_target = 'autostart'
+            elif current_section == 'rules':
+                if stripped.startswith(('hl.env', 'hl.config', 'hl.general', 'hl.decoration', 'hl.animation', 'hl.curve', 'hl.monitor', 'hl.dwindle', 'hl.master', 'hl.input', 'hl.gesture', 'hl.device')):
+                    active_target = 'main'
+                    current_section = 'main'
+                else:
+                    active_target = 'rules'
+            else:
+                if (stripped.startswith('hl.on(') or stripped.startswith('hl.on (')) and ('hyprland.start' in stripped or 'start' in stripped):
+                    active_target = 'autostart'
+                elif 'hl.bind(' in stripped or 'hl.bind (' in stripped:
+                    active_target = 'keybinds'
+                elif 'hl.window_rule(' in stripped or 'hl.layer_rule(' in stripped:
+                    active_target = 'rules'
+                else:
+                    active_target = 'main'
+
+        # Track bracket & string depths across multiline blocks
+        in_str = False
+        str_ch = ''
+        for idx, ch in enumerate(stripped):
+            if ch in ('"', "'") and not in_str:
+                in_str = True
+                str_ch = ch
+            elif in_str and ch == str_ch and (idx == 0 or stripped[idx-1] != '\\'):
+                in_str = False
+            elif not in_str:
+                if ch == '-' and idx + 1 < len(stripped) and stripped[idx+1] == '-':
+                    break
+                elif ch == '(':
+                    paren_depth += 1
+                elif ch == ')':
+                    paren_depth = max(0, paren_depth - 1)
+                elif ch == '{':
+                    brace_depth += 1
+                elif ch == '}':
+                    brace_depth = max(0, brace_depth - 1)
+
+        if stripped.startswith('for ') and ' do' in stripped:
+            in_for_loop = True
+        elif in_for_loop and stripped == 'end':
+            in_for_loop = False
+
+        if active_target == 'autostart':
             autostart_lines.append(line)
-        elif current_section == 'keybinds':
+        elif active_target == 'keybinds':
             keybind_lines.append(line)
-        elif current_section == 'rules':
+        elif active_target == 'rules':
             rule_lines.append(line)
         else:
             main_lines.append(line)
 
-    # Write conf/autostart.lua (Deduplicated)
+    # Write conf/autostart.lua
     existing_autostart = ""
     if os.path.exists(autostart_path):
         with open(autostart_path, "r", encoding="utf-8") as f:
             existing_autostart = f.read()
 
+    autostart_vars = []
+    for v in ["terminal", "myTerminal", "term", "fileManager", "browser"]:
+        if v in var_defs and any(re.search(rf'\b{re.escape(v)}\b', l) for l in autostart_lines):
+            autostart_vars.append(var_defs[v])
+
     if autostart_lines:
-        combined_autostart = deduplicate_lines(autostart_lines)
-        autostart_content = strip_header_banner("".join(combined_autostart))
+        raw_as = strip_header_banner("".join(autostart_lines)).strip()
+        if autostart_vars and not any(f"local {v}" in raw_as for v in ["terminal", "myTerminal", "term"]):
+            autostart_content = "\n".join(autostart_vars) + "\n\n" + raw_as
+        else:
+            autostart_content = raw_as
     elif existing_autostart.strip():
-        autostart_content = strip_header_banner(existing_autostart)
+        autostart_content = strip_header_banner(existing_autostart).strip()
     else:
         autostart_content = """hl.on("hyprland.start", function ()
     hl.exec_cmd("systemctl enable --now --user hyprpolkitagent")
@@ -1635,14 +2560,25 @@ end)"""
 {autostart_content}
 """)
 
-    # Write conf/keybinds.lua (Deduplicated)
-    vars_prefix = "\n".join(var_defs) if var_defs else 'local mainMod = "SUPER"\nlocal terminal = "kitty"\nlocal fileManager = "nautilus"'
-    if keybind_lines:
-        combined_keybinds = deduplicate_lines(keybind_lines)
-        keybind_content = f"{vars_prefix}\n\n" + strip_header_banner("".join(combined_keybinds))
+    # Write conf/keybinds.lua
+    # Clean duplicate local literal variable declarations from keybind lines if already in vars_prefix
+    clean_keybind_lines = []
+    for line in keybind_lines:
+        m = var_re.match(line)
+        if m and m.group(1).strip() in var_defs:
+            continue
+        clean_keybind_lines.append(line)
+
+    if clean_keybind_lines:
+        keybind_body = strip_header_banner("".join(clean_keybind_lines)).strip()
+        keybind_content = f"{vars_prefix}\n\n{keybind_body}"
     elif os.path.exists(keybinds_path):
         with open(keybinds_path, "r", encoding="utf-8") as f:
-            keybind_content = strip_header_banner(f.read())
+            existing_kb = strip_header_banner(f.read()).strip()
+        if not any(f"local {k}" in existing_kb for k in ['terminal', 'fileManager']):
+            keybind_content = f"{vars_prefix}\n\n{existing_kb}"
+        else:
+            keybind_content = existing_kb
     else:
         keybind_content = vars_prefix + """
 
@@ -1673,8 +2609,7 @@ hl.bind(mainMod .. " + print", hl.dsp.exec_cmd("~/.config/quickshell/scripts/scr
 
     # Write conf/rules.lua
     if rule_lines:
-        combined_rules = deduplicate_lines(rule_lines)
-        rules_content = strip_header_banner("".join(combined_rules))
+        rules_content = strip_header_banner("".join(rule_lines))
     elif os.path.exists(rules_path):
         with open(rules_path, "r", encoding="utf-8") as f:
             rules_content = strip_header_banner(f.read())
@@ -1706,8 +2641,8 @@ hl.window_rule({
 {rules_content}
 """)
 
-    # Clean up main hyprland.lua
-    while main_lines and (not main_lines[-1].strip() or main_lines[-1].strip() in ['end', 'end)', 'end);', 'end}']):
+    # Clean up main hyprland.lua trailing whitespace
+    while main_lines and not main_lines[-1].strip():
         main_lines.pop()
 
     cleaned_main = "".join(main_lines).strip()
@@ -1719,7 +2654,9 @@ local confDir = home .. "/.config/hypr/conf"
 
 local function load_conf(module_name)
     local module_path = confDir .. "/" .. module_name .. ".lua"
-    if io.open(module_path, "r") then
+    local f = io.open(module_path, "r")
+    if f then
+        f:close()
         dofile(module_path)
     end
 end
@@ -1735,7 +2672,6 @@ load_conf("quickshell")
 
     return {
         "ok": True,
-        "backup": backup_path,
         "conf_dir": conf_dir,
         "extracted_autostart": len(autostart_lines),
         "extracted_keybinds": len(keybind_lines),
@@ -1754,8 +2690,10 @@ def modularize_hypr_conf():
 #  Quickshell Desktop Environment Integration (~/.config/hypr/conf/quickshell.conf)
 # ══════════════════════════════════════════════════════════════════════════════
 
-# ── 1. Autostart Quickshell Desktop Environment ──────────────────────────────
+# ── 1. Autostart Quickshell Desktop Environment & Clipboard Daemons ─────────
 exec-once = qs
+exec-once = wl-paste --type text --watch cliphist store
+exec-once = wl-paste --type image --watch cliphist store
 
 # ── 2. Quickshell IPC Keybindings ─────────────────────────────────────────────
 bind = SUPER, SPACE,         exec, qs ipc call launcher toggle
@@ -1885,6 +2823,11 @@ dwindle {
     preserve_split = true
 }
 
+scrolling {
+    column_width = 0.89
+    fullscreen_on_one_column = false
+}
+
 input {
     kb_layout = us
     follow_mouse = 1
@@ -1957,9 +2900,6 @@ windowrulev2 = pin, title:^(Picture-in-Picture|Picture in picture)$
 windowrulev2 = float, class:^(pavucontrol|nm-connection-editor|blueman-manager|swappy)$
 """)
         return {"ok": True, "created_main": True, "conf_dir": conf_dir}
-
-    backup_path = f"{conf_path}.bak.{int(time.time())}"
-    shutil.copy2(conf_path, backup_path)
 
     with open(conf_path, "r", encoding="utf-8") as f:
         lines = f.readlines()
@@ -2100,7 +3040,6 @@ source = ~/.config/hypr/conf/quickshell.conf
 
     return {
         "ok": True,
-        "backup": backup_path,
         "conf_dir": conf_dir,
         "extracted_autostart": len(autostart_lines),
         "extracted_keybinds": len(keybind_lines),
@@ -2259,9 +3198,6 @@ window-rule {
 """)
         return {"ok": True, "created_main": True, "conf_dir": conf_dir}
 
-    backup_path = f"{niri_path}.bak.{int(time.time())}"
-    shutil.copy2(niri_path, backup_path)
-
     with open(niri_path, "r", encoding="utf-8") as f:
         content = f.read()
 
@@ -2307,11 +3243,15 @@ spawn-at-startup "wl-paste" "--type" "image" "--watch" "cliphist" "store\""""
 
     # Write conf/keybinds.kdl
     if clean_binds_lines:
-        combined_binds = deduplicate_lines(clean_binds_lines)
-        keybinds_content = strip_header_banner("\n".join(combined_binds))
+        keybinds_content = strip_header_banner("\n".join(clean_binds_lines))
+        final_binds_block = f"binds {{\n{keybinds_content}\n}}"
     elif os.path.exists(keybinds_path):
         with open(keybinds_path, "r", encoding="utf-8") as f:
-            keybinds_content = strip_header_banner(f.read())
+            raw_existing = strip_header_banner(f.read())
+        if raw_existing.strip().startswith("binds {") and raw_existing.strip().endswith("}"):
+            final_binds_block = raw_existing.strip()
+        else:
+            final_binds_block = f"binds {{\n{raw_existing}\n}}"
     else:
         keybinds_content = """    Mod+Return { spawn "kitty"; }
     Mod+E      { spawn "nautilus"; }
@@ -2336,15 +3276,14 @@ spawn-at-startup "wl-paste" "--type" "image" "--watch" "cliphist" "store\""""
     Print       { spawn "sh" "-c" "~/.config/quickshell/scripts/screenshot.sh full"; }
     Shift+Print { spawn "sh" "-c" "~/.config/quickshell/scripts/screenshot.sh region"; }
     Mod+Print   { spawn "sh" "-c" "~/.config/quickshell/scripts/screenshot.sh window"; }"""
+        final_binds_block = f"binds {{\n{keybinds_content}\n}}"
 
     with open(keybinds_path, "w", encoding="utf-8") as f:
         f.write(f"""// ══════════════════════════════════════════════════════════════════════════════
 //  Keybindings & Shortcuts (~/.config/niri/conf/keybinds.kdl)
 // ══════════════════════════════════════════════════════════════════════════════
 
-binds {{
-{keybinds_content}
-}}
+{final_binds_block}
 """)
 
     # Write conf/rules.kdl
@@ -2396,7 +3335,6 @@ include "conf/quickshell.kdl"
 
     return {
         "ok": True,
-        "backup": backup_path,
         "conf_dir": conf_dir
     }
 
@@ -2454,9 +3392,6 @@ def save_monitors_to_file(monitors_data, is_lua=True):
         lua_path = os.path.join(hypr_dir, "hyprland.lua")
         if not os.path.exists(lua_path):
             return {"ok": False, "error": "hyprland.lua does not exist"}
-
-        backup_path = f"{lua_path}.bak.{int(time.time())}"
-        shutil.copy2(lua_path, backup_path)
 
         with open(lua_path, "r", encoding="utf-8") as f:
             content = f.read()
@@ -2519,15 +3454,12 @@ def save_monitors_to_file(monitors_data, is_lua=True):
         with open(lua_path, "w", encoding="utf-8") as f:
             f.write(new_content)
 
-        return {"ok": True, "file": lua_path, "backup": backup_path}
+        return {"ok": True, "file": lua_path}
 
     else:
         conf_path = os.path.join(hypr_dir, "hyprland.conf")
         if not os.path.exists(conf_path):
             return {"ok": False, "error": "hyprland.conf does not exist"}
-
-        backup_path = f"{conf_path}.bak.{int(time.time())}"
-        shutil.copy2(conf_path, backup_path)
 
         with open(conf_path, "r", encoding="utf-8") as f:
             content = f.read()
@@ -2560,16 +3492,13 @@ def save_monitors_to_file(monitors_data, is_lua=True):
         with open(conf_path, "w", encoding="utf-8") as f:
             f.write(new_content)
 
-        return {"ok": True, "file": conf_path, "backup": backup_path}
+        return {"ok": True, "file": conf_path}
 
 def save_niri_monitors(monitors_data):
     niri_dir = os.path.join(HOME, ".config/niri")
     kdl_path = os.path.join(niri_dir, "config.kdl")
     if not os.path.exists(kdl_path):
         return {"ok": False, "error": "config.kdl does not exist"}
-
-    backup_path = f"{kdl_path}.bak.{int(time.time())}"
-    shutil.copy2(kdl_path, backup_path)
 
     with open(kdl_path, "r", encoding="utf-8") as f:
         content = f.read()
@@ -2599,7 +3528,7 @@ def save_niri_monitors(monitors_data):
     with open(kdl_path, "w", encoding="utf-8") as f:
         f.write(new_content)
 
-    return {"ok": True, "file": kdl_path, "backup": backup_path}
+    return {"ok": True, "file": kdl_path}
 
 def apply_monitors_layout(monitors_data, save_config=True):
     if not isinstance(monitors_data, list):
@@ -2743,6 +3672,44 @@ def main():
         args = parser.parse_args(sys.argv[2:])
         res = delete_keybind(args.line, target_file=args.file)
         print(json.dumps(res))
+    elif cmd == "autostart-list":
+        data = list_autostart()
+        print(json.dumps(data))
+    elif cmd == "autostart-add":
+        import argparse
+        parser = argparse.ArgumentParser()
+        parser.add_argument("--cmd", required=True)
+        parser.add_argument("--type", default="exec-once")
+        parser.add_argument("--file", default=None)
+        args = parser.parse_args(sys.argv[2:])
+        res = add_autostart(args.cmd, autostart_type=args.type, target_file=args.file)
+        print(json.dumps(res))
+    elif cmd == "autostart-toggle":
+        import argparse
+        parser = argparse.ArgumentParser()
+        parser.add_argument("--file", required=True)
+        parser.add_argument("--line", required=True)
+        parser.add_argument("--enable", action="store_true", default=False)
+        parser.add_argument("--disable", action="store_true", default=False)
+        args = parser.parse_args(sys.argv[2:])
+        enable_val = True if args.enable else (False if args.disable else True)
+        res = toggle_autostart(args.file, args.line, enable=enable_val)
+        print(json.dumps(res))
+    elif cmd == "autostart-delete":
+        import argparse
+        parser = argparse.ArgumentParser()
+        parser.add_argument("--file", required=True)
+        parser.add_argument("--line", required=True)
+        args = parser.parse_args(sys.argv[2:])
+        res = delete_autostart(args.file, args.line)
+        print(json.dumps(res))
+    elif cmd == "autostart-run":
+        import argparse
+        parser = argparse.ArgumentParser()
+        parser.add_argument("--cmd", required=True)
+        args = parser.parse_args(sys.argv[2:])
+        res = run_autostart_cmd(args.cmd)
+        print(json.dumps(res))
     elif cmd in ("options-apply", "save-options"):
         import argparse
         parser = argparse.ArgumentParser()
@@ -2777,6 +3744,17 @@ def main():
         b64_str = sys.argv[3]
         res = save_config_b64(target, b64_str)
         print(json.dumps(res))
+    elif cmd == "anim-style-set":
+        if len(sys.argv) < 3:
+            print(json.dumps({"ok": False, "error": "Usage: anim-style-set <style_id>"}))
+            sys.exit(1)
+        style_id = sys.argv[2]
+        res = set_animation_style(style_id)
+        print(json.dumps(res))
+    elif cmd == "anim-style-get":
+        print(json.dumps({"ok": True, "style": get_animation_style()}))
+    elif cmd == "anim-styles-list":
+        print(json.dumps({"ok": True, "styles": get_animation_styles_list(), "current": get_animation_style()}))
     elif cmd == "reload":
         res = reload_compositor()
         print(json.dumps(res))

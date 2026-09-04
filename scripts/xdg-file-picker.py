@@ -7,12 +7,12 @@ import time
 import re
 import urllib.parse
 
-def pick_via_zenity():
+def pick_via_zenity(title="Select Image"):
     zenity_bin = shutil.which("zenity")
     if not zenity_bin:
         if shutil.which("nix-shell"):
             try:
-                cmd = ["nix-shell", "-p", "zenity", "--run", "zenity --file-selection --title='Select Wallpaper Image'"]
+                cmd = ["nix-shell", "-p", "zenity", "--run", f"zenity --file-selection --title='{title}'"]
                 proc = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
                 if proc.returncode == 0:
                     selected = proc.stdout.strip()
@@ -26,7 +26,7 @@ def pick_via_zenity():
         cmd = [
             zenity_bin,
             "--file-selection",
-            "--title=Select Wallpaper Image",
+            f"--title={title}",
             "--file-filter=Image files (*.jpg, *.png, *.webp, *.jpeg, *.gif, *.bmp, *.avif, *.svg) | *.jpg *.jpeg *.png *.webp *.gif *.bmp *.avif *.svg *.JPG *.JPEG *.PNG *.WEBP",
             "--file-filter=All files (*.*) | *"
         ]
@@ -42,7 +42,7 @@ def pick_via_zenity():
         pass
     return None
 
-def pick_via_kdialog():
+def pick_via_kdialog(title="Select Image"):
     if not shutil.which("kdialog"):
         return None
     try:
@@ -52,7 +52,9 @@ def pick_via_kdialog():
             "kdialog",
             "--getopenfilename",
             start_dir,
-            "Image files (*.jpg *.jpeg *.png *.webp *.gif *.bmp *.avif *.svg);;All files (*)"
+            "Image files (*.jpg *.jpeg *.png *.webp *.gif *.bmp *.avif *.svg);;All files (*)",
+            "--title",
+            title
         ]
         proc = subprocess.run(cmd, capture_output=True, text=True)
         if proc.returncode == 0:
@@ -63,7 +65,7 @@ def pick_via_kdialog():
         pass
     return None
 
-def pick_via_yad():
+def pick_via_yad(title="Select Image"):
     if not shutil.which("yad"):
         return None
     try:
@@ -71,7 +73,7 @@ def pick_via_yad():
         cmd = [
             "yad",
             "--file",
-            "--title=Select Wallpaper Image",
+            f"--title={title}",
             "--file-filter=Image files | *.jpg *.jpeg *.png *.webp *.gif *.bmp *.avif *.svg *.JPG *.PNG",
             "--file-filter=All files | *"
         ]
@@ -87,7 +89,7 @@ def pick_via_yad():
         pass
     return None
 
-def pick_via_gdbus():
+def pick_via_gdbus(title="Select Image"):
     """Fallback via gdbus tool to talk with org.freedesktop.portal.Desktop (no python-dbus required)."""
     if not shutil.which("gdbus"):
         return None
@@ -109,7 +111,7 @@ def pick_via_gdbus():
                 "--dest", "org.freedesktop.portal.Desktop",
                 "--object-path", "/org/freedesktop/portal/desktop",
                 "--method", "org.freedesktop.portal.FileChooser.OpenFile",
-                "", "Select Wallpaper Image", options
+                "", title, options
             ],
             capture_output=True,
             text=True,
@@ -159,14 +161,14 @@ def pick_via_gdbus():
                 except Exception:
                     pass
 
-def pick_via_gtk():
+def pick_via_gtk(title="Select Image"):
     try:
         import gi
         gi.require_version('Gtk', '3.0')
         from gi.repository import Gtk
 
         dialog = Gtk.FileChooserDialog(
-            title="Select Wallpaper Image",
+            title=title,
             parent=None,
             action=Gtk.FileChooserAction.OPEN
         )
@@ -215,7 +217,7 @@ def pick_via_gtk():
     except Exception:
         return None
 
-def pick_via_portal():
+def pick_via_portal(title="Select Image"):
     try:
         import dbus
         from dbus.mainloop.glib import DBusGMainLoop
@@ -255,21 +257,22 @@ def pick_via_portal():
             signal_name='Response'
         )
 
-        file_chooser.OpenFile('', 'Select Wallpaper Image', options)
+        file_chooser.OpenFile('', title, options)
         loop.run()
         return selected_file[0]
     except Exception:
         return None
 
 def main():
+    title = sys.argv[1] if len(sys.argv) > 1 else "Select Image"
     # Try backends in order of reliability and user environment
     backends = [
-        ("zenity", pick_via_zenity),
-        ("kdialog", pick_via_kdialog),
-        ("yad", pick_via_yad),
-        ("gtk", pick_via_gtk),
-        ("portal_dbus", pick_via_portal),
-        ("gdbus", pick_via_gdbus),
+        ("zenity", lambda: pick_via_zenity(title)),
+        ("kdialog", lambda: pick_via_kdialog(title)),
+        ("yad", lambda: pick_via_yad(title)),
+        ("gtk", lambda: pick_via_gtk(title)),
+        ("portal_dbus", lambda: pick_via_portal(title)),
+        ("gdbus", lambda: pick_via_gdbus(title)),
     ]
 
     path = None

@@ -256,12 +256,14 @@ setup_target_directory() {
                     BACKUP_DIR="${TARGET_DIR}_backup_$(date +%Y%m%d_%H%M%S)"
                     mv "$TARGET_DIR" "$BACKUP_DIR"
                     info "Backed up existing config to $BACKUP_DIR"
-                    cp -r "$SCRIPT_DIR" "$TARGET_DIR"
+                    mkdir -p "$TARGET_DIR"
+                    cp -r "$SCRIPT_DIR/." "$TARGET_DIR/"
                     success "Installed fresh configuration to $TARGET_DIR"
                     ;;
                 overwrite)
                     rm -rf "$TARGET_DIR"
-                    cp -r "$SCRIPT_DIR" "$TARGET_DIR"
+                    mkdir -p "$TARGET_DIR"
+                    cp -r "$SCRIPT_DIR/." "$TARGET_DIR/"
                     success "Overwrote configuration in $TARGET_DIR"
                     ;;
                 symlink)
@@ -275,8 +277,8 @@ setup_target_directory() {
                     ;;
             esac
         else
-            mkdir -p "$(dirname "$TARGET_DIR")"
-            cp -r "$SCRIPT_DIR" "$TARGET_DIR"
+            mkdir -p "$TARGET_DIR"
+            cp -r "$SCRIPT_DIR/." "$TARGET_DIR/"
             success "Copied configuration to $TARGET_DIR"
         fi
     fi
@@ -295,7 +297,7 @@ setup_target_directory() {
 # Format: "command_to_check|category|arch_pkg|debian_pkg|fedora_pkg|nix_pkg|description|required_type"
 DEPENDENCIES_DB=(
     # Core Framework & Compositors
-    "qs|Core|quickshell-git|quickshell|quickshell|quickshell|Quickshell UI framework (qs)|req"
+    "qs|Core|quickshell|quickshell|quickshell|quickshell|Quickshell UI framework (qs)|req"
     "hyprland|Compositor|hyprland|hyprland|hyprland|hyprland|Hyprland Wayland compositor|comp"
     "niri|Compositor|niri|niri|niri|niri|Niri Scrollable Wayland compositor|comp"
 
@@ -316,7 +318,7 @@ DEPENDENCIES_DB=(
 
     # Theming, Thematic Colors & Wallpaper
     "swww|Theming|swww|swww|swww|awww|Wayland animated wallpaper daemon (awww / swww)|opt"
-    "matugen|Theming|matugen-bin|matugen|matugen|matugen|Material You dynamic color palette generator from wallpaper|opt"
+    "matugen|Theming|matugen|matugen|matugen|matugen|Material You dynamic color palette generator from wallpaper|opt"
     "swaybg|Theming|swaybg|swaybg|swaybg|swaybg|Wayland wallpaper daemon (fallback)|opt"
 
     # System Utilities & IPC
@@ -677,19 +679,23 @@ inject_compositor_configs() {
 #  Quickshell Desktop Environment Integration (~/.config/hypr/conf/quickshell.conf)
 # ══════════════════════════════════════════════════════════════════════════════
 
-# ── 1. Autostart Quickshell Desktop Environment ──────────────────────────────
+# ── 1. Autostart Quickshell Desktop Environment & Clipboard Daemons ─────────
 exec-once = qs
+exec-once = wl-paste --type text --watch cliphist store
+exec-once = wl-paste --type image --watch cliphist store
 
 # ── 2. Quickshell IPC Keybindings ─────────────────────────────────────────────
 bind = SUPER, SPACE,         exec, qs ipc call launcher toggle
-bind = SUPER SHIFT, W,       exec, qs ipc call wallpaper toggle
-bind = SUPER SHIFT, E,       exec, qs ipc call emoji toggle
-bind = SUPER, V,             exec, qs ipc call clipboard toggle
-bind = SUPER, P,             exec, qs ipc call powermenu toggle
-bind = SUPER ALT, L,         exec, qs ipc call lockscreen toggle
+bind = SUPER, C,             exec, qs ipc call controlCenter toggle
 bind = SUPER, D,             exec, qs ipc call dashboard toggle
 bind = SUPER, N,             exec, qs ipc call notifCenter toggle
-bind = SUPER, C,             exec, qs ipc call controlCenter toggle
+bind = SUPER, V,             exec, qs ipc call clipboard toggle
+bind = SUPER SHIFT, E,       exec, qs ipc call emoji toggle
+bind = SUPER SHIFT, W,       exec, qs ipc call wallpaper toggle
+bind = SUPER, P,             exec, qs ipc call powermenu toggle
+bind = SUPER ALT, L,         exec, qs ipc call lockscreen toggle
+bind = SUPER, comma,         exec, qs ipc call settings toggle
+bind = SUPER, M,             exec, qs ipc call sysmon toggle
 bind = SUPER, B,             exec, qs ipc call battery toggle
 
 # ── 3. Quickshell Layer Rules (Blur & Transparency) ───────────────────────────
@@ -808,7 +814,7 @@ EOF
 
             # 5. Clean & Connect Main hyprland.conf
             if [ -f "$HYPR_CONF" ]; then
-                local backup_conf="${HYPR_CONF}.bak.$(date +%Y%m%d_%H%M%S)"
+                local backup_conf="${HYPR_CONF}.bak"
                 cp "$HYPR_CONF" "$backup_conf"
                 info "Created backup: $backup_conf"
                 sed -i '/quickshell\.conf/d' "$HYPR_CONF"
@@ -880,21 +886,25 @@ EOF
 
 local mainMod = "SUPER"
 
--- ── 1. Autostart Quickshell Desktop Environment ──────────────────────────────
+-- ── 1. Autostart Quickshell Desktop Environment & Clipboard Daemons ─────────
 hl.on("hyprland.start", function ()
     hl.exec_cmd("qs")
+    hl.exec_cmd("wl-paste --type text --watch cliphist store")
+    hl.exec_cmd("wl-paste --type image --watch cliphist store")
 end)
 
 -- ── 2. Quickshell IPC Keybindings ─────────────────────────────────────────────
 hl.bind(mainMod .. " + SPACE",         hl.dsp.exec_cmd("qs ipc call launcher toggle"))
-hl.bind(mainMod .. " + SHIFT + W",     hl.dsp.exec_cmd("qs ipc call wallpaper toggle"))
-hl.bind(mainMod .. " + SHIFT + E",     hl.dsp.exec_cmd("qs ipc call emoji toggle"))
-hl.bind(mainMod .. " + V",             hl.dsp.exec_cmd("qs ipc call clipboard toggle"))
-hl.bind(mainMod .. " + P",             hl.dsp.exec_cmd("qs ipc call powermenu toggle"))
-hl.bind(mainMod .. " + ALT + L",       hl.dsp.exec_cmd("qs ipc call lockscreen toggle"))
+hl.bind(mainMod .. " + C",             hl.dsp.exec_cmd("qs ipc call controlCenter toggle"))
 hl.bind(mainMod .. " + D",             hl.dsp.exec_cmd("qs ipc call dashboard toggle"))
 hl.bind(mainMod .. " + N",             hl.dsp.exec_cmd("qs ipc call notifCenter toggle"))
-hl.bind(mainMod .. " + C",             hl.dsp.exec_cmd("qs ipc call controlCenter toggle"))
+hl.bind(mainMod .. " + V",             hl.dsp.exec_cmd("qs ipc call clipboard toggle"))
+hl.bind(mainMod .. " + SHIFT + E",     hl.dsp.exec_cmd("qs ipc call emoji toggle"))
+hl.bind(mainMod .. " + SHIFT + W",     hl.dsp.exec_cmd("qs ipc call wallpaper toggle"))
+hl.bind(mainMod .. " + P",             hl.dsp.exec_cmd("qs ipc call powermenu toggle"))
+hl.bind(mainMod .. " + ALT + L",       hl.dsp.exec_cmd("qs ipc call lockscreen toggle"))
+hl.bind(mainMod .. " + COMMA",         hl.dsp.exec_cmd("qs ipc call settings toggle"))
+hl.bind(mainMod .. " + M",             hl.dsp.exec_cmd("qs ipc call sysmon toggle"))
 hl.bind(mainMod .. " + B",             hl.dsp.exec_cmd("qs ipc call battery toggle"))
 
 -- ── 3. Quickshell Layer Rules (Blur & Transparency) ───────────────────────────
@@ -934,15 +944,74 @@ EOF
                 success "Wrote $HYPR_CONF_DIR/autostart.lua"
             fi
 
+            if [ ! -f "$HYPR_CONF_DIR/keybinds.lua" ]; then
+                cat << 'EOF' > "$HYPR_CONF_DIR/keybinds.lua"
+-- ══════════════════════════════════════════════════════════════════════════════
+--  Keybindings & Shortcuts (~/.config/hypr/conf/keybinds.lua)
+-- ══════════════════════════════════════════════════════════════════════════════
+
+local mainMod = "SUPER"
+local terminal = "kitty"
+local fileManager = "nautilus"
+local menu = "wofi --show drun"
+
+hl.bind(mainMod .. " + T", hl.dsp.exec_cmd(terminal), { repeating = true })
+hl.bind(mainMod .. " + E", hl.dsp.exec_cmd(fileManager))
+hl.bind(mainMod .. " + Q", hl.dsp.window.close(), { repeating = true })
+hl.bind(mainMod .. " + ALT + F", hl.dsp.window.float({ action = "toggle" }))
+hl.bind(mainMod .. " + SHIFT + F", hl.dsp.window.fullscreen({ mode = "fullscreen", action = "toggle" }))
+hl.bind(mainMod .. " + J", hl.dsp.layout("togglesplit"))
+
+for i = 1, 10 do
+    local key = i % 10
+    hl.bind(mainMod .. " + " .. key, hl.dsp.focus({ workspace = i }))
+    hl.bind(mainMod .. " + SHIFT + " .. key, hl.dsp.window.move({ workspace = i }))
+end
+
+hl.bind("print", hl.dsp.exec_cmd("~/.config/quickshell/scripts/screenshot.sh full"), { locked = true })
+hl.bind("SHIFT + print", hl.dsp.exec_cmd("~/.config/quickshell/scripts/screenshot.sh region"), { locked = true })
+hl.bind(mainMod .. " + print", hl.dsp.exec_cmd("~/.config/quickshell/scripts/screenshot.sh window"), { locked = true })
+EOF
+                success "Wrote $HYPR_CONF_DIR/keybinds.lua"
+            fi
+
+            if [ ! -f "$HYPR_CONF_DIR/rules.lua" ]; then
+                cat << 'EOF' > "$HYPR_CONF_DIR/rules.lua"
+-- ══════════════════════════════════════════════════════════════════════════════
+--  Window & Workspace Rules (~/.config/hypr/conf/rules.lua)
+-- ══════════════════════════════════════════════════════════════════════════════
+
+hl.window_rule({
+    name = "suppress-maximize",
+    match = { class = ".*" },
+    suppress_event = "maximize",
+})
+
+hl.window_rule({
+    name = "pip-float",
+    match = { title = "^(Picture-in-Picture|Picture in picture)$" },
+    float = true,
+    pin = true,
+})
+
+hl.window_rule({
+    name = "dialog-float",
+    match = { class = "(pavucontrol|nm-connection-editor|blueman-manager|swappy)" },
+    float = true,
+})
+EOF
+                success "Wrote $HYPR_CONF_DIR/rules.lua"
+            fi
+
             if [ -f "$HYPR_LUA" ]; then
-                local backup_lua="${HYPR_LUA}.bak.$(date +%Y%m%d_%H%M%S)"
+                local backup_lua="${HYPR_LUA}.bak"
                 cp "$HYPR_LUA" "$backup_lua"
                 info "Created backup: $backup_lua"
                 sed -i '/quickshell\.lua/d' "$HYPR_LUA"
                 sed -i '/qs ipc call/d' "$HYPR_LUA"
                 sed -i '/quickshell:/d' "$HYPR_LUA"
                 sed -i '/load_conf(/d' "$HYPR_LUA"
-                echo -e "\n-- ── Load Modular Configuration Files ──\nlocal home = os.getenv(\"HOME\") or \"\"\nlocal confDir = home .. \"/.config/hypr/conf\"\n\nlocal function load_conf(module_name)\n    local module_path = confDir .. \"/\" .. module_name .. \".lua\"\n    if io.open(module_path, \"r\") then\n        dofile(module_path)\n    end\nend\n\nload_conf(\"autostart\")\nload_conf(\"keybinds\")\nload_conf(\"rules\")\nload_conf(\"quickshell\")" >> "$HYPR_LUA"
+                echo -e "\n-- ── Load Modular Configuration Files ──\nlocal home = os.getenv(\"HOME\") or \"\"\nlocal confDir = home .. \"/.config/hypr/conf\"\n\nlocal function load_conf(module_name)\n    local module_path = confDir .. \"/\" .. module_name .. \".lua\"\n    local f = io.open(module_path, \"r\")\n    if f then\n        f:close()\n        dofile(module_path)\n    end\nend\n\nload_conf(\"autostart\")\nload_conf(\"keybinds\")\nload_conf(\"rules\")\nload_conf(\"quickshell\")" >> "$HYPR_LUA"
                 success "Connected modular loader to $HYPR_LUA"
             else
                 info "Writing starter $HYPR_LUA with modular loader..."
@@ -953,7 +1022,9 @@ local confDir = home .. "/.config/hypr/conf"
 
 local function load_conf(module_name)
     local module_path = confDir .. "/" .. module_name .. ".lua"
-    if io.open(module_path, "r") then
+    local f = io.open(module_path, "r")
+    if f then
+        f:close()
         dofile(module_path)
     end
 end
@@ -1004,14 +1075,16 @@ spawn-at-startup "qs"
 // ── 2. Quickshell IPC Keybindings ─────────────────────────────────────────────
 binds {
     Mod+Space       { spawn "qs" "ipc" "call" "launcher" "toggle"; }
-    Mod+Shift+W     { spawn "qs" "ipc" "call" "wallpaper" "toggle"; }
-    Mod+Shift+E     { spawn "qs" "ipc" "call" "emoji" "toggle"; }
-    Mod+V           { spawn "qs" "ipc" "call" "clipboard" "toggle"; }
-    Mod+P           { spawn "qs" "ipc" "call" "powermenu" "toggle"; }
-    Mod+Alt+L       { spawn "qs" "ipc" "call" "lockscreen" "toggle"; }
+    Mod+C           { spawn "qs" "ipc" "call" "controlCenter" "toggle"; }
     Mod+D           { spawn "qs" "ipc" "call" "dashboard" "toggle"; }
     Mod+N           { spawn "qs" "ipc" "call" "notifCenter" "toggle"; }
-    Mod+C           { spawn "qs" "ipc" "call" "controlCenter" "toggle"; }
+    Mod+V           { spawn "qs" "ipc" "call" "clipboard" "toggle"; }
+    Mod+Shift+E     { spawn "qs" "ipc" "call" "emoji" "toggle"; }
+    Mod+Shift+W     { spawn "qs" "ipc" "call" "wallpaper" "toggle"; }
+    Mod+P           { spawn "qs" "ipc" "call" "powermenu" "toggle"; }
+    Mod+Alt+L       { spawn "qs" "ipc" "call" "lockscreen" "toggle"; }
+    Mod+Comma       { spawn "qs" "ipc" "call" "settings" "toggle"; }
+    Mod+M           { spawn "qs" "ipc" "call" "sysmon" "toggle"; }
     Mod+B           { spawn "qs" "ipc" "call" "battery" "toggle"; }
 }
 EOF
@@ -1030,7 +1103,7 @@ EOF
             fi
 
             if [ -f "$NIRI_CONF" ]; then
-                local backup_niri="${NIRI_CONF}.bak.$(date +%Y%m%d_%H%M%S)"
+                local backup_niri="${NIRI_CONF}.bak"
                 cp "$NIRI_CONF" "$backup_niri"
                 info "Created backup: $backup_niri"
                 sed -i '/quickshell\.kdl/d' "$NIRI_CONF"

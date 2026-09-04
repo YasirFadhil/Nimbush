@@ -167,7 +167,7 @@ in
 
       # Automatically place files into ~/.config/quickshell if not using wrapped package
       xdg.configFile."quickshell" = mkIf (cfg.package == null) {
-        source = ../.;
+        source = self;
         recursive = true;
       };
 
@@ -181,6 +181,8 @@ in
         text = ''
 # ── Quickshell Desktop Environment Integration (Hyprland Classic) ──
 exec-once = qs
+exec-once = wl-paste --type text --watch cliphist store
+exec-once = wl-paste --type image --watch cliphist store
 
 bind = SUPER, SPACE,         exec, qs ipc call launcher toggle
 bind = SUPER SHIFT, W,       exec, qs ipc call wallpaper toggle
@@ -296,6 +298,8 @@ local mainMod = "SUPER"
 
 hl.on("hyprland.start", function ()
     hl.exec_cmd("qs")
+    hl.exec_cmd("wl-paste --type text --watch cliphist store")
+    hl.exec_cmd("wl-paste --type image --watch cliphist store")
 end)
 
 hl.bind(mainMod .. " + SPACE",         hl.dsp.exec_cmd("qs ipc call launcher toggle"))
@@ -347,6 +351,7 @@ end)
 local mainMod = "SUPER"
 local terminal = "kitty"
 local fileManager = "nautilus"
+local menu = "wofi --show drun"
 
 hl.bind(mainMod .. " + T", hl.dsp.exec_cmd(terminal), { repeating = true })
 hl.bind(mainMod .. " + E", hl.dsp.exec_cmd(fileManager))
@@ -490,7 +495,7 @@ window-rule {
     }
 
     # Declarative Hyprland Integration
-    (mkIf (cfg.hyprland.enableIntegration && (cfg.hyprland.enablePackage || (config.wayland.windowManager ? hyprland && config.wayland.windowManager.hyprland ? enable && config.wayland.windowManager.hyprland.enable))) {
+    (mkIf (cfg.hyprland.enableIntegration && (cfg.hyprland.enablePackage || (lib.attrByPath [ "wayland" "windowManager" "hyprland" "enable" ] false config))) {
       wayland.windowManager.hyprland.settings = {
         exec-once = (optional (!cfg.enableSystemdService) "qs") ++ [
           "wl-paste --type text --watch cliphist store"
@@ -559,7 +564,7 @@ window-rule {
     })
 
     # Declarative Niri Integration
-    (mkIf (cfg.niri.enableIntegration && (cfg.niri.enablePackage || (config.programs ? niri && config.programs.niri ? enable && config.programs.niri.enable))) {
+    (mkIf (cfg.niri.enableIntegration && (cfg.niri.enablePackage || (lib.attrByPath [ "programs" "niri" "enable" ] false config))) {
       programs.niri.settings = {
         spawn-at-startup = (optional (!cfg.enableSystemdService) { command = [ "qs" ]; }) ++ [
           { command = [ "wl-paste" "--type" "text" "--watch" "cliphist" "store" ]; }

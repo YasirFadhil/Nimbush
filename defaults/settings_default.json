@@ -56,5 +56,6 @@
   "dashboardShowActions": true,
   "dashboardMetricsStyle": "cards",
   "firstRunCompleted": false,
+  "customAvatar": "",
   "customSettingsVersion": 2
 }

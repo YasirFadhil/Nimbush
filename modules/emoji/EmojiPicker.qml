@@ -164,6 +164,18 @@ PanelWindow {
                             emojiPickerWindow.currentIndex = Math.max(0, count - 1)
                             if (emojiGridView) emojiGridView.positionViewAtIndex(emojiPickerWindow.currentIndex, GridView.End)
                             event.accepted = true
+                        } else if (event.key === Qt.Key_Backtab || (event.key === Qt.Key_Tab && (event.modifiers & Qt.ShiftModifier))) {
+                            if (count > 0) {
+                                emojiPickerWindow.currentIndex = (emojiPickerWindow.currentIndex - 1 + count) % count
+                                if (emojiGridView) emojiGridView.positionViewAtIndex(emojiPickerWindow.currentIndex, GridView.Contain)
+                            }
+                            event.accepted = true
+                        } else if (event.key === Qt.Key_Tab) {
+                            if (count > 0) {
+                                emojiPickerWindow.currentIndex = (emojiPickerWindow.currentIndex + 1) % count
+                                if (emojiGridView) emojiGridView.positionViewAtIndex(emojiPickerWindow.currentIndex, GridView.Contain)
+                            }
+                            event.accepted = true
                         } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
                             if (emojiPickerWindow.emojiResults && emojiPickerWindow.emojiResults.length > emojiPickerWindow.currentIndex) {
                                 const em = emojiPickerWindow.emojiResults[emojiPickerWindow.currentIndex]

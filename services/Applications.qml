@@ -31,13 +31,6 @@ Singleton {
         function onModelReset() { debounceTimer.restart() }
     }
 
-    Connections {
-        target: Services.SystemTheme
-        function onIconThemeRevChanged() {
-            debounceTimer.restart()
-        }
-    }
-
     Component.onCompleted: {
         _rebuildIndex()
         debounceTimer.restart()

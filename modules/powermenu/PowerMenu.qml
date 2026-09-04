@@ -184,7 +184,7 @@ PanelWindow {
             }
 
             // ── Arrow Keys & Tab Navigation (No letter conflicts) ────────────
-            if (k === Qt.Key_Left) {
+            if (k === Qt.Key_Left || k === Qt.Key_Backtab || (k === Qt.Key_Tab && (event.modifiers & Qt.ShiftModifier))) {
                 root.selectedIndex = (root.selectedIndex - 1 + root.actions.length) % root.actions.length
                 event.accepted = true
             } else if (k === Qt.Key_Right || k === Qt.Key_Tab) {
@@ -267,19 +267,31 @@ PanelWindow {
                     Layout.fillWidth: true
                     spacing: 14
 
-                    // User / Distro Avatar
-                    Rectangle {
-                        width: 44; height: 44; radius: 22
-                        color: Services.Theme.surfaceVariant
-                        border.color: Services.Theme.border
-                        border.width: 1
+                    // User Profile Avatar
+                    Item {
+                        width: 44; height: 44
 
-                        Text {
-                            anchors.centerIn: parent
-                            text: Services.OsInfo.logoGlyph
-                            font.family: Services.Theme.fontSymbols
-                            font.pixelSize: Services.Theme.fontSize6xl + 2
-                            color: Services.Theme.accent
+                        readonly property string avatarShape: Services.Config ? Services.Config.lockscreenAvatarShape : "squircle"
+                        readonly property real avatarRadius: {
+                            if (avatarShape === "circle") return width / 2
+                            if (avatarShape === "squircle") return 12
+                            return 8
+                        }
+
+                        Services.AvatarFrame {
+                            anchors.fill: parent
+                            source: Services.OsInfo.avatarPath
+                            shapeRadius: parent.avatarRadius
+                            backgroundColor: Services.Theme.surfaceVariant
+                            borderColor: Services.Theme.border
+                            borderWidth: 1
+                            fallbackText: {
+                                const u = (Services.OsInfo.username || Quickshell.env("USER") || "user").toUpperCase()
+                                return u.length > 0 ? u.charAt(0) : "󰌽"
+                            }
+                            fallbackFontFamily: Services.Theme.fontDisplay || Services.Theme.fontSymbols
+                            fallbackFontSize: 18
+                            fallbackColor: Services.Theme.accent
                         }
 
                         // Online dot indicator

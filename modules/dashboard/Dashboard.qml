@@ -125,57 +125,33 @@ PanelWindow {
                     Layout.fillWidth: true
                     spacing: 10
 
-                    // Avatar with active ring
-                    Rectangle {
+                    // User Profile Avatar with shape & online status dot
+                    Item {
+                        id: dashboardAvatarItem
                         width: 44
                         height: 44
-                        radius: 22
-                        color: Services.Theme.surfaceVariant
-                        border.color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.4)
-                        border.width: 1.5
-                        antialiasing: true
-                        smooth: true
 
-                        Image {
-                            id: avatarImg
+                        readonly property string avatarShape: Services.Config ? Services.Config.lockscreenAvatarShape : "squircle"
+                        readonly property real avatarRadius: {
+                            if (avatarShape === "circle") return width / 2
+                            if (avatarShape === "squircle") return 12
+                            return 8
+                        }
+
+                        Services.AvatarFrame {
                             anchors.fill: parent
-                            anchors.margins: 2
                             source: Services.OsInfo.avatarPath
-                            fillMode: Image.PreserveAspectCrop
-                            asynchronous: true
-                            cache: true
-                            sourceSize: Qt.size(88, 88)
-                            visible: false
-                            smooth: true
-                        }
-
-                        MultiEffect {
-                            anchors.fill: avatarImg
-                            source: avatarImg
-                            maskEnabled: true
-                            maskSource: avatarMask
-                            visible: avatarImg.status === Image.Ready
-                        }
-
-                        Item {
-                            id: avatarMask
-                            anchors.fill: avatarImg
-                            visible: false
-                            layer.enabled: true
-                            Rectangle {
-                                anchors.fill: parent
-                                radius: 20
-                                color: "black"
+                            shapeRadius: dashboardAvatarItem.avatarRadius
+                            backgroundColor: Services.Theme.surfaceVariant
+                            borderColor: (Services.Config && Services.Config.lockscreenAvatarRing) ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.4) : Services.Theme.border
+                            borderWidth: 1.5
+                            fallbackText: {
+                                const u = (Services.OsInfo.username || Quickshell.env("USER") || "user").toUpperCase()
+                                return u.length > 0 ? u.charAt(0) : "󰌽"
                             }
-                        }
-
-                        Text {
-                            anchors.centerIn: parent
-                            visible: avatarImg.status !== Image.Ready
-                            text: Services.OsInfo.logoGlyph || "\uf17c"
-                            font.family: Services.Theme.fontSymbols
-                            font.pixelSize: 20
-                            color: Services.Theme.accent
+                            fallbackFontFamily: Services.Theme.fontDisplay || Services.Theme.fontSymbols
+                            fallbackFontSize: 18
+                            fallbackColor: Services.Theme.accent
                         }
 
                         // Live status dot

@@ -15,7 +15,6 @@ Singleton {
 
     // ── Discovered System Models ─────────────────────────────────────────────
     property var gtkThemes: []
-    property var iconThemes: []
     property var cursorThemes: []
     property var cursorSizes: [
         { id: 16, label: "16 px" },
@@ -30,7 +29,6 @@ Singleton {
 
     // ── Current System State ─────────────────────────────────────────────────
     property string currentGtkTheme: "Tahoe-Dark-Amber"
-    property string currentIconTheme: "MacTahoe"
     property string currentCursorTheme: "MacTahoe-dark"
     property int currentCursorSize: 24
     property string currentFontFamily: "Liga SFMonoNerdFont"
@@ -49,7 +47,6 @@ Singleton {
 
     Component.onCompleted: {
         refresh()
-        loadCacheProc.running = true
     }
 
     function refresh() {
@@ -67,13 +64,6 @@ Singleton {
         execProc.running = true
     }
 
-    function setIconTheme(name) {
-        if (!name) return
-        currentIconTheme = name
-        execProc.running = false
-        execProc.command = ["python3", helperScript, "set_icon_theme", name]
-        execProc.running = true
-    }
 
     function setCursorTheme(name, size) {
         if (!name) return
@@ -149,120 +139,26 @@ Singleton {
         execProc.running = true
     }
 
-    // ── Icon Cache & Reactive Resolution ─────────────────────────────────────
-    property var iconCacheMap: ({})
-    property int iconThemeRev: 0
-
-    function reloadIconCache() {
-        if (iconCacheFileView) {
-            iconCacheFileView.reload()
-            try {
-                var raw = iconCacheFileView.text()
-                if (raw && raw.trim().startsWith("{")) {
-                    root.iconCacheMap = JSON.parse(raw.trim())
-                    root.iconThemeRev++
-                }
-            } catch (e) {}
-        }
-        loadCacheProc.running = false
-        loadCacheProc.rawOutput = ""
-        loadCacheProc.running = true
-    }
-
-    FileView {
-        id: iconCacheFileView
-        path: (Quickshell.env("HOME") || "/home/" + (Quickshell.env("USER") || "user")) + "/.cache/quickshell/icon_theme_cache.json"
-        blockLoading: false
-        printErrors: false
-        onLoaded: {
-            try {
-                var raw = iconCacheFileView.text()
-                if (raw && raw.trim().startsWith("{")) {
-                    root.iconCacheMap = JSON.parse(raw.trim())
-                    root.iconThemeRev++
-                }
-            } catch (e) {}
-        }
-    }
+    // ── Native Icon Resolution ───────────────────────────────────────────────
+    readonly property int iconThemeRev: 0
 
     function getIcon(iconName) {
         if (!iconName) return ""
-        var s = typeof iconName === "string" ? iconName : (iconName.name || iconName.toString() || "")
+        var s = typeof iconName === "string" ? iconName.trim() : (iconName.name || iconName.toString() || "").trim()
         if (!s) return ""
 
         if (s.startsWith("file://") || s.startsWith("http://") || s.startsWith("https://")) return s
         if (s.startsWith("/")) return "file://" + s
         
-        // Strip image://icon/ prefix emitted by Quickshell DBusMenu/desktop items
-        if (s.startsWith("image://icon/")) {
-            s = s.substring(13)
-        } else if (s.startsWith("image://")) {
-            // Internal image memory handles (e.g. image://qsimage/, image://qsdbusmenu/)
-            return s
-        }
-        
-        var clean = s.toLowerCase().trim()
-        if (clean.endsWith(".svg") || clean.endsWith(".png") || clean.endsWith(".xpm")) {
-            clean = clean.substring(0, clean.lastIndexOf("."))
-        }
-        
-        if (iconCacheMap && iconCacheMap[clean]) {
-            return "file://" + iconCacheMap[clean]
-        }
-        
-        // Try fallback with dot suffix or app name (e.g. org.gnome.Nautilus -> nautilus)
-        if (clean.indexOf(".") !== -1) {
-            var parts = clean.split(".")
-            var lastPart = parts[parts.length - 1]
-            if (iconCacheMap && iconCacheMap[lastPart]) {
-                return "file://" + iconCacheMap[lastPart]
-            }
-            var dashed = clean.replace(/\./g, "-")
-            if (iconCacheMap && iconCacheMap[dashed]) {
-                return "file://" + iconCacheMap[dashed]
-            }
-        }
+        if (s.startsWith("image://icon/")) s = s.substring(13)
+        else if (s.startsWith("image://")) return s
 
-        // Try reverse-DNS stripped prefixes (e.g. org.gnome.tweaks -> gnome-tweaks)
-        if (clean.indexOf("org.gnome.") === 0) {
-            var gn = "gnome-" + clean.substring(10)
-            if (iconCacheMap && iconCacheMap[gn]) return "file://" + iconCacheMap[gn]
-        }
-        if (clean.indexOf("org.kde.") === 0) {
-            var kde = clean.substring(8)
-            if (iconCacheMap && iconCacheMap[kde]) return "file://" + iconCacheMap[kde]
-        }
-        
         var qp = Quickshell.iconPath(s, false)
-        if (qp && qp.length > 0) {
-            return qp.startsWith("file://") ? qp : (qp.startsWith("/") ? ("file://" + qp) : qp)
-        }
-        return ""
+        if (qp && qp.length > 0) return qp
+        return "image://icon/" + s
     }
 
     // ── Processes ────────────────────────────────────────────────────────────
-    Process {
-        id: loadCacheProc
-        command: ["cat", (Quickshell.env("HOME") || "/home/" + (Quickshell.env("USER") || "user")) + "/.cache/quickshell/icon_theme_cache.json"]
-        property string rawOutput: ""
-
-        stdout: SplitParser {
-            onRead: chunk => {
-                loadCacheProc.rawOutput += chunk
-            }
-        }
-
-        onExited: (exitCode, exitStatus) => {
-            var trimmed = loadCacheProc.rawOutput.trim()
-            if (trimmed.length > 0 && trimmed.startsWith("{")) {
-                try {
-                    root.iconCacheMap = JSON.parse(trimmed)
-                    root.iconThemeRev++
-                } catch (e) {}
-            }
-        }
-    }
-
     Process {
         id: queryProc
         command: ["python3", root.helperScript, "query"]
@@ -281,7 +177,6 @@ Singleton {
                     var data = JSON.parse(trimmed)
                     if (data) {
                         if (data.gtk_themes) root.gtkThemes = data.gtk_themes
-                        if (data.icon_themes) root.iconThemes = data.icon_themes
                         if (data.cursor_themes) root.cursorThemes = data.cursor_themes
                         if (data.system_fonts) root.systemFonts = data.system_fonts
                         if (data.monospace_fonts) root.monospaceFonts = data.monospace_fonts
@@ -289,7 +184,6 @@ Singleton {
                         if (data.current) {
                             var cur = data.current
                             if (cur.gtk_theme) root.currentGtkTheme = cur.gtk_theme
-                            if (cur.icon_theme) root.currentIconTheme = cur.icon_theme
                             if (cur.cursor_theme) root.currentCursorTheme = cur.cursor_theme
                             if (cur.cursor_size) root.currentCursorSize = cur.cursor_size
                             if (cur.font_family) root.currentFontFamily = cur.font_family
@@ -304,7 +198,6 @@ Singleton {
                             if (cur.color_scheme) root.currentColorScheme = cur.color_scheme
                         }
                         root.isLoaded = true
-                        root.reloadIconCache()
                     }
                 } catch (e) {
                 }
@@ -315,7 +208,6 @@ Singleton {
     Process {
         id: execProc
         onExited: (exitCode, exitStatus) => {
-            root.reloadIconCache()
         }
     }
 }

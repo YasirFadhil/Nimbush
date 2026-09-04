@@ -136,6 +136,7 @@ Singleton {
     property bool lockscreenShowStatusPill: true
     property bool batteryShowWarnings: true
     property int batteryLowThreshold: 20
+    property string customAvatar: ""
     property int clipboardLimit: 50
     property int launcherMaxResults: 8
     property bool firstRunCompleted: false
@@ -302,6 +303,7 @@ Singleton {
         if (data.lockscreenShowStatusPill !== undefined) lockscreenShowStatusPill = Boolean(data.lockscreenShowStatusPill)
         if (data.batteryShowWarnings !== undefined) batteryShowWarnings = Boolean(data.batteryShowWarnings)
         if (data.batteryLowThreshold !== undefined) batteryLowThreshold = Number(data.batteryLowThreshold)
+        if (data.customAvatar !== undefined) customAvatar = String(data.customAvatar)
         if (data.clipboardLimit !== undefined) clipboardLimit = Number(data.clipboardLimit)
         if (data.launcherMaxResults !== undefined) launcherMaxResults = Number(data.launcherMaxResults)
 
@@ -404,6 +406,7 @@ Singleton {
             lockscreenShowStatusPill: lockscreenShowStatusPill,
             batteryShowWarnings: batteryShowWarnings,
             batteryLowThreshold: batteryLowThreshold,
+            customAvatar: customAvatar,
             clipboardLimit: clipboardLimit,
             launcherMaxResults: launcherMaxResults,
 
@@ -499,6 +502,7 @@ Singleton {
         lockscreenShowStatusPill = true
         batteryShowWarnings = true
         batteryLowThreshold = 20
+        customAvatar = ""
         clipboardLimit = 50
         launcherMaxResults = 8
 
@@ -701,6 +705,8 @@ Singleton {
     function setLockscreenShowStatusPill(val) { lockscreenShowStatusPill = val; saveConfig() }
     function setBatteryShowWarnings(val) { batteryShowWarnings = val; saveConfig() }
     function setBatteryLowThreshold(val) { batteryLowThreshold = val; saveConfig() }
+    function setCustomAvatar(path) { customAvatar = path; saveConfig() }
+    function clearCustomAvatar() { customAvatar = ""; saveConfig() }
     function setClipboardLimit(val) { clipboardLimit = val; saveConfig() }
     function setLauncherMaxResults(val) { launcherMaxResults = val; saveConfig() }
 

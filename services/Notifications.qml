@@ -611,7 +611,11 @@ Singleton {
                     if (Array.isArray(parsed) && parsed.length > 0) {
                         historyModel.clear()
                         for (let i = 0; i < parsed.length; i++) {
-                            historyModel.append(parsed[i])
+                            const entry = parsed[i]
+                            if (entry.image && entry.image.startsWith("image://qsimage/")) {
+                                entry.image = ""
+                            }
+                            historyModel.append(entry)
                         }
                         root.pruneExpiredHistory()
                     }
@@ -658,7 +662,7 @@ Singleton {
                 appIcon: item.appIcon || "",
                 summary: item.summary || "",
                 body: item.body || "",
-                image: item.image || "",
+                image: (item.image && !item.image.startsWith("image://qsimage/")) ? item.image : "",
                 urgency: item.urgency !== undefined ? item.urgency : 1,
                 time: item.time || Date.now(),
                 actions: actions,

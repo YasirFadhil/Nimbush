@@ -38,7 +38,7 @@ Variants {
     color: "transparent"
     WlrLayershell.layer: WlrLayer.Top
     WlrLayershell.namespace: "quickshell:bar"
-    WlrLayershell.keyboardFocus: (root.showDynamicIsland && (dynamicIsland.replyMode || dynamicIsland.wallpaperMode)) ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
+    WlrLayershell.keyboardFocus: (root.showDynamicIsland && (dynamicIsland.replyMode || dynamicIsland.wallpaperMode)) ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
 
     exclusiveZone: isMinimal ? 30 : (isUnified ? 38 : (isFloating ? 46 : 36))
     implicitHeight: 220
@@ -164,8 +164,9 @@ Variants {
                     id: statusTray
                     Layout.alignment: Qt.AlignVCenter
                     barWidth: root.width
-                    islandRightEdge: root.showDynamicIsland ? ((root.width + (dynamicIsland.expanded ? dynamicIsland.calculatedExpandedWidth : dynamicIsland.calculatedCollapsedWidth)) / 2) : 0
-                    isIslandExpanded: root.showDynamicIsland && dynamicIsland.expanded
+                    islandRightEdge: root.showDynamicIsland ? (((root.width + (dynamicIsland.expanded ? dynamicIsland.calculatedExpandedWidth : dynamicIsland.calculatedCollapsedWidth)) / 2) + dynamicIsland.satelliteExtraWidth) : 0
+                    islandCollapsedRightEdge: root.showDynamicIsland ? ((root.width + dynamicIsland.calculatedCollapsedWidth) / 2) : 0
+                    isIslandExpanded: root.showDynamicIsland && (dynamicIsland.expanded || dynamicIsland.satelliteExtraWidth > 0)
                 }
             }
         }

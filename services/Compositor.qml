@@ -44,6 +44,8 @@ Singleton {
     // ── Live Options for Hyprland ─────────────────────────────────────────────
     // Visual & Effects
     property bool hyprAnim: true
+    property string hyprAnimStyle: "fluid"
+    property var hyprAnimStyles: []
     property bool hyprBlur: true
     property int hyprBlurSize: 4
     property int hyprBlurPasses: 2
@@ -60,7 +62,9 @@ Singleton {
     property int hyprBorderSize: 0
     property int hyprGapsIn: 5
     property int hyprGapsOut: 10
-    property string hyprLayout: "scrolling"
+    property string hyprLayout: "dwindle"
+    property real hyprScrollingColumnWidth: 0.89
+    property bool hyprScrollingFullscreenOnOneColumn: false
     property bool hyprResizeOnBorder: false
     property string hyprBorderColorPreset: "cyan_emerald"
 
@@ -85,6 +89,12 @@ Singleton {
     property bool isLoadingBinds: false
     property string keybindStatus: ""
     property string keybindError: ""
+
+    // ── Autostart Programs from Compositor Config ─────────────────────────────
+    property var autostartList: []
+    property bool isLoadingAutostart: false
+    property string autostartStatus: ""
+    property string autostartError: ""
 
     // ── Discovered Compositors & Configs ──────────────────────────────────────
     property var installedCompositors: []
@@ -288,6 +298,7 @@ Singleton {
     Component.onCompleted: {
         refreshState()
         loadKeybinds()
+        loadAutostart()
     }
 
     function refreshState() {
@@ -382,13 +393,35 @@ Singleton {
     }
 
     // ── Live Setting Updates & Helpers ────────────────────────────────────────
+    Process {
+        id: animStyleProc
+        property string targetStyle: ""
+        command: [root.helperScript, "anim-style-set", targetStyle]
+    }
+
+    function setHyprAnimStyle(styleId) {
+        if (!styleId) return
+        hyprAnimStyle = styleId
+        if (styleId === "disabled") {
+            hyprAnim = false
+        } else {
+            hyprAnim = true
+        }
+        animStyleProc.targetStyle = styleId
+        animStyleProc.running = true
+    }
+
     function setHyprOption(optKey, optVal) {
         setOption(optKey, optVal)
     }
 
     function toggleHyprAnim() {
         hyprAnim = !hyprAnim
-        setOption("anim", hyprAnim)
+        if (!hyprAnim) {
+            setHyprAnimStyle("disabled")
+        } else {
+            setHyprAnimStyle(hyprAnimStyle === "disabled" ? "fluid" : hyprAnimStyle)
+        }
     }
 
     function toggleHyprBlur() {
@@ -464,6 +497,21 @@ Singleton {
     function setHyprLayout(val) {
         hyprLayout = String(val)
         setOption("layout", hyprLayout)
+    }
+
+    function setHyprScrollingColumnWidth(val) {
+        hyprScrollingColumnWidth = Number(val)
+        setOption("scrolling_column_width", hyprScrollingColumnWidth)
+    }
+
+    function toggleHyprScrollingFullscreenOnOneColumn() {
+        hyprScrollingFullscreenOnOneColumn = !hyprScrollingFullscreenOnOneColumn
+        setOption("scrolling_fullscreen_on_one_column", hyprScrollingFullscreenOnOneColumn)
+    }
+
+    function setHyprScrollingFullscreenOnOneColumn(val) {
+        hyprScrollingFullscreenOnOneColumn = Boolean(val)
+        setOption("scrolling_fullscreen_on_one_column", hyprScrollingFullscreenOnOneColumn)
     }
 
     function toggleHyprTouchpadNatural() {
@@ -852,6 +900,52 @@ Singleton {
         bindsDeleteProc.running = true
     }
 
+    // ── Autostart Programs Management ─────────────────────────────────────────
+    function loadAutostart() {
+        isLoadingAutostart = true
+        autostartListProc.qOutput = ""
+        autostartListProc.command = [root.helperScript, "autostart-list"]
+        autostartListProc.running = true
+    }
+
+    function addAutostart(cmd, type, file) {
+        if (!cmd) return
+        autostartStatus = "Adding autostart program..."
+        autostartAddProc.qOutput = ""
+        var cmdArgs = [root.helperScript, "autostart-add", "--cmd", cmd]
+        if (type) { cmdArgs.push("--type", type) }
+        if (file) { cmdArgs.push("--file", file) }
+        autostartAddProc.command = cmdArgs
+        autostartAddProc.running = true
+    }
+
+    function toggleAutostart(file, lineNum, enabled) {
+        if (!file || !lineNum) return
+        autostartStatus = enabled ? "Enabling program..." : "Disabling program..."
+        autostartToggleProc.qOutput = ""
+        var cmdArgs = [root.helperScript, "autostart-toggle", "--file", file, "--line", String(lineNum)]
+        if (enabled) { cmdArgs.push("--enable") }
+        else { cmdArgs.push("--disable") }
+        autostartToggleProc.command = cmdArgs
+        autostartToggleProc.running = true
+    }
+
+    function deleteAutostart(file, lineNum) {
+        if (!file || !lineNum) return
+        autostartStatus = "Removing autostart program..."
+        autostartDeleteProc.qOutput = ""
+        var cmdArgs = [root.helperScript, "autostart-delete", "--file", file, "--line", String(lineNum)]
+        autostartDeleteProc.command = cmdArgs
+        autostartDeleteProc.running = true
+    }
+
+    function runAutostart(cmd) {
+        if (!cmd) return
+        autostartRunProc.qOutput = ""
+        autostartRunProc.command = [root.helperScript, "autostart-run", "--cmd", cmd]
+        autostartRunProc.running = true
+    }
+
     // ── Config File Management ────────────────────────────────────────────────
     function loadFile(filePath) {
         if (!filePath) return
@@ -1022,6 +1116,8 @@ Singleton {
                     if (data.blur_size !== undefined) root.hyprBlurSize = data.blur_size
                     if (data.blur_passes !== undefined) root.hyprBlurPasses = data.blur_passes
                     if (data.anim !== undefined) root.hyprAnim = data.anim
+                    if (data.animStyle !== undefined) root.hyprAnimStyle = data.animStyle
+                    if (data.animStyles !== undefined) root.hyprAnimStyles = data.animStyles
                     if (data.shadow !== undefined) root.hyprShadow = data.shadow
                     if (data.shadow_range !== undefined) root.hyprShadowRange = data.shadow_range
                     if (data.shadow_power !== undefined) root.hyprShadowPower = data.shadow_power
@@ -1034,6 +1130,8 @@ Singleton {
                     if (data.dim_inactive !== undefined) root.hyprDimInactive = data.dim_inactive
                     if (data.dim_strength !== undefined) root.hyprDimStrength = data.dim_strength
                     if (data.layout !== undefined) root.hyprLayout = data.layout
+                    if (data.scrolling_column_width !== undefined) root.hyprScrollingColumnWidth = data.scrolling_column_width
+                    if (data.scrolling_fullscreen_on_one_column !== undefined) root.hyprScrollingFullscreenOnOneColumn = data.scrolling_fullscreen_on_one_column
                     if (data.touchpad_natural !== undefined) root.hyprTouchpadNatural = data.touchpad_natural
                     if (data.touchpad_tap !== undefined) root.hyprTouchpadTap = data.touchpad_tap
                     if (data.touchpad_dwt !== undefined) root.hyprTouchpadDwt = data.touchpad_dwt
@@ -1153,6 +1251,86 @@ Singleton {
                 root.loadKeybinds()
             }
             bindsDeleteProc.qOutput = ""
+        }
+    }
+
+    // ── Autostart Background Processes ────────────────────────────────────────
+    Process {
+        id: autostartListProc
+        property string qOutput: ""
+        stdout: SplitParser {
+            onRead: chunk => { autostartListProc.qOutput += chunk }
+        }
+        onExited: (exitCode) => {
+            root.isLoadingAutostart = false
+            if (exitCode === 0 && autostartListProc.qOutput.length > 0) {
+                try {
+                    var data = JSON.parse(autostartListProc.qOutput.trim())
+                    if (data && data.ok && data.items) {
+                        root.autostartList = data.items
+                    }
+                } catch(e) {}
+            }
+            autostartListProc.qOutput = ""
+        }
+    }
+
+    Process {
+        id: autostartAddProc
+        property string qOutput: ""
+        stdout: SplitParser {
+            onRead: chunk => { autostartAddProc.qOutput += chunk }
+        }
+        onExited: (exitCode) => {
+            if (exitCode === 0 && autostartAddProc.qOutput.length > 0) {
+                try {
+                    var res = JSON.parse(autostartAddProc.qOutput.trim())
+                    if (res && res.ok) {
+                        root.autostartStatus = "Autostart added successfully"
+                        root.loadAutostart()
+                    } else {
+                        root.autostartError = (res && res.error) ? res.error : "Failed to add autostart"
+                    }
+                } catch(e) { root.loadAutostart() }
+            } else {
+                root.loadAutostart()
+            }
+            autostartAddProc.qOutput = ""
+        }
+    }
+
+    Process {
+        id: autostartToggleProc
+        property string qOutput: ""
+        stdout: SplitParser {
+            onRead: chunk => { autostartToggleProc.qOutput += chunk }
+        }
+        onExited: (exitCode) => {
+            root.loadAutostart()
+            autostartToggleProc.qOutput = ""
+        }
+    }
+
+    Process {
+        id: autostartDeleteProc
+        property string qOutput: ""
+        stdout: SplitParser {
+            onRead: chunk => { autostartDeleteProc.qOutput += chunk }
+        }
+        onExited: (exitCode) => {
+            root.loadAutostart()
+            autostartDeleteProc.qOutput = ""
+        }
+    }
+
+    Process {
+        id: autostartRunProc
+        property string qOutput: ""
+        stdout: SplitParser {
+            onRead: chunk => { autostartRunProc.qOutput += chunk }
+        }
+        onExited: (exitCode) => {
+            autostartRunProc.qOutput = ""
         }
     }
 }

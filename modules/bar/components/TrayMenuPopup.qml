@@ -193,7 +193,6 @@ PanelWindow {
                                         id: menuEntryImg
                                         property var rawIco: menuItem.modelData.icon
                                         property string iconSource: {
-                                            const rev = Services.SystemTheme ? Services.SystemTheme.iconThemeRev : 0
                                             if (!rawIco) return ""
                                             let s = typeof rawIco === "string" ? rawIco : (rawIco.name || rawIco.toString() || "")
                                             if (!s) return ""
@@ -313,7 +312,6 @@ PanelWindow {
                                                     id: subMenuEntryImg
                                                     property var rawIco: subItem.modelData.icon
                                                     property string iconSource: {
-                                                        const rev = Services.SystemTheme ? Services.SystemTheme.iconThemeRev : 0
                                                         if (!rawIco) return ""
                                                         let s = typeof rawIco === "string" ? rawIco : (rawIco.name || rawIco.toString() || "")
                                                         if (!s) return ""

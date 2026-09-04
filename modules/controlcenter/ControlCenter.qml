@@ -198,7 +198,7 @@ PanelWindow {
         }
     }
 
-    // Signal strength macOS-style — 4 ascending bars filled according to percentage
+    // Signal strength indicator — 4 ascending bars filled according to percentage
     component SignalBars: Item {
         id: bars
         property int signal: 0   // 0-100

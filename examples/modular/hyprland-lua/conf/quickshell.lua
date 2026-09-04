@@ -4,9 +4,11 @@
 
 local mainMod = "SUPER"
 
--- ── 1. Autostart Quickshell Desktop Environment ──────────────────────────────
+-- ── 1. Autostart Quickshell Desktop Environment & Clipboard Daemons ─────────
 hl.on("hyprland.start", function ()
     hl.exec_cmd("qs")
+    hl.exec_cmd("wl-paste --type text --watch cliphist store")
+    hl.exec_cmd("wl-paste --type image --watch cliphist store")
 end)
 
 -- ── 2. Quickshell IPC Keybindings ─────────────────────────────────────────────
