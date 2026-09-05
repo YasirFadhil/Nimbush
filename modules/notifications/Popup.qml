@@ -156,14 +156,14 @@ PanelWindow {
                                     const res = Services.SystemTheme.getIcon(icon)
                                     if (res && res.length > 0) return res
                                 }
-                                const qp = Quickshell.iconPath(icon, false)
+                                const qp = Quickshell.iconPath(icon, true)
                                 return (qp && qp.startsWith("/")) ? ("file://" + qp) : (qp || "")
                             }
                             fillMode: Image.PreserveAspectFit
                             asynchronous: true
                             cache: true
                             sourceSize: Qt.size(32, 32)
-                            visible: status === Image.Ready
+                            visible: status === Image.Ready && source.toString().length > 0
                         }
                     }
 
@@ -212,7 +212,7 @@ PanelWindow {
                     Image {
                         id: popThumb
                         property string imgPath: notifItem.image || ""
-                        visible: imgPath.length > 0 && status === Image.Ready
+                        visible: imgPath.length > 0 && status === Image.Ready && source.toString().length > 0
                         Layout.preferredWidth: visible ? 30 : 0
                         Layout.preferredHeight: visible ? 30 : 0
                         source: {
@@ -225,7 +225,7 @@ PanelWindow {
                                 const res = Services.SystemTheme.getIcon(imgPath)
                                 if (res && res.length > 0) return res
                             }
-                            const qp = Quickshell.iconPath(imgPath, false)
+                            const qp = Quickshell.iconPath(imgPath, true)
                             return (qp && qp.startsWith("/")) ? ("file://" + qp) : (qp || "")
                         }
                         fillMode: Image.PreserveAspectCrop

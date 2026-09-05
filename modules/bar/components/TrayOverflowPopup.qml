@@ -181,7 +181,7 @@ PanelWindow {
                                                 return icon
                                             if (icon.startsWith("/"))
                                                 return "file://" + icon
-                                            const qp = Quickshell.iconPath(icon, false)
+                                            const qp = Quickshell.iconPath(icon, true)
                                             return (qp && qp.startsWith("/")) ? ("file://" + qp) : (qp || "")
                                         }
                                         fillMode: Image.PreserveAspectFit

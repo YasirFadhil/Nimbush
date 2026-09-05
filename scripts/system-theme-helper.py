@@ -376,6 +376,33 @@ def get_gtk_themes():
         theme_list = ["Adwaita", "Tahoe-Dark", "Tahoe-Light", "Default"]
     return theme_list
 
+def get_icon_themes():
+    search_paths = get_data_dirs("icons")
+    icons = set()
+    for p in search_paths:
+        try:
+            if not os.path.isdir(p):
+                continue
+            for d in os.listdir(p):
+                full = os.path.join(p, d)
+                if not os.path.isdir(full):
+                    continue
+                idx = os.path.join(full, "index.theme")
+                if os.path.isfile(idx):
+                    try:
+                        with open(idx, "r", encoding="utf-8", errors="ignore") as f:
+                            txt = f.read()
+                            if "[Icon Theme]" in txt or "Directories=" in txt:
+                                icons.add(d)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+    icon_list = sorted(list(icons))
+    if not icon_list:
+        icon_list = ["MacTahoe-dark", "MacTahoe-light", "MacTahoe", "Adwaita", "hicolor"]
+    return icon_list
+
 def get_cursor_themes():
     search_paths = get_data_dirs("icons")
     cursors = set()
@@ -459,11 +486,13 @@ def parse_font_spec(font_str, default_family="Liga SFMonoNerdFont", default_size
 def query_all():
     ensure_session_portal_ready()
     gtk_themes = get_gtk_themes()
+    icon_themes = get_icon_themes()
     cursor_themes = get_cursor_themes()
     system_fonts, mono_fonts = get_fonts()
 
     schema = "org.gnome.desktop.interface"
     cur_gtk = get_gsettings(schema, "gtk-theme") or (gtk_themes[0] if gtk_themes else "Adwaita")
+    cur_icon = get_gsettings(schema, "icon-theme") or (icon_themes[0] if icon_themes else "MacTahoe-dark")
     cur_cursor = get_gsettings(schema, "cursor-theme") or (cursor_themes[0] if cursor_themes else "Adwaita")
     
     cur_cursor_size_raw = get_gsettings(schema, "cursor-size")
@@ -492,12 +521,14 @@ def query_all():
 
     return {
         "gtk_themes": [{"id": t, "label": t} for t in gtk_themes],
+        "icon_themes": [{"id": i, "label": i} for i in icon_themes],
         "cursor_themes": [{"id": c, "label": c} for c in cursor_themes],
         "cursor_sizes": [16, 24, 32, 36, 48, 64],
         "system_fonts": [{"id": f, "label": f} for f in system_fonts[:80]],
         "monospace_fonts": [{"id": f, "label": f} for f in mono_fonts[:60]],
         "current": {
             "gtk_theme": cur_gtk,
+            "icon_theme": cur_icon,
             "cursor_theme": cur_cursor,
             "cursor_size": cur_cursor_size,
             "color_scheme": cur_color_scheme,
@@ -592,6 +623,67 @@ def set_gtk_theme(name):
     update_xsettingsd({"Net/ThemeName": name})
     apply_gtk_theme_links(name)
     return {"status": "ok", "gtk_theme": name}
+
+def set_icon_theme(name):
+    if not name:
+        return {"error": "no theme specified"}
+    set_gsettings("org.gnome.desktop.interface", "icon-theme", name)
+    for p in [os.path.join(HOME, ".config/gtk-3.0/settings.ini"), os.path.join(HOME, ".config/gtk-4.0/settings.ini")]:
+        update_gtk_ini(p, {"gtk-icon-theme-name": name})
+    update_gtk2({"gtk-icon-theme-name": name})
+    update_xsettingsd({"Net/IconThemeName": name})
+    
+    # Also update qt6ct / qt5ct if config directories exist
+    for qct in [os.path.join(HOME, ".config/qt6ct/qt6ct.conf"), os.path.join(HOME, ".config/qt5ct/qt5ct.conf")]:
+        if os.path.exists(qct) and not is_nix_store_managed(qct):
+            try:
+                with open(qct, "r", encoding="utf-8") as f:
+                    q_lines = f.readlines()
+                new_q_lines = []
+                for line in q_lines:
+                    if line.strip().startswith("icon_theme="):
+                        new_q_lines.append(f"icon_theme={name}\n")
+                    else:
+                        new_q_lines.append(line)
+                with open(qct, "w", encoding="utf-8") as f:
+                    f.writelines(new_q_lines)
+            except Exception:
+                pass
+
+    # Also update ~/.config/kdeglobals [Icons] Theme=... if present
+    kdeglobals = os.path.join(HOME, ".config/kdeglobals")
+    if not is_nix_store_managed(kdeglobals):
+        try:
+            k_lines = []
+            if os.path.exists(kdeglobals):
+                with open(kdeglobals, "r", encoding="utf-8") as f:
+                    k_lines = f.readlines()
+            icons_idx = -1
+            for i, line in enumerate(k_lines):
+                if line.strip() == "[Icons]":
+                    icons_idx = i
+                    break
+            if icons_idx == -1:
+                k_lines.append("\n[Icons]\nTheme=" + name + "\n")
+            else:
+                found = False
+                for i in range(icons_idx + 1, len(k_lines)):
+                    if k_lines[i].strip().startswith("["):
+                        break
+                    if k_lines[i].strip().startswith("Theme="):
+                        k_lines[i] = f"Theme={name}\n"
+                        found = True
+                        break
+                if not found:
+                    k_lines.insert(icons_idx + 1, f"Theme={name}\n")
+            with open(kdeglobals, "w", encoding="utf-8") as f:
+                f.writelines(k_lines)
+        except Exception:
+            pass
+
+    cur_cursor = get_gsettings("org.gnome.desktop.interface", "cursor-theme") or "MacTahoe-dark"
+    update_default_cursor_theme(cur_cursor)
+    return {"status": "ok", "icon_theme": name}
 
 def set_cursor(name, size):
     try:
@@ -770,6 +862,9 @@ def main():
     cmd = sys.argv[1]
     if cmd == "set_gtk_theme" and len(sys.argv) >= 3:
         res = set_gtk_theme(sys.argv[2])
+        print(json.dumps(res))
+    elif cmd == "set_icon_theme" and len(sys.argv) >= 3:
+        res = set_icon_theme(sys.argv[2])
         print(json.dumps(res))
     elif cmd == "set_cursor" and len(sys.argv) >= 4:
         res = set_cursor(sys.argv[2], sys.argv[3])

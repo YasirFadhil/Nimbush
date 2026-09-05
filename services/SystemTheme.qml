@@ -15,6 +15,7 @@ Singleton {
 
     // ── Discovered System Models ─────────────────────────────────────────────
     property var gtkThemes: []
+    property var iconThemes: []
     property var cursorThemes: []
     property var cursorSizes: [
         { id: 16, label: "16 px" },
@@ -29,6 +30,7 @@ Singleton {
 
     // ── Current System State ─────────────────────────────────────────────────
     property string currentGtkTheme: "Tahoe-Dark-Amber"
+    property string currentIconTheme: "MacTahoe-dark"
     property string currentCursorTheme: "MacTahoe-dark"
     property int currentCursorSize: 24
     property string currentFontFamily: "Liga SFMonoNerdFont"
@@ -64,6 +66,13 @@ Singleton {
         execProc.running = true
     }
 
+    function setIconTheme(name) {
+        if (!name) return
+        currentIconTheme = name
+        execProc.running = false
+        execProc.command = ["python3", helperScript, "set_icon_theme", name]
+        execProc.running = true
+    }
 
     function setCursorTheme(name, size) {
         if (!name) return
@@ -147,15 +156,36 @@ Singleton {
         var s = typeof iconName === "string" ? iconName.trim() : (iconName.name || iconName.toString() || "").trim()
         if (!s) return ""
 
+        // If it's already an absolute file path or network URI
         if (s.startsWith("file://") || s.startsWith("http://") || s.startsWith("https://")) return s
         if (s.startsWith("/")) return "file://" + s
         
-        if (s.startsWith("image://icon/")) s = s.substring(13)
+        // Strip image://icon/ if passed
+        if (s.startsWith("image://icon/")) s = s.substring(13).trim()
         else if (s.startsWith("image://")) return s
+        if (!s) return ""
 
-        var qp = Quickshell.iconPath(s, false)
-        if (qp && qp.length > 0) return qp
-        return "image://icon/" + s
+        // 1. Quickshell theme resolution with fallback enabled
+        var qp = Quickshell.iconPath(s, true)
+        if (qp && qp.length > 0) {
+            return qp.startsWith("/") ? ("file://" + qp) : qp
+        }
+
+        // 2. Strip file extension if desktop file supplied icon as "app.png" or "app.svg"
+        if (s.indexOf(".") !== -1) {
+            var baseName = s.replace(/\.[^/.]+$/, "")
+            if (baseName.length > 0) {
+                var qpBase = Quickshell.iconPath(baseName, true)
+                if (qpBase && qpBase.length > 0) {
+                    return qpBase.startsWith("/") ? ("file://" + qpBase) : qpBase
+                }
+            }
+        }
+
+        // Return empty string when not found.
+        // NEVER return "image://icon/" + s because missing icons cause Qt to render
+        // a magenta/black checkered missing-texture pixmap that overrides QML fallbacks.
+        return ""
     }
 
     // ── Processes ────────────────────────────────────────────────────────────
@@ -177,6 +207,7 @@ Singleton {
                     var data = JSON.parse(trimmed)
                     if (data) {
                         if (data.gtk_themes) root.gtkThemes = data.gtk_themes
+                        if (data.icon_themes) root.iconThemes = data.icon_themes
                         if (data.cursor_themes) root.cursorThemes = data.cursor_themes
                         if (data.system_fonts) root.systemFonts = data.system_fonts
                         if (data.monospace_fonts) root.monospaceFonts = data.monospace_fonts
@@ -184,6 +215,7 @@ Singleton {
                         if (data.current) {
                             var cur = data.current
                             if (cur.gtk_theme) root.currentGtkTheme = cur.gtk_theme
+                            if (cur.icon_theme) root.currentIconTheme = cur.icon_theme
                             if (cur.cursor_theme) root.currentCursorTheme = cur.cursor_theme
                             if (cur.cursor_size) root.currentCursorSize = cur.cursor_size
                             if (cur.font_family) root.currentFontFamily = cur.font_family

@@ -511,14 +511,14 @@ Scope {
                                             const res = Services.SystemTheme.getIcon(src)
                                             if (res && res.length > 0) return res
                                         }
-                                        const qp = Quickshell.iconPath(src, false)
+                                        const qp = Quickshell.iconPath(src, true)
                                         return (qp && qp.startsWith("/")) ? ("file://" + qp) : (qp || "")
                                     }
                                     fillMode: Image.PreserveAspectCrop
                                     asynchronous: true
                                     cache: true
                                     sourceSize: Qt.size(64, 64)
-                                    visible: status === Image.Ready
+                                    visible: status === Image.Ready && source.toString().length > 0
                                 }
 
                                 Text {
