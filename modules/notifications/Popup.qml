@@ -20,8 +20,19 @@ PanelWindow {
     readonly property bool showDynamicIsland: isIslandMode && isIslandVisible
     readonly property bool hasPopups: Services.Notifications.popupList.count > 0
 
-    // Only show popup window when NOT in island mode, popups exist, and lockscreen is not locked
-    visible: !showDynamicIsland && hasPopups && !Services.OverlayManager.isLocked
+    readonly property bool isFullscreen: Services.Workspaces ? Services.Workspaces.isFullscreen : false
+    readonly property bool hasBatteryPopup: {
+        if (!Services.Notifications || !Services.Notifications.popupList) return false
+        for (let i = 0; i < Services.Notifications.popupList.count; i++) {
+            if (Services.Notifications.isBatteryNotification(Services.Notifications.popupList.get(i))) return true
+        }
+        return false
+    }
+    readonly property bool fullscreenAllowed: (Services.Config && Services.Config.notificationShowInFullscreen) || hasBatteryPopup
+
+    // In fullscreen mode, notifications always appear as popups (if enabled in settings or if battery alert).
+    // In normal (non-fullscreen) mode, only show popups when NOT in dynamic island mode.
+    visible: hasPopups && !Services.OverlayManager.isLocked && (isFullscreen ? fullscreenAllowed : !showDynamicIsland)
 
     WlrLayershell.layer: WlrLayer.Overlay
     WlrLayershell.namespace: "quickshell:notifpopup"
@@ -84,9 +95,13 @@ PanelWindow {
             property var notifItem: modelData
             property bool isReplying: popupWin.replyMode && popupWin.activeReplyNotifId === notifItem.notifId
             property bool isCritical: notifItem.urgency === 2
+            readonly property bool isBattery: Services.Notifications ? Services.Notifications.isBatteryNotification(notifItem) : false
+            readonly property bool cardAllowed: !popupWin.isFullscreen || (Services.Config && Services.Config.notificationShowInFullscreen) || isBattery
 
+            visible: cardAllowed
             width: popupListView.width
-            implicitHeight: cardContent.implicitHeight + 18
+            implicitHeight: cardAllowed ? (cardContent.implicitHeight + 18) : 0
+            height: cardAllowed ? implicitHeight : 0
             radius: Services.Theme.radiusMd
             color: Services.Theme.surfaced
             border.color: card.isCritical ? Services.Theme.danger : Services.Theme.border

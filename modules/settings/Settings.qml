@@ -3813,6 +3813,15 @@ FloatingWindow {
 
                                 SettingsDivider {}
 
+                                SettingsSwitch {
+                                    title: "Show in Fullscreen"
+                                    subtitle: "Display notification popups over fullscreen apps (battery alerts always appear)"
+                                    checked: Services.Config ? Services.Config.notificationShowInFullscreen : false
+                                    onToggled: (st) => { if (Services.Config) Services.Config.setNotificationShowInFullscreen(st) }
+                                }
+
+                                SettingsDivider {}
+
                                 SettingsRow {
                                     title: "Test & Actions"
 

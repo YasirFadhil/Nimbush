@@ -130,7 +130,8 @@ Singleton {
             appIcon: icon || "battery-caution",
             summary: title,
             body: message,
-            urgency: u
+            urgency: u,
+            isBattery: true
         })
     }
 

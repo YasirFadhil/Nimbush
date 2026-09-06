@@ -321,6 +321,101 @@ def do_watch():
     if monitor_proc:
         monitor_proc.terminate()
 
+def get_devices():
+    devices = []
+    try:
+        raw = subprocess.check_output(
+            ["kdeconnect-cli", "-a", "--id-name-only"],
+            stderr=subprocess.DEVNULL,
+            text=True,
+            timeout=1.5
+        )
+        for line in raw.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            parts = line.split(" ", 1)
+            dev_id = parts[0]
+            dev_name = parts[1] if len(parts) > 1 else dev_id
+            
+            dev_type = "phone"
+            try:
+                type_prop = subprocess.check_output(
+                    ["busctl", "--user", "get-property", "org.kde.kdeconnect",
+                     f"/modules/kdeconnect/devices/{dev_id}", "org.kde.kdeconnect.device", "type"],
+                    stderr=subprocess.DEVNULL,
+                    text=True,
+                    timeout=0.6
+                ).strip().split(" ", 1)[-1].strip('"')
+                if type_prop:
+                    dev_type = type_prop
+            except Exception:
+                pass
+
+            devices.append({
+                "id": dev_id,
+                "name": dev_name,
+                "type": dev_type,
+                "reachable": True
+            })
+    except Exception:
+        pass
+    return devices
+
+def do_share(device_id, files):
+    if not files:
+        print(json.dumps({"status": "error", "message": "no files provided"}))
+        return
+
+    import urllib.parse
+    cleaned_files = []
+    for f in files:
+        if f.startswith("file://"):
+            f = urllib.parse.unquote(f[7:])
+        if os.path.exists(f):
+            cleaned_files.append(os.path.abspath(f))
+
+    if not cleaned_files:
+        print(json.dumps({"status": "error", "message": "files do not exist"}))
+        return
+
+    if not device_id:
+        devs = get_devices()
+        if devs:
+            device_id = devs[0]["id"]
+        else:
+            print(json.dumps({"status": "error", "message": "no device available"}))
+            return
+
+    # 1. Try DBus shareUrls
+    file_urls = [f"file://{p}" for p in cleaned_files]
+    try:
+        bus_args = ["busctl", "--user", "call", "org.kde.kdeconnect",
+                    f"/modules/kdeconnect/devices/{device_id}/share",
+                    "org.kde.kdeconnect.device.share", "shareUrls",
+                    "as", str(len(file_urls))] + file_urls
+        res = subprocess.run(bus_args, check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=4.0)
+        if res.returncode == 0:
+            print(json.dumps({"status": "ok", "device": device_id, "count": len(cleaned_files), "method": "dbus"}))
+            return
+    except Exception:
+        pass
+
+    # 2. Fallback to kdeconnect-cli
+    try:
+        cmd = ["kdeconnect-cli", "-d", device_id]
+        for f in cleaned_files:
+            cmd.extend(["--share", f])
+        res = subprocess.run(cmd, check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5.0)
+        if res.returncode == 0:
+            print(json.dumps({"status": "ok", "device": device_id, "count": len(cleaned_files), "method": "cli"}))
+            return
+    except Exception as e:
+        print(json.dumps({"status": "error", "message": str(e)}))
+        return
+
+    print(json.dumps({"status": "ok", "device": device_id, "count": len(cleaned_files), "method": "dispatched"}))
+
 def main():
     parser = argparse.ArgumentParser(description="KDE Connect notification helper")
     subparsers = parser.add_subparsers(dest="command")
@@ -330,6 +425,14 @@ def main():
 
     # List mode
     subparsers.add_parser("list")
+
+    # Devices mode
+    subparsers.add_parser("devices")
+
+    # Share mode
+    share_p = subparsers.add_parser("share")
+    share_p.add_argument("--device", default="")
+    share_p.add_argument("--files", nargs="+", required=True)
 
     # Reply mode
     reply_p = subparsers.add_parser("reply")
@@ -351,6 +454,10 @@ def main():
         do_watch()
     elif args.command == "list":
         print(json.dumps(get_active_notifications()))
+    elif args.command == "devices":
+        print(json.dumps(get_devices()))
+    elif args.command == "share":
+        do_share(args.device, args.files)
     elif args.command == "reply":
         do_reply(args.reply_id, args.notif_id, args.summary, args.body, args.message)
     elif args.command == "dismiss":
@@ -360,3 +467,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

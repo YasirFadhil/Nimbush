@@ -110,6 +110,7 @@ Singleton {
     property int notificationRetentionDays: 7     // 1 to 7 days
     property bool dndEnabled: false
     property string notificationPosition: "top_right" // "top_right" | "top_center" | "top_left" | "bottom_right"
+    property bool notificationShowInFullscreen: false
 
     // ── Lockscreen & System ──────────────────────────────────────────────────
     property string lockscreenClockStyle: "hero"  // "hero" | "modern" | "compact" | "minimal" | "vertical" | "typographic" | "radial" | "cyber"
@@ -272,6 +273,7 @@ Singleton {
         if (data.notificationRetentionDays !== undefined) notificationRetentionDays = Math.max(1, Math.min(7, Number(data.notificationRetentionDays)))
         if (data.dndEnabled !== undefined) dndEnabled = Boolean(data.dndEnabled)
         if (data.notificationPosition !== undefined) notificationPosition = data.notificationPosition
+        if (data.notificationShowInFullscreen !== undefined) notificationShowInFullscreen = Boolean(data.notificationShowInFullscreen)
 
         if (data.lockscreenClockStyle !== undefined) lockscreenClockStyle = data.lockscreenClockStyle
         if (data.lockscreenAuthStyle !== undefined) lockscreenAuthStyle = data.lockscreenAuthStyle
@@ -381,6 +383,7 @@ Singleton {
             notificationRetentionDays: notificationRetentionDays,
             dndEnabled: dndEnabled,
             notificationPosition: notificationPosition,
+            notificationShowInFullscreen: notificationShowInFullscreen,
 
             lockscreenClockStyle: lockscreenClockStyle,
             lockscreenAuthStyle: lockscreenAuthStyle,
@@ -479,6 +482,7 @@ Singleton {
         notificationRetentionDays = 7
         dndEnabled = false
         notificationPosition = "top_right"
+        notificationShowInFullscreen = false
 
         lockscreenClockStyle = "hero"
         lockscreenLayout = "default"
@@ -679,6 +683,7 @@ Singleton {
     function setNotificationTimeout(sec) { notificationTimeout = sec; saveConfig() }
     function setNotificationRetentionDays(days) { notificationRetentionDays = Math.max(1, Math.min(7, days)); saveConfig() }
     function setNotificationPosition(pos) { notificationPosition = pos; saveConfig() }
+    function setNotificationShowInFullscreen(val) { notificationShowInFullscreen = Boolean(val); saveConfig() }
     function setDndEnabled(val) { dndEnabled = val; saveConfig() }
 
     function setLockscreenClockStyle(style) { lockscreenClockStyle = style; saveConfig() }
