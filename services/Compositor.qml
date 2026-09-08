@@ -46,6 +46,11 @@ Singleton {
     property bool hyprAnim: true
     property string hyprAnimStyle: "fluid"
     property var hyprAnimStyles: []
+    property bool hyprWorkspaceAnim: true
+    property string hyprWorkspaceAnimStyle: "slidevert"
+    property real hyprWorkspaceAnimSpeed: 2.0
+    property string hyprWorkspaceAnimBezier: "quick"
+    property var availableBeziers: ["quick", "overshoot", "easeOutQuint", "easeInOutCubic", "almostLinear", "linear", "default"]
     property bool hyprBlur: true
     property int hyprBlurSize: 4
     property int hyprBlurPasses: 2
@@ -399,6 +404,45 @@ Singleton {
         command: [root.helperScript, "anim-style-set", targetStyle]
     }
 
+    Process {
+        id: workspaceAnimProc
+        property string targetEnabled: "true"
+        property string targetStyle: "slidevert"
+        property string targetSpeed: "2.0"
+        property string targetBezier: "quick"
+        command: [root.helperScript, "anim-workspace-set", targetEnabled, targetStyle, targetSpeed, targetBezier]
+    }
+
+    function _applyWorkspaceAnim() {
+        workspaceAnimProc.targetEnabled = hyprWorkspaceAnim ? "true" : "false"
+        workspaceAnimProc.targetStyle = hyprWorkspaceAnimStyle ? hyprWorkspaceAnimStyle : "slidevert"
+        workspaceAnimProc.targetSpeed = (Math.round(hyprWorkspaceAnimSpeed * 10) / 10).toString()
+        workspaceAnimProc.targetBezier = hyprWorkspaceAnimBezier ? hyprWorkspaceAnimBezier : "quick"
+        workspaceAnimProc.running = true
+    }
+
+    function toggleWorkspaceAnim() {
+        hyprWorkspaceAnim = !hyprWorkspaceAnim
+        _applyWorkspaceAnim()
+    }
+
+    function setWorkspaceAnimStyle(styleId) {
+        if (!styleId) return
+        hyprWorkspaceAnimStyle = styleId
+        _applyWorkspaceAnim()
+    }
+
+    function setWorkspaceAnimSpeed(spd) {
+        hyprWorkspaceAnimSpeed = Math.round(Number(spd) * 10) / 10
+        _applyWorkspaceAnim()
+    }
+
+    function setWorkspaceAnimBezier(bz) {
+        if (!bz) return
+        hyprWorkspaceAnimBezier = bz
+        _applyWorkspaceAnim()
+    }
+
     function setHyprAnimStyle(styleId) {
         if (!styleId) return
         hyprAnimStyle = styleId
@@ -514,19 +558,31 @@ Singleton {
         setOption("scrolling_fullscreen_on_one_column", hyprScrollingFullscreenOnOneColumn)
     }
 
-    function toggleHyprTouchpadNatural() {
-        hyprTouchpadNatural = !hyprTouchpadNatural
+    function setHyprTouchpadNatural(val) {
+        hyprTouchpadNatural = Boolean(val)
         setOption("touchpad_natural", hyprTouchpadNatural)
     }
 
-    function toggleHyprTouchpadTap() {
-        hyprTouchpadTap = !hyprTouchpadTap
+    function toggleHyprTouchpadNatural() {
+        setHyprTouchpadNatural(!hyprTouchpadNatural)
+    }
+
+    function setHyprTouchpadTap(val) {
+        hyprTouchpadTap = Boolean(val)
         setOption("touchpad_tap", hyprTouchpadTap)
     }
 
-    function toggleHyprTouchpadDwt() {
-        hyprTouchpadDwt = !hyprTouchpadDwt
+    function toggleHyprTouchpadTap() {
+        setHyprTouchpadTap(!hyprTouchpadTap)
+    }
+
+    function setHyprTouchpadDwt(val) {
+        hyprTouchpadDwt = Boolean(val)
         setOption("touchpad_dwt", hyprTouchpadDwt)
+    }
+
+    function toggleHyprTouchpadDwt() {
+        setHyprTouchpadDwt(!hyprTouchpadDwt)
     }
 
     function setHyprSensitivity(val) {
@@ -571,14 +627,22 @@ Singleton {
         setOption("follow_mouse", hyprFollowMouse)
     }
 
-    function toggleHyprWorkspaceSwipe() {
-        hyprWorkspaceSwipe = !hyprWorkspaceSwipe
+    function setHyprWorkspaceSwipe(val) {
+        hyprWorkspaceSwipe = Boolean(val)
         setOption("workspace_swipe", hyprWorkspaceSwipe)
     }
 
-    function toggleHyprSwipeInvert() {
-        hyprSwipeInvert = !hyprSwipeInvert
+    function toggleHyprWorkspaceSwipe() {
+        setHyprWorkspaceSwipe(!hyprWorkspaceSwipe)
+    }
+
+    function setHyprSwipeInvert(val) {
+        hyprSwipeInvert = Boolean(val)
         setOption("workspace_swipe_invert", hyprSwipeInvert)
+    }
+
+    function toggleHyprSwipeInvert() {
+        setHyprSwipeInvert(!hyprSwipeInvert)
     }
 
     function setMonitorScale(monName, scaleVal, saveToConfig) {
@@ -870,21 +934,33 @@ Singleton {
         bindsListProc.running = true
     }
 
-    function addKeybind(keys, action, desc, file) {
+    function addKeybind(keys, action, desc, file, opts) {
         if (!keys || !action) return
         keybindStatus = "Adding keybind..."
         bindsAddProc.qOutput = ""
         var cmd = [root.helperScript, "binds-add", "--keys", keys, "--action", action, "--desc", desc || ""]
+        if (opts) {
+            if (opts.repeat) cmd.push("--repeat")
+            if (opts.locked) cmd.push("--locked")
+            if (opts.mouse) cmd.push("--mouse")
+            if (opts.nonConsuming) cmd.push("--non-consuming")
+        }
         if (file) { cmd.push("--file", file) }
         bindsAddProc.command = cmd
         bindsAddProc.running = true
     }
 
-    function updateKeybind(lineNum, keys, action, desc, file) {
+    function updateKeybind(lineNum, keys, action, desc, file, opts) {
         if (!lineNum || !keys || !action) return
         keybindStatus = "Updating keybind..."
         bindsUpdateProc.qOutput = ""
         var cmd = [root.helperScript, "binds-update", "--line", String(lineNum), "--keys", keys, "--action", action, "--desc", desc || ""]
+        if (opts) {
+            if (opts.repeat) cmd.push("--repeat")
+            if (opts.locked) cmd.push("--locked")
+            if (opts.mouse) cmd.push("--mouse")
+            if (opts.nonConsuming) cmd.push("--non-consuming")
+        }
         if (file) { cmd.push("--file", file) }
         bindsUpdateProc.command = cmd
         bindsUpdateProc.running = true
@@ -1118,6 +1194,11 @@ Singleton {
                     if (data.anim !== undefined) root.hyprAnim = data.anim
                     if (data.animStyle !== undefined) root.hyprAnimStyle = data.animStyle
                     if (data.animStyles !== undefined) root.hyprAnimStyles = data.animStyles
+                    if (data.workspace_anim !== undefined) root.hyprWorkspaceAnim = data.workspace_anim
+                    if (data.workspace_anim_style !== undefined) root.hyprWorkspaceAnimStyle = data.workspace_anim_style
+                    if (data.workspace_anim_speed !== undefined) root.hyprWorkspaceAnimSpeed = data.workspace_anim_speed
+                    if (data.workspace_anim_bezier !== undefined) root.hyprWorkspaceAnimBezier = data.workspace_anim_bezier
+                    if (data.available_beziers && data.available_beziers.length > 0) root.availableBeziers = data.available_beziers
                     if (data.shadow !== undefined) root.hyprShadow = data.shadow
                     if (data.shadow_range !== undefined) root.hyprShadowRange = data.shadow_range
                     if (data.shadow_power !== undefined) root.hyprShadowPower = data.shadow_power

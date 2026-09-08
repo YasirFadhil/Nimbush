@@ -54,10 +54,10 @@ Variants {
         // Dynamic Island expanded region (only in islands mode)
         Region {
             readonly property bool isIslandActive: root.showDynamicIsland
-            x: isIslandActive ? ((root.width - (dynamicIsland.expanded ? Math.max(480, dynamicIsland.islandWidth) : Math.max(160, dynamicIsland.calculatedCollapsedWidth + 20))) / 2) : 0
-            y: isIslandActive ? (root.isBottom ? (root.height - (dynamicIsland.expanded ? Math.max(140, dynamicIsland.islandHeight) : root.barHeight)) : 0) : 0
-            width: isIslandActive ? (dynamicIsland.expanded ? Math.max(480, dynamicIsland.islandWidth) : Math.max(160, dynamicIsland.calculatedCollapsedWidth + 20)) : 0
-            height: isIslandActive ? (dynamicIsland.expanded ? Math.max(140, dynamicIsland.islandHeight) : root.barHeight) : 0
+            x: isIslandActive ? ((root.width - (dynamicIsland.expanded ? Math.max(520, dynamicIsland.islandWidth) : Math.max(160, dynamicIsland.calculatedCollapsedWidth + 20))) / 2) : 0
+            y: isIslandActive ? (root.isBottom ? (root.height - (dynamicIsland.expanded ? Math.max(160, dynamicIsland.islandHeight) : root.barHeight)) : 0) : 0
+            width: isIslandActive ? (dynamicIsland.expanded ? Math.max(520, dynamicIsland.islandWidth) : Math.max(160, dynamicIsland.calculatedCollapsedWidth + 20)) : 0
+            height: isIslandActive ? (dynamicIsland.expanded ? Math.max(160, dynamicIsland.islandHeight) : root.barHeight) : 0
         }
     }
 

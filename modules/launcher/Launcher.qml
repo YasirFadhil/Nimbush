@@ -297,7 +297,7 @@ PanelWindow {
                                 anchors.fill: parent
                                 radius: 8
                                 color: appItem.index === resultList.currentIndex ? Qt.rgba(255, 255, 255, 0.1) : Qt.rgba(255, 255, 255, 0.05)
-                                visible: !ico.source || ico.status !== Image.Ready
+                                visible: !ico.source || ico.status !== Image.Ready || !ico.visible
 
                                 Text {
                                     anchors.centerIn: parent
@@ -322,8 +322,8 @@ PanelWindow {
                                     if (rawIcon.startsWith("/")) return "file://" + rawIcon
                                     let s = rawIcon.startsWith("image://icon/") ? rawIcon.substring(13) : rawIcon
                                     if (s.startsWith("image://")) return s
-                                    const qp = Quickshell.iconPath(s, false)
-                                    return (qp && qp.startsWith("/")) ? ("file://" + qp) : ""
+                                    const qp = Quickshell.iconPath(s, true)
+                                    return (qp && qp.startsWith("/")) ? ("file://" + qp) : (qp || "")
                                 }
                                 fillMode: Image.PreserveAspectFit
                                 asynchronous: true
@@ -331,7 +331,7 @@ PanelWindow {
                                 sourceSize: Qt.size(64, 64)
                                 mipmap: true
                                 smooth: true
-                                visible: ico.status === Image.Ready
+                                visible: ico.status === Image.Ready && ico.source.toString().length > 0
                             }
                         }
 

@@ -101,7 +101,7 @@ PanelWindow {
                                 return icon
                             if (icon.startsWith("/"))
                                 return "file://" + icon
-                            const qp = Quickshell.iconPath(icon, false)
+                            const qp = Quickshell.iconPath(icon, true)
                             return (qp && qp.startsWith("/")) ? ("file://" + qp) : (qp || "")
                         }
                         fillMode: Image.PreserveAspectFit
@@ -204,8 +204,8 @@ PanelWindow {
                                             if (s.startsWith("/")) return "file://" + s
                                             if (s.startsWith("image://icon/")) s = s.substring(13)
                                             else if (s.startsWith("image://")) return s
-                                            const qp = Quickshell.iconPath(s, false)
-                                            return (qp && qp.startsWith("/")) ? ("file://" + qp) : ""
+                                            const qp = Quickshell.iconPath(s, true)
+                                            return (qp && qp.startsWith("/")) ? ("file://" + qp) : (qp || "")
                                         }
                                         source: iconSource
                                         visible: iconSource.length > 0 && status === Image.Ready
@@ -323,8 +323,8 @@ PanelWindow {
                                                         if (s.startsWith("/")) return "file://" + s
                                                         if (s.startsWith("image://icon/")) s = s.substring(13)
                                                         else if (s.startsWith("image://")) return s
-                                                        const qp = Quickshell.iconPath(s, false)
-                                                        return (qp && qp.startsWith("/")) ? ("file://" + qp) : ""
+                                                        const qp = Quickshell.iconPath(s, true)
+                                                        return (qp && qp.startsWith("/")) ? ("file://" + qp) : (qp || "")
                                                     }
                                                     source: iconSource
                                                     visible: iconSource.length > 0 && status === Image.Ready

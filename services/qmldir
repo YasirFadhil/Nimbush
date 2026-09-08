@@ -22,6 +22,9 @@ singleton Compositor 1.0 Compositor.qml
 singleton Emojis 1.0 Emojis.qml
 singleton SystemTheme 1.0 SystemTheme.qml
 singleton Weather 1.0 Weather.qml
+singleton DeviceShare 1.0 DeviceShare.qml
+singleton Cava 1.0 Cava.qml
 AvatarFrame 1.0 AvatarFrame.qml
+
 
 

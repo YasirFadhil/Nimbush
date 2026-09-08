@@ -229,6 +229,11 @@ def query_all():
             "discoveredConfigFiles": found_files
         }
         res.update(raw_opts)
+        try:
+            ws_info = get_workspace_anim_info()
+            res.update(ws_info)
+        except Exception:
+            pass
         return res
     elif comp == "niri":
         clean_monitors = []
@@ -378,6 +383,7 @@ LUA_MAP = {
     "blur_size": lambda v: f"hl.config({{ decoration = {{ blur = {{ size = {int(v)} }} }} }})",
     "blur_passes": lambda v: f"hl.config({{ decoration = {{ blur = {{ passes = {int(v)} }} }} }})",
     "anim": lambda v: f"hl.config({{ animations = {{ enabled = {str(v).lower()} }} }})",
+    "workspace_anim": lambda v: f'hl.animation({{ leaf = "workspaces", enabled = {str(v).lower()} }}) ; hl.animation({{ leaf = "workspacesIn", enabled = {str(v).lower()} }}) ; hl.animation({{ leaf = "workspacesOut", enabled = {str(v).lower()} }})',
     "shadow": lambda v: f"hl.config({{ decoration = {{ shadow = {{ enabled = {str(v).lower()} }} }} }})",
     "shadow_range": lambda v: f"hl.config({{ decoration = {{ shadow = {{ range = {int(v)} }} }} }})",
     "shadow_power": lambda v: f"hl.config({{ decoration = {{ shadow = {{ render_power = {int(v)} }} }} }})",
@@ -408,6 +414,7 @@ KEYWORD_MAP = {
     "blur_size": lambda v: ("decoration:blur:size", str(v)),
     "blur_passes": lambda v: ("decoration:blur:passes", str(v)),
     "anim": lambda v: ("animations:enabled", "1" if str(v).lower() in ("true", "1") else "0"),
+    "workspace_anim": lambda v: ("animation", f'workspaces,{"1" if str(v).lower() in ("true", "1") else "0"}'),
     "shadow": lambda v: ("decoration:shadow:enabled", "1" if str(v).lower() in ("true", "1") else "0"),
     "shadow_range": lambda v: ("decoration:shadow:range", str(v)),
     "shadow_power": lambda v: ("decoration:shadow:render_power", str(v)),
@@ -436,6 +443,18 @@ lua_map = LUA_MAP
 keyword_map = KEYWORD_MAP
 
 def set_option(opt_name, opt_val):
+    if opt_name in ("workspace_anim", "workspace_anim_style", "workspace_anim_speed", "workspace_anim_bezier"):
+        kwargs = {}
+        if opt_name == "workspace_anim":
+            kwargs["enabled"] = opt_val
+        elif opt_name == "workspace_anim_style":
+            kwargs["style"] = opt_val
+        elif opt_name == "workspace_anim_speed":
+            kwargs["speed"] = opt_val
+        elif opt_name == "workspace_anim_bezier":
+            kwargs["bezier"] = opt_val
+        return set_workspace_animation(**kwargs)
+
     # If Lua mapper exists, try eval first
     res = None
     if opt_name in LUA_MAP:
@@ -528,6 +547,42 @@ def update_lua_option(content, opt_name, opt_val):
         if re.search(pat, content):
             return re.sub(pat, r'\g<1>' + val_str, content, count=1)
 
+    if opt_name == "workspace_anim":
+        b_str = "true" if (isinstance(opt_val, bool) and opt_val) or str(opt_val).lower() in ("true", "1") else "false"
+        for leaf in ["workspaces", "workspacesIn", "workspacesOut"]:
+            pat = r'(hl\.animation\s*\(\s*\{\s*leaf\s*=\s*"' + leaf + r'"[\s\S]*?enabled\s*=\s*)(?:true|false)'
+            content = re.sub(pat, r'\g<1>' + b_str, content)
+        return content
+
+    if opt_name == "workspace_anim_speed":
+        try:
+            fval = float(opt_val)
+            val_num = str(int(fval) if fval.is_integer() else round(fval, 2))
+        except Exception:
+            val_num = str(opt_val)
+        for leaf in ["workspaces", "workspacesIn", "workspacesOut"]:
+            pat = r'(hl\.animation\s*\(\s*\{\s*leaf\s*=\s*"' + leaf + r'"[\s\S]*?speed\s*=\s*)[0-9.]+'
+            content = re.sub(pat, r'\g<1>' + val_num, content)
+        return content
+
+    if opt_name == "workspace_anim_bezier":
+        b_name = str(opt_val).strip()
+        for leaf in ["workspaces", "workspacesIn", "workspacesOut"]:
+            pat = r'(hl\.animation\s*\(\s*\{\s*leaf\s*=\s*"' + leaf + r'"[\s\S]*?bezier\s*=\s*)"[^"]+"'
+            content = re.sub(pat, r'\g<1>"' + b_name + '"', content)
+        return content
+
+    if opt_name == "workspace_anim_style":
+        s_name = str(opt_val).strip()
+        for leaf in ["workspaces", "workspacesIn", "workspacesOut"]:
+            pat = r'(hl\.animation\s*\(\s*\{\s*leaf\s*=\s*"' + leaf + r'"[\s\S]*?style\s*=\s*)"[^"]+"'
+            if re.search(pat, content):
+                content = re.sub(pat, r'\g<1>"' + s_name + '"', content)
+            else:
+                pat_insert = r'(hl\.animation\s*\(\s*\{\s*leaf\s*=\s*"' + leaf + r'"[\s\S]*?)(\s*\}\))'
+                content = re.sub(pat_insert, r'\g<1>, style = "' + s_name + r'"\g<2>', content)
+        return content
+
     if opt_name == "blur":
         pat = r'(blur\s*=\s*\{[\s\S]*?enabled\s*=\s*)(?:true|false)'
         if re.search(pat, content):
@@ -562,26 +617,50 @@ def update_lua_option(content, opt_name, opt_val):
         pat = r'(touchpad\s*=\s*\{[\s\S]*?natural_scroll\s*=\s*)(?:true|false)'
         if re.search(pat, content):
             return re.sub(pat, r'\g<1>' + val_str, content, count=1)
+        pat_tp = r'(touchpad\s*=\s*\{)'
+        if re.search(pat_tp, content):
+            return re.sub(pat_tp, r'\g<1>\n            natural_scroll = ' + val_str + ',', content, count=1)
+        pat_inp = r'(input\s*=\s*\{)'
+        if re.search(pat_inp, content):
+            return re.sub(pat_inp, r'\g<1>\n        touchpad = {\n            natural_scroll = ' + val_str + ',\n        },', content, count=1)
 
     if opt_name == "touchpad_tap":
         pat = r'(touchpad\s*=\s*\{[\s\S]*?tap_to_click\s*=\s*)(?:true|false)'
         if re.search(pat, content):
             return re.sub(pat, r'\g<1>' + val_str, content, count=1)
+        pat_tp = r'(touchpad\s*=\s*\{)'
+        if re.search(pat_tp, content):
+            return re.sub(pat_tp, r'\g<1>\n            tap_to_click = ' + val_str + ',', content, count=1)
+        pat_inp = r'(input\s*=\s*\{)'
+        if re.search(pat_inp, content):
+            return re.sub(pat_inp, r'\g<1>\n        touchpad = {\n            tap_to_click = ' + val_str + ',\n        },', content, count=1)
 
     if opt_name == "touchpad_dwt":
         pat = r'(touchpad\s*=\s*\{[\s\S]*?disable_while_typing\s*=\s*)(?:true|false)'
         if re.search(pat, content):
             return re.sub(pat, r'\g<1>' + val_str, content, count=1)
+        pat_tp = r'(touchpad\s*=\s*\{)'
+        if re.search(pat_tp, content):
+            return re.sub(pat_tp, r'\g<1>\n            disable_while_typing = ' + val_str + ',', content, count=1)
+        pat_inp = r'(input\s*=\s*\{)'
+        if re.search(pat_inp, content):
+            return re.sub(pat_inp, r'\g<1>\n        touchpad = {\n            disable_while_typing = ' + val_str + ',\n        },', content, count=1)
 
     if opt_name == "workspace_swipe":
         pat = r'(workspace_swipe\s*=\s*)(?:true|false)'
         if re.search(pat, content):
             return re.sub(pat, r'\g<1>' + val_str, content, count=1)
+        pat_gest = r'(gestures\s*=\s*\{)'
+        if re.search(pat_gest, content):
+            return re.sub(pat_gest, r'\g<1>\n        workspace_swipe = ' + val_str + ',', content, count=1)
 
     if opt_name == "workspace_swipe_invert":
         pat = r'(workspace_swipe_invert\s*=\s*)(?:true|false)'
         if re.search(pat, content):
             return re.sub(pat, r'\g<1>' + val_str, content, count=1)
+        pat_gest = r'(gestures\s*=\s*\{)'
+        if re.search(pat_gest, content):
+            return re.sub(pat_gest, r'\g<1>\n        workspace_swipe_invert = ' + val_str + ',', content, count=1)
 
     return content
 
@@ -653,6 +732,37 @@ def update_hyprconf_option(content, opt_name, opt_val):
         pat = nested_patterns[opt_name]
         if re.search(pat, content):
             return re.sub(pat, r'\g<1>' + val_str, content, count=1)
+        if opt_name == "touchpad_dwt":
+            pat_tp = r'(touchpad\s*\{)'
+            if re.search(pat_tp, content):
+                return re.sub(pat_tp, r'\g<1>\n        disable_while_typing = ' + val_str, content, count=1)
+            pat_inp = r'(input\s*\{)'
+            if re.search(pat_inp, content):
+                return re.sub(pat_inp, r'\g<1>\n    touchpad {\n        disable_while_typing = ' + val_str + '\n    }', content, count=1)
+        if opt_name == "touchpad_tap":
+            pat_tp = r'(touchpad\s*\{)'
+            if re.search(pat_tp, content):
+                return re.sub(pat_tp, r'\g<1>\n        tap-to-click = ' + val_str, content, count=1)
+            pat_inp = r'(input\s*\{)'
+            if re.search(pat_inp, content):
+                return re.sub(pat_inp, r'\g<1>\n    touchpad {\n        tap-to-click = ' + val_str + '\n    }', content, count=1)
+        if opt_name == "touchpad_natural":
+            pat_tp = r'(touchpad\s*\{)'
+            if re.search(pat_tp, content):
+                return re.sub(pat_tp, r'\g<1>\n        natural_scroll = ' + val_str, content, count=1)
+            pat_inp = r'(input\s*\{)'
+            if re.search(pat_inp, content):
+                return re.sub(pat_inp, r'\g<1>\n    touchpad {\n        natural_scroll = ' + val_str + '\n    }', content, count=1)
+        ws_info = get_workspace_anim_info()
+        en_val = "1" if (opt_val if opt_name == "workspace_anim" else ws_info["workspace_anim"]) else "0"
+        spd_val = str(opt_val) if opt_name == "workspace_anim_speed" else str(ws_info["workspace_anim_speed"])
+        bz_val = str(opt_val) if opt_name == "workspace_anim_bezier" else str(ws_info["workspace_anim_bezier"])
+        sty_val = str(opt_val) if opt_name == "workspace_anim_style" else str(ws_info["workspace_anim_style"])
+        for leaf in ["workspaces", "workspacesIn", "workspacesOut"]:
+            pat = r'(animation\s*=\s*' + leaf + r'\s*,\s*)[0-1](\s*,\s*)[0-9.]+(\s*,\s*)[^,]+(\s*,\s*)[^\n]+'
+            if re.search(pat, content):
+                content = re.sub(pat, r'\g<1>' + en_val + r'\g<2>' + spd_val + r'\g<3>' + bz_val + r'\g<4>' + sty_val, content)
+        return content
 
     return content
 
@@ -936,6 +1046,106 @@ def set_animation_style(style_id):
         set_option("anim", True)
         return {"ok": True, "style": style_id, "enabled": True}
 
+def get_workspace_anim_info():
+    info = {
+        "workspace_anim": True,
+        "workspace_anim_style": "slidevert",
+        "workspace_anim_speed": 2.0,
+        "workspace_anim_bezier": "quick",
+        "available_beziers": ["quick", "overshoot", "easeOutQuint", "easeInOutCubic", "almostLinear", "linear", "default"]
+    }
+    if not is_hyprland():
+        return info
+
+    try:
+        r = subprocess.run(["hyprctl", "-j", "animations"], capture_output=True, text=True, timeout=0.8)
+        if r.returncode == 0:
+            data = json.loads(r.stdout)
+            if isinstance(data, list) and len(data) >= 2:
+                anims, beziers = data[0], data[1]
+                curves = [b["name"] for b in beziers if isinstance(b, dict) and "name" in b]
+                if curves:
+                    info["available_beziers"] = curves
+                for a in anims:
+                    if isinstance(a, dict) and a.get("name") == "workspaces":
+                        if "enabled" in a:
+                            info["workspace_anim"] = bool(a["enabled"])
+                        if "style" in a and a["style"]:
+                            info["workspace_anim_style"] = a["style"]
+                        if "speed" in a:
+                            info["workspace_anim_speed"] = round(float(a["speed"]), 2)
+                        if "bezier" in a and a["bezier"]:
+                            info["workspace_anim_bezier"] = a["bezier"]
+                        break
+    except Exception:
+        pass
+    return info
+
+def set_workspace_animation(enabled=None, style=None, speed=None, bezier=None):
+    curr = get_workspace_anim_info()
+    if enabled is None:
+        enabled = curr["workspace_anim"]
+    else:
+        enabled = str(enabled).lower() in ("true", "1")
+
+    if style is None or not str(style).strip():
+        style = curr["workspace_anim_style"]
+    else:
+        style = str(style).strip()
+
+    if speed is None:
+        speed = curr["workspace_anim_speed"]
+    else:
+        try:
+            speed = round(float(speed), 2)
+        except Exception:
+            speed = 2.0
+
+    if bezier is None or not str(bezier).strip():
+        bezier = curr["workspace_anim_bezier"]
+    else:
+        bezier = str(bezier).strip()
+
+    speed_str = str(int(speed) if float(speed).is_integer() else speed)
+    enabled_str = "true" if enabled else "false"
+    en_int = "1" if enabled else "0"
+
+    # Live apply
+    if is_lua_config():
+        lua_stmts = []
+        for leaf in ["workspaces", "workspacesIn", "workspacesOut"]:
+            lua_stmts.append(f'hl.animation({{ leaf = "{leaf}", enabled = {enabled_str}, speed = {speed_str}, bezier = "{bezier}", style = "{style}" }})')
+        full_lua = " ; ".join(lua_stmts)
+        try:
+            subprocess.run(["hyprctl", "eval", full_lua], capture_output=True, text=True, timeout=1.5)
+        except Exception:
+            pass
+    else:
+        batch_cmds = []
+        for leaf in ["workspaces", "workspacesIn", "workspacesOut"]:
+            batch_cmds.append(f"keyword animation {leaf},{en_int},{speed_str},{bezier},{style}")
+        try:
+            subprocess.run(["hyprctl", "--batch", " ; ".join(batch_cmds)], capture_output=True, text=True, timeout=1.5)
+        except Exception:
+            pass
+
+    # Persist
+    changes = {
+        "workspace_anim": enabled,
+        "workspace_anim_style": style,
+        "workspace_anim_speed": speed,
+        "workspace_anim_bezier": bezier
+    }
+    save_res = save_general_options(changes)
+    return {
+        "ok": True,
+        "workspace_anim": enabled,
+        "workspace_anim_style": style,
+        "workspace_anim_speed": speed,
+        "workspace_anim_bezier": bezier,
+        "persisted": save_res
+    }
+
 def _write_and_validate(target_path, content):
     if not target_path:
         return {"ok": False, "error": "No target path provided"}
@@ -1053,6 +1263,15 @@ def get_keybind_files():
 
     return files
 
+def _parse_lua_opts(opts_str):
+    o = (opts_str or "").lower()
+    return {
+        "repeat": ("repeating" in o and "true" in o) or ("repeat" in o and "true" in o),
+        "locked": "locked" in o and "true" in o,
+        "mouse": "mouse" in o and "true" in o,
+        "nonConsuming": "non_consuming" in o or "nonconsuming" in o
+    }
+
 def parse_lua_binds(path):
     if not os.path.exists(path):
         return []
@@ -1161,6 +1380,7 @@ def parse_lua_binds(path):
             raw_combo = parts[0]
             raw_action = parts[1]
             opts = parts[2] if len(parts) > 2 else ""
+            p_opts = _parse_lua_opts(opts)
 
             # Check if this line is in a loop for workspaces (e.g. key or i)
             if 'key' in raw_combo and 'workspace' in raw_action:
@@ -1198,7 +1418,11 @@ def parse_lua_binds(path):
                         "action": clean_action,
                         "raw": raw_snippet.strip(),
                         "category": cat,
-                        "opts": opts.strip()
+                        "opts": opts.strip(),
+                        "repeat": p_opts["repeat"],
+                        "locked": p_opts["locked"],
+                        "mouse": p_opts["mouse"],
+                        "nonConsuming": p_opts["nonConsuming"]
                     })
                 continue
 
@@ -1269,19 +1493,25 @@ def parse_lua_binds(path):
                 "action": clean_action,
                 "raw": raw_snippet.strip(),
                 "category": cat,
-                "opts": opts.strip()
+                "opts": opts.strip(),
+                "repeat": p_opts["repeat"],
+                "locked": p_opts["locked"],
+                "mouse": p_opts["mouse"],
+                "nonConsuming": p_opts["nonConsuming"]
             })
     return binds
 
 HYPR_DISPATCHERS = {
     "killactive", "closewindow", "togglefloating", "fullscreen", "fakefullscreen",
     "workspace", "movetoworkspace", "movetoworkspacesilent", "togglesplit", "swapsplit",
-    "pseudo", "pin", "movefocus", "movewindow", "movecurrentworkspacetomonitor",
-    "focusmonitor", "focuswindow", "splitratio", "toggleopaque", "dpms", "exit",
-    "submap", "layoutmsg"
+    "pseudo", "pin", "movefocus", "movewindow", "swapwindow", "resizeactive", "resizewindow",
+    "movecurrentworkspacetomonitor", "focusmonitor", "focuswindow", "cyclenext",
+    "togglegroup", "changegroupactive", "movewindoworgroup", "centerwindow",
+    "togglespecialworkspace", "splitratio", "toggleopaque", "dpms", "exit",
+    "submap", "layoutmsg", "forcekillactive"
 }
 
-def format_hyprconf_bind(keys, action):
+def format_hyprconf_bind(keys, action, repeat=False, locked=False, mouse=False, non_consuming=False):
     parts = [p.strip() for p in keys.split("+") if p.strip()]
     if not parts:
         return ""
@@ -1306,88 +1536,139 @@ def format_hyprconf_bind(keys, action):
         mod = ""
         k = parts[0]
 
+    flags = ""
+    if non_consuming:
+        flags += "n"
+    if mouse:
+        flags += "m"
+    if repeat and locked:
+        flags += "el"
+    elif repeat:
+        flags += "e"
+    elif locked:
+        flags += "l"
+    bind_verb = f"bind{flags}" if flags else "bind"
+
     act = action.strip()
     act_low = act.lower()
 
     if act_low in ("close window", "killactive"):
-        return f"bind = {mod}, {k}, killactive,\n"
+        return f"{bind_verb} = {mod}, {k}, killactive,\n"
     elif act_low in ("toggle floating", "togglefloating"):
-        return f"bind = {mod}, {k}, togglefloating,\n"
+        return f"{bind_verb} = {mod}, {k}, togglefloating,\n"
     elif act_low in ("toggle fullscreen", "fullscreen"):
-        return f"bind = {mod}, {k}, fullscreen, 0\n"
+        return f"{bind_verb} = {mod}, {k}, fullscreen, 0\n"
     elif act_low in ("togglesplit", "layout togglesplit", "toggle split"):
-        return f"bind = {mod}, {k}, togglesplit,\n"
+        return f"{bind_verb} = {mod}, {k}, togglesplit,\n"
     elif act_low.startswith("focus workspace ") or (act_low.startswith("workspace ") and not act_low.startswith("workspace =")):
         ws_num = act.split()[-1]
-        return f"bind = {mod}, {k}, workspace, {ws_num}\n"
+        return f"{bind_verb} = {mod}, {k}, workspace, {ws_num}\n"
     elif act_low.startswith("move window to workspace ") or act_low.startswith("movetoworkspace "):
         ws_num = act.split()[-1]
-        return f"bind = {mod}, {k}, movetoworkspace, {ws_num}\n"
+        return f"{bind_verb} = {mod}, {k}, movetoworkspace, {ws_num}\n"
     elif act_low.startswith("move window (silent) to workspace ") or act_low.startswith("movetoworkspacesilent "):
         ws_num = act.split()[-1]
-        return f"bind = {mod}, {k}, movetoworkspacesilent, {ws_num}\n"
+        return f"{bind_verb} = {mod}, {k}, movetoworkspacesilent, {ws_num}\n"
 
     first_word = act.split()[0] if act.split() else ""
     if first_word.lower() in HYPR_DISPATCHERS:
         arg_part = act[len(first_word):].strip().lstrip(",").strip()
         if arg_part:
-            return f"bind = {mod}, {k}, {first_word}, {arg_part}\n"
-        return f"bind = {mod}, {k}, {first_word},\n"
+            return f"{bind_verb} = {mod}, {k}, {first_word}, {arg_part}\n"
+        return f"{bind_verb} = {mod}, {k}, {first_word},\n"
 
     if act.startswith("exec, ") or act.startswith("exec "):
         cmd = act[5:].strip()
-        return f"bind = {mod}, {k}, exec, {cmd}\n"
+        return f"{bind_verb} = {mod}, {k}, exec, {cmd}\n"
 
-    return f"bind = {mod}, {k}, exec, {act}\n"
+    return f"{bind_verb} = {mod}, {k}, exec, {act}\n"
 
-def format_lua_bind(keys, action):
+def format_lua_bind(keys, action, repeat=False, locked=False, mouse=False, non_consuming=False):
     act = action.strip()
     act_low = act.lower()
 
-    if act_low in ("close window", "killactive"):
-        return f'hl.bind("{keys}", hl.dsp.window.close(), {{ repeating = true }})\n'
-    elif act_low in ("toggle floating", "togglefloating"):
-        return f'hl.bind("{keys}", hl.dsp.window.float())\n'
-    elif act_low in ("toggle fullscreen", "fullscreen"):
-        return f'hl.bind("{keys}", hl.dsp.window.fullscreen())\n'
-    elif act_low in ("togglesplit", "layout togglesplit", "toggle split"):
-        return f'hl.bind("{keys}", hl.dsp.layout("togglesplit"))\n'
-    elif act_low.startswith("focus workspace ") or (act_low.startswith("workspace ") and not act_low.startswith("workspace =")):
-        ws_num = act.split()[-1]
-        return f'hl.bind("{keys}", hl.dsp.focus({{ workspace = {ws_num} }}))\n'
-    elif act_low.startswith("move window to workspace ") or act_low.startswith("movetoworkspace "):
-        ws_num = act.split()[-1]
-        return f'hl.bind("{keys}", hl.dsp.window.move({{ workspace = {ws_num} }}))\n'
-    elif act.startswith("hl.dsp."):
-        return f'hl.bind("{keys}", {act})\n'
-    else:
-        escaped_action = act.replace('\\', '\\\\').replace('"', '\\"')
-        return f'hl.bind("{keys}", hl.dsp.exec_cmd("{escaped_action}"))\n'
+    opts_items = []
+    if locked:
+        opts_items.append("locked = true")
+    if repeat:
+        opts_items.append("repeating = true")
+    if mouse:
+        opts_items.append("mouse = true")
+    if non_consuming:
+        opts_items.append("non_consuming = true")
+    opts_suffix = f", {{ {', '.join(opts_items)} }}" if opts_items else ""
 
-def format_niri_bind(keys, action):
+    if act_low in ("close window", "killactive"):
+        final_opts = opts_suffix if opts_items else ", { repeating = true }"
+        return f'hl.bind("{keys}", hl.dsp.window.close(){final_opts})\n'
+    elif act_low in ("toggle floating", "togglefloating"):
+        return f'hl.bind("{keys}", hl.dsp.window.float(){opts_suffix})\n'
+    elif act_low in ("toggle fullscreen", "fullscreen", "fullscreen 0", "fullscreen 1"):
+        return f'hl.bind("{keys}", hl.dsp.window.fullscreen(){opts_suffix})\n'
+    elif act_low in ("togglesplit", "layout togglesplit", "toggle split"):
+        return f'hl.bind("{keys}", hl.dsp.layout("togglesplit"){opts_suffix})\n'
+    elif act_low in ("workspace e+1", "workspace +1"):
+        return f'hl.bind("{keys}", hl.dsp.focus({{ workspace = "e+1" }}){opts_suffix})\n'
+    elif act_low in ("workspace e-1", "workspace -1"):
+        return f'hl.bind("{keys}", hl.dsp.focus({{ workspace = "e-1" }}){opts_suffix})\n'
+    elif act_low.startswith("focus workspace ") or (act_low.startswith("workspace ") and not act_low.startswith("workspace =")):
+        ws_part = act.split()[-1]
+        ws_val = ws_part if ws_part.isdigit() else f'"{ws_part}"'
+        return f'hl.bind("{keys}", hl.dsp.focus({{ workspace = {ws_val} }}){opts_suffix})\n'
+    elif act_low in ("togglespecialworkspace", "togglespecialworkspace magic"):
+        return f'hl.bind("{keys}", hl.dsp.workspace.toggle_special("magic"){opts_suffix})\n'
+    elif act_low in ("movetoworkspace special", "movetoworkspace special:magic"):
+        return f'hl.bind("{keys}", hl.dsp.window.move({{ workspace = "special:magic" }}){opts_suffix})\n'
+    elif act_low.startswith("move window to workspace ") or act_low.startswith("movetoworkspace "):
+        ws_part = act.split()[-1]
+        ws_val = ws_part if ws_part.isdigit() else f'"{ws_part}"'
+        return f'hl.bind("{keys}", hl.dsp.window.move({{ workspace = {ws_val} }}){opts_suffix})\n'
+    elif act_low.startswith("movefocus "):
+        dir_map = {"l": "left", "r": "right", "u": "up", "d": "down", "left": "left", "right": "right", "up": "up", "down": "down"}
+        d_arg = act_low.split()[-1]
+        d_name = dir_map.get(d_arg, d_arg)
+        return f'hl.bind("{keys}", hl.dsp.focus({{ direction = "{d_name}" }}){opts_suffix})\n'
+    elif act.startswith("hl.dsp."):
+        return f'hl.bind("{keys}", {act}{opts_suffix})\n'
+    else:
+        first_word = act.split()[0] if act.split() else ""
+        if first_word.lower() in HYPR_DISPATCHERS:
+            escaped_action = f"hyprctl dispatch {act}".replace('\\', '\\\\').replace('"', '\\"')
+            return f'hl.bind("{keys}", hl.dsp.exec_cmd("{escaped_action}"){opts_suffix})\n'
+        escaped_action = act.replace('\\', '\\\\').replace('"', '\\"')
+        return f'hl.bind("{keys}", hl.dsp.exec_cmd("{escaped_action}"){opts_suffix})\n'
+
+def format_niri_bind(keys, action, repeat=False, locked=False, mouse=False, non_consuming=False):
     clean_combo = keys.replace(" ", "")
     act = action.strip()
     act_low = act.lower()
 
+    attr_parts = []
+    if locked:
+        attr_parts.append("allow-when-locked=true")
+    if not repeat:
+        attr_parts.append("repeat=false")
+    attr_str = f" {' '.join(attr_parts)}" if attr_parts else ""
+
     if act_low in ("close window", "killactive", "close-window"):
-        return f'    {clean_combo} {{ close-window; }}\n'
+        return f'    {clean_combo}{attr_str} {{ close-window; }}\n'
     elif act_low in ("toggle floating", "togglefloating", "toggle-window-floating"):
-        return f'    {clean_combo} {{ toggle-window-floating; }}\n'
+        return f'    {clean_combo}{attr_str} {{ toggle-window-floating; }}\n'
     elif act_low in ("toggle fullscreen", "fullscreen", "fullscreen-window"):
-        return f'    {clean_combo} {{ fullscreen-window; }}\n'
+        return f'    {clean_combo}{attr_str} {{ fullscreen-window; }}\n'
     elif act_low.startswith("focus-workspace ") or act_low.startswith("focus workspace "):
         ws_num = act.split()[-1]
-        return f'    {clean_combo} {{ focus-workspace {ws_num}; }}\n'
+        return f'    {clean_combo}{attr_str} {{ focus-workspace {ws_num}; }}\n'
     elif act_low.startswith("move-window-to-workspace ") or act_low.startswith("move window to workspace "):
         ws_num = act.split()[-1]
-        return f'    {clean_combo} {{ move-window-to-workspace {ws_num}; }}\n'
+        return f'    {clean_combo}{attr_str} {{ move-window-to-workspace {ws_num}; }}\n'
     elif act.startswith("niri:") or "(" in act or "-" in act or act.endswith(";"):
         clean_act = act.rstrip(";")
-        return f'    {clean_combo} {{ {clean_act}; }}\n'
+        return f'    {clean_combo}{attr_str} {{ {clean_act}; }}\n'
     else:
         parts = act.split()
         quoted_parts = " ".join(f'"{p}"' for p in parts)
-        return f'    {clean_combo} {{ spawn {quoted_parts}; }}\n'
+        return f'    {clean_combo}{attr_str} {{ spawn {quoted_parts}; }}\n'
 
 def parse_hyprconf_binds(path):
     if not os.path.exists(path):
@@ -1399,17 +1680,23 @@ def parse_hyprconf_binds(path):
         return []
 
     binds = []
-    bind_re = re.compile(r'^\s*bind[a-zA-Z]*\s*=\s*([^,]*),\s*([^,]+),\s*([^,]+)(?:,\s*(.*))?')
+    bind_re = re.compile(r'^\s*bind([a-zA-Z]*)\s*=\s*([^,]*),\s*([^,]+),\s*([^,]+)(?:,\s*(.*))?')
     for idx, line in enumerate(lines):
         line_str = line.strip()
         if not line_str or line_str.startswith("#"):
             continue
         m = bind_re.match(line_str)
         if m:
-            mod = m.group(1).strip()
-            key = m.group(2).strip()
-            disp = m.group(3).strip()
-            arg = m.group(4).strip() if m.group(4) else ""
+            flags = (m.group(1) or "").lower()
+            is_repeat = 'e' in flags
+            is_locked = 'l' in flags
+            is_mouse = 'm' in flags
+            is_non_consuming = 'n' in flags
+
+            mod = m.group(2).strip()
+            key = m.group(3).strip()
+            disp = m.group(4).strip()
+            arg = m.group(5).strip() if m.group(5) else ""
 
             combo = f"{mod} + {key}" if mod else key
             action = f"{disp} {arg}".strip() if arg else disp
@@ -1442,7 +1729,11 @@ def parse_hyprconf_binds(path):
                 "action": action,
                 "raw": line_str,
                 "category": cat,
-                "opts": ""
+                "opts": flags,
+                "repeat": is_repeat,
+                "locked": is_locked,
+                "mouse": is_mouse,
+                "nonConsuming": is_non_consuming
             })
     return binds
 
@@ -1456,7 +1747,7 @@ def parse_niri_binds(path):
         return []
 
     binds = []
-    niri_bind_re = re.compile(r'^\s*([A-Za-z0-9_\+\-]+)(?:\s+[^\{]+)?\s*\{\s*([^;\}]+);?\s*\}')
+    niri_bind_re = re.compile(r'^\s*([A-Za-z0-9_\+\-]+)(?:\s+([^\{]+))?\s*\{\s*([^;\}]+);?\s*\}')
     in_binds_block = False
     for idx, line in enumerate(lines):
         line_str = line.strip()
@@ -1471,8 +1762,13 @@ def parse_niri_binds(path):
         if in_binds_block or niri_bind_re.match(line_str):
             m = niri_bind_re.match(line_str)
             if m:
+                attrs = (m.group(2) or "").lower()
+                is_locked = "allow-when-locked" in attrs and "true" in attrs
+                is_repeat = "repeat=false" not in attrs
+                is_mouse = "mouse" in attrs
+
                 combo = m.group(1).replace("-", "+").replace("+", " + ")
-                action = m.group(2).strip()
+                action = m.group(3).strip()
                 if action.startswith('spawn "') and action.endswith('"'):
                     parts = re.findall(r'"([^"]*)"', action)
                     action = " ".join(parts) if parts else action
@@ -1503,16 +1799,24 @@ def parse_niri_binds(path):
                     "action": action,
                     "raw": line_str,
                     "category": cat,
-                    "opts": ""
+                    "opts": attrs.strip(),
+                    "repeat": is_repeat,
+                    "locked": is_locked,
+                    "mouse": is_mouse,
+                    "nonConsuming": False
                 })
     return binds
 
-def list_keybinds():
-    files = get_keybind_files()
-    if not files:
-        primary_path, primary_type = get_primary_config()
-        if primary_path and os.path.exists(primary_path):
-            files = [(primary_path, primary_type)]
+def list_keybinds(target_file=None):
+    if target_file and os.path.exists(target_file):
+        ftype = "lua" if target_file.endswith(".lua") else ("niri" if target_file.endswith(".kdl") else "hyprconf")
+        files = [(target_file, ftype)]
+    else:
+        files = get_keybind_files()
+        if not files:
+            primary_path, primary_type = get_primary_config()
+            if primary_path and os.path.exists(primary_path):
+                files = [(primary_path, primary_type)]
 
     all_binds = []
     seen = set()
@@ -1540,7 +1844,7 @@ def list_keybinds():
         "total": len(all_binds)
     }
 
-def add_keybind(keys, action, desc="", target_file=None):
+def add_keybind(keys, action, desc="", repeat=False, locked=False, mouse=False, non_consuming=False, target_file=None):
     if target_file and os.path.exists(target_file):
         cfg_path = target_file
         cfg_type = "lua" if target_file.endswith(".lua") else ("niri" if target_file.endswith(".kdl") else "hyprconf")
@@ -1562,7 +1866,7 @@ def add_keybind(keys, action, desc="", target_file=None):
         return {"ok": False, "error": str(e)}
 
     if cfg_type == "lua":
-        new_line = format_lua_bind(keys, action)
+        new_line = format_lua_bind(keys, action, repeat=repeat, locked=locked, mouse=mouse, non_consuming=non_consuming)
         insert_idx = len(lines)
         for i, l in enumerate(lines):
             if "WINDOW / LAYER RULES" in l or "WINDOW RULES" in l or "LAYER RULES" in l:
@@ -1571,11 +1875,11 @@ def add_keybind(keys, action, desc="", target_file=None):
         lines.insert(insert_idx, new_line)
 
     elif cfg_type == "hyprconf":
-        new_line = format_hyprconf_bind(keys, action)
+        new_line = format_hyprconf_bind(keys, action, repeat=repeat, locked=locked, mouse=mouse, non_consuming=non_consuming)
         lines.append(new_line)
 
     elif cfg_type == "niri":
-        new_line = format_niri_bind(keys, action)
+        new_line = format_niri_bind(keys, action, repeat=repeat, locked=locked, mouse=mouse, non_consuming=non_consuming)
         insert_idx = len(lines)
         for i, l in enumerate(lines):
             if "binds {" in l:
@@ -1589,7 +1893,7 @@ def add_keybind(keys, action, desc="", target_file=None):
         reload_compositor()
     return res
 
-def update_keybind(line_num, keys, action, desc="", target_file=None):
+def update_keybind(line_num, keys, action, desc="", repeat=False, locked=False, mouse=False, non_consuming=False, target_file=None):
     if target_file and os.path.exists(target_file):
         cfg_path = target_file
         cfg_type = "lua" if target_file.endswith(".lua") else ("niri" if target_file.endswith(".kdl") else "hyprconf")
@@ -1615,13 +1919,17 @@ def update_keybind(line_num, keys, action, desc="", target_file=None):
 
     keys = keys.strip()
     action = action.strip()
+    indent = re.match(r'^\s*', lines[line_idx]).group(0)
 
     if cfg_type == "lua":
-        lines[line_idx] = format_lua_bind(keys, action)
+        formatted = format_lua_bind(keys, action, repeat=repeat, locked=locked, mouse=mouse, non_consuming=non_consuming)
+        lines[line_idx] = indent + formatted.lstrip() if indent else formatted
     elif cfg_type == "hyprconf":
-        lines[line_idx] = format_hyprconf_bind(keys, action)
+        formatted = format_hyprconf_bind(keys, action, repeat=repeat, locked=locked, mouse=mouse, non_consuming=non_consuming)
+        lines[line_idx] = indent + formatted.lstrip() if indent else formatted
     elif cfg_type == "niri":
-        lines[line_idx] = format_niri_bind(keys, action)
+        formatted = format_niri_bind(keys, action, repeat=repeat, locked=locked, mouse=mouse, non_consuming=non_consuming)
+        lines[line_idx] = indent + formatted.lstrip() if indent else formatted
 
     content = "".join(lines)
     res = _write_and_validate(cfg_path, content)
@@ -2137,7 +2445,7 @@ local mainMod = "SUPER"
 
 -- ── 1. Autostart Quickshell Desktop Environment & Clipboard Daemons ─────────
 hl.on("hyprland.start", function ()
-    hl.exec_cmd("qs")
+    hl.exec_cmd("bash -c 'source ~/.config/quickshell/state/icon-theme.env 2>/dev/null; export QS_ICON_THEME; exec qs -n'")
     hl.exec_cmd("wl-paste --type text --watch cliphist store")
     hl.exec_cmd("wl-paste --type image --watch cliphist store")
 end)
@@ -2691,7 +2999,7 @@ def modularize_hypr_conf():
 # ══════════════════════════════════════════════════════════════════════════════
 
 # ── 1. Autostart Quickshell Desktop Environment & Clipboard Daemons ─────────
-exec-once = qs
+exec-once = bash -c 'source ~/.config/quickshell/state/icon-theme.env 2>/dev/null; export QS_ICON_THEME; exec qs -n'
 exec-once = wl-paste --type text --watch cliphist store
 exec-once = wl-paste --type image --watch cliphist store
 
@@ -3059,7 +3367,7 @@ def modularize_niri_kdl():
 // ══════════════════════════════════════════════════════════════════════════════
 
 // ── 1. Autostart Quickshell Desktop Environment ──────────────────────────────
-spawn-at-startup "qs"
+spawn-at-startup "bash" "-c" "source ~/.config/quickshell/state/icon-theme.env 2>/dev/null; export QS_ICON_THEME; exec qs -n"
 
 // ── 2. Quickshell IPC Keybindings ─────────────────────────────────────────────
 binds {
@@ -3641,7 +3949,11 @@ def main():
         except Exception as e:
             print(json.dumps({"ok": False, "error": str(e)}))
     elif cmd == "binds-list":
-        data = list_keybinds()
+        import argparse
+        parser = argparse.ArgumentParser()
+        parser.add_argument("--file", default=None)
+        args = parser.parse_args(sys.argv[2:])
+        data = list_keybinds(target_file=args.file)
         print(json.dumps(data))
     elif cmd == "binds-add":
         import argparse
@@ -3649,9 +3961,13 @@ def main():
         parser.add_argument("--keys", required=True)
         parser.add_argument("--action", required=True)
         parser.add_argument("--desc", default="")
+        parser.add_argument("--repeat", action="store_true", default=False)
+        parser.add_argument("--locked", action="store_true", default=False)
+        parser.add_argument("--mouse", action="store_true", default=False)
+        parser.add_argument("--non-consuming", dest="non_consuming", action="store_true", default=False)
         parser.add_argument("--file", default=None)
         args = parser.parse_args(sys.argv[2:])
-        res = add_keybind(args.keys, args.action, args.desc, target_file=args.file)
+        res = add_keybind(args.keys, args.action, args.desc, repeat=args.repeat, locked=args.locked, mouse=args.mouse, non_consuming=args.non_consuming, target_file=args.file)
         print(json.dumps(res))
     elif cmd == "binds-update":
         import argparse
@@ -3660,9 +3976,13 @@ def main():
         parser.add_argument("--keys", required=True)
         parser.add_argument("--action", required=True)
         parser.add_argument("--desc", default="")
+        parser.add_argument("--repeat", action="store_true", default=False)
+        parser.add_argument("--locked", action="store_true", default=False)
+        parser.add_argument("--mouse", action="store_true", default=False)
+        parser.add_argument("--non-consuming", dest="non_consuming", action="store_true", default=False)
         parser.add_argument("--file", default=None)
         args = parser.parse_args(sys.argv[2:])
-        res = update_keybind(args.line, args.keys, args.action, args.desc, target_file=args.file)
+        res = update_keybind(args.line, args.keys, args.action, args.desc, repeat=args.repeat, locked=args.locked, mouse=args.mouse, non_consuming=args.non_consuming, target_file=args.file)
         print(json.dumps(res))
     elif cmd == "binds-delete":
         import argparse
@@ -3755,6 +4075,15 @@ def main():
         print(json.dumps({"ok": True, "style": get_animation_style()}))
     elif cmd == "anim-styles-list":
         print(json.dumps({"ok": True, "styles": get_animation_styles_list(), "current": get_animation_style()}))
+    elif cmd == "anim-workspace-set":
+        enabled = sys.argv[2] if len(sys.argv) > 2 else None
+        style = sys.argv[3] if len(sys.argv) > 3 else None
+        speed = sys.argv[4] if len(sys.argv) > 4 else None
+        bezier = sys.argv[5] if len(sys.argv) > 5 else None
+        res = set_workspace_animation(enabled, style, speed, bezier)
+        print(json.dumps(res))
+    elif cmd == "anim-workspace-get":
+        print(json.dumps({"ok": True, "workspace": get_workspace_anim_info()}))
     elif cmd == "reload":
         res = reload_compositor()
         print(json.dumps(res))

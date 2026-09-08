@@ -46,6 +46,7 @@ Singleton {
     property bool clockShowDate: true
     property string clockDateFormat: "short"      // "short" | "full"
     property string islandStyle: "expanded"       // "expanded" | "compact" | "minimal" | "hidden"
+    property bool islandCavaWave: true            // Live CAVA audio spectrum visualizer
     property string workspaceStyle: "pills"       // "pills" | "numbers" | "dots" | "icons"
     property bool workspaceShowAll: true
     property string barMonitorMode: "all"         // "all" | "primary" | "custom"
@@ -110,6 +111,7 @@ Singleton {
     property int notificationRetentionDays: 7     // 1 to 7 days
     property bool dndEnabled: false
     property string notificationPosition: "top_right" // "top_right" | "top_center" | "top_left" | "bottom_right"
+    property bool notificationShowInFullscreen: false
 
     // ── Lockscreen & System ──────────────────────────────────────────────────
     property string lockscreenClockStyle: "hero"  // "hero" | "modern" | "compact" | "minimal" | "vertical" | "typographic" | "radial" | "cyber"
@@ -257,6 +259,7 @@ Singleton {
         if (data.clockShowDate !== undefined) clockShowDate = Boolean(data.clockShowDate)
         if (data.clockDateFormat !== undefined) clockDateFormat = data.clockDateFormat
         if (data.islandStyle !== undefined) islandStyle = data.islandStyle
+        if (data.islandCavaWave !== undefined) islandCavaWave = Boolean(data.islandCavaWave)
         if (data.workspaceStyle !== undefined) workspaceStyle = data.workspaceStyle
         if (data.workspaceShowAll !== undefined) workspaceShowAll = Boolean(data.workspaceShowAll)
         if (data.barMonitorMode !== undefined) barMonitorMode = data.barMonitorMode
@@ -272,6 +275,7 @@ Singleton {
         if (data.notificationRetentionDays !== undefined) notificationRetentionDays = Math.max(1, Math.min(7, Number(data.notificationRetentionDays)))
         if (data.dndEnabled !== undefined) dndEnabled = Boolean(data.dndEnabled)
         if (data.notificationPosition !== undefined) notificationPosition = data.notificationPosition
+        if (data.notificationShowInFullscreen !== undefined) notificationShowInFullscreen = Boolean(data.notificationShowInFullscreen)
 
         if (data.lockscreenClockStyle !== undefined) lockscreenClockStyle = data.lockscreenClockStyle
         if (data.lockscreenAuthStyle !== undefined) lockscreenAuthStyle = data.lockscreenAuthStyle
@@ -366,6 +370,7 @@ Singleton {
             clockShowDate: clockShowDate,
             clockDateFormat: clockDateFormat,
             islandStyle: islandStyle,
+            islandCavaWave: islandCavaWave,
             workspaceStyle: workspaceStyle,
             workspaceShowAll: workspaceShowAll,
             barMonitorMode: barMonitorMode,
@@ -381,6 +386,7 @@ Singleton {
             notificationRetentionDays: notificationRetentionDays,
             dndEnabled: dndEnabled,
             notificationPosition: notificationPosition,
+            notificationShowInFullscreen: notificationShowInFullscreen,
 
             lockscreenClockStyle: lockscreenClockStyle,
             lockscreenAuthStyle: lockscreenAuthStyle,
@@ -466,6 +472,7 @@ Singleton {
         clockShowDate = true
         clockDateFormat = "short"
         islandStyle = "expanded"
+        islandCavaWave = true
         workspaceStyle = "pills"
         workspaceShowAll = true
 
@@ -479,6 +486,7 @@ Singleton {
         notificationRetentionDays = 7
         dndEnabled = false
         notificationPosition = "top_right"
+        notificationShowInFullscreen = false
 
         lockscreenClockStyle = "hero"
         lockscreenLayout = "default"
@@ -631,6 +639,7 @@ Singleton {
     function setClockShowDate(val) { clockShowDate = val; saveConfig() }
     function setClockDateFormat(fmt) { clockDateFormat = fmt; saveConfig() }
     function setIslandStyle(style) { islandStyle = style; saveConfig() }
+    function setIslandCavaWave(val) { islandCavaWave = val; saveConfig() }
     function setWorkspaceStyle(style) { workspaceStyle = style; saveConfig() }
     function setWorkspaceShowAll(val) { workspaceShowAll = val; saveConfig() }
     function setBarMonitorMode(mode) { barMonitorMode = mode; saveConfig() }
@@ -679,6 +688,7 @@ Singleton {
     function setNotificationTimeout(sec) { notificationTimeout = sec; saveConfig() }
     function setNotificationRetentionDays(days) { notificationRetentionDays = Math.max(1, Math.min(7, days)); saveConfig() }
     function setNotificationPosition(pos) { notificationPosition = pos; saveConfig() }
+    function setNotificationShowInFullscreen(val) { notificationShowInFullscreen = Boolean(val); saveConfig() }
     function setDndEnabled(val) { dndEnabled = val; saveConfig() }
 
     function setLockscreenClockStyle(style) { lockscreenClockStyle = style; saveConfig() }

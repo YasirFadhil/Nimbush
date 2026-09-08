@@ -11,3 +11,4 @@ __pycache__/
 # Logs & temp files
 *.log
 .cache/
+state/

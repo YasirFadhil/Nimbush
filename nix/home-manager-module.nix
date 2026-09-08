@@ -481,6 +481,7 @@ window-rule {
         };
 
         Service = {
+          EnvironmentFile = "-%h/.config/quickshell/state/icon-theme.env";
           ExecStart = if cfg.package != null
             then "${cfg.package}/bin/quickshell-shell"
             else "${pkgs.quickshell}/bin/qs -c %h/.config/quickshell";
@@ -497,7 +498,7 @@ window-rule {
     # Declarative Hyprland Integration
     (mkIf (cfg.hyprland.enableIntegration && (cfg.hyprland.enablePackage || (lib.attrByPath [ "wayland" "windowManager" "hyprland" "enable" ] false config))) {
       wayland.windowManager.hyprland.settings = {
-        exec-once = (optional (!cfg.enableSystemdService) "qs") ++ [
+        exec-once = (optional (!cfg.enableSystemdService) "bash -c 'source ~/.config/quickshell/state/icon-theme.env 2>/dev/null; export QS_ICON_THEME; exec qs -n'") ++ [
           "wl-paste --type text --watch cliphist store"
           "wl-paste --type image --watch cliphist store"
         ];

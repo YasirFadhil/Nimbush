@@ -23,12 +23,19 @@ FloatingWindow {
         if (contentFlick) contentFlick.contentY = 0
         compSubTab = 0
         keyCategory = "all"
+        keyBehaviourFilter = "all"
         isAddingKeybind = false
         keySearchQuery = ""
+        formRepeat = false
+        formLocked = false
+        formMouse = false
+        formNonConsuming = false
+        formFile = ""
     }
     property int compSubTab: 0
     property string keySearchQuery: ""
     property string keyCategory: "all"
+    property string keyBehaviourFilter: "all" // "all", "repeat", "locked", "mouse", "passthrough"
     property string sidebarSearchQuery: ""
     property bool isAddingKeybind: false
     property var editingBindId: ""
@@ -36,6 +43,11 @@ FloatingWindow {
     property string formKeys: ""
     property string formAction: ""
     property string formDesc: ""
+    property bool formRepeat: false
+    property bool formLocked: false
+    property bool formMouse: false
+    property bool formNonConsuming: false
+    property string formFile: ""
 
     // ── Displays & Monitors State & Geometry (Directly on rootWindow) ───────────
     property var dispMonitors: (Services.Compositor && Services.Compositor.monitorsList) ? Services.Compositor.monitorsList : []
@@ -734,6 +746,7 @@ FloatingWindow {
         property int maxPopupHeight: 240
         property int minButtonWidth: 90
         property int maxButtonWidth: 175
+        property int buttonHeight: 26
         property string searchQuery: ""
         signal selected(var val)
 
@@ -758,7 +771,8 @@ FloatingWindow {
         Rectangle {
             id: dropBtn
             implicitWidth: Math.min(dropRoot.maxButtonWidth, Math.max(dropRoot.minButtonWidth, dropBtnText.implicitWidth + 28))
-            height: 26
+            width: (dropRoot.width > 0 && dropRoot.width > implicitWidth) ? dropRoot.width : implicitWidth
+            height: dropRoot.buttonHeight
             radius: 6
             color: dropMenu.visible 
                 ? (Services.Theme.isDark ? "#32323e" : "#e8e8ed")
@@ -3078,6 +3092,23 @@ FloatingWindow {
                                 SettingsDivider {}
 
                                 SettingsRow {
+                                    title: "Icon Theme"
+                                    subtitle: "System-wide application and folder icon pack"
+
+                                    SettingsDropdown {
+                                        minButtonWidth: 160
+                                        searchable: true
+                                        currentValue: Services.SystemTheme ? Services.SystemTheme.currentIconTheme : "MacTahoe-dark"
+                                        model: Services.SystemTheme ? Services.SystemTheme.iconThemes : []
+                                        onSelected: (val) => {
+                                            if (Services.SystemTheme) Services.SystemTheme.setIconTheme(val)
+                                        }
+                                    }
+                                }
+
+                                SettingsDivider {}
+
+                                SettingsRow {
                                     title: "Cursor Theme"
                                     subtitle: "Mouse pointer theme for Wayland session and apps"
 
@@ -3455,6 +3486,15 @@ FloatingWindow {
                                         onSelected: (val) => { if (Services.Config) Services.Config.setIslandStyle(val) }
                                     }
                                 }
+
+                                SettingsDivider {}
+
+                                SettingsSwitch {
+                                    title: "Live CAVA Wave Visualizer"
+                                    subtitle: "Visualize audio frequencies in real time using CAVA when media is playing"
+                                    checked: Services.Config ? Services.Config.islandCavaWave : true
+                                    onToggled: (st) => { if (Services.Config) Services.Config.setIslandCavaWave(st) }
+                                }
                             }
 
                             SettingsSection {
@@ -3792,6 +3832,15 @@ FloatingWindow {
                                     from: 1; to: 7; stepSize: 1; valueSuffix: " days"
                                     value: Services.Config ? Services.Config.notificationRetentionDays : 7
                                     onMoved: (v) => { if (Services.Config) Services.Config.setNotificationRetentionDays(Math.round(v)) }
+                                }
+
+                                SettingsDivider {}
+
+                                SettingsSwitch {
+                                    title: "Show in Fullscreen"
+                                    subtitle: "Display notification popups over fullscreen apps (battery alerts always appear)"
+                                    checked: Services.Config ? Services.Config.notificationShowInFullscreen : false
+                                    onToggled: (st) => { if (Services.Config) Services.Config.setNotificationShowInFullscreen(st) }
                                 }
 
                                 SettingsDivider {}
@@ -4772,12 +4821,12 @@ FloatingWindow {
                                 spacing: 10
 
                                 SettingsSection {
-                                    title: "Blur & Animations"
+                                    title: "Window Animations"
                                     icon: Services.Icons.sparkle
 
                                     SettingsSwitch {
                                         title: "Window Animations"
-                                        subtitle: "Enable window and workspace transition animations"
+                                        subtitle: "Enable window open, close and resize animations"
                                         checked: Services.Compositor ? Services.Compositor.hyprAnim : true
                                         onToggled: () => { if (Services.Compositor) Services.Compositor.toggleHyprAnim() }
                                     }
@@ -4786,22 +4835,22 @@ FloatingWindow {
 
                                     SettingsRow {
                                         title: "Animation Preset"
-                                        subtitle: "Select easing curve and motion speed"
+                                        subtitle: "Select easing curve profile and global motion speed"
 
                                         SettingsDropdown {
                                             minButtonWidth: 140
                                             maxButtonWidth: 190
                                             model: (Services.Compositor && Services.Compositor.hyprAnimStyles && Services.Compositor.hyprAnimStyles.length > 0)
                                                 ? Services.Compositor.hyprAnimStyles.map(function(s) {
-                                                    return { id: s.id, label: (s.icon ? (s.icon + "  ") : "") + s.name }
+                                                    return { id: s.id, label: s.name }
                                                 })
                                                 : [
-                                                    { id: "fluid", label: "󰁨  Fluid" },
-                                                    { id: "snappy", label: "󰅒  Snappy" },
-                                                    { id: "bouncy", label: "󰑮  Bouncy" },
-                                                    { id: "gentle", label: "󰤄  Gentle" },
-                                                    { id: "linear", label: "󰋙  Linear" },
-                                                    { id: "disabled", label: "󰅖  Disabled" }
+                                                    { id: "fluid", label: "Fluid" },
+                                                    { id: "snappy", label: "Snappy" },
+                                                    { id: "bouncy", label: "Bouncy" },
+                                                    { id: "gentle", label: "Gentle" },
+                                                    { id: "linear", label: "Linear" },
+                                                    { id: "disabled", label: "Disabled" }
                                                 ]
                                             currentValue: Services.Compositor ? Services.Compositor.hyprAnimStyle : "fluid"
                                             onSelected: function(val) {
@@ -4809,8 +4858,84 @@ FloatingWindow {
                                             }
                                         }
                                     }
+                                }
+
+                                SettingsSection {
+                                    title: "Workspace Animations"
+                                    icon: Services.Icons.grid
+
+                                    SettingsSwitch {
+                                        title: "Workspace Transitions"
+                                        subtitle: "Animate transitions when switching or swiping workspaces"
+                                        checked: Services.Compositor ? Services.Compositor.hyprWorkspaceAnim : true
+                                        onToggled: () => { if (Services.Compositor) Services.Compositor.toggleWorkspaceAnim() }
+                                    }
 
                                     SettingsDivider {}
+
+                                    SettingsRow {
+                                        title: "Transition Effect"
+                                        subtitle: "Movement style and direction for workspace transitions"
+
+                                        SettingsDropdown {
+                                            minButtonWidth: 160
+                                            maxButtonWidth: 220
+                                            model: [
+                                                { id: "slidevert", label: "Vertical Slide" },
+                                                { id: "slide", label: "Horizontal Slide" },
+                                                { id: "slidefade", label: "Slide & Fade" },
+                                                { id: "slidefadevert", label: "Vertical Slide & Fade" },
+                                                { id: "fade", label: "Crossfade" }
+                                            ]
+                                            currentValue: Services.Compositor ? Services.Compositor.hyprWorkspaceAnimStyle : "slidevert"
+                                            onSelected: function(val) {
+                                                if (Services.Compositor) Services.Compositor.setWorkspaceAnimStyle(val)
+                                            }
+                                        }
+                                    }
+
+                                    SettingsDivider {}
+
+                                    SettingsRow {
+                                        title: "Easing Curve (Bezier)"
+                                        subtitle: "Motion curve and momentum deceleration"
+
+                                        SettingsDropdown {
+                                            minButtonWidth: 160
+                                            maxButtonWidth: 220
+                                            model: (Services.Compositor && Services.Compositor.availableBeziers && Services.Compositor.availableBeziers.length > 0)
+                                                ? Services.Compositor.availableBeziers.map(function(b) {
+                                                    return { id: b, label: b }
+                                                })
+                                                : [
+                                                    { id: "quick", label: "quick" },
+                                                    { id: "overshoot", label: "overshoot" },
+                                                    { id: "easeOutQuint", label: "easeOutQuint" },
+                                                    { id: "easeInOutCubic", label: "easeInOutCubic" },
+                                                    { id: "almostLinear", label: "almostLinear" },
+                                                    { id: "linear", label: "linear" },
+                                                    { id: "default", label: "default" }
+                                                ]
+                                            currentValue: Services.Compositor ? Services.Compositor.hyprWorkspaceAnimBezier : "quick"
+                                            onSelected: function(val) {
+                                                if (Services.Compositor) Services.Compositor.setWorkspaceAnimBezier(val)
+                                            }
+                                        }
+                                    }
+
+                                    SettingsDivider {}
+
+                                    SettingsSlider {
+                                        title: "Transition Speed"
+                                        from: 1; to: 10; stepSize: 0.5; decimals: 1; valueSuffix: "x"
+                                        value: Services.Compositor ? Services.Compositor.hyprWorkspaceAnimSpeed : 2.0
+                                        onMoved: (v) => { if (Services.Compositor) Services.Compositor.setWorkspaceAnimSpeed(v) }
+                                    }
+                                }
+
+                                SettingsSection {
+                                    title: "Blur & Drop Shadows"
+                                    icon: Services.Icons.eye
 
                                     SettingsSwitch {
                                         title: "Blur"
@@ -5882,7 +6007,7 @@ FloatingWindow {
                                             title: "Natural Scrolling"
                                             subtitle: "Reverse scrolling direction (swipe up scrolls content up)"
                                             checked: Services.Compositor ? Services.Compositor.hyprTouchpadNatural : true
-                                            onToggled: () => { if (Services.Compositor) Services.Compositor.toggleHyprTouchpadNatural() }
+                                            onToggled: (val) => { if (Services.Compositor) Services.Compositor.setHyprTouchpadNatural(val) }
                                         }
 
                                         SettingsDivider {}
@@ -5891,7 +6016,7 @@ FloatingWindow {
                                             title: "Tap to Click"
                                             subtitle: "Tap touchpad surface to trigger primary click"
                                             checked: Services.Compositor ? Services.Compositor.hyprTouchpadTap : true
-                                            onToggled: () => { if (Services.Compositor) Services.Compositor.toggleHyprTouchpadTap() }
+                                            onToggled: (val) => { if (Services.Compositor) Services.Compositor.setHyprTouchpadTap(val) }
                                         }
 
                                         SettingsDivider {}
@@ -5900,7 +6025,7 @@ FloatingWindow {
                                             title: "Disable While Typing (DWT)"
                                             subtitle: "Prevent accidental palm clicks when typing on the keyboard"
                                             checked: Services.Compositor ? Services.Compositor.hyprTouchpadDwt : true
-                                            onToggled: () => { if (Services.Compositor) Services.Compositor.toggleHyprTouchpadDwt() }
+                                            onToggled: (val) => { if (Services.Compositor) Services.Compositor.setHyprTouchpadDwt(val) }
                                         }
 
                                         SettingsDivider {}
@@ -5909,7 +6034,7 @@ FloatingWindow {
                                             title: "Touchpad 3-Finger Workspace Swipe"
                                             subtitle: "Smooth 1:1 trackpad swipe gesture to switch active workspace"
                                             checked: Services.Compositor ? Services.Compositor.hyprWorkspaceSwipe : true
-                                            onToggled: () => { if (Services.Compositor) Services.Compositor.toggleHyprWorkspaceSwipe() }
+                                            onToggled: (val) => { if (Services.Compositor) Services.Compositor.setHyprWorkspaceSwipe(val) }
                                         }
 
                                         SettingsDivider {}
@@ -6232,7 +6357,6 @@ FloatingWindow {
                                             font.family: Services.Theme.fontSymbols
                                             font.pixelSize: 14
                                             color: Services.Theme.textPrimary
-                                            rotation: (Services.Compositor && Services.Compositor.isLoadingAutostart) ? autoSpinAnim.angle : 0
 
                                             NumberAnimation on rotation {
                                                 id: autoSpinAnim
@@ -6576,6 +6700,7 @@ FloatingWindow {
                                     icon: Services.Icons.rocket || "󰐥"
 
                                     ColumnLayout {
+                                        id: autostartListCol
                                         Layout.fillWidth: true
                                         spacing: 8
 
@@ -6594,7 +6719,7 @@ FloatingWindow {
 
                                         // Empty State Card
                                         Rectangle {
-                                            visible: filteredList.length === 0
+                                            visible: (autostartListCol.filteredList || []).length === 0
                                             Layout.fillWidth: true
                                             Layout.preferredHeight: 110
                                             implicitHeight: 110
@@ -6614,7 +6739,7 @@ FloatingWindow {
 
                                         // Startup Program Cards
                                         Repeater {
-                                            model: filteredList
+                                            model: autostartListCol.filteredList
 
                                             delegate: Rectangle {
                                                 id: autoItemCard
@@ -6856,61 +6981,211 @@ FloatingWindow {
                             spacing: 14
 
                             property string addCategoryType: "shell" // "shell", "compositor", "apps", "custom"
+                            property int currentPage: 0
+                            property int itemsPerPage: 9
 
-                            readonly property var shellActions: [
-                                { id: "qs ipc call launcher toggle",        label: "App Launcher",               desc: "Toggle application search & launcher",       icon: Services.Icons.sparkle || "󰀉" },
-                                { id: "qs ipc call dashboard toggle",       label: "Dashboard & Control Center", desc: "Toggle quick control center and widgets",    icon: Services.Icons.dashboard || "󰕮" },
-                                { id: "qs ipc call powermenu toggle",       label: "Power Menu",                 desc: "Toggle power, sleep, and session menu",      icon: Services.Icons.power || "󰐥" },
-                                { id: "qs ipc call clipboard toggle",       label: "Clipboard Manager",          desc: "Toggle clipboard history manager",           icon: Services.Icons.clipboard || "󰅌" },
-                                { id: "qs ipc call lockscreen toggle",      label: "Lock Screen",                desc: "Lock session immediately",                   icon: Services.Icons.lock || "󰌾" },
-                                { id: "qs ipc call settings toggle",        label: "Settings Panel",             desc: "Toggle Quickshell system settings",          icon: Services.Icons.settings || "󰒓" },
-                                { id: "qs ipc call notifications toggle",   label: "Notification Center",        desc: "Toggle notification history panel",          icon: Services.Icons.bell || "󰂚" },
-                                { id: "qs ipc call wallpaper toggle",       label: "Wallpaper Selector",         desc: "Open wallpaper picker",                      icon: Services.Icons.image || "󰋩" }
+                            readonly property var allBinds: (Services.Compositor ? Services.Compositor.keybindsList : []) || []
+                            readonly property int totalBindsCount: allBinds.length
+                            readonly property int repeatBindsCount: allBinds.filter(k => Boolean(k.repeat)).length
+                            readonly property int lockedBindsCount: allBinds.filter(k => Boolean(k.locked)).length
+                            readonly property int mouseBindsCount: allBinds.filter(k => Boolean(k.mouse)).length
+
+                            onFilteredBindsChanged: {
+                                if (currentPage >= totalPages) currentPage = Math.max(0, totalPages - 1)
+                            }
+
+                            readonly property var actionCategories: [
+                                { id: "all",         label: "All Actions & Dispatchers" },
+                                { id: "shell",       label: "Quickshell Features" },
+                                { id: "comp_window", label: "Compositor: Window Control" },
+                                { id: "comp_nav",    label: "Compositor: Focus & Navigation" },
+                                { id: "comp_move",   label: "Compositor: Move & Swap Windows" },
+                                { id: "comp_resize", label: "Compositor: Resize & Layout" },
+                                { id: "comp_work",   label: "Compositor: Workspaces (1–10)" },
+                                { id: "comp_mon",    label: "Compositor: Monitors & Session" },
+                                { id: "media",       label: "Media, Volume & Hardware" },
+                                { id: "apps",        label: "Launch Applications" },
+                                { id: "custom",      label: "Custom Shell Command" }
                             ]
 
-                            readonly property var compositorActions: [
-                                { id: "close window",                                     label: "Close Active Window",       desc: "Close the currently focused window",        icon: Services.Icons.close || "✕" },
-                                { id: "toggle floating",                                  label: "Toggle Floating Window",    desc: "Switch window between tile and float",      icon: Services.Icons.layout || "󰕰" },
-                                { id: "toggle fullscreen",                                label: "Toggle Fullscreen",         desc: "Toggle fullscreen mode for active window",  icon: Services.Icons.maximize || "󰊓" },
-                                { id: "~/.config/quickshell/scripts/screenshot.sh region", label: "Screenshot: Selected Area", desc: "Capture a selected region to clipboard",   icon: Services.Icons.camera || "󰄀" },
-                                { id: "~/.config/quickshell/scripts/screenshot.sh full",   label: "Screenshot: Full Screen",    desc: "Capture the entire screen",                 icon: Services.Icons.camera || "󰄀" },
-                                { id: "wpctl set-volume -l 1 @DEFAULT_AUDIO_SINK@ 5%+",   label: "Volume Up (+5%)",           desc: "Increase audio output volume",              icon: Services.Icons.volumeUp || "󰕾" },
-                                { id: "wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%-",       label: "Volume Down (-5%)",         desc: "Decrease audio output volume",              icon: Services.Icons.volumeDown || "󰖀" },
-                                { id: "wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle",      label: "Toggle Audio Mute",         desc: "Mute or unmute speaker sink",               icon: Services.Icons.volumeMute || "󰝟" },
-                                { id: "wpctl set-mute @DEFAULT_AUDIO_SOURCE@ toggle",    label: "Toggle Microphone Mute",    desc: "Mute or unmute default mic",                icon: Services.Icons.micMute || "󰍭" },
-                                { id: "playerctl play-pause",                            label: "Media: Play / Pause",       desc: "Play or pause current media playback",       icon: Services.Icons.music || "󰎈" },
-                                { id: "playerctl next",                                  label: "Media: Next Track",         desc: "Skip to next media track",                  icon: Services.Icons.music || "󰎈" },
-                                { id: "playerctl previous",                              label: "Media: Previous Track",     desc: "Skip to previous media track",              icon: Services.Icons.music || "󰎈" },
-                                { id: "brightnessctl set 5%+",                           label: "Brightness Up (+5%)",       desc: "Increase monitor backlight brightness",      icon: Services.Icons.sun || "󰃠" },
-                                { id: "brightnessctl set 5%-",                           label: "Brightness Down (-5%)",     desc: "Decrease monitor backlight brightness",      icon: Services.Icons.sun || "󰃠" }
+                            readonly property var shellActions: [
+                                { id: "qs ipc call launcher toggle",        label: "App Launcher",               desc: "Toggle application search & launcher",       defaultRepeat: false, defaultLocked: false },
+                                { id: "qs ipc call dashboard toggle",       label: "Dashboard & Control Center", desc: "Toggle quick control center and widgets",    defaultRepeat: false, defaultLocked: false },
+                                { id: "qs ipc call powermenu toggle",       label: "Power Menu",                 desc: "Toggle power, sleep, and session menu",      defaultRepeat: false, defaultLocked: true },
+                                { id: "qs ipc call clipboard toggle",       label: "Clipboard Manager",          desc: "Toggle clipboard history manager",           defaultRepeat: false, defaultLocked: false },
+                                { id: "qs ipc call lockscreen toggle",      label: "Lock Screen",                desc: "Lock session immediately",                   defaultRepeat: false, defaultLocked: true },
+                                { id: "qs ipc call settings toggle",        label: "Settings Panel",             desc: "Toggle Quickshell system settings",          defaultRepeat: false, defaultLocked: false },
+                                { id: "qs ipc call notifications toggle",   label: "Notification Center",        desc: "Toggle notification history panel",          defaultRepeat: false, defaultLocked: false },
+                                { id: "qs ipc call wallpaper toggle",       label: "Wallpaper Selector",         desc: "Open wallpaper picker",                      defaultRepeat: false, defaultLocked: false },
+                                { id: "qs ipc call emoji toggle",           label: "Emoji Picker",               desc: "Open emoji selection drawer",               defaultRepeat: false, defaultLocked: false },
+                                { id: "~/.config/quickshell/scripts/screenshot.sh region", label: "Screenshot: Selected Area", desc: "Capture selected area to clipboard & file", defaultRepeat: false, defaultLocked: true },
+                                { id: "~/.config/quickshell/scripts/screenshot.sh full",   label: "Screenshot: Full Screen",    desc: "Capture entire desktop screenshot",        defaultRepeat: false, defaultLocked: true }
+                            ]
+
+                            readonly property var compWindowActions: [
+                                { id: "killactive",           label: "Close Active Window (killactive)",           desc: "Close the currently focused window",       defaultRepeat: false, defaultLocked: false },
+                                { id: "togglefloating",       label: "Toggle Floating / Tiling (togglefloating)",  desc: "Switch active window between tile & float", defaultRepeat: false, defaultLocked: false },
+                                { id: "fullscreen 0",         label: "Toggle Fullscreen (fullscreen 0)",           desc: "Toggle true fullscreen mode",              defaultRepeat: false, defaultLocked: false },
+                                { id: "fullscreen 1",         label: "Toggle Maximize (fullscreen 1)",             desc: "Maximize window keeping bar & panels",     defaultRepeat: false, defaultLocked: false },
+                                { id: "pin",                  label: "Pin Window to All Workspaces (pin)",         desc: "Show active floating window on all workspaces", defaultRepeat: false, defaultLocked: false },
+                                { id: "centerwindow",         label: "Center Floating Window (centerwindow)",     desc: "Center active floating window on screen",  defaultRepeat: false, defaultLocked: false },
+                                { id: "togglegroup",          label: "Toggle Window Group / Tabs (togglegroup)",   desc: "Combine or ungroup windows into tabs",     defaultRepeat: false, defaultLocked: false },
+                                { id: "changegroupactive f",  label: "Next Tab in Group (changegroupactive f)",    desc: "Switch to next window in group",           defaultRepeat: true,  defaultLocked: false },
+                                { id: "changegroupactive b",  label: "Prev Tab in Group (changegroupactive b)",    desc: "Switch to previous window in group",       defaultRepeat: true,  defaultLocked: false },
+                                { id: "movewindoworgroup l",  label: "Move Window/Group Left",                     desc: "Move window or group leftwards",           defaultRepeat: false, defaultLocked: false },
+                                { id: "movewindoworgroup r",  label: "Move Window/Group Right",                    desc: "Move window or group rightwards",          defaultRepeat: false, defaultLocked: false }
+                            ]
+
+                            readonly property var compNavActions: [
+                                { id: "movefocus l",       label: "Focus Window Left (movefocus l)",       desc: "Move keyboard focus to window on left",   defaultRepeat: false, defaultLocked: false },
+                                { id: "movefocus r",       label: "Focus Window Right (movefocus r)",      desc: "Move keyboard focus to window on right",  defaultRepeat: false, defaultLocked: false },
+                                { id: "movefocus u",       label: "Focus Window Up (movefocus u)",         desc: "Move keyboard focus to window above",     defaultRepeat: false, defaultLocked: false },
+                                { id: "movefocus d",       label: "Focus Window Down (movefocus d)",       desc: "Move keyboard focus to window below",     defaultRepeat: false, defaultLocked: false },
+                                { id: "cyclenext",         label: "Cycle Focus Next (cyclenext)",          desc: "Focus next window in current workspace",  defaultRepeat: true,  defaultLocked: false },
+                                { id: "cyclenext prev",    label: "Cycle Focus Previous (cyclenext prev)", desc: "Focus previous window in workspace",      defaultRepeat: true,  defaultLocked: false }
+                            ]
+
+                            readonly property var compMoveActions: [
+                                { id: "swapwindow l",  label: "Swap Window Left (swapwindow l)",   desc: "Swap position with window to the left",  defaultRepeat: false, defaultLocked: false },
+                                { id: "swapwindow r",  label: "Swap Window Right (swapwindow r)",  desc: "Swap position with window to the right", defaultRepeat: false, defaultLocked: false },
+                                { id: "swapwindow u",  label: "Swap Window Up (swapwindow u)",     desc: "Swap position with window above",        defaultRepeat: false, defaultLocked: false },
+                                { id: "swapwindow d",  label: "Swap Window Down (swapwindow d)",   desc: "Swap position with window below",        defaultRepeat: false, defaultLocked: false },
+                                { id: "movewindow l",  label: "Move Window Left (movewindow l)",   desc: "Move active window leftwards",           defaultRepeat: false, defaultLocked: false },
+                                { id: "movewindow r",  label: "Move Window Right (movewindow r)",  desc: "Move active window rightwards",          defaultRepeat: false, defaultLocked: false },
+                                { id: "movewindow u",  label: "Move Window Up (movewindow u)",     desc: "Move active window upwards",             defaultRepeat: false, defaultLocked: false },
+                                { id: "movewindow d",  label: "Move Window Down (movewindow d)",   desc: "Move active window downwards",           defaultRepeat: false, defaultLocked: false }
+                            ]
+
+                            readonly property var compResizeActions: [
+                                { id: "resizeactive 25 0",    label: "Resize: Expand Width (+25px)",                 desc: "Grow active window width",                 defaultRepeat: true, defaultLocked: false },
+                                { id: "resizeactive -25 0",   label: "Resize: Shrink Width (-25px)",                 desc: "Shrink active window width",               defaultRepeat: true, defaultLocked: false },
+                                { id: "resizeactive 0 25",    label: "Resize: Expand Height (+25px)",                desc: "Grow active window height",                defaultRepeat: true, defaultLocked: false },
+                                { id: "resizeactive 0 -25",   label: "Resize: Shrink Height (-25px)",                desc: "Shrink active window height",              defaultRepeat: true, defaultLocked: false },
+                                { id: "togglesplit",          label: "Toggle Split Orientation (togglesplit)",       desc: "Toggle split orientation between H and V", defaultRepeat: false, defaultLocked: false },
+                                { id: "pseudo",               label: "Toggle Pseudo-tiling (pseudo)",                desc: "Keep window floating size while tiled",    defaultRepeat: false, defaultLocked: false },
+                                { id: "layoutmsg swapsplit",  label: "Swap Split Branches (layoutmsg swapsplit)",    desc: "Swap tree branches in layout",             defaultRepeat: false, defaultLocked: false }
+                            ]
+
+                            readonly property var compWorkspaceActions: [
+                                { id: "workspace e+1",              label: "Next Workspace (workspace e+1)",               desc: "Switch to next workspace",               defaultRepeat: true,  defaultLocked: false },
+                                { id: "workspace e-1",              label: "Prev Workspace (workspace e-1)",               desc: "Switch to previous workspace",           defaultRepeat: true,  defaultLocked: false },
+                                { id: "togglespecialworkspace",     label: "Toggle Scratchpad (togglespecialworkspace)",   desc: "Show or hide dropdown scratchpad",       defaultRepeat: false, defaultLocked: false },
+                                { id: "movetoworkspace special",    label: "Send to Scratchpad (movetoworkspace special)", desc: "Move active window into scratchpad",    defaultRepeat: false, defaultLocked: false },
+                                { id: "workspace 1",                label: "Switch to Workspace 1",                        desc: "Jump directly to workspace 1",           defaultRepeat: false, defaultLocked: false },
+                                { id: "workspace 2",                label: "Switch to Workspace 2",                        desc: "Jump directly to workspace 2",           defaultRepeat: false, defaultLocked: false },
+                                { id: "workspace 3",                label: "Switch to Workspace 3",                        desc: "Jump directly to workspace 3",           defaultRepeat: false, defaultLocked: false },
+                                { id: "workspace 4",                label: "Switch to Workspace 4",                        desc: "Jump directly to workspace 4",           defaultRepeat: false, defaultLocked: false },
+                                { id: "workspace 5",                label: "Switch to Workspace 5",                        desc: "Jump directly to workspace 5",           defaultRepeat: false, defaultLocked: false },
+                                { id: "workspace 6",                label: "Switch to Workspace 6",                        desc: "Jump directly to workspace 6",           defaultRepeat: false, defaultLocked: false },
+                                { id: "workspace 7",                label: "Switch to Workspace 7",                        desc: "Jump directly to workspace 7",           defaultRepeat: false, defaultLocked: false },
+                                { id: "workspace 8",                label: "Switch to Workspace 8",                        desc: "Jump directly to workspace 8",           defaultRepeat: false, defaultLocked: false },
+                                { id: "workspace 9",                label: "Switch to Workspace 9",                        desc: "Jump directly to workspace 9",           defaultRepeat: false, defaultLocked: false },
+                                { id: "workspace 10",               label: "Switch to Workspace 10",                       desc: "Jump directly to workspace 10",          defaultRepeat: false, defaultLocked: false },
+                                { id: "movetoworkspace 1",          label: "Move Window to Workspace 1",                   desc: "Move window to workspace 1 & focus it",  defaultRepeat: false, defaultLocked: false },
+                                { id: "movetoworkspace 2",          label: "Move Window to Workspace 2",                   desc: "Move window to workspace 2 & focus it",  defaultRepeat: false, defaultLocked: false },
+                                { id: "movetoworkspace 3",          label: "Move Window to Workspace 3",                   desc: "Move window to workspace 3 & focus it",  defaultRepeat: false, defaultLocked: false },
+                                { id: "movetoworkspace 4",          label: "Move Window to Workspace 4",                   desc: "Move window to workspace 4 & focus it",  defaultRepeat: false, defaultLocked: false },
+                                { id: "movetoworkspace 5",          label: "Move Window to Workspace 5",                   desc: "Move window to workspace 5 & focus it",  defaultRepeat: false, defaultLocked: false },
+                                { id: "movetoworkspace 6",          label: "Move Window to Workspace 6",                   desc: "Move window to workspace 6 & focus it",  defaultRepeat: false, defaultLocked: false },
+                                { id: "movetoworkspace 7",          label: "Move Window to Workspace 7",                   desc: "Move window to workspace 7 & focus it",  defaultRepeat: false, defaultLocked: false },
+                                { id: "movetoworkspace 8",          label: "Move Window to Workspace 8",                   desc: "Move window to workspace 8 & focus it",  defaultRepeat: false, defaultLocked: false },
+                                { id: "movetoworkspace 9",          label: "Move Window to Workspace 9",                   desc: "Move window to workspace 9 & focus it",  defaultRepeat: false, defaultLocked: false },
+                                { id: "movetoworkspace 10",         label: "Move Window to Workspace 10",                  desc: "Move window to workspace 10 & focus it", defaultRepeat: false, defaultLocked: false },
+                                { id: "movetoworkspacesilent 1",    label: "Move to Workspace 1 (Silently)",               desc: "Move window to workspace 1 in background", defaultRepeat: false, defaultLocked: false },
+                                { id: "movetoworkspacesilent 2",    label: "Move to Workspace 2 (Silently)",               desc: "Move window to workspace 2 in background", defaultRepeat: false, defaultLocked: false },
+                                { id: "movetoworkspacesilent 3",    label: "Move to Workspace 3 (Silently)",               desc: "Move window to workspace 3 in background", defaultRepeat: false, defaultLocked: false },
+                                { id: "movetoworkspacesilent 4",    label: "Move to Workspace 4 (Silently)",               desc: "Move window to workspace 4 in background", defaultRepeat: false, defaultLocked: false },
+                                { id: "movetoworkspacesilent 5",    label: "Move to Workspace 5 (Silently)",               desc: "Move window to workspace 5 in background", defaultRepeat: false, defaultLocked: false }
+                            ]
+
+                            readonly property var compMonitorActions: [
+                                { id: "focusmonitor +1",     label: "Focus Next Monitor (focusmonitor +1)",     desc: "Move focus to next monitor",               defaultRepeat: false, defaultLocked: false },
+                                { id: "focusmonitor -1",     label: "Focus Previous Monitor (focusmonitor -1)", desc: "Move focus to previous monitor",           defaultRepeat: false, defaultLocked: false },
+                                { id: "movewindow mon:+1",   label: "Move Window to Next Monitor",              desc: "Move active window to next display",       defaultRepeat: false, defaultLocked: false },
+                                { id: "movewindow mon:-1",   label: "Move Window to Previous Monitor",          desc: "Move active window to previous display",   defaultRepeat: false, defaultLocked: false },
+                                { id: "dpms off",            label: "Turn Off Displays (Sleep DPMS)",           desc: "Put monitors into power saving standby",   defaultRepeat: false, defaultLocked: true },
+                                { id: "dpms on",             label: "Turn On Displays (Wake DPMS)",             desc: "Wake monitors from standby",               defaultRepeat: false, defaultLocked: true },
+                                { id: "exit",                label: "Exit Compositor (Logout)",                 desc: "Terminate session and return to greeter",  defaultRepeat: false, defaultLocked: true },
+                                { id: "forcekillactive",     label: "Force Kill Active Window (SIGKILL)",       desc: "Forcefully kill unresponsive process",     defaultRepeat: false, defaultLocked: false }
+                            ]
+
+                            readonly property var mediaActions: [
+                                { id: "wpctl set-volume -l 1.5 @DEFAULT_AUDIO_SINK@ 5%+", label: "Volume Up (+5%)",         desc: "Increase audio output volume",        defaultRepeat: true,  defaultLocked: true },
+                                { id: "wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%-",     label: "Volume Down (-5%)",       desc: "Decrease audio output volume",        defaultRepeat: true,  defaultLocked: true },
+                                { id: "wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle",    label: "Toggle Audio Mute",       desc: "Mute or unmute speaker output",       defaultRepeat: false, defaultLocked: true },
+                                { id: "wpctl set-mute @DEFAULT_AUDIO_SOURCE@ toggle",  label: "Toggle Microphone Mute",  desc: "Mute or unmute default microphone",   defaultRepeat: false, defaultLocked: true },
+                                { id: "playerctl play-pause",                          label: "Media: Play / Pause",     desc: "Play or pause active media playback", defaultRepeat: false, defaultLocked: true },
+                                { id: "playerctl next",                                label: "Media: Next Track",       desc: "Skip to next media track",            defaultRepeat: false, defaultLocked: true },
+                                { id: "playerctl previous",                            label: "Media: Previous Track",   desc: "Skip to previous media track",        defaultRepeat: false, defaultLocked: true },
+                                { id: "playerctl stop",                                label: "Media: Stop Playback",    desc: "Stop active media playback",          defaultRepeat: false, defaultLocked: true },
+                                { id: "brightnessctl -e4 -n2 set 5%+",                 label: "Brightness Up (+5%)",     desc: "Increase display backlight brightness", defaultRepeat: true,  defaultLocked: true },
+                                { id: "brightnessctl -e4 -n2 set 5%-",                 label: "Brightness Down (-5%)",   desc: "Decrease display backlight brightness", defaultRepeat: true,  defaultLocked: true }
                             ]
 
                             readonly property var appActions: [
-                                { id: "kitty",         label: "Kitty Terminal",        desc: "Fast GPU-accelerated terminal",          icon: Services.Icons.terminal || "󰞷" },
-                                { id: "alacritty",     label: "Alacritty Terminal",    desc: "Simple OpenGL terminal",                  icon: Services.Icons.terminal || "󰞷" },
-                                { id: "nautilus",      label: "Nautilus File Manager", desc: "GNOME Files / Directory browser",         icon: Services.Icons.folder || "󰉋" },
-                                { id: "thunar",        label: "Thunar File Manager",   desc: "Lightweight file manager",                icon: Services.Icons.folder || "󰉋" },
-                                { id: "firefox",       label: "Firefox Web Browser",   desc: "Mozilla Firefox browser",                 icon: Services.Icons.globe || "󰈹" },
-                                { id: "google-chrome", label: "Google Chrome",         desc: "Google Chrome web browser",               icon: Services.Icons.globe || "󰈹" },
-                                { id: "code",          label: "Visual Studio Code",    desc: "Code and script editor",                  icon: Services.Icons.code || "󰨞" },
-                                { id: "cursor",        label: "Cursor AI Editor",      desc: "AI coding environment",                   icon: Services.Icons.code || "󰨞" },
-                                { id: "spotify",       label: "Spotify Music",         desc: "Spotify music streaming",                 icon: Services.Icons.music || "󰓇" },
-                                { id: "discord",       label: "Discord",               desc: "Chat & voice communications",             icon: Services.Icons.message || "󰙯" }
+                                { id: "kitty",         label: "Kitty Terminal",        desc: "Fast GPU-accelerated terminal",          defaultRepeat: false, defaultLocked: false },
+                                { id: "ghostty",       label: "Ghostty Terminal",      desc: "Native modern terminal emulator",        defaultRepeat: false, defaultLocked: false },
+                                { id: "alacritty",     label: "Alacritty Terminal",    desc: "Simple OpenGL terminal",                  defaultRepeat: false, defaultLocked: false },
+                                { id: "foot",          label: "Foot Terminal",         desc: "Fast lightweight Wayland terminal",       defaultRepeat: false, defaultLocked: false },
+                                { id: "nautilus",      label: "Nautilus File Manager", desc: "GNOME Files / Directory browser",         defaultRepeat: false, defaultLocked: false },
+                                { id: "thunar",        label: "Thunar File Manager",   desc: "Lightweight file manager",                defaultRepeat: false, defaultLocked: false },
+                                { id: "dolphin",       label: "Dolphin File Manager",  desc: "KDE Plasma advanced file manager",       defaultRepeat: false, defaultLocked: false },
+                                { id: "firefox",       label: "Firefox Web Browser",   desc: "Mozilla Firefox browser",                 defaultRepeat: false, defaultLocked: false },
+                                { id: "google-chrome", label: "Google Chrome",         desc: "Google Chrome web browser",               defaultRepeat: false, defaultLocked: false },
+                                { id: "code",          label: "Visual Studio Code",    desc: "Code and script editor",                  defaultRepeat: false, defaultLocked: false },
+                                { id: "cursor",        label: "Cursor AI Editor",      desc: "AI-first code and project editor",        defaultRepeat: false, defaultLocked: false },
+                                { id: "spotify",       label: "Spotify Music",         desc: "Spotify music streaming application",     defaultRepeat: false, defaultLocked: false },
+                                { id: "discord",       label: "Discord",               desc: "Chat & voice communications client",      defaultRepeat: false, defaultLocked: false }
                             ]
+
+                            function getActionListForCategory(catId) {
+                                switch (catId) {
+                                    case "all":
+                                        return tab6.shellActions.concat(
+                                            tab6.compWindowActions,
+                                            tab6.compNavActions,
+                                            tab6.compMoveActions,
+                                            tab6.compResizeActions,
+                                            tab6.compWorkspaceActions,
+                                            tab6.compMonitorActions,
+                                            tab6.mediaActions,
+                                            tab6.appActions
+                                        )
+                                    case "shell": return tab6.shellActions
+                                    case "comp_window": return tab6.compWindowActions
+                                    case "comp_nav": return tab6.compNavActions
+                                    case "comp_move": return tab6.compMoveActions
+                                    case "comp_resize": return tab6.compResizeActions
+                                    case "comp_work": return tab6.compWorkspaceActions
+                                    case "comp_mon": return tab6.compMonitorActions
+                                    case "media": return tab6.mediaActions
+                                    case "apps": return tab6.appActions
+                                    default: return []
+                                }
+                            }
+
+                            function findCategoryForAction(action) {
+                                if (!action) return "custom"
+                                const cats = ["shell", "comp_window", "comp_nav", "comp_move", "comp_resize", "comp_work", "comp_mon", "media", "apps"]
+                                for (let c = 0; c < cats.length; c++) {
+                                    const list = tab6.getActionListForCategory(cats[c])
+                                    for (let i = 0; i < list.length; i++) {
+                                        if (list[i].id === action) return cats[c]
+                                    }
+                                }
+                                return "custom"
+                            }
 
                             function getHumanActionTitle(action) {
                                 if (!action) return "Custom Shortcut"
                                 const act = action.toLowerCase().trim()
-                                if (act.includes("launcher toggle")) return "App Launcher"
-                                if (act.includes("dashboard toggle")) return "Dashboard & Control Center"
-                                if (act.includes("powermenu toggle")) return "Power & Session Menu"
-                                if (act.includes("clipboard toggle")) return "Clipboard Manager"
-                                if (act.includes("lockscreen toggle")) return "Lock Screen"
-                                if (act.includes("settings toggle")) return "Settings Panel"
-                                if (act.includes("notification")) return "Notification Center"
-                                if (act.includes("wallpaper")) return "Wallpaper Selector"
-                                if (act.includes("screenshot") && act.includes("region")) return "Screenshot: Selected Area"
-                                if (act.includes("screenshot") && act.includes("full")) return "Screenshot: Full Screen"
+                                const cats = ["shell", "comp_window", "comp_nav", "comp_move", "comp_resize", "comp_work", "comp_mon", "media", "apps"]
+                                for (let c = 0; c < cats.length; c++) {
+                                    const list = tab6.getActionListForCategory(cats[c])
+                                    for (let i = 0; i < list.length; i++) {
+                                        if (list[i].id.toLowerCase().trim() === act) return list[i].label
+                                    }
+                                }
                                 if (act.includes("killactive") || act === "close window") return "Close Active Window"
                                 if (act.includes("togglefloating") || act === "toggle floating") return "Toggle Floating Window"
                                 if (act.includes("fullscreen") || act === "toggle fullscreen") return "Toggle Fullscreen"
@@ -6923,317 +7198,298 @@ FloatingWindow {
                                 if (act.includes("previous") || act.includes("prev")) return "Media: Previous Track"
                                 if (act.includes("brightness") && act.includes("+")) return "Brightness Up"
                                 if (act.includes("brightness") && act.includes("-")) return "Brightness Down"
-                                if (act === "kitty") return "Kitty Terminal"
-                                if (act === "alacritty") return "Alacritty Terminal"
-                                if (act === "foot") return "Foot Terminal"
-                                if (act === "ghostty") return "Ghostty Terminal"
-                                if (act === "nautilus") return "Nautilus File Manager"
-                                if (act === "thunar") return "Thunar File Manager"
-                                if (act === "dolphin") return "Dolphin File Manager"
-                                if (act === "firefox") return "Firefox Web Browser"
-                                if (act === "google-chrome" || act === "chromium") return "Chrome Web Browser"
-                                if (act === "brave" || act === "brave-browser") return "Brave Web Browser"
-                                if (act === "code") return "Visual Studio Code"
-                                if (act === "cursor") return "Cursor Editor"
-                                if (act === "spotify") return "Spotify Music"
-                                if (act === "discord") return "Discord"
                                 if (act.includes("workspace")) return act.replace("dispatch workspace", "Workspace").replace("workspace", "Workspace")
                                 return action
                             }
 
-                            // ── Top Toolbar: Search + Quick Stats + Add Button ────
+                            function toggleModifier(modName) {
+                                let tokens = (rootWindow.formKeys || "").split("+").map(s => s.trim()).filter(s => s.length > 0)
+                                let idx = tokens.findIndex(t => t.toUpperCase() === modName.toUpperCase())
+                                const modOrder = ["SUPER", "CTRL", "ALT", "SHIFT"]
+                                if (idx >= 0) {
+                                    tokens.splice(idx, 1)
+                                } else {
+                                    let nonMods = tokens.filter(t => !modOrder.includes(t.toUpperCase()))
+                                    let curMods = tokens.filter(t => modOrder.includes(t.toUpperCase()))
+                                    curMods.push(modName.toUpperCase())
+                                    curMods.sort((a, b) => modOrder.indexOf(a) - modOrder.indexOf(b))
+                                    tokens = [...curMods, ...nonMods]
+                                }
+                                rootWindow.formKeys = tokens.join(" + ")
+                            }
+
+                            function appendKey(kName) {
+                                let tokens = (rootWindow.formKeys || "").split("+").map(s => s.trim()).filter(s => s.length > 0)
+                                const modOrder = ["SUPER", "CTRL", "ALT", "SHIFT"]
+                                if (tokens.length > 0 && !modOrder.includes(tokens[tokens.length - 1].toUpperCase())) {
+                                    tokens[tokens.length - 1] = kName
+                                } else {
+                                    tokens.push(kName)
+                                }
+                                rootWindow.formKeys = tokens.join(" + ")
+                            }
+
+                            function checkConflict(combo) {
+                                if (!combo || combo.trim().length === 0) return null
+                                const norm = combo.toLowerCase().replace(/\s+/g, "")
+                                for (let i = 0; i < tab6.allBinds.length; i++) {
+                                    const b = tab6.allBinds[i]
+                                    if (rootWindow.editingBindLine > 0 && b.startLine === rootWindow.editingBindLine) continue
+                                    const bNorm = (b.keys || "").toLowerCase().replace(/\s+/g, "")
+                                    if (norm === bNorm) return b
+                                }
+                                return null
+                            }
+
+                            function previewConfigSyntax(keys, action, repeat, locked, mouse, nonConsuming) {
+                                const k = (keys || "").trim() || "Mod + Key"
+                                const act = (action || "").trim() || "command"
+                                const isLua = Services.Compositor ? (Services.Compositor.configType === "lua") : true
+                                if (isLua) {
+                                    let opts = []
+                                    if (locked) opts.push("locked = true")
+                                    if (repeat) opts.push("repeating = true")
+                                    if (mouse) opts.push("mouse = true")
+                                    if (nonConsuming) opts.push("non_consuming = true")
+                                    const optStr = opts.length > 0 ? ", { " + opts.join(", ") + " }" : ""
+                                    const actLow = act.toLowerCase()
+                                    if (actLow === "killactive" || actLow === "close window") {
+                                        return 'hl.bind("' + k + '", hl.dsp.window.close()' + (opts.length > 0 ? optStr : ', { repeating = true }') + ')'
+                                    } else if (actLow === "togglefloating" || actLow === "toggle floating") {
+                                        return 'hl.bind("' + k + '", hl.dsp.window.float()' + optStr + ')'
+                                    } else if (actLow === "fullscreen 0" || actLow === "fullscreen 1" || actLow === "fullscreen" || actLow === "toggle fullscreen") {
+                                        return 'hl.bind("' + k + '", hl.dsp.window.fullscreen()' + optStr + ')'
+                                    } else if (actLow.startsWith("togglesplit")) {
+                                        return 'hl.bind("' + k + '", hl.dsp.layout("togglesplit")' + optStr + ')'
+                                    } else if (actLow === "workspace e+1") {
+                                        return 'hl.bind("' + k + '", hl.dsp.focus({ workspace = "e+1" })' + optStr + ')'
+                                    } else if (actLow === "workspace e-1") {
+                                        return 'hl.bind("' + k + '", hl.dsp.focus({ workspace = "e-1" })' + optStr + ')'
+                                    } else if (actLow.startsWith("workspace ")) {
+                                        const ws = act.split(" ").slice(1).join(" ")
+                                        return 'hl.bind("' + k + '", hl.dsp.focus({ workspace = ' + (isNaN(Number(ws)) ? ('"' + ws + '"') : ws) + ' })' + optStr + ')'
+                                    } else if (actLow.startsWith("movetoworkspace ")) {
+                                        const ws = act.split(" ").slice(1).join(" ")
+                                        return 'hl.bind("' + k + '", hl.dsp.window.move({ workspace = ' + (isNaN(Number(ws)) ? ('"' + ws + '"') : ws) + ' })' + optStr + ')'
+                                    } else if (actLow.startsWith("movefocus ")) {
+                                        const d = act.split(" ")[1]
+                                        const dirMap = { "l": "left", "r": "right", "u": "up", "d": "down" }
+                                        return 'hl.bind("' + k + '", hl.dsp.focus({ direction = "' + (dirMap[d] || d) + '" })' + optStr + ')'
+                                    } else if (actLow === "togglespecialworkspace") {
+                                        return 'hl.bind("' + k + '", hl.dsp.workspace.toggle_special("magic")' + optStr + ')'
+                                    } else {
+                                        const firstW = act.split(" ")[0].toLowerCase()
+                                        const hyprDisps = ["swapwindow", "resizeactive", "resizewindow", "cyclenext", "togglegroup", "changegroupactive", "movewindoworgroup", "centerwindow", "splitratio", "dpms", "exit", "forcekillactive", "focusmonitor"]
+                                        if (hyprDisps.includes(firstW)) {
+                                            return 'hl.bind("' + k + '", hl.dsp.exec_cmd("hyprctl dispatch ' + act + '")' + optStr + ')'
+                                        }
+                                        return 'hl.bind("' + k + '", hl.dsp.exec_cmd("' + act + '")' + optStr + ')'
+                                    }
+                                } else {
+                                    let flags = ""
+                                    if (nonConsuming) flags += "n"
+                                    if (mouse) flags += "m"
+                                    if (repeat && locked) flags += "el"
+                                    else if (repeat) flags += "e"
+                                    else if (locked) flags += "l"
+                                    const firstWord = act.split(" ")[0].toLowerCase()
+                                    const hyprDispatchers = ["killactive", "togglefloating", "fullscreen", "workspace", "movetoworkspace", "movetoworkspacesilent", "togglesplit", "pseudo", "pin", "movefocus", "movewindow", "swapwindow", "resizeactive", "resizewindow", "cyclenext", "togglegroup", "changegroupactive", "movewindoworgroup", "centerwindow", "togglespecialworkspace", "splitratio", "dpms", "exit", "forcekillactive", "focusmonitor"]
+                                    if (hyprDispatchers.includes(firstWord)) {
+                                        const argPart = act.substring(firstWord.length).trim()
+                                        return "bind" + flags + " = " + k + ", " + firstWord + (argPart ? (", " + argPart) : ", ")
+                                    }
+                                    return "bind" + flags + " = " + k + ", exec, " + act
+                                }
+                            }
+
+                            readonly property var filteredBinds: {
+                                const list = tab6.allBinds
+                                const cat = rootWindow.keyCategory
+                                const beh = rootWindow.keyBehaviourFilter
+                                const q = (rootWindow.keySearchQuery || "").trim().toLowerCase()
+
+                                return list.filter(k => {
+                                    if (cat !== "all") {
+                                        if (cat === "custom" && k.category !== "custom") return false
+                                        else if (cat !== "custom" && k.category !== cat) return false
+                                    }
+
+                                    if (beh === "repeat" && !k.repeat) return false
+                                    if (beh === "locked" && !k.locked) return false
+                                    if (beh === "mouse" && !k.mouse) return false
+
+                                    if (q.length > 0) {
+                                        const keysMatch = (k.keys || "").toLowerCase().includes(q)
+                                        const actMatch = (k.action || "").toLowerCase().includes(q)
+                                        const title = tab6.getHumanActionTitle(k.action).toLowerCase()
+                                        const descMatch = (k.desc || "").toLowerCase().includes(q)
+                                        if (!keysMatch && !actMatch && !title.includes(q) && !descMatch) return false
+                                    }
+
+                                    return true
+                                })
+                            }
+
+                            readonly property int totalPages: Math.max(1, Math.ceil(filteredBinds.length / itemsPerPage))
+                            readonly property var pagedBinds: {
+                                let start = currentPage * itemsPerPage
+                                return filteredBinds.slice(start, start + itemsPerPage)
+                            }
+
+                            // ── Top Header Row ──────────────────────────────────
                             RowLayout {
                                 Layout.fillWidth: true
-                                spacing: 10
+                                spacing: 12
 
-                                // Search input box
-                                Rectangle {
+                                ColumnLayout {
                                     Layout.fillWidth: true
-                                    height: 38
-                                    radius: Services.Theme.radiusSm
-                                    color: Services.Theme.surfaceVariant
-                                    border.color: keySearchInput.activeFocus ? Services.Theme.accent : Services.Theme.border
-                                    border.width: keySearchInput.activeFocus ? 1.5 : 1
+                                    spacing: 2
 
                                     RowLayout {
-                                        anchors.fill: parent
-                                        anchors.leftMargin: 12
-                                        anchors.rightMargin: 10
                                         spacing: 8
-
                                         Text {
-                                            text: Services.Icons.search || "󰍉"
-                                            font.family: Services.Theme.fontSymbols
-                                            font.pixelSize: 12
-                                            color: keySearchInput.activeFocus ? Services.Theme.accent : Services.Theme.textDisabled
-                                        }
-
-                                        TextField {
-                                            id: keySearchInput
-                                            Layout.fillWidth: true
-                                            placeholderText: "Search shortcuts by keys, title, command, or category..."
-                                            placeholderTextColor: Services.Theme.textDisabled
-                                            text: rootWindow.keySearchQuery
-                                            onTextChanged: rootWindow.keySearchQuery = text
-                                            font.pixelSize: 11
+                                            text: "Compositor Keybindings"
+                                            font.pixelSize: Services.Theme.fontSizeLg
+                                            font.weight: Font.Bold
                                             color: Services.Theme.textPrimary
-                                            background: null
-                                            selectByMouse: true
                                         }
 
-                                        // Clear search button
+                                        // Total Count Badge
                                         Rectangle {
-                                            visible: (rootWindow.keySearchQuery || "").length > 0
-                                            width: 18; height: 18; radius: 9
-                                            color: clrMouse.containsMouse ? Qt.rgba(1, 1, 1, 0.12) : "transparent"
+                                            radius: 10
+                                            implicitHeight: 20
+                                            implicitWidth: kb_totalTxt.implicitWidth + 12
+                                            color: Services.Theme.isDark ? "#26262e" : "#e5e7eb"
                                             Text {
+                                                id: kb_totalTxt
                                                 anchors.centerIn: parent
-                                                text: Services.Icons.close || "✕"
-                                                font.family: Services.Theme.fontSymbols
-                                                font.pixelSize: 8
+                                                text: tab6.totalBindsCount + " Binds"
+                                                font.pixelSize: 10
+                                                font.weight: Font.DemiBold
                                                 color: Services.Theme.textSecondary
                                             }
-                                            MouseArea {
-                                                id: clrMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
-                                                onClicked: rootWindow.keySearchQuery = ""
-                                            }
                                         }
+                                    }
+
+                                    Text {
+                                        text: "Manage active keyboard and mouse shortcuts directly in your compositor configuration"
+                                        font.pixelSize: Services.Theme.fontSizeSm
+                                        color: Services.Theme.textSecondary
                                     }
                                 }
 
-                                // Add Keybind Primary Toggle Button
+                                // "+ New Shortcut" Button
                                 Rectangle {
-                                    height: 38
-                                    implicitWidth: addBtnRow.implicitWidth + 24
-                                    radius: Services.Theme.radiusSm
-                                    color: rootWindow.isAddingKeybind 
-                                        ? Services.Theme.bgElevated 
-                                        : (addKbToggleMouse.containsMouse ? Qt.lighter(Services.Theme.accent, 1.1) : Services.Theme.accent)
-                                    border.color: rootWindow.isAddingKeybind ? Services.Theme.accent : "transparent"
-                                    border.width: rootWindow.isAddingKeybind ? 1.5 : 0
+                                    implicitHeight: 36
+                                    implicitWidth: kb_addBtnRow.implicitWidth + 24
+                                    radius: 8
+                                    color: (rootWindow.isAddingKeybind || rootWindow.editingBindLine > 0)
+                                        ? (Services.Theme.isDark ? "#2a2a34" : "#e2e8f0")
+                                        : Services.Theme.accent
+                                    border.color: (rootWindow.isAddingKeybind || rootWindow.editingBindLine > 0)
+                                        ? Services.Theme.border : "transparent"
+                                    border.width: 1
 
                                     RowLayout {
-                                        id: addBtnRow
+                                        id: kb_addBtnRow
                                         anchors.centerIn: parent
                                         spacing: 6
                                         Text {
-                                            text: rootWindow.isAddingKeybind ? (Services.Icons.close || "✕") : (Services.Icons.plus || "+")
-                                            font.family: Services.Theme.fontSymbols
-                                            font.pixelSize: 10
+                                            text: (rootWindow.isAddingKeybind || rootWindow.editingBindLine > 0) ? "✕" : "+"
+                                            font.pixelSize: 13
                                             font.bold: true
-                                            color: rootWindow.isAddingKeybind ? Services.Theme.accent : "#ffffff"
+                                            color: (rootWindow.isAddingKeybind || rootWindow.editingBindLine > 0)
+                                                ? Services.Theme.textPrimary
+                                                : Services.Theme.bgOnAccent
                                         }
                                         Text {
-                                            text: rootWindow.isAddingKeybind ? "Close Form" : "Add Shortcut"
-                                            font.pixelSize: 11
+                                            text: (rootWindow.isAddingKeybind || rootWindow.editingBindLine > 0) ? "Close Studio" : "Add Keybind"
+                                            font.pixelSize: Services.Theme.fontSizeSm
                                             font.weight: Font.DemiBold
-                                            color: rootWindow.isAddingKeybind ? Services.Theme.accent : "#ffffff"
+                                            color: (rootWindow.isAddingKeybind || rootWindow.editingBindLine > 0)
+                                                ? Services.Theme.textPrimary
+                                                : Services.Theme.bgOnAccent
                                         }
                                     }
+
                                     MouseArea {
-                                        id: addKbToggleMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                                        anchors.fill: parent
+                                        cursorShape: Qt.PointingHandCursor
+                                        hoverEnabled: true
                                         onClicked: {
-                                            rootWindow.isAddingKeybind = !rootWindow.isAddingKeybind
-                                            if (rootWindow.isAddingKeybind) {
+                                            if (rootWindow.isAddingKeybind || rootWindow.editingBindLine > 0) {
+                                                rootWindow.isAddingKeybind = false
+                                                rootWindow.editingBindId = ""
+                                                rootWindow.editingBindLine = -1
+                                                rootWindow.formKeys = ""
+                                                rootWindow.formAction = ""
+                                                rootWindow.formDesc = ""
+                                            } else {
+                                                rootWindow.isAddingKeybind = true
+                                                rootWindow.editingBindId = ""
+                                                rootWindow.editingBindLine = -1
                                                 rootWindow.formKeys = ""
                                                 tab6.addCategoryType = "shell"
                                                 rootWindow.formAction = tab6.shellActions[0].id
                                                 rootWindow.formDesc = tab6.shellActions[0].label
+                                                rootWindow.formRepeat = Boolean(tab6.shellActions[0].defaultRepeat)
+                                                rootWindow.formLocked = Boolean(tab6.shellActions[0].defaultLocked)
+                                                rootWindow.formMouse = false
+                                                rootWindow.formNonConsuming = false
                                             }
                                         }
                                     }
                                 }
                             }
 
-                            // ── Category Filter Pills Bar (Fluid Gliding Indicator) ───────────────
+                            // ── Status / Feedback Notification Banner ────────────
                             Rectangle {
-                                id: keyCatTabBar
+                                visible: (Services.Compositor && (Services.Compositor.keybindStatus.length > 0 || Services.Compositor.keybindError.length > 0))
                                 Layout.fillWidth: true
-                                height: 38
+                                implicitHeight: kb_notifRow.implicitHeight + 16
                                 radius: 8
-                                color: Services.Theme.isDark ? "#181820" : "#f1f3f8"
-                                border.color: Services.Theme.isDark ? "#262632" : "#e2e8f0"
+                                color: (Services.Compositor && Services.Compositor.keybindError.length > 0)
+                                    ? (Services.Theme.isDark ? "#3f1414" : "#fef2f2")
+                                    : (Services.Theme.isDark ? "#143324" : "#f0fdf4")
+                                border.color: (Services.Compositor && Services.Compositor.keybindError.length > 0)
+                                    ? "#ef4444" : "#10b981"
                                 border.width: 1
-                                clip: true
 
-                                readonly property var allBinds: (Services.Compositor ? Services.Compositor.keybindsList : []) || []
-                                function getCatCount(catId) {
-                                    if (catId === "all") return allBinds.length
-                                    return allBinds.filter(k => k.category === catId).length
-                                }
-
-                                readonly property var catModel: [
-                                    { id: "all",        label: "All",           icon: Services.Icons.keyboard || "󰌌" },
-                                    { id: "quickshell", label: "Quickshell",    icon: Services.Icons.sparkle || "󰀉" },
-                                    { id: "nav",        label: "Window & Nav",  icon: Services.Icons.layout || "󰕰" },
-                                    { id: "apps",       label: "Applications",  icon: Services.Icons.terminal || "󰞷" },
-                                    { id: "screenshot", label: "Screenshot",    icon: Services.Icons.camera || "󰄀" },
-                                    { id: "media",      label: "Media & Sound", icon: Services.Icons.music || "󰎈" }
-                                ]
-
-                                readonly property int curCatIdx: {
-                                    for (let i = 0; i < catModel.length; i++) {
-                                        if (catModel[i].id === rootWindow.keyCategory) return i;
-                                    }
-                                    return 0;
-                                }
-
-                                property int hoveredCatIdx: -1
-                                property real hoverCatX: 0
-                                property real hoverCatW: 60
-                                property bool isHoveringCatBar: false
-
-                                Flickable {
-                                    id: keyCatFlick
+                                RowLayout {
+                                    id: kb_notifRow
                                     anchors.fill: parent
-                                    anchors.leftMargin: 3
-                                    anchors.rightMargin: 3
-                                    contentWidth: keyCatContentItem.implicitWidth + 8
-                                    contentHeight: parent.height
-                                    clip: true
-                                    boundsBehavior: Flickable.StopAtBounds
+                                    anchors.leftMargin: 12
+                                    anchors.rightMargin: 12
+                                    spacing: 8
 
-                                    Item {
-                                        id: keyCatContentItem
-                                        implicitWidth: keyCatRow.implicitWidth + 6
-                                        height: parent.height
+                                    Text {
+                                        text: (Services.Compositor && Services.Compositor.keybindError.length > 0) ? "󰅚" : "󰄬"
+                                        font.family: Services.Theme.fontSymbols
+                                        font.pixelSize: 13
+                                        color: (Services.Compositor && Services.Compositor.keybindError.length > 0) ? "#ef4444" : "#10b981"
+                                    }
 
-                                        // Smooth Sliding Active Category Indicator Pill
-                                        Rectangle {
-                                            id: activeCatPill
-                                            z: 1
-                                            y: 4
-                                            height: parent.height - 8
-                                            radius: 6
+                                    Text {
+                                        Layout.fillWidth: true
+                                        text: (Services.Compositor && Services.Compositor.keybindError.length > 0)
+                                            ? Services.Compositor.keybindError
+                                            : (Services.Compositor ? Services.Compositor.keybindStatus : "")
+                                        font.pixelSize: Services.Theme.fontSizeSm
+                                        color: Services.Theme.textPrimary
+                                        elide: Text.ElideRight
+                                    }
 
-                                            readonly property var curChild: (keyCatRow.children && keyCatRow.children[keyCatTabBar.curCatIdx]) ? keyCatRow.children[keyCatTabBar.curCatIdx] : null
-
-                                            x: curChild ? (curChild.x + 1) : 2
-                                            width: curChild ? Math.max(30, curChild.width - 2) : 60
-
-                                            color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.24)
-                                            border.color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.55)
-                                            border.width: 1
-
-                                            // Top Specular Highlight
-                                            Rectangle {
-                                                anchors.top: parent.top; anchors.left: parent.left; anchors.right: parent.right
-                                                anchors.margins: 1; height: 1; radius: 0.5
-                                                color: Qt.rgba(1, 1, 1, 0.35)
-                                            }
-
-                                            Behavior on x {
-                                                NumberAnimation { duration: 240; easing.type: Easing.OutBack; easing.overshoot: 1.15 }
-                                            }
-                                            Behavior on width {
-                                                NumberAnimation { duration: 240; easing.type: Easing.OutBack; easing.overshoot: 1.15 }
-                                            }
-                                        }
-
-                                        // Smooth Gliding Hover Highlight for Inactive Tabs
-                                        Rectangle {
-                                            id: hoverCatPill
-                                            z: 0
-                                            y: 4
-                                            height: parent.height - 8
-                                            radius: 6
-                                            x: keyCatTabBar.hoverCatX + 1
-                                            width: Math.max(30, keyCatTabBar.hoverCatW - 2)
-                                            color: Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.06) : Qt.rgba(0, 0, 0, 0.05)
-                                            border.color: Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)
-                                            border.width: 1
-                                            opacity: (keyCatTabBar.isHoveringCatBar && keyCatTabBar.hoveredCatIdx >= 0 && keyCatTabBar.hoveredCatIdx !== keyCatTabBar.curCatIdx) ? 1.0 : 0.0
-
-                                            Behavior on x {
-                                                NumberAnimation { duration: 160; easing.type: Easing.OutCubic }
-                                            }
-                                            Behavior on width {
-                                                NumberAnimation { duration: 160; easing.type: Easing.OutCubic }
-                                            }
-                                            Behavior on opacity {
-                                                NumberAnimation { duration: 140; easing.type: Easing.OutQuad }
-                                            }
-                                        }
-
-                                        RowLayout {
-                                            id: keyCatRow
-                                            anchors.verticalCenter: parent.verticalCenter
-                                            anchors.left: parent.left
-                                            anchors.leftMargin: 2
-                                            spacing: 3
-                                            z: 2
-
-                                            Repeater {
-                                                id: keyCatRep
-                                                model: keyCatTabBar.catModel
-
-                                                delegate: Item {
-                                                    id: catPillRoot
-                                                    required property var modelData
-                                                    required property int index
-                                                    readonly property bool isCur: rootWindow.keyCategory === modelData.id
-                                                    readonly property int count: keyCatTabBar.getCatCount(modelData.id)
-
-                                                    implicitWidth: pillInnerRow.implicitWidth + 18
-                                                    height: 30
-
-                                                    RowLayout {
-                                                        id: pillInnerRow
-                                                        anchors.centerIn: parent
-                                                        spacing: 5
-
-                                                        Text {
-                                                            text: modelData.icon
-                                                            font.family: Services.Theme.fontSymbols
-                                                            font.pixelSize: 10
-                                                            color: isCur ? Services.Theme.accent : (catMouse.containsMouse ? Services.Theme.textPrimary : Services.Theme.textSecondary)
-                                                            Behavior on color { ColorAnimation { duration: 150 } }
-                                                        }
-                                                        Text {
-                                                            text: modelData.label
-                                                            font.pixelSize: 10
-                                                            font.weight: isCur ? Font.DemiBold : Font.Normal
-                                                            color: isCur ? Services.Theme.textPrimary : (catMouse.containsMouse ? Services.Theme.textPrimary : Services.Theme.textSecondary)
-                                                            Behavior on color { ColorAnimation { duration: 150 } }
-                                                        }
-                                                        // Count Badge
-                                                        Rectangle {
-                                                            height: 15
-                                                            implicitWidth: catCountTxt.implicitWidth + 8
-                                                            radius: 7
-                                                            color: isCur ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.35) : Services.Theme.bgElevated
-                                                            border.color: isCur ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.5) : "transparent"
-                                                            border.width: 1
-                                                            Behavior on color { ColorAnimation { duration: 150 } }
-
-                                                            Text {
-                                                                id: catCountTxt
-                                                                anchors.centerIn: parent
-                                                                text: String(count)
-                                                                font.pixelSize: 8
-                                                                font.weight: Font.Bold
-                                                                color: isCur ? "#ffffff" : Services.Theme.textDisabled
-                                                            }
-                                                        }
-                                                    }
-
-                                                    MouseArea {
-                                                        id: catMouse
-                                                        anchors.fill: parent
-                                                        hoverEnabled: true
-                                                        cursorShape: Qt.PointingHandCursor
-                                                        onEntered: {
-                                                            keyCatTabBar.hoveredCatIdx = catPillRoot.index
-                                                            keyCatTabBar.hoverCatX = catPillRoot.x
-                                                            keyCatTabBar.hoverCatW = catPillRoot.width
-                                                            keyCatTabBar.isHoveringCatBar = true
-                                                        }
-                                                        onExited: {
-                                                            keyCatTabBar.isHoveringCatBar = false
-                                                            keyCatTabBar.hoveredCatIdx = -1
-                                                        }
-                                                        onClicked: rootWindow.keyCategory = modelData.id
-                                                    }
+                                    Text {
+                                        text: "✕"
+                                        font.pixelSize: 11
+                                        color: Services.Theme.textSecondary
+                                        MouseArea {
+                                            anchors.fill: parent
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: {
+                                                if (Services.Compositor) {
+                                                    Services.Compositor.keybindStatus = ""
+                                                    Services.Compositor.keybindError = ""
                                                 }
                                             }
                                         }
@@ -7241,178 +7497,490 @@ FloatingWindow {
                                 }
                             }
 
-                            // ── Add Keybinding Form Card (Sleek Compact Drawer) ──
+                            // ═════════════════════════════════════════════════
+                            // ── KEYBIND STUDIO CARD (Clean, Simple Flat, Fun) ──
+                            // ═════════════════════════════════════════════════
                             Rectangle {
-                                visible: rootWindow.isAddingKeybind
+                                id: kb_studioCard
+                                visible: rootWindow.isAddingKeybind || rootWindow.editingBindLine > 0
                                 Layout.fillWidth: true
-                                implicitHeight: addFormCol.implicitHeight + 20
-                                radius: Services.Theme.radiusSm
-                                color: Services.Theme.surfaceVariant
-                                border.color: Services.Theme.accent
+                                implicitHeight: kb_studioContent.implicitHeight + 24
+                                radius: 12
+                                color: Services.Theme.isDark ? "#1a1a20" : "#ffffff"
+                                border.color: (rootWindow.editingBindLine > 0) ? Services.Theme.accent : (Services.Theme.isDark ? "#2a2a36" : "#e2e8f0")
                                 border.width: 1
 
                                 ColumnLayout {
-                                    id: addFormCol
-                                    anchors.fill: parent
-                                    anchors.margins: 10
-                                    spacing: 8
+                                    id: kb_studioContent
+                                    anchors.left: parent.left
+                                    anchors.right: parent.right
+                                    anchors.top: parent.top
+                                    anchors.margins: 14
+                                    spacing: 12
 
-                                    // Row 1: Header + Category Tabs + Close Button
+                                    // Studio Header
                                     RowLayout {
                                         Layout.fillWidth: true
                                         spacing: 8
 
                                         Text {
-                                            text: "New Shortcut:"
-                                            font.pixelSize: 11
-                                            font.weight: Font.DemiBold
+                                            text: rootWindow.editingBindLine > 0 ? "󰏫" : "󰐕"
+                                            font.family: Services.Theme.fontSymbols
+                                            font.pixelSize: 14
+                                            color: Services.Theme.accent
+                                        }
+
+                                        Text {
+                                            text: rootWindow.editingBindLine > 0 ? ("Edit Keybind (Line " + rootWindow.editingBindLine + ")") : "Create New Keybind"
+                                            font.pixelSize: Services.Theme.fontSizeMd
+                                            font.weight: Font.Bold
                                             color: Services.Theme.textPrimary
                                         }
 
-                                        // Category Tabs (Liquid Glass Segmented Bar)
-                                        Rectangle {
-                                            id: addFormCatTabBar
-                                            height: 28
-                                            implicitWidth: addFormCatRow.implicitWidth + 6
-                                            radius: 6
-                                            color: Services.Theme.bgDeep
-                                            border.color: Services.Theme.border
-                                            border.width: 1
-                                            clip: true
+                                        Item { Layout.fillWidth: true }
 
-                                            readonly property var formCatList: ["shell", "compositor", "apps", "custom"]
-                                            readonly property int curFormCatIdx: Math.max(0, formCatList.indexOf(tab6.addCategoryType))
-
-                                            // Liquid Glass Sliding Indicator Pill
-                                            Rectangle {
-                                                id: formCatLiquidPill
-                                                z: 1
-                                                y: 2
-                                                height: parent.height - 4
-                                                radius: 4
-
-                                                x: (addFormCatRow.children[addFormCatTabBar.curFormCatIdx] ? addFormCatRow.children[addFormCatTabBar.curFormCatIdx].x : 2) + 2
-                                                width: addFormCatRow.children[addFormCatTabBar.curFormCatIdx] ? addFormCatRow.children[addFormCatTabBar.curFormCatIdx].width : 45
-
-                                                // Liquid Transparent Glass Material
-                                                color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.24)
-                                                border.color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.55)
-                                                border.width: 1
-
-                                                property real stretchScaleX: 1.0
-                                                property real stretchScaleY: 1.0
-                                                transform: Scale {
-                                                    origin.x: formCatLiquidPill.width / 2
-                                                    origin.y: formCatLiquidPill.height / 2
-                                                    xScale: formCatLiquidPill.stretchScaleX
-                                                    yScale: formCatLiquidPill.stretchScaleY
-                                                }
-
-                                                // Top Specular Glass Highlight Line
-                                                Rectangle {
-                                                    anchors.top: parent.top; anchors.left: parent.left; anchors.right: parent.right
-                                                    anchors.topMargin: 0.5; anchors.leftMargin: 2; anchors.rightMargin: 2
-                                                    height: 1; radius: 0.5
-                                                    color: Qt.rgba(1, 1, 1, 0.40)
-                                                }
-
-                                                // Fluid Sliding Transitions
-                                                Behavior on x {
-                                                    NumberAnimation { duration: 280; easing.type: Easing.OutBack; easing.overshoot: 1.15 }
-                                                }
-                                                Behavior on width {
-                                                    NumberAnimation { duration: 280; easing.type: Easing.OutBack; easing.overshoot: 1.15 }
-                                                }
-                                            }
-
-                                            // Fluid Elastic Squash & Stretch Animation
-                                            SequentialAnimation {
-                                                id: formCatStretchAnim
-                                                ParallelAnimation {
-                                                    NumberAnimation { target: formCatLiquidPill; property: "stretchScaleX"; to: 1.08; duration: 80; easing.type: Easing.OutQuad }
-                                                    NumberAnimation { target: formCatLiquidPill; property: "stretchScaleY"; to: 0.92; duration: 80; easing.type: Easing.OutQuad }
-                                                }
-                                                ParallelAnimation {
-                                                    NumberAnimation { target: formCatLiquidPill; property: "stretchScaleX"; to: 1.0; duration: 200; easing.type: Easing.OutBack; easing.overshoot: 1.25 }
-                                                    NumberAnimation { target: formCatLiquidPill; property: "stretchScaleY"; to: 1.0; duration: 200; easing.type: Easing.OutBack; easing.overshoot: 1.25 }
-                                                }
-                                            }
-
-                                            Connections {
-                                                target: tab6
-                                                function onAddCategoryTypeChanged() {
-                                                    formCatStretchAnim.restart()
-                                                }
-                                            }
-
-                                            RowLayout {
-                                                id: addFormCatRow
+                                        // Cancel Studio
+                                        Text {
+                                            text: "Cancel"
+                                            font.pixelSize: Services.Theme.fontSizeXs
+                                            font.weight: Font.Medium
+                                            color: Services.Theme.textSecondary
+                                            MouseArea {
                                                 anchors.fill: parent
-                                                anchors.margins: 2
-                                                spacing: 2
-                                                z: 2
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: {
+                                                    rootWindow.isAddingKeybind = false
+                                                    rootWindow.editingBindId = ""
+                                                    rootWindow.editingBindLine = -1
+                                                    rootWindow.formKeys = ""
+                                                    rootWindow.formAction = ""
+                                                    rootWindow.formDesc = ""
+                                                }
+                                            }
+                                        }
+                                    }
 
-                                                Repeater {
-                                                    model: [
-                                                        { id: "shell",      label: "Shell",      icon: Services.Icons.sparkle || "󰀉" },
-                                                        { id: "compositor", label: "Compositor", icon: Services.Icons.layout || "󰕰" },
-                                                        { id: "apps",       label: "Apps",       icon: Services.Icons.terminal || "󰞷" },
-                                                        { id: "custom",     label: "Custom",     icon: Services.Icons.code || "󰅍" }
-                                                    ]
+                                    // Studio Divider
+                                    Rectangle {
+                                        Layout.fillWidth: true
+                                        height: 1
+                                        color: Services.Theme.isDark ? "#252530" : "#f1f5f9"
+                                    }
 
-                                                    delegate: Item {
-                                                        implicitHeight: 24
-                                                        implicitWidth: cTabRow.implicitWidth + 14
-                                                        readonly property bool isSelected: tab6.addCategoryType === modelData.id
+                                    // ── Section 1: Shortcut Keys Combination ────
+                                    ColumnLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 6
 
-                                                        // Hover effect for unselected tabs
-                                                        Rectangle {
-                                                            anchors.fill: parent
-                                                            radius: 4
-                                                            color: catTabMouse.containsMouse && !isSelected ? Qt.rgba(1, 1, 1, 0.05) : "transparent"
-                                                            Behavior on color { ColorAnimation { duration: 150 } }
+                                        RowLayout {
+                                            id: conflictHeaderRow
+                                            spacing: 6
+                                            readonly property var conflictItem: tab6.checkConflict(rootWindow.formKeys)
+
+                                            Text {
+                                                text: "KEY COMBINATION"
+                                                font.pixelSize: 10
+                                                font.weight: Font.Bold
+                                                font.letterSpacing: 0.6
+                                                color: Services.Theme.textSecondary
+                                            }
+
+                                            // Conflict Warning Badge
+                                            Rectangle {
+                                                visible: conflictHeaderRow.conflictItem !== null
+                                                radius: 4
+                                                implicitHeight: 18
+                                                implicitWidth: kb_confTxt.implicitWidth + 10
+                                                color: Services.Theme.isDark ? "#451a03" : "#fef3c7"
+                                                border.color: "#f59e0b"; border.width: 1
+                                                Text {
+                                                    id: kb_confTxt
+                                                    anchors.centerIn: parent
+                                                    text: "󰀦 Already in use: " + (conflictHeaderRow.conflictItem ? tab6.getHumanActionTitle(conflictHeaderRow.conflictItem.action) : "")
+                                                    font.pixelSize: 9
+                                                    font.bold: true
+                                                    color: "#f59e0b"
+                                                }
+                                            }
+                                        }
+
+                                        // Key Recorder + Clear Button
+                                        RowLayout {
+                                            Layout.fillWidth: true
+                                            spacing: 8
+
+                                            KeyRecorder {
+                                                id: kb_addKeyRec
+                                                Layout.fillWidth: true
+                                                height: 36
+                                                compact: false
+                                                value: rootWindow.formKeys
+                                                placeholder: "Click here and press key combo on your keyboard..."
+                                                onRecorded: (k) => { rootWindow.formKeys = k }
+                                                onCleared: { rootWindow.formKeys = "" }
+                                            }
+
+                                            Rectangle {
+                                                visible: (rootWindow.formKeys || "").length > 0
+                                                height: 36; width: 36; radius: 6
+                                                color: kb_clrRecMouse.containsMouse ? (Services.Theme.isDark ? "#282832" : "#e2e8f0") : (Services.Theme.isDark ? "#202026" : "#f1f5f9")
+                                                border.color: Services.Theme.border; border.width: 1
+                                                Text {
+                                                    anchors.centerIn: parent
+                                                    text: "󰩹"
+                                                    font.family: Services.Theme.fontSymbols
+                                                    font.pixelSize: 13
+                                                    color: Services.Theme.textSecondary
+                                                }
+                                                MouseArea {
+                                                    id: kb_clrRecMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                                                    onClicked: rootWindow.formKeys = ""
+                                                }
+                                            }
+                                        }
+
+                                        // Quick Modifiers (Click to toggle)
+                                        RowLayout {
+                                            Layout.fillWidth: true
+                                            spacing: 6
+
+                                            Text {
+                                                text: "Modifiers:"
+                                                font.pixelSize: 10
+                                                color: Services.Theme.textSecondary
+                                                Layout.alignment: Qt.AlignVCenter
+                                            }
+
+                                            Repeater {
+                                                model: ["SUPER", "CTRL", "ALT", "SHIFT"]
+                                                delegate: Rectangle {
+                                                    id: kb_modBtn
+                                                    readonly property bool isActive: (rootWindow.formKeys || "").toUpperCase().split("+").map(s => s.trim()).includes(modelData)
+                                                    implicitHeight: 24
+                                                    implicitWidth: kb_modLabel.implicitWidth + 14
+                                                    radius: 5
+                                                    color: isActive ? Services.Theme.accent : (kb_modBtnMouse.containsMouse ? (Services.Theme.isDark ? "#2a2a34" : "#e5e7eb") : (Services.Theme.isDark ? "#1f1f26" : "#f3f4f6"))
+                                                    border.color: isActive ? "transparent" : Services.Theme.border
+                                                    border.width: 1
+
+                                                    Text {
+                                                        id: kb_modLabel
+                                                        anchors.centerIn: parent
+                                                        text: modelData
+                                                        font.pixelSize: 10
+                                                        font.weight: Font.DemiBold
+                                                        color: kb_modBtn.isActive ? Services.Theme.bgOnAccent : Services.Theme.textPrimary
+                                                    }
+
+                                                    MouseArea {
+                                                        id: kb_modBtnMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                                                        onClicked: tab6.toggleModifier(kb_modBtn.modelData)
+                                                    }
+                                                }
+                                            }
+
+                                            Item { Layout.fillWidth: true }
+
+                                            // Common Key quick-clicks
+                                            Text {
+                                                text: "Common Keys:"
+                                                font.pixelSize: 10
+                                                color: Services.Theme.textSecondary
+                                                Layout.alignment: Qt.AlignVCenter
+                                            }
+
+                                            Repeater {
+                                                model: ["Return", "Space", "Tab", "Q", "F", "Print"]
+                                                delegate: Rectangle {
+                                                    implicitHeight: 24
+                                                    implicitWidth: kb_keyLabel.implicitWidth + 12
+                                                    radius: 5
+                                                    color: kb_keyQuickMouse.containsMouse ? (Services.Theme.isDark ? "#2a2a34" : "#e5e7eb") : (Services.Theme.isDark ? "#1f1f26" : "#f3f4f6")
+                                                    border.color: Services.Theme.border
+                                                    border.width: 1
+
+                                                    Text {
+                                                        id: kb_keyLabel
+                                                        anchors.centerIn: parent
+                                                        text: modelData
+                                                        font.pixelSize: 10
+                                                        color: Services.Theme.textPrimary
+                                                    }
+
+                                                    MouseArea {
+                                                        id: kb_keyQuickMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                                                        onClicked: tab6.appendKey(modelData)
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    // ── Section 2: Action / Command Selection (Dropdowns) ────
+                                    ColumnLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 6
+
+                                        Text {
+                                            text: "ACTION & DISPATCHER"
+                                            font.pixelSize: 10
+                                            font.weight: Font.Bold
+                                            font.letterSpacing: 0.6
+                                            color: Services.Theme.textSecondary
+                                        }
+
+                                        Rectangle {
+                                            Layout.fillWidth: true
+                                            implicitHeight: kb_actionCardCol.implicitHeight + 20
+                                            radius: 8
+                                            color: Services.Theme.isDark ? "#141418" : "#f8fafc"
+                                            border.color: Services.Theme.isDark ? "#22222a" : "#e2e8f0"
+                                            border.width: 1
+
+                                            ColumnLayout {
+                                                id: kb_actionCardCol
+                                                anchors.left: parent.left
+                                                anchors.right: parent.right
+                                                anchors.top: parent.top
+                                                anchors.margins: 10
+                                                spacing: 10
+
+                                                // Row of Dropdowns: Category + Action / Dispatcher
+                                                RowLayout {
+                                                    Layout.fillWidth: true
+                                                    spacing: 10
+
+                                                    // Dropdown 1: Category
+                                                    ColumnLayout {
+                                                        Layout.preferredWidth: 230
+                                                        spacing: 4
+
+                                                        Text {
+                                                            text: "Category"
+                                                            font.pixelSize: 10
+                                                            font.weight: Font.DemiBold
+                                                            color: Services.Theme.textSecondary
                                                         }
 
-                                                        RowLayout {
-                                                            id: cTabRow
-                                                            anchors.centerIn: parent
-                                                            spacing: 4
-                                                            z: 2
-                                                            Text {
-                                                                text: modelData.icon
-                                                                font.family: Services.Theme.fontSymbols
-                                                                font.pixelSize: 9
-                                                                color: isSelected ? Services.Theme.accent : Services.Theme.textSecondary
-                                                                Behavior on color { ColorAnimation { duration: 200 } }
-                                                            }
-                                                            Text {
-                                                                text: modelData.label
-                                                                font.pixelSize: 9
-                                                                font.weight: isSelected ? Font.DemiBold : Font.Normal
-                                                                color: isSelected ? Services.Theme.textPrimary : Services.Theme.textSecondary
-                                                                Behavior on color { ColorAnimation { duration: 200 } }
-                                                            }
-                                                        }
-
-                                                        MouseArea {
-                                                            id: catTabMouse
-                                                            anchors.fill: parent
-                                                            hoverEnabled: true
-                                                            cursorShape: Qt.PointingHandCursor
-                                                            onClicked: {
-                                                                tab6.addCategoryType = modelData.id
-                                                                if (modelData.id === "shell") {
-                                                                    rootWindow.formAction = tab6.shellActions[0].id
-                                                                    rootWindow.formDesc = tab6.shellActions[0].label
-                                                                } else if (modelData.id === "compositor") {
-                                                                    rootWindow.formAction = tab6.compositorActions[0].id
-                                                                    rootWindow.formDesc = tab6.compositorActions[0].label
-                                                                } else if (modelData.id === "apps") {
-                                                                    rootWindow.formAction = tab6.appActions[0].id
-                                                                    rootWindow.formDesc = tab6.appActions[0].label
-                                                                } else {
+                                                        SettingsDropdown {
+                                                            Layout.fillWidth: true
+                                                            minButtonWidth: 220
+                                                            maxButtonWidth: 260
+                                                            buttonHeight: 32
+                                                            currentValue: tab6.addCategoryType
+                                                            model: tab6.actionCategories
+                                                            onSelected: (val) => {
+                                                                tab6.addCategoryType = val
+                                                                if (val === "custom") {
                                                                     rootWindow.formAction = ""
                                                                     rootWindow.formDesc = ""
+                                                                } else {
+                                                                    const list = tab6.getActionListForCategory(val) || []
+                                                                    if (list.length > 0 && list[0]) {
+                                                                        rootWindow.formAction = list[0].id || ""
+                                                                        rootWindow.formDesc = list[0].label || ""
+                                                                        rootWindow.formRepeat = Boolean(list[0].defaultRepeat)
+                                                                        rootWindow.formLocked = Boolean(list[0].defaultLocked)
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+
+                                                    // Dropdown 2: Action / Dispatcher (visible when not custom)
+                                                    ColumnLayout {
+                                                        visible: tab6.addCategoryType !== "custom"
+                                                        Layout.fillWidth: true
+                                                        spacing: 4
+
+                                                        RowLayout {
+                                                            spacing: 6
+                                                            Text {
+                                                                text: "Action / Dispatcher Preset"
+                                                                font.pixelSize: 10
+                                                                font.weight: Font.DemiBold
+                                                                color: Services.Theme.textSecondary
+                                                            }
+                                                            Text {
+                                                                text: "(" + tab6.getActionListForCategory(tab6.addCategoryType).length + " available)"
+                                                                font.pixelSize: 9
+                                                                color: Services.Theme.textSecondary
+                                                            }
+                                                        }
+
+                                                        SettingsDropdown {
+                                                            Layout.fillWidth: true
+                                                            minButtonWidth: 280
+                                                            maxButtonWidth: 600
+                                                            buttonHeight: 32
+                                                            searchable: true
+                                                            searchPlaceholder: "Search action / dispatcher..."
+                                                            currentValue: rootWindow.formAction
+                                                            model: tab6.getActionListForCategory(tab6.addCategoryType)
+                                                            onSelected: (val) => {
+                                                                rootWindow.formAction = val
+                                                                const list = tab6.getActionListForCategory(tab6.addCategoryType)
+                                                                for (let i = 0; i < list.length; i++) {
+                                                                    if (list[i].id === val) {
+                                                                        rootWindow.formDesc = list[i].label
+                                                                        rootWindow.formRepeat = Boolean(list[i].defaultRepeat)
+                                                                        rootWindow.formLocked = Boolean(list[i].defaultLocked)
+                                                                        break
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+
+                                                // Selected Preset Information / Description Box
+                                                Rectangle {
+                                                    visible: tab6.addCategoryType !== "custom" && (rootWindow.formAction || "").length > 0
+                                                    Layout.fillWidth: true
+                                                    implicitHeight: kb_sumRow.implicitHeight + 12
+                                                    radius: 6
+                                                    color: Services.Theme.isDark ? "#1b1b22" : "#edf0f5"
+                                                    border.color: Services.Theme.isDark ? "#282834" : "#d8dde6"
+                                                    border.width: 1
+
+                                                    RowLayout {
+                                                        id: kb_sumRow
+                                                        anchors.fill: parent
+                                                        anchors.margins: 8
+                                                        spacing: 8
+
+                                                        Text {
+                                                            text: "󰅂"
+                                                            font.family: Services.Theme.fontSymbols
+                                                            font.pixelSize: 12
+                                                            color: Services.Theme.accent
+                                                        }
+
+                                                        ColumnLayout {
+                                                            Layout.fillWidth: true
+                                                            spacing: 2
+
+                                                            Text {
+                                                                text: rootWindow.formDesc || tab6.getHumanActionTitle(rootWindow.formAction)
+                                                                font.pixelSize: 11
+                                                                font.weight: Font.DemiBold
+                                                                color: Services.Theme.textPrimary
+                                                            }
+
+                                                            Text {
+                                                                text: {
+                                                                    const list = tab6.getActionListForCategory(tab6.addCategoryType)
+                                                                    for (let i = 0; i < list.length; i++) {
+                                                                        if (list[i].id === rootWindow.formAction && list[i].desc) return list[i].desc
+                                                                    }
+                                                                    return rootWindow.formAction
+                                                                }
+                                                                font.pixelSize: 10
+                                                                color: Services.Theme.textSecondary
+                                                                elide: Text.ElideRight
+                                                            }
+                                                        }
+
+                                                        Rectangle {
+                                                            implicitHeight: 20
+                                                            implicitWidth: kb_sumCmd.implicitWidth + 12
+                                                            radius: 4
+                                                            color: Services.Theme.isDark ? "#242430" : "#e2e6ed"
+
+                                                            Text {
+                                                                id: kb_sumCmd
+                                                                anchors.centerIn: parent
+                                                                text: rootWindow.formAction
+                                                                font.pixelSize: 9
+                                                                font.family: "Monospace"
+                                                                color: Services.Theme.accent
+                                                            }
+                                                        }
+                                                    }
+                                                }
+
+                                                // Custom Command Inputs (visible when Category is 'custom')
+                                                ColumnLayout {
+                                                    visible: tab6.addCategoryType === "custom"
+                                                    Layout.fillWidth: true
+                                                    spacing: 8
+
+                                                    ColumnLayout {
+                                                        Layout.fillWidth: true
+                                                        spacing: 3
+
+                                                        Text {
+                                                            text: "Command / Dispatcher to Execute"
+                                                            font.pixelSize: 10
+                                                            font.weight: Font.DemiBold
+                                                            color: Services.Theme.textSecondary
+                                                        }
+
+                                                        Rectangle {
+                                                            Layout.fillWidth: true
+                                                            height: 34
+                                                            radius: 6
+                                                            color: Services.Theme.isDark ? "#15151a" : "#ffffff"
+                                                            border.color: Services.Theme.border; border.width: 1
+
+                                                            TextInput {
+                                                                anchors.fill: parent
+                                                                anchors.margins: 8
+                                                                text: rootWindow.formAction
+                                                                color: Services.Theme.textPrimary
+                                                                font.pixelSize: Services.Theme.fontSizeSm
+                                                                font.family: "Monospace"
+                                                                selectByMouse: true
+                                                                verticalAlignment: TextInput.AlignVCenter
+                                                                onTextChanged: rootWindow.formAction = text
+
+                                                                Text {
+                                                                    anchors.fill: parent
+                                                                    text: "Type custom command, e.g. kitty -e btop or hyprctl dispatch ..."
+                                                                    color: Services.Theme.textSecondary
+                                                                    font.pixelSize: Services.Theme.fontSizeSm
+                                                                    visible: parent.text.length === 0
+                                                                    verticalAlignment: Text.AlignVCenter
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+
+                                                    ColumnLayout {
+                                                        Layout.fillWidth: true
+                                                        spacing: 3
+
+                                                        Text {
+                                                            text: "Friendly Description (Optional)"
+                                                            font.pixelSize: 10
+                                                            font.weight: Font.DemiBold
+                                                            color: Services.Theme.textSecondary
+                                                        }
+
+                                                        Rectangle {
+                                                            Layout.fillWidth: true
+                                                            height: 32
+                                                            radius: 6
+                                                            color: Services.Theme.isDark ? "#15151a" : "#ffffff"
+                                                            border.color: Services.Theme.border; border.width: 1
+
+                                                            TextInput {
+                                                                anchors.fill: parent
+                                                                anchors.margins: 8
+                                                                text: rootWindow.formDesc
+                                                                color: Services.Theme.textPrimary
+                                                                font.pixelSize: Services.Theme.fontSizeXs
+                                                                selectByMouse: true
+                                                                verticalAlignment: TextInput.AlignVCenter
+                                                                onTextChanged: rootWindow.formDesc = text
+
+                                                                Text {
+                                                                    anchors.fill: parent
+                                                                    text: "Friendly shortcut description (e.g. Launch Task Manager)"
+                                                                    color: Services.Theme.textSecondary
+                                                                    font.pixelSize: Services.Theme.fontSizeXs
+                                                                    visible: parent.text.length === 0
+                                                                    verticalAlignment: Text.AlignVCenter
                                                                 }
                                                             }
                                                         }
@@ -7420,309 +7988,204 @@ FloatingWindow {
                                                 }
                                             }
                                         }
+                                    }
 
-                                        Item { Layout.fillWidth: true }
+                                    // ── Section 3: Behaviour Configuration Switches ────
+                                    ColumnLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 6
+
+                                        Text {
+                                            text: "KEYBIND BEHAVIOUR & FLAGS"
+                                            font.pixelSize: 10
+                                            font.weight: Font.Bold
+                                            font.letterSpacing: 0.6
+                                            color: Services.Theme.textSecondary
+                                        }
 
                                         Rectangle {
-                                            width: 20; height: 20; radius: 10
-                                            color: closeFormMouse.containsMouse ? Qt.rgba(1, 1, 1, 0.12) : "transparent"
-                                            Text {
-                                                anchors.centerIn: parent
-                                                text: Services.Icons.close || "✕"
-                                                font.family: Services.Theme.fontSymbols; font.pixelSize: 9; color: Services.Theme.textSecondary
-                                            }
-                                            MouseArea {
-                                                id: closeFormMouse
-                                                anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
-                                                onClicked: rootWindow.isAddingKeybind = false
+                                            Layout.fillWidth: true
+                                            implicitHeight: kb_behLayout.implicitHeight + 8
+                                            radius: 8
+                                            color: Services.Theme.isDark ? "#141418" : "#f8fafc"
+                                            border.color: Services.Theme.isDark ? "#22222a" : "#e2e8f0"
+                                            border.width: 1
+
+                                            ColumnLayout {
+                                                id: kb_behLayout
+                                                anchors.left: parent.left
+                                                anchors.right: parent.right
+                                                anchors.top: parent.top
+                                                anchors.margins: 4
+                                                spacing: 0
+
+                                                // 1. Repeat Switch
+                                                SettingsSwitch {
+                                                    title: "Repeat on Hold (repeating)"
+                                                    subtitle: "Continuously triggers action while key is held (Volume, brightness, workspace resize)"
+                                                    checked: rootWindow.formRepeat
+                                                    onToggled: (st) => { rootWindow.formRepeat = st }
+                                                }
+
+                                                Rectangle { Layout.fillWidth: true; height: 1; color: Services.Theme.isDark ? "#202028" : "#f1f5f9" }
+
+                                                // 2. Locked Switch
+                                                SettingsSwitch {
+                                                    title: "Active on Lockscreen (locked)"
+                                                    subtitle: "Works even when screen locker is active (Media keys, volume, mute, power)"
+                                                    checked: rootWindow.formLocked
+                                                    onToggled: (st) => { rootWindow.formLocked = st }
+                                                }
+
+                                                Rectangle { Layout.fillWidth: true; height: 1; color: Services.Theme.isDark ? "#202028" : "#f1f5f9" }
+
+                                                // 3. Mouse Binding Switch
+                                                SettingsSwitch {
+                                                    title: "Mouse Button Trigger (mouse)"
+                                                    subtitle: "Binds shortcut to a mouse click or drag event"
+                                                    checked: rootWindow.formMouse
+                                                    onToggled: (st) => { rootWindow.formMouse = st }
+                                                }
+
+                                                Rectangle { Layout.fillWidth: true; height: 1; color: Services.Theme.isDark ? "#202028" : "#f1f5f9" }
+
+                                                // 4. Non-consuming Switch
+                                                SettingsSwitch {
+                                                    title: "Pass-through Event (non_consuming)"
+                                                    subtitle: "Does not consume the key press, passing it through to the active window"
+                                                    checked: rootWindow.formNonConsuming
+                                                    onToggled: (st) => { rootWindow.formNonConsuming = st }
+                                                }
                                             }
                                         }
                                     }
 
-                                    // Row 2: Action Dropdown (or Custom Command) + Key Recorder side by side!
+                                    // ── Section 4: Live Config Syntax Preview ────
                                     RowLayout {
                                         Layout.fillWidth: true
                                         spacing: 8
 
-                                        // Action Picker Dropdown (when Shell, Compositor, Apps)
+                                        Text {
+                                            text: "Syntax:"
+                                            font.pixelSize: 10
+                                            font.weight: Font.DemiBold
+                                            color: Services.Theme.textSecondary
+                                        }
+
                                         Rectangle {
-                                            id: actionPickerBtn
-                                            visible: tab6.addCategoryType !== "custom"
                                             Layout.fillWidth: true
-                                            Layout.minimumWidth: 200
-                                            height: 32
+                                            height: 26
                                             radius: 5
-                                            color: Services.Theme.bgDeep
-                                            border.color: actionPickerPopup.visible ? Services.Theme.accent : (pickerMouse.containsMouse ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.45) : Services.Theme.border)
-                                            border.width: 1
+                                            color: Services.Theme.isDark ? "#121216" : "#f1f5f9"
+                                            border.color: Services.Theme.border; border.width: 1
 
-                                            readonly property var currentList: {
-                                                if (tab6.addCategoryType === "shell") return tab6.shellActions
-                                                if (tab6.addCategoryType === "compositor") return tab6.compositorActions
-                                                if (tab6.addCategoryType === "apps") return tab6.appActions
-                                                return []
-                                            }
-
-                                            readonly property var currentSelected: {
-                                                for (let i = 0; i < currentList.length; i++) {
-                                                    if (currentList[i].id === rootWindow.formAction) return currentList[i]
-                                                }
-                                                return currentList.length > 0 ? currentList[0] : { label: "Select action...", desc: "", id: "" }
-                                            }
-
-                                            RowLayout {
+                                            Text {
                                                 anchors.fill: parent
                                                 anchors.leftMargin: 8
                                                 anchors.rightMargin: 8
-                                                spacing: 6
-
-                                                Text {
-                                                    text: actionPickerBtn.currentSelected.icon || (Services.Icons.sliders || "⚙")
-                                                    font.family: Services.Theme.fontSymbols
-                                                    font.pixelSize: 10
-                                                    color: Services.Theme.accent
-                                                }
-
-                                                Text {
-                                                    text: actionPickerBtn.currentSelected.label
-                                                    font.pixelSize: 10
-                                                    font.weight: Font.DemiBold
-                                                    color: Services.Theme.textPrimary
-                                                    elide: Text.ElideRight
-                                                }
-
-                                                Text {
-                                                    text: "• " + actionPickerBtn.currentSelected.id
-                                                    font.pixelSize: 9
-                                                    color: Services.Theme.textDisabled
-                                                    elide: Text.ElideRight
-                                                    Layout.fillWidth: true
-                                                }
-
-                                                Text {
-                                                    text: "▾"
-                                                    font.pixelSize: 9
-                                                    color: Services.Theme.textSecondary
-                                                }
+                                                text: tab6.previewConfigSyntax(rootWindow.formKeys, rootWindow.formAction, rootWindow.formRepeat, rootWindow.formLocked, rootWindow.formMouse, rootWindow.formNonConsuming)
+                                                font.pixelSize: 9
+                                                font.family: "Monospace"
+                                                color: Services.Theme.textSecondary
+                                                verticalAlignment: Text.AlignVCenter
+                                                elide: Text.ElideRight
                                             }
-
-                                            MouseArea {
-                                                id: pickerMouse
-                                                anchors.fill: parent
-                                                hoverEnabled: true
-                                                cursorShape: Qt.PointingHandCursor
-                                                onClicked: {
-                                                    if (actionPickerPopup.visible) actionPickerPopup.close()
-                                                    else actionPickerPopup.open()
-                                                }
-                                            }
-
-                                            Popup {
-                                                id: actionPickerPopup
-                                                y: actionPickerBtn.height + 4
-                                                width: actionPickerBtn.width
-                                                height: Math.min(220, pickerListCol.implicitHeight + 8)
-                                                padding: 4
-                                                closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutsideParent
-                                                modal: false
-                                                focus: true
-
-                                                background: Rectangle {
-                                                    radius: 6
-                                                    color: Services.Theme.isDark ? "#1c1c24" : "#ffffff"
-                                                    border.color: Services.Theme.isDark ? "#383846" : "#d0d0dc"
-                                                    border.width: 1
-                                                }
-
-                                                contentItem: Flickable {
-                                                    contentHeight: pickerListCol.implicitHeight
-                                                    clip: true
-                                                    boundsBehavior: Flickable.StopAtBounds
-                                                    ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
-
-                                                    ColumnLayout {
-                                                        id: pickerListCol
-                                                        width: parent.width
-                                                        spacing: 2
-
-                                                        Repeater {
-                                                            model: actionPickerBtn.currentList
-                                                            delegate: Rectangle {
-                                                                required property var modelData
-                                                                Layout.fillWidth: true
-                                                                height: 30
-                                                                radius: 4
-                                                                readonly property bool isSelected: rootWindow.formAction === modelData.id
-                                                                color: isSelected
-                                                                    ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.18)
-                                                                    : (itemArea.containsMouse ? Qt.rgba(1, 1, 1, 0.06) : "transparent")
-
-                                                                RowLayout {
-                                                                    anchors.fill: parent
-                                                                    anchors.leftMargin: 8
-                                                                    anchors.rightMargin: 8
-                                                                    spacing: 6
-
-                                                                    Text {
-                                                                        text: modelData.icon || "•"
-                                                                        font.family: Services.Theme.fontSymbols
-                                                                        font.pixelSize: 10
-                                                                        color: isSelected ? Services.Theme.accent : Services.Theme.textSecondary
-                                                                    }
-
-                                                                    Text {
-                                                                        text: modelData.label
-                                                                        font.pixelSize: 10
-                                                                        font.weight: isSelected ? Font.DemiBold : Font.Normal
-                                                                        color: isSelected ? Services.Theme.accent : Services.Theme.textPrimary
-                                                                    }
-
-                                                                    Text {
-                                                                        text: modelData.desc || modelData.id
-                                                                        font.pixelSize: 8
-                                                                        color: Services.Theme.textDisabled
-                                                                        elide: Text.ElideRight
-                                                                        Layout.fillWidth: true
-                                                                    }
-
-                                                                    Text {
-                                                                        visible: isSelected
-                                                                        text: Services.Icons.check || "✓"
-                                                                        font.family: Services.Theme.fontSymbols
-                                                                        font.pixelSize: 9
-                                                                        font.bold: true
-                                                                        color: Services.Theme.accent
-                                                                    }
-                                                                }
-
-                                                                MouseArea {
-                                                                    id: itemArea
-                                                                    anchors.fill: parent
-                                                                    hoverEnabled: true
-                                                                    cursorShape: Qt.PointingHandCursor
-                                                                    onClicked: {
-                                                                        rootWindow.formAction = modelData.id
-                                                                        rootWindow.formDesc = modelData.label
-                                                                        actionPickerPopup.close()
-                                                                    }
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-
-                                        // Custom Command Input
-                                        Rectangle {
-                                            visible: tab6.addCategoryType === "custom"
-                                            Layout.fillWidth: true
-                                            Layout.minimumWidth: 200
-                                            height: 32
-                                            radius: 5
-                                            color: Services.Theme.bgDeep
-                                            border.color: customCmdInput.activeFocus ? Services.Theme.accent : Services.Theme.border
-                                            border.width: 1
-
-                                            TextField {
-                                                id: customCmdInput
-                                                anchors.fill: parent
-                                                anchors.margins: 4
-                                                anchors.leftMargin: 8
-                                                placeholderText: "Type custom shell command (e.g. kitty, rofi -show drun)..."
-                                                placeholderTextColor: Services.Theme.textDisabled
-                                                text: rootWindow.formAction
-                                                onTextChanged: rootWindow.formAction = text
-                                                font.family: Services.Theme.fontMono
-                                                font.pixelSize: 10
-                                                color: Services.Theme.textPrimary
-                                                background: null
-                                                selectByMouse: true
-                                            }
-                                        }
-
-                                        // Compact KeyRecorder
-                                        KeyRecorder {
-                                            id: addKeyRec
-                                            Layout.preferredWidth: 230
-                                            Layout.fillWidth: false
-                                            height: 32
-                                            compact: true
-                                            value: rootWindow.formKeys
-                                            placeholder: "Click to record shortcut..."
-                                            onRecorded: (k) => { rootWindow.formKeys = k }
-                                            onCleared: { rootWindow.formKeys = "" }
                                         }
                                     }
 
-                                    // Row 3: Quick Modifiers Chips + Save / Cancel Buttons
+                                    // ── Studio Bottom Actions ────────────────────
                                     RowLayout {
                                         Layout.fillWidth: true
-                                        spacing: 6
+                                        spacing: 8
 
-                                        Text { text: "Quick Keys:"; font.pixelSize: 8; color: Services.Theme.textDisabled }
+                                        Item { Layout.fillWidth: true }
 
-                                        Repeater {
-                                            model: ["SUPER", "SHIFT", "CTRL", "ALT", "Return", "Space", "Print"]
-                                            delegate: Rectangle {
-                                                height: 20
-                                                implicitWidth: qkTxt.implicitWidth + 8
-                                                radius: 3
-                                                color: qkMouse.containsMouse ? Services.Theme.bgHover : Services.Theme.bgDeep
-                                                border.color: Services.Theme.border; border.width: 1
-                                                Text { id: qkTxt; anchors.centerIn: parent; text: modelData; font.family: Services.Theme.fontMono; font.pixelSize: 8; color: Services.Theme.textSecondary }
-                                                MouseArea {
-                                                    id: qkMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
-                                                    onClicked: {
-                                                        if (rootWindow.formKeys.length > 0) rootWindow.formKeys += " + " + modelData
-                                                        else rootWindow.formKeys = modelData
-                                                    }
+                                        // Cancel Button
+                                        Rectangle {
+                                            implicitHeight: 32
+                                            implicitWidth: kb_cancelTxt.implicitWidth + 20
+                                            radius: 6
+                                            color: kb_cancelMouse.containsMouse ? (Services.Theme.isDark ? "#252530" : "#e2e8f0") : "transparent"
+                                            border.color: Services.Theme.border; border.width: 1
+
+                                            Text {
+                                                id: kb_cancelTxt
+                                                anchors.centerIn: parent
+                                                text: "Cancel"
+                                                font.pixelSize: Services.Theme.fontSizeSm
+                                                color: Services.Theme.textSecondary
+                                            }
+
+                                            MouseArea {
+                                                id: kb_cancelMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                                                onClicked: {
+                                                    rootWindow.isAddingKeybind = false
+                                                    rootWindow.editingBindId = ""
+                                                    rootWindow.editingBindLine = -1
+                                                    rootWindow.formKeys = ""
+                                                    rootWindow.formAction = ""
+                                                    rootWindow.formDesc = ""
                                                 }
                                             }
                                         }
 
-                                        Item { Layout.fillWidth: true }
-
+                                        // Save / Apply Button
                                         Rectangle {
-                                            height: 24
-                                            implicitWidth: addFormCanTxt.implicitWidth + 14
-                                            radius: 4
-                                            color: addFormCanMouse.containsMouse ? Services.Theme.bgHover : Services.Theme.surfaceVariant
-                                            border.color: Services.Theme.border; border.width: 1
-                                            Text { id: addFormCanTxt; anchors.centerIn: parent; text: "Cancel"; font.pixelSize: 10; color: Services.Theme.textSecondary }
-                                            MouseArea {
-                                                id: addFormCanMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
-                                                onClicked: rootWindow.isAddingKeybind = false
-                                            }
-                                        }
-
-                                        Rectangle {
-                                            readonly property bool isValid: rootWindow.formKeys.trim().length > 0 && rootWindow.formAction.trim().length > 0
-                                            height: 24
-                                            implicitWidth: addFormSaveTxt.implicitWidth + 18
-                                            radius: 4
-                                            color: isValid ? (addFormSaveMouse.containsMouse ? Qt.lighter(Services.Theme.accent, 1.1) : Services.Theme.accent) : Services.Theme.bgElevated
-                                            opacity: isValid ? 1.0 : 0.5
+                                            readonly property bool isValid: (rootWindow.formKeys.trim().length > 0) && (rootWindow.formAction.trim().length > 0)
+                                            implicitHeight: 32
+                                            implicitWidth: kb_saveTxt.implicitWidth + 24
+                                            radius: 6
+                                            color: isValid ? Services.Theme.accent : (Services.Theme.isDark ? "#2a2a34" : "#cbd5e1")
+                                            opacity: isValid ? 1.0 : 0.6
 
                                             Text {
-                                                id: addFormSaveTxt
+                                                id: kb_saveTxt
                                                 anchors.centerIn: parent
-                                                text: "Save Shortcut"
-                                                font.pixelSize: 10
-                                                font.weight: Font.DemiBold
-                                                color: parent.isValid ? "#ffffff" : Services.Theme.textDisabled
+                                                text: rootWindow.editingBindLine > 0 ? "Update Keybind" : "Add Keybind"
+                                                font.pixelSize: Services.Theme.fontSizeSm
+                                                font.bold: true
+                                                color: parent.isValid ? Services.Theme.bgOnAccent : Services.Theme.textDisabled
                                             }
 
                                             MouseArea {
-                                                id: addFormSaveMouse
                                                 anchors.fill: parent
-                                                enabled: parent.isValid
                                                 cursorShape: parent.isValid ? Qt.PointingHandCursor : Qt.ArrowCursor
                                                 onClicked: {
-                                                    if (Services.Compositor && parent.isValid) {
-                                                        Services.Compositor.addKeybind(rootWindow.formKeys.trim(), rootWindow.formAction.trim(), rootWindow.formDesc)
-                                                        rootWindow.isAddingKeybind = false
+                                                    if (!parent.isValid) return
+                                                    if (Services.Compositor) {
+                                                        const opts = {
+                                                            repeat: Boolean(rootWindow.formRepeat),
+                                                            locked: Boolean(rootWindow.formLocked),
+                                                            mouse: Boolean(rootWindow.formMouse),
+                                                            nonConsuming: Boolean(rootWindow.formNonConsuming)
+                                                        }
+
+                                                        if (rootWindow.editingBindLine > 0) {
+                                                            Services.Compositor.updateKeybind(
+                                                                rootWindow.editingBindLine,
+                                                                rootWindow.formKeys.trim(),
+                                                                rootWindow.formAction.trim(),
+                                                                rootWindow.formDesc.trim(),
+                                                                rootWindow.formFile,
+                                                                opts
+                                                            )
+                                                        } else {
+                                                            Services.Compositor.addKeybind(
+                                                                rootWindow.formKeys.trim(),
+                                                                rootWindow.formAction.trim(),
+                                                                rootWindow.formDesc.trim(),
+                                                                "",
+                                                                opts
+                                                            )
+                                                        }
                                                     }
+
+                                                    rootWindow.isAddingKeybind = false
+                                                    rootWindow.editingBindId = ""
+                                                    rootWindow.editingBindLine = -1
+                                                    rootWindow.formKeys = ""
+                                                    rootWindow.formAction = ""
+                                                    rootWindow.formDesc = ""
                                                 }
                                             }
                                         }
@@ -7730,617 +8193,272 @@ FloatingWindow {
                                 }
                             }
 
-                            // ── Live Keybindings List Card ──────────────────────────
-                            SettingsSection {
-                                id: keybindsSection
-                                title: (Services.Compositor ? Services.Compositor.activeDisplayName : "Compositor") + " Keybinds  ·  " + keybindsSection.filteredBinds.length + " shortcuts"
-                                icon: Services.Icons.keyboard
+                            // ═════════════════════════════════════════════════
+                            // ── SEARCH & BEHAVIOUR FILTERS ("Kurangi Listnya") ─
+                            // ═════════════════════════════════════════════════
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: 8
 
-                                property int hoveredIndex: -1
-                                property real hoverTargetY: 0
-                                property real hoverTargetH: 48
-                                property bool isHoveringList: false
-
-                                readonly property var filteredBinds: {
-                                    const q = (rootWindow.keySearchQuery || "").toLowerCase().trim()
-                                    const cat = rootWindow.keyCategory
-                                    const list = (Services.Compositor ? Services.Compositor.keybindsList : []) || []
-                                    return list.filter(k => {
-                                        if (cat !== "all" && k.category !== cat) return false
-                                        if (q.length === 0) return true
-                                        const ks = (k.keys || "").toLowerCase()
-                                        const act = (k.action || "").toLowerCase()
-                                        const title = tab6.getHumanActionTitle(k.action).toLowerCase()
-                                        return ks.includes(q) || act.includes(q) || title.includes(q)
-                                    })
-                                }
-
-                                // Empty State Card
-                                Rectangle {
-                                    visible: keybindsSection.filteredBinds.length === 0
+                                // Row 1: Search Bar + Behaviour Filter Pills
+                                RowLayout {
                                     Layout.fillWidth: true
-                                    implicitHeight: 140
-                                    color: "transparent"
+                                    spacing: 8
 
-                                    ColumnLayout {
-                                        anchors.centerIn: parent
-                                        spacing: 8
-                                        Text {
-                                            Layout.alignment: Qt.AlignHCenter
-                                            text: Services.Icons.search || "󰍉"
-                                            font.family: Services.Theme.fontSymbols; font.pixelSize: 26; color: Services.Theme.textDisabled
+                                    // Search Bar
+                                    Rectangle {
+                                        Layout.fillWidth: true
+                                        height: 36
+                                        radius: 8
+                                        color: Services.Theme.isDark ? "#1a1a20" : "#ffffff"
+                                        border.color: kb_searchInput.activeFocus ? Services.Theme.accent : (Services.Theme.isDark ? "#282834" : "#e2e8f0")
+                                        border.width: 1
+
+                                        RowLayout {
+                                            anchors.fill: parent
+                                            anchors.leftMargin: 10
+                                            anchors.rightMargin: 10
+                                            spacing: 8
+
+                                            Text {
+                                                text: "󰍉"
+                                                font.family: Services.Theme.fontSymbols
+                                                font.pixelSize: 13
+                                                color: Services.Theme.textSecondary
+                                            }
+
+                                            TextInput {
+                                                id: kb_searchInput
+                                                Layout.fillWidth: true
+                                                text: rootWindow.keySearchQuery
+                                                font.pixelSize: Services.Theme.fontSizeSm
+                                                color: Services.Theme.textPrimary
+                                                selectByMouse: true
+                                                onTextChanged: {
+                                                    rootWindow.keySearchQuery = text
+                                                    tab6.currentPage = 0
+                                                }
+
+                                                Text {
+                                                    anchors.fill: parent
+                                                    text: "Search shortcut, command, or action..."
+                                                    font.pixelSize: Services.Theme.fontSizeSm
+                                                    color: Services.Theme.textSecondary
+                                                    visible: parent.text.length === 0
+                                                    verticalAlignment: Text.AlignVCenter
+                                                }
+                                            }
+
+                                            Text {
+                                                visible: rootWindow.keySearchQuery.length > 0
+                                                text: "✕"
+                                                font.pixelSize: 11
+                                                color: Services.Theme.textSecondary
+                                                MouseArea {
+                                                    anchors.fill: parent
+                                                    cursorShape: Qt.PointingHandCursor
+                                                    onClicked: {
+                                                        rootWindow.keySearchQuery = ""
+                                                        tab6.currentPage = 0
+                                                    }
+                                                }
+                                            }
                                         }
-                                        Text {
-                                            Layout.alignment: Qt.AlignHCenter
-                                            text: "No shortcuts match your search"
-                                            font.pixelSize: 12; font.weight: Font.Medium; color: Services.Theme.textSecondary
-                                        }
-                                        Rectangle {
-                                            Layout.alignment: Qt.AlignHCenter
-                                            height: 24; implicitWidth: resetFilterTxt.implicitWidth + 14; radius: 4
-                                            color: resetFilterMouse.containsMouse ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.15) : Services.Theme.surfaceVariant
-                                            border.color: Services.Theme.border; border.width: 1
-                                            Text { id: resetFilterTxt; anchors.centerIn: parent; text: "Reset Filters"; font.pixelSize: 10; color: Services.Theme.accent }
-                                            MouseArea {
-                                                id: resetFilterMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
-                                                onClicked: {
-                                                    rootWindow.keySearchQuery = ""
-                                                    rootWindow.keyCategory = "all"
+                                    }
+
+                                    // Behaviour Filter Chips: All, Repeat, Locked, Mouse
+                                    RowLayout {
+                                        spacing: 4
+
+                                        Repeater {
+                                            model: [
+                                                { id: "all",    label: "All",    icon: "󰌌", count: tab6.totalBindsCount },
+                                                { id: "repeat", label: "Repeat", icon: "󰑖", count: tab6.repeatBindsCount },
+                                                { id: "locked", label: "Locked", icon: "󰌾", count: tab6.lockedBindsCount },
+                                                { id: "mouse",  label: "Mouse",  icon: "󰍽", count: tab6.mouseBindsCount }
+                                            ]
+                                            delegate: Rectangle {
+                                                readonly property bool isSelected: rootWindow.keyBehaviourFilter === modelData.id
+                                                implicitHeight: 36
+                                                implicitWidth: kb_behChipRow.implicitWidth + 16
+                                                radius: 8
+                                                color: isSelected ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.15) : (kb_behChipMouse.containsMouse ? (Services.Theme.isDark ? "#252530" : "#e5e7eb") : (Services.Theme.isDark ? "#1a1a20" : "#ffffff"))
+                                                border.color: isSelected ? Services.Theme.accent : (Services.Theme.isDark ? "#282834" : "#e2e8f0")
+                                                border.width: isSelected ? 1.5 : 1
+
+                                                RowLayout {
+                                                    id: kb_behChipRow
+                                                    anchors.centerIn: parent
+                                                    spacing: 5
+
+                                                    Text {
+                                                        text: modelData.icon
+                                                        font.family: Services.Theme.fontSymbols
+                                                        font.pixelSize: 11
+                                                        color: isSelected ? Services.Theme.accent : Services.Theme.textSecondary
+                                                    }
+
+                                                    Text {
+                                                        text: modelData.label
+                                                        font.pixelSize: Services.Theme.fontSizeXs
+                                                        font.weight: isSelected ? Font.Bold : Font.Normal
+                                                        color: isSelected ? Services.Theme.textPrimary : Services.Theme.textSecondary
+                                                    }
+
+                                                    Text {
+                                                        text: String(modelData.count)
+                                                        font.pixelSize: 9
+                                                        font.bold: true
+                                                        color: isSelected ? Services.Theme.accent : Services.Theme.textSecondary
+                                                    }
+                                                }
+
+                                                MouseArea {
+                                                    id: kb_behChipMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                                                    onClicked: {
+                                                        rootWindow.keyBehaviourFilter = modelData.id
+                                                        tab6.currentPage = 0
+                                                    }
                                                 }
                                             }
                                         }
                                     }
                                 }
 
-                                // ── Inset Grouped Table with Magnetic Gliding Hover Highlight ──
-                                Item {
-                                    id: bindsTableWrapper
-                                    visible: keybindsSection.filteredBinds.length > 0
+                                // Row 2: Category Segment Switcher Bar (Unified with Tab 5 subtabs, without icons)
+                                Rectangle {
+                                    id: kbCategoryTabBar
                                     Layout.fillWidth: true
-                                    implicitHeight: bindsColLayout.implicitHeight
+                                    height: 38
+                                    radius: 8
+                                    color: Services.Theme.surfaceVariant
+                                    border.color: Services.Theme.border
+                                    border.width: 1
+                                    clip: true
 
-                                    // Smooth Magnetic Gliding Hover Highlight Pill
+                                    // Liquid Glass Sliding Indicator Pill
                                     Rectangle {
-                                        id: keybindGlidingHover
-                                        z: 0
-                                        anchors.left: parent.left
-                                        anchors.right: parent.right
-                                        anchors.margins: 2
-                                        y: keybindsSection.hoverTargetY
-                                        height: keybindsSection.hoverTargetH
-                                        radius: 8
+                                        id: kbCatPill
+                                        z: 1
+                                        y: 3
+                                        height: parent.height - 6
+                                        radius: 6
 
-                                        color: Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.055) : Qt.rgba(0, 0, 0, 0.04)
-                                        border.color: Services.Theme.isDark ? Qt.rgba(255, 255, 255, 0.08) : Qt.rgba(0, 0, 0, 0.06)
+                                        readonly property var catKeys: ["all", "quickshell", "window", "apps", "media", "system", "custom"]
+                                        readonly property int activeIdx: {
+                                            const idx = catKeys.indexOf(rootWindow.keyCategory)
+                                            return idx >= 0 ? idx : 0
+                                        }
+                                        readonly property int tabCount: 7
+                                        readonly property real itemWidth: Math.max(0, (kbCategoryTabBar.width - 6 - (tabCount - 1) * 3) / tabCount)
+
+                                        x: 3 + activeIdx * (itemWidth + 3)
+                                        width: itemWidth
+
+                                        // Liquid Transparent Glass Material
+                                        color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.22)
+                                        border.color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.55)
                                         border.width: 1
 
-                                        // Top Specular Highlight Line
+                                        // Top Specular Glass Highlight Line
                                         Rectangle {
                                             anchors.top: parent.top
                                             anchors.left: parent.left
                                             anchors.right: parent.right
-                                            anchors.margins: 2
+                                            anchors.topMargin: 1
+                                            anchors.leftMargin: 4
+                                            anchors.rightMargin: 4
                                             height: 1
                                             radius: 0.5
-                                            color: Qt.rgba(1, 1, 1, Services.Theme.isDark ? 0.14 : 0.4)
+                                            color: Qt.rgba(1, 1, 1, 0.40)
                                         }
 
-                                        opacity: (keybindsSection.isHoveringList && keybindsSection.hoveredIndex >= 0) ? 1.0 : 0.0
-                                        visible: opacity > 0
+                                        // Liquid Gloss Curved Sheen
+                                        Rectangle {
+                                            anchors.top: parent.top
+                                            anchors.left: parent.left
+                                            anchors.right: parent.right
+                                            anchors.topMargin: 1
+                                            anchors.leftMargin: 2
+                                            anchors.rightMargin: 2
+                                            height: parent.height * 0.46
+                                            radius: 5
+                                            gradient: Gradient {
+                                                GradientStop { position: 0.0; color: Qt.rgba(1, 1, 1, 0.16) }
+                                                GradientStop { position: 1.0; color: Qt.rgba(1, 1, 1, 0.0) }
+                                            }
+                                        }
 
-                                        Behavior on y {
-                                            NumberAnimation { duration: 160; easing.type: Easing.OutCubic }
+                                        // Fluid Sliding Transitions
+                                        Behavior on x {
+                                            NumberAnimation {
+                                                duration: 260
+                                                easing.type: Easing.OutBack
+                                                easing.overshoot: 1.15
+                                            }
                                         }
-                                        Behavior on height {
-                                            NumberAnimation { duration: 160; easing.type: Easing.OutCubic }
+                                        Behavior on width {
+                                            NumberAnimation {
+                                                duration: 260
+                                                easing.type: Easing.OutBack
+                                                easing.overshoot: 1.15
+                                            }
                                         }
-                                        Behavior on opacity {
-                                            NumberAnimation { duration: 140; easing.type: Easing.OutQuad }
-                                        }
+                                        Behavior on color { ColorAnimation { duration: 200 } }
+                                        Behavior on border.color { ColorAnimation { duration: 200 } }
                                     }
 
-                                    // Container Area to catch list hover exit
-                                    MouseArea {
+                                    RowLayout {
                                         anchors.fill: parent
-                                        z: 0
-                                        hoverEnabled: true
-                                        acceptedButtons: Qt.NoButton
-                                        onExited: {
-                                            keybindsSection.isHoveringList = false
-                                            keybindsSection.hoveredIndex = -1
-                                        }
-                                    }
-
-                                    ColumnLayout {
-                                        id: bindsColLayout
-                                        anchors.left: parent.left
-                                        anchors.right: parent.right
-                                        anchors.top: parent.top
-                                        spacing: 0
-                                        z: 1
+                                        anchors.margins: 3
+                                        spacing: 3
+                                        z: 2
 
                                         Repeater {
-                                            model: keybindsSection.filteredBinds
+                                            model: [
+                                                { id: "all",        label: "All" },
+                                                { id: "quickshell", label: "Quickshell" },
+                                                { id: "window",     label: "Window" },
+                                                { id: "apps",       label: "Apps" },
+                                                { id: "media",      label: "Media" },
+                                                { id: "system",     label: "System" },
+                                                { id: "custom",     label: "Custom" }
+                                            ]
 
-                                            delegate: ColumnLayout {
-                                                id: bindItemRoot
-                                                required property var modelData
-                                                required property int index
+                                            delegate: Item {
                                                 Layout.fillWidth: true
-                                                spacing: 0
+                                                Layout.fillHeight: true
 
-                                                readonly property bool isEditingThis: rootWindow.editingBindId === (modelData.id || modelData.startLine)
-                                                property bool isConfirmingDelete: false
-                                                property bool justCopied: false
+                                                readonly property bool isCur: rootWindow.keyCategory === modelData.id
 
-                                                Timer {
-                                                    id: copyFeedbackTimer
-                                                    interval: 1400
-                                                    onTriggered: bindItemRoot.justCopied = false
-                                                }
-
-                                                function getCategoryIcon(cat) {
-                                                    switch (cat) {
-                                                        case "quickshell": return Services.Icons.sparkle || "󰀉";
-                                                        case "nav": return Services.Icons.layout || "󰕰";
-                                                        case "apps": return Services.Icons.terminal || "󰞷";
-                                                        case "screenshot": return Services.Icons.camera || "󰄀";
-                                                        case "media": return Services.Icons.music || "󰎈";
-                                                        default: return Services.Icons.keyboard || "󰌌";
-                                                    }
-                                                }
-
-                                                function getCategoryColor(cat) {
-                                                    switch (cat) {
-                                                        case "quickshell": return "#c084fc";
-                                                        case "nav": return "#38bdf8";
-                                                        case "apps": return "#34d399";
-                                                        case "screenshot": return "#fbbf24";
-                                                        case "media": return "#f472b6";
-                                                        default: return Services.Theme.accent;
-                                                    }
-                                                }
-
-                                                // Subtle Divider Line Between Inset Rows
+                                                // Hover effect for unselected tabs
                                                 Rectangle {
-                                                    visible: bindItemRoot.index > 0 && !bindItemRoot.isEditingThis
-                                                    Layout.fillWidth: true
-                                                    height: 1
-                                                    color: Services.Theme.isDark ? "#242430" : "#e8eaf0"
-                                                    Layout.leftMargin: 48
-                                                    Layout.rightMargin: 8
-                                                    opacity: (keybindsSection.hoveredIndex === bindItemRoot.index || keybindsSection.hoveredIndex === (bindItemRoot.index - 1)) ? 0.2 : 1.0
-                                                    Behavior on opacity { NumberAnimation { duration: 120 } }
+                                                    anchors.fill: parent
+                                                    radius: 5
+                                                    color: subMouse.containsMouse && !isCur ? Qt.rgba(1, 1, 1, 0.05) : "transparent"
+                                                    Behavior on color { ColorAnimation { duration: 150 } }
                                                 }
 
-                                                // ── Interactive Inset Row Container ──
-                                                Rectangle {
-                                                    Layout.fillWidth: true
-                                                    implicitHeight: bindItemRoot.isEditingThis ? (editCardCol.implicitHeight + 20) : 46
-                                                    radius: 8
-                                                    color: bindItemRoot.isEditingThis
-                                                        ? (Services.Theme.isDark ? "#14141c" : "#f1f5f9")
-                                                        : "transparent"
+                                                Text {
+                                                    anchors.centerIn: parent
+                                                    width: Math.min(parent.width - 6, implicitWidth)
+                                                    text: modelData.label
+                                                    font.pixelSize: 11
+                                                    font.weight: isCur ? Font.DemiBold : Font.Normal
+                                                    color: isCur ? Services.Theme.textPrimary : (subMouse.containsMouse ? Services.Theme.textPrimary : Services.Theme.textSecondary)
+                                                    horizontalAlignment: Text.AlignHCenter
+                                                    elide: Text.ElideRight
+                                                    Behavior on color { ColorAnimation { duration: 200 } }
+                                                }
 
-                                                    MouseArea {
-                                                        id: itemMouse
-                                                        anchors.fill: parent
-                                                        hoverEnabled: true
-                                                        acceptedButtons: Qt.NoButton
-                                                        onEntered: {
-                                                            keybindsSection.hoverTargetY = bindItemRoot.y
-                                                            keybindsSection.hoverTargetH = bindItemRoot.height
-                                                            keybindsSection.hoveredIndex = bindItemRoot.index
-                                                            keybindsSection.isHoveringList = true
-                                                        }
-                                                    }
-
-                                                    // ── Regular Display Row ──
-                                                    RowLayout {
-                                                        visible: !bindItemRoot.isEditingThis
-                                                        anchors.fill: parent
-                                                        anchors.leftMargin: 8
-                                                        anchors.rightMargin: 8
-                                                        spacing: 10
-
-                                                        // Category Squircle Icon Badge with Glow
-                                                        Rectangle {
-                                                            readonly property color catColor: bindItemRoot.getCategoryColor(bindItemRoot.modelData.category)
-                                                            width: 30; height: 30; radius: 7
-                                                            color: Qt.rgba(catColor.r, catColor.g, catColor.b, 0.16)
-                                                            border.color: Qt.rgba(catColor.r, catColor.g, catColor.b, 0.35)
-                                                            border.width: 1
-
-                                                            // Inner specular shine
-                                                            Rectangle {
-                                                                anchors.top: parent.top; anchors.left: parent.left; anchors.right: parent.right
-                                                                anchors.margins: 1; height: 1; radius: 0.5
-                                                                color: Qt.rgba(1, 1, 1, 0.30)
-                                                            }
-
-                                                            Text {
-                                                                anchors.centerIn: parent
-                                                                text: bindItemRoot.getCategoryIcon(bindItemRoot.modelData.category)
-                                                                font.family: Services.Theme.fontSymbols
-                                                                font.pixelSize: 13
-                                                                color: parent.catColor
-                                                            }
-                                                        }
-
-                                                        // Action Title & Subtitle Info
-                                                        ColumnLayout {
-                                                            spacing: 2
-                                                            Layout.fillWidth: true
-                                                            Layout.minimumWidth: 0
-                                                            Layout.alignment: Qt.AlignVCenter
-
-                                                            Text {
-                                                                Layout.fillWidth: true
-                                                                Layout.minimumWidth: 0
-                                                                text: tab6.getHumanActionTitle(bindItemRoot.modelData.action)
-                                                                font.pixelSize: 12
-                                                                font.weight: Font.Medium
-                                                                color: Services.Theme.textPrimary
-                                                                elide: Text.ElideRight
-                                                            }
-
-                                                            Text {
-                                                                Layout.fillWidth: true
-                                                                Layout.minimumWidth: 0
-                                                                text: (bindItemRoot.modelData.action || "No action") + "  ·  " + (bindItemRoot.modelData.fileName ? bindItemRoot.modelData.fileName + ":" + bindItemRoot.modelData.startLine : "line " + bindItemRoot.modelData.startLine)
-                                                                font.family: Services.Theme.fontMono
-                                                                font.pixelSize: 9
-                                                                color: Services.Theme.textDisabled
-                                                                elide: Text.ElideRight
-                                                            }
-                                                        }
-
-                                                        Item { Layout.fillWidth: true }
-
-                                                        // Category Badge Tag with Dot
-                                                        Rectangle {
-                                                            readonly property color catColor: bindItemRoot.getCategoryColor(bindItemRoot.modelData.category)
-                                                            height: 18
-                                                            implicitWidth: cBadgeRow.implicitWidth + 10
-                                                            radius: 4
-                                                            color: Qt.rgba(catColor.r, catColor.g, catColor.b, 0.12)
-                                                            border.color: Qt.rgba(catColor.r, catColor.g, catColor.b, 0.28)
-                                                            border.width: 1
-
-                                                            RowLayout {
-                                                                id: cBadgeRow
-                                                                anchors.centerIn: parent
-                                                                spacing: 4
-
-                                                                Rectangle {
-                                                                    width: 4.5; height: 4.5; radius: 2.25
-                                                                    color: parent.parent.catColor
-                                                                }
-
-                                                                Text {
-                                                                    text: (bindItemRoot.modelData.category || "custom").toUpperCase()
-                                                                    font.pixelSize: 8
-                                                                    font.weight: Font.Bold
-                                                                    color: parent.parent.catColor
-                                                                }
-                                                            }
-                                                        }
-
-                                                        // 3D Clean Keycaps (Physical KBD)
-                                                        RowLayout {
-                                                            spacing: 3
-                                                            Layout.alignment: Qt.AlignVCenter
-                                                            scale: itemMouse.containsMouse ? 1.02 : 1.0
-                                                            Behavior on scale { NumberAnimation { duration: 120 } }
-
-                                                            Repeater {
-                                                                id: keyTokenRep
-                                                                model: bindItemRoot.modelData.keyTokens || [bindItemRoot.modelData.keys]
-                                                                delegate: RowLayout {
-                                                                    id: tokenDelegate
-                                                                    required property string modelData
-                                                                    required property int index
-                                                                    spacing: 3
-
-                                                                    readonly property bool isMod: (tokenDelegate.modelData.toUpperCase() === "SUPER" || tokenDelegate.modelData.toUpperCase() === "CTRL" || tokenDelegate.modelData.toUpperCase() === "ALT" || tokenDelegate.modelData.toUpperCase() === "SHIFT")
-
-                                                                    Rectangle {
-                                                                        height: 23
-                                                                        implicitWidth: Math.max(23, kbTxt.implicitWidth + 12)
-                                                                        radius: 4
-                                                                        color: tokenDelegate.isMod
-                                                                            ? (Services.Theme.isDark ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.20) : Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.14))
-                                                                            : (Services.Theme.isDark ? "#282836" : "#e5e7eb")
-                                                                        border.color: tokenDelegate.isMod 
-                                                                            ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.50) 
-                                                                            : (Services.Theme.isDark ? "#383848" : "#cbd5e1")
-                                                                        border.width: 1
-
-                                                                        // Top Specular Highlight
-                                                                        Rectangle {
-                                                                            anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top
-                                                                            anchors.margins: 1; height: 1; radius: 0.5
-                                                                            color: tokenDelegate.isMod ? Qt.rgba(1, 1, 1, 0.28) : Qt.rgba(1, 1, 1, 0.16)
-                                                                        }
-
-                                                                        Text {
-                                                                            id: kbTxt
-                                                                            anchors.centerIn: parent
-                                                                            text: tokenDelegate.modelData
-                                                                            font.family: Services.Theme.fontMono
-                                                                            font.pixelSize: 9
-                                                                            font.weight: Font.DemiBold
-                                                                            color: tokenDelegate.isMod ? Services.Theme.accent : Services.Theme.textPrimary
-                                                                        }
-                                                                    }
-
-                                                                    Text {
-                                                                        visible: tokenDelegate.index < (keyTokenRep.count - 1)
-                                                                        text: "+"
-                                                                        font.pixelSize: 9
-                                                                        font.bold: true
-                                                                        color: Services.Theme.textDisabled
-                                                                    }
-                                                                }
-                                                            }
-                                                        }
-
-                                                        // Quick Actions Group: Copy, Record/Edit, Delete (Subtle Fade-in + Bounce)
-                                                        RowLayout {
-                                                            spacing: 2
-                                                            opacity: itemMouse.containsMouse || bindItemRoot.isConfirmingDelete ? 1.0 : 0.20
-                                                            Behavior on opacity { NumberAnimation { duration: 120 } }
-
-                                                            // Copy Action
-                                                            Rectangle {
-                                                                id: cpBtnBox
-                                                                width: 25; height: 25; radius: 5
-                                                                scale: cpMouse.containsMouse ? 1.14 : 1.0
-                                                                Behavior on scale { NumberAnimation { duration: 120; easing.type: Easing.OutBack } }
-
-                                                                color: bindItemRoot.justCopied
-                                                                    ? Qt.rgba(0.15, 0.8, 0.35, 0.25)
-                                                                    : (cpMouse.containsMouse ? Qt.rgba(1, 1, 1, 0.08) : "transparent")
-                                                                border.color: bindItemRoot.justCopied ? (Services.Theme.success || "#10b981") : "transparent"
-                                                                border.width: 1
-
-                                                                Text {
-                                                                    anchors.centerIn: parent
-                                                                    text: bindItemRoot.justCopied ? (Services.Icons.check || "✓") : (Services.Icons.clipboard || "󰅌")
-                                                                    font.family: Services.Theme.fontSymbols
-                                                                    font.pixelSize: 11
-                                                                    color: bindItemRoot.justCopied ? (Services.Theme.success || "#10b981") : (cpMouse.containsMouse ? Services.Theme.accent : Services.Theme.textSecondary)
-                                                                }
-                                                                MouseArea {
-                                                                    id: cpMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
-                                                                    onClicked: {
-                                                                        if (Services.Clipboard) {
-                                                                            Services.Clipboard.copyText(bindItemRoot.modelData.action)
-                                                                            bindItemRoot.justCopied = true
-                                                                            copyFeedbackTimer.restart()
-                                                                        }
-                                                                    }
-                                                                }
-                                                            }
-
-                                                            // Record / Edit Button
-                                                            Rectangle {
-                                                                id: edBtnBox
-                                                                width: 25; height: 25; radius: 5
-                                                                scale: edMouse.containsMouse ? 1.14 : 1.0
-                                                                Behavior on scale { NumberAnimation { duration: 120; easing.type: Easing.OutBack } }
-
-                                                                color: edMouse.containsMouse ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.22) : "transparent"
-                                                                border.color: edMouse.containsMouse ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.45) : "transparent"
-                                                                border.width: 1
-
-                                                                Text {
-                                                                    anchors.centerIn: parent
-                                                                    text: Services.Icons.sliders || "✎"
-                                                                    font.family: Services.Theme.fontSymbols
-                                                                    font.pixelSize: 11
-                                                                    color: edMouse.containsMouse ? Services.Theme.accent : Services.Theme.textSecondary
-                                                                }
-                                                                MouseArea {
-                                                                    id: edMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
-                                                                    onClicked: {
-                                                                        rootWindow.editingBindId = (bindItemRoot.modelData.id || bindItemRoot.modelData.startLine)
-                                                                        rootWindow.editingBindLine = bindItemRoot.modelData.startLine
-                                                                        rootWindow.formKeys = bindItemRoot.modelData.keys
-                                                                        rootWindow.formAction = bindItemRoot.modelData.action
-                                                                        bindItemRoot.isConfirmingDelete = false
-                                                                    }
-                                                                }
-                                                            }
-
-                                                            // Delete with Confirmation
-                                                            Item {
-                                                                width: bindItemRoot.isConfirmingDelete ? confirmDelRow.implicitWidth : 25
-                                                                height: 25
-
-                                                                // Regular Delete Trash Icon
-                                                                Rectangle {
-                                                                    visible: !bindItemRoot.isConfirmingDelete
-                                                                    anchors.fill: parent; radius: 5
-                                                                    scale: delMouse.containsMouse ? 1.14 : 1.0
-                                                                    Behavior on scale { NumberAnimation { duration: 120; easing.type: Easing.OutBack } }
-
-                                                                    color: delMouse.containsMouse ? Qt.rgba(0.9, 0.2, 0.2, 0.18) : "transparent"
-                                                                    border.color: delMouse.containsMouse ? Qt.rgba(0.9, 0.2, 0.2, 0.45) : "transparent"
-                                                                    border.width: 1
-
-                                                                    Text {
-                                                                        anchors.centerIn: parent
-                                                                        text: Services.Icons.trash || "󰩹"
-                                                                        font.family: Services.Theme.fontSymbols
-                                                                        font.pixelSize: 11
-                                                                        color: delMouse.containsMouse ? (Services.Theme.danger || "#ef4444") : Services.Theme.textDisabled
-                                                                    }
-                                                                    MouseArea {
-                                                                        id: delMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
-                                                                        onClicked: bindItemRoot.isConfirmingDelete = true
-                                                                    }
-                                                                }
-
-                                                                // Confirmation Buttons (Delete? Yes / No)
-                                                                RowLayout {
-                                                                    id: confirmDelRow
-                                                                    visible: bindItemRoot.isConfirmingDelete
-                                                                    anchors.verticalCenter: parent.verticalCenter
-                                                                    spacing: 3
-
-                                                                    Rectangle {
-                                                                        height: 23; implicitWidth: 44; radius: 4
-                                                                        color: Services.Theme.danger || "#ef4444"
-                                                                        Text { anchors.centerIn: parent; text: "Delete"; font.pixelSize: 9; font.bold: true; color: "#ffffff" }
-                                                                        MouseArea {
-                                                                            anchors.fill: parent; cursorShape: Qt.PointingHandCursor
-                                                                            onClicked: {
-                                                                                if (Services.Compositor) Services.Compositor.deleteKeybind(bindItemRoot.modelData.startLine, bindItemRoot.modelData.file)
-                                                                                bindItemRoot.isConfirmingDelete = false
-                                                                            }
-                                                                        }
-                                                                    }
-
-                                                                    Rectangle {
-                                                                        height: 23; implicitWidth: 23; radius: 4
-                                                                        color: Services.Theme.surfaceVariant
-                                                                        border.color: Services.Theme.border; border.width: 1
-                                                                        Text { anchors.centerIn: parent; text: "✕"; font.pixelSize: 9; color: Services.Theme.textSecondary }
-                                                                        MouseArea {
-                                                                            anchors.fill: parent; cursorShape: Qt.PointingHandCursor
-                                                                            onClicked: bindItemRoot.isConfirmingDelete = false
-                                                                        }
-                                                                    }
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-
-                                                    // ── Inline Shortcut Editor / Key Recorder Card (Spacious 2-Row Design) ──
-                                                    ColumnLayout {
-                                                        id: editCardCol
-                                                        visible: bindItemRoot.isEditingThis
-                                                        anchors.fill: parent
-                                                        anchors.margins: 12
-                                                        spacing: 10
-
-                                                        RowLayout {
-                                                            Layout.fillWidth: true
-                                                            spacing: 6
-                                                            Text { text: "Edit Shortcut  ·  " + (bindItemRoot.modelData.fileName ? bindItemRoot.modelData.fileName + " : Line " : "Line ") + bindItemRoot.modelData.startLine; font.pixelSize: 11; font.weight: Font.Bold; color: Services.Theme.accent }
-                                                            Item { Layout.fillWidth: true }
-                                                        }
-
-                                                        // Row 1: Action Command Input + Key Recorder
-                                                        RowLayout {
-                                                            Layout.fillWidth: true
-                                                            spacing: 8
-
-                                                            // Action Command TextField
-                                                            Rectangle {
-                                                                Layout.fillWidth: true
-                                                                Layout.minimumWidth: 180
-                                                                height: 32
-                                                                radius: 5
-                                                                color: Services.Theme.surfaceVariant
-                                                                border.color: edActionInput.activeFocus ? Services.Theme.accent : Services.Theme.border
-                                                                border.width: 1
-
-                                                                TextField {
-                                                                    id: edActionInput
-                                                                    anchors.fill: parent
-                                                                    anchors.margins: 4
-                                                                    anchors.leftMargin: 8
-                                                                    text: rootWindow.formAction
-                                                                    onTextChanged: rootWindow.formAction = text
-                                                                    font.family: Services.Theme.fontMono
-                                                                    font.pixelSize: 10
-                                                                    color: Services.Theme.textPrimary
-                                                                    placeholderText: "Action command..."
-                                                                    placeholderTextColor: Services.Theme.textDisabled
-                                                                    background: null
-                                                                    selectByMouse: true
-                                                                }
-                                                            }
-
-                                                            // Key Recorder in Inline Mode
-                                                            KeyRecorder {
-                                                                Layout.preferredWidth: 230
-                                                                Layout.fillWidth: false
-                                                                height: 32
-                                                                compact: true
-                                                                value: rootWindow.formKeys
-                                                                placeholder: "Click to record..."
-                                                                onRecorded: (k) => { rootWindow.formKeys = k }
-                                                                onCleared: { rootWindow.formKeys = "" }
-                                                            }
-                                                        }
-
-                                                        // Row 2: Quick Modifiers Chips + Save / Cancel Buttons
-                                                        RowLayout {
-                                                            Layout.fillWidth: true
-                                                            spacing: 6
-
-                                                            Text { text: "Quick Keys:"; font.pixelSize: 8; color: Services.Theme.textDisabled }
-
-                                                            Repeater {
-                                                                model: ["SUPER", "SHIFT", "CTRL", "ALT", "Return", "Space"]
-                                                                delegate: Rectangle {
-                                                                    height: 20
-                                                                    implicitWidth: qModTxt.implicitWidth + 8
-                                                                    radius: 3
-                                                                    color: qModMouse.containsMouse ? Services.Theme.bgHover : Services.Theme.surfaceVariant
-                                                                    border.color: Services.Theme.border; border.width: 1
-                                                                    Text { id: qModTxt; anchors.centerIn: parent; text: modelData; font.family: Services.Theme.fontMono; font.pixelSize: 8; color: Services.Theme.textSecondary }
-                                                                    MouseArea {
-                                                                        id: qModMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
-                                                                        onClicked: {
-                                                                            if (rootWindow.formKeys.length > 0) rootWindow.formKeys += " + " + modelData
-                                                                            else rootWindow.formKeys = modelData
-                                                                        }
-                                                                    }
-                                                                }
-                                                            }
-
-                                                            Item { Layout.fillWidth: true }
-
-                                                            // Cancel Edit Button
-                                                            Rectangle {
-                                                                height: 28
-                                                                implicitWidth: cnEdTxt.implicitWidth + 14
-                                                                radius: 6
-                                                                color: Services.Theme.surfaceVariant
-                                                                border.color: Services.Theme.border; border.width: 1
-                                                                Text { id: cnEdTxt; anchors.centerIn: parent; text: "Cancel"; font.pixelSize: 10; color: Services.Theme.textSecondary }
-                                                                MouseArea {
-                                                                    anchors.fill: parent; cursorShape: Qt.PointingHandCursor
-                                                                    onClicked: {
-                                                                        rootWindow.editingBindId = ""
-                                                                        rootWindow.editingBindLine = -1
-                                                                    }
-                                                                }
-                                                            }
-
-                                                            // Save Edit Button
-                                                            Rectangle {
-                                                                height: 28
-                                                                implicitWidth: svEdTxt.implicitWidth + 18
-                                                                radius: 6
-                                                                color: Services.Theme.accent
-                                                                Text { id: svEdTxt; anchors.centerIn: parent; text: "Save Changes"; font.pixelSize: 10; font.weight: Font.DemiBold; color: "#ffffff" }
-                                                                MouseArea {
-                                                                    anchors.fill: parent; cursorShape: Qt.PointingHandCursor
-                                                                    onClicked: {
-                                                                        if (Services.Compositor && rootWindow.formKeys && rootWindow.formAction) {
-                                                                            Services.Compositor.updateKeybind(bindItemRoot.modelData.startLine, rootWindow.formKeys.trim(), rootWindow.formAction.trim(), "", bindItemRoot.modelData.file)
-                                                                            rootWindow.editingBindId = ""
-                                                                            rootWindow.editingBindLine = -1
-                                                                        }
-                                                                    }
-                                                                }
-                                                            }
-                                                        }
+                                                MouseArea {
+                                                    id: subMouse
+                                                    anchors.fill: parent
+                                                    hoverEnabled: true
+                                                    cursorShape: Qt.PointingHandCursor
+                                                    onClicked: {
+                                                        rootWindow.keyCategory = modelData.id
+                                                        tab6.currentPage = 0
                                                     }
                                                 }
                                             }
@@ -8348,7 +8466,383 @@ FloatingWindow {
                                     }
                                 }
                             }
-                    }
+
+                            // ═════════════════════════════════════════════════
+                            // ── THE KEYBINDINGS LIST (Clean Flat Cards, No 3D) ─
+                            // ═════════════════════════════════════════════════
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: 6
+
+                                // Empty State
+                                Rectangle {
+                                    visible: tab6.filteredBinds.length === 0
+                                    Layout.fillWidth: true
+                                    implicitHeight: 120
+                                    radius: 10
+                                    color: Services.Theme.isDark ? "#18181f" : "#f9fafb"
+                                    border.color: Services.Theme.isDark ? "#24242e" : "#e5e7eb"
+                                    border.width: 1
+
+                                    ColumnLayout {
+                                        anchors.centerIn: parent
+                                        spacing: 6
+                                        Text {
+                                            Layout.alignment: Qt.AlignHCenter
+                                            text: "󰌌"
+                                            font.family: Services.Theme.fontSymbols
+                                            font.pixelSize: 24
+                                            color: Services.Theme.textSecondary
+                                        }
+                                        Text {
+                                            Layout.alignment: Qt.AlignHCenter
+                                            text: "No keybindings matched your filter or search"
+                                            font.pixelSize: Services.Theme.fontSizeSm
+                                            color: Services.Theme.textSecondary
+                                        }
+                                    }
+                                }
+
+                                // Keybind Items Repeater (Paginated)
+                                Repeater {
+                                    model: tab6.pagedBinds
+                                    delegate: Rectangle {
+                                        id: kb_bindItemRoot
+                                        Layout.fillWidth: true
+                                        implicitHeight: 52
+                                        radius: 8
+                                        color: kb_bindMouse.containsMouse ? (Services.Theme.isDark ? "#202028" : "#f8fafc") : (Services.Theme.isDark ? "#17171d" : "#ffffff")
+                                        border.color: (rootWindow.editingBindLine > 0 && rootWindow.editingBindLine === modelData.startLine)
+                                            ? Services.Theme.accent
+                                            : (Services.Theme.isDark ? "#252530" : "#e2e8f0")
+                                        border.width: 1
+
+                                        RowLayout {
+                                            anchors.fill: parent
+                                            anchors.leftMargin: 12
+                                            anchors.rightMargin: 12
+                                            spacing: 12
+
+                                            // 1. Flat Keycaps (Simple, NO 3D)
+                                            RowLayout {
+                                                spacing: 4
+                                                Layout.minimumWidth: 150
+                                                Layout.preferredWidth: 180
+
+                                                readonly property var tokens: (modelData.keys || "").split("+").map(s => s.trim()).filter(s => s.length > 0)
+
+                                                Repeater {
+                                                    model: parent.tokens
+                                                    delegate: RowLayout {
+                                                        spacing: 4
+                                                        Rectangle {
+                                                            implicitHeight: 24
+                                                            implicitWidth: kb_keyCapTxt.implicitWidth + 12
+                                                            radius: 5
+                                                            color: Services.Theme.isDark ? "#252530" : "#f1f5f9"
+                                                            border.color: Services.Theme.isDark ? "#363644" : "#cbd5e1"
+                                                            border.width: 1
+
+                                                            Text {
+                                                                id: kb_keyCapTxt
+                                                                anchors.centerIn: parent
+                                                                text: modelData
+                                                                font.pixelSize: 10
+                                                                font.weight: Font.DemiBold
+                                                                color: Services.Theme.textPrimary
+                                                            }
+                                                        }
+
+                                                        Text {
+                                                            visible: index < (parent.parent.tokens.length - 1)
+                                                            text: "+"
+                                                            font.pixelSize: 10
+                                                            font.bold: true
+                                                            color: Services.Theme.textSecondary
+                                                        }
+                                                    }
+                                                }
+                                            }
+
+                                            // 2. Action Title & Subtitle
+                                            ColumnLayout {
+                                                Layout.fillWidth: true
+                                                spacing: 1
+
+                                                RowLayout {
+                                                    spacing: 6
+                                                    Text {
+                                                        text: tab6.getHumanActionTitle(modelData.action)
+                                                        font.pixelSize: Services.Theme.fontSizeSm
+                                                        font.weight: Font.Medium
+                                                        color: Services.Theme.textPrimary
+                                                        elide: Text.ElideRight
+                                                    }
+
+                                                    // Category Badge
+                                                    Rectangle {
+                                                        visible: (modelData.category || "").length > 0
+                                                        radius: 4
+                                                        implicitHeight: 16
+                                                        implicitWidth: kb_catTagTxt.implicitWidth + 8
+                                                        color: Services.Theme.isDark ? "#202028" : "#f1f5f9"
+                                                        Text {
+                                                            id: kb_catTagTxt
+                                                            anchors.centerIn: parent
+                                                            text: (modelData.category || "custom").toUpperCase()
+                                                            font.pixelSize: 8
+                                                            font.weight: Font.DemiBold
+                                                            color: Services.Theme.textSecondary
+                                                        }
+                                                    }
+                                                }
+
+                                                Text {
+                                                    Layout.fillWidth: true
+                                                    text: modelData.action
+                                                    font.pixelSize: 10
+                                                    font.family: "Monospace"
+                                                    color: Services.Theme.textSecondary
+                                                    elide: Text.ElideRight
+                                                }
+                                            }
+
+                                            // 3. Behaviour Badges (Repeat, Locked, Mouse)
+                                            RowLayout {
+                                                spacing: 4
+
+                                                // Repeat Badge
+                                                Rectangle {
+                                                    visible: Boolean(modelData.repeat)
+                                                    radius: 4
+                                                    implicitHeight: 20
+                                                    implicitWidth: kb_repTagRow.implicitWidth + 10
+                                                    color: Services.Theme.isDark ? "#2e1065" : "#f3e8ff"
+                                                    border.color: "#a855f7"; border.width: 1
+
+                                                    RowLayout {
+                                                        id: kb_repTagRow
+                                                        anchors.centerIn: parent
+                                                        spacing: 3
+                                                        Text { text: "󰑖"; font.family: Services.Theme.fontSymbols; font.pixelSize: 9; color: "#c084fc" }
+                                                        Text { text: "Repeat"; font.pixelSize: 9; font.bold: true; color: "#c084fc" }
+                                                    }
+                                                }
+
+                                                // Locked Badge
+                                                Rectangle {
+                                                    visible: Boolean(modelData.locked)
+                                                    radius: 4
+                                                    implicitHeight: 20
+                                                    implicitWidth: kb_lkTagRow.implicitWidth + 10
+                                                    color: Services.Theme.isDark ? "#064e3b" : "#ecfdf5"
+                                                    border.color: "#10b981"; border.width: 1
+
+                                                    RowLayout {
+                                                        id: kb_lkTagRow
+                                                        anchors.centerIn: parent
+                                                        spacing: 3
+                                                        Text { text: "󰌾"; font.family: Services.Theme.fontSymbols; font.pixelSize: 9; color: "#34d399" }
+                                                        Text { text: "Locked"; font.pixelSize: 9; font.bold: true; color: "#34d399" }
+                                                    }
+                                                }
+
+                                                // Mouse Badge
+                                                Rectangle {
+                                                    visible: Boolean(modelData.mouse)
+                                                    radius: 4
+                                                    implicitHeight: 20
+                                                    implicitWidth: kb_msTagRow.implicitWidth + 10
+                                                    color: Services.Theme.isDark ? "#451a03" : "#fef3c7"
+                                                    border.color: "#f59e0b"; border.width: 1
+
+                                                    RowLayout {
+                                                        id: kb_msTagRow
+                                                        anchors.centerIn: parent
+                                                        spacing: 3
+                                                        Text { text: "󰍽"; font.family: Services.Theme.fontSymbols; font.pixelSize: 9; color: "#fbbf24" }
+                                                        Text { text: "Mouse"; font.pixelSize: 9; font.bold: true; color: "#fbbf24" }
+                                                    }
+                                                }
+                                            }
+
+                                            // 4. Quick Action Buttons (Edit & Delete)
+                                            RowLayout {
+                                                spacing: 4
+
+                                                // Edit Button
+                                                Rectangle {
+                                                    implicitHeight: 28; implicitWidth: 28; radius: 5
+                                                    color: kb_editMouse.containsMouse ? (Services.Theme.isDark ? "#2c2c38" : "#e2e8f0") : "transparent"
+                                                    border.color: kb_editMouse.containsMouse ? Services.Theme.border : "transparent"
+                                                    border.width: 1
+
+                                                    Text {
+                                                        anchors.centerIn: parent
+                                                        text: "󰏫"
+                                                        font.family: Services.Theme.fontSymbols
+                                                        font.pixelSize: 12
+                                                        color: kb_editMouse.containsMouse ? Services.Theme.accent : Services.Theme.textSecondary
+                                                    }
+
+                                                    MouseArea {
+                                                        id: kb_editMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                                                        onClicked: {
+                                                            rootWindow.editingBindId = modelData.id || ""
+                                                            rootWindow.editingBindLine = modelData.startLine || -1
+                                                            rootWindow.formKeys = modelData.keys || ""
+                                                            rootWindow.formAction = modelData.action || ""
+                                                            rootWindow.formDesc = modelData.desc || tab6.getHumanActionTitle(modelData.action)
+                                                            rootWindow.formRepeat = Boolean(modelData.repeat)
+                                                            rootWindow.formLocked = Boolean(modelData.locked)
+                                                            rootWindow.formMouse = Boolean(modelData.mouse)
+                                                            rootWindow.formNonConsuming = Boolean(modelData.nonConsuming)
+                                                            rootWindow.formFile = modelData.file || ""
+                                                            tab6.addCategoryType = tab6.findCategoryForAction(modelData.action)
+                                                            rootWindow.isAddingKeybind = false
+                                                        }
+                                                    }
+                                                }
+
+                                                // Delete Button
+                                                Rectangle {
+                                                    implicitHeight: 28; implicitWidth: 28; radius: 5
+                                                    color: kb_delMouse.containsMouse ? (Services.Theme.isDark ? "#3b1717" : "#fee2e2") : "transparent"
+                                                    border.color: kb_delMouse.containsMouse ? "#ef4444" : "transparent"
+                                                    border.width: 1
+
+                                                    Text {
+                                                        anchors.centerIn: parent
+                                                        text: "󰆴"
+                                                        font.family: Services.Theme.fontSymbols
+                                                        font.pixelSize: 12
+                                                        color: kb_delMouse.containsMouse ? "#ef4444" : Services.Theme.textSecondary
+                                                    }
+
+                                                    MouseArea {
+                                                        id: kb_delMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                                                        onClicked: {
+                                                            if (Services.Compositor) {
+                                                                Services.Compositor.deleteKeybind(modelData.startLine, modelData.file)
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        MouseArea {
+                                            id: kb_bindMouse
+                                            anchors.fill: parent
+                                            hoverEnabled: true
+                                            z: -1
+                                        }
+                                    }
+                                }
+                            }
+
+                            // ═════════════════════════════════════════════════
+                            // ── PAGINATION CONTROLS ("Kurangi Listnya") ──────
+                            // ═════════════════════════════════════════════════
+                            RowLayout {
+                                visible: tab6.filteredBinds.length > 0
+                                Layout.fillWidth: true
+                                spacing: 8
+
+                                Text {
+                                    text: "Showing " + ((tab6.currentPage * tab6.itemsPerPage) + 1) + "–" + Math.min((tab6.currentPage + 1) * tab6.itemsPerPage, tab6.filteredBinds.length) + " of " + tab6.filteredBinds.length + " keybindings"
+                                    font.pixelSize: Services.Theme.fontSizeXs
+                                    color: Services.Theme.textSecondary
+                                }
+
+                                Text {
+                                    visible: Boolean(Services.Compositor && Services.Compositor.configPath)
+                                    text: "• " + ((Services.Compositor && Services.Compositor.configPath) ? Services.Compositor.configPath.split("/").pop() : "")
+                                    font.pixelSize: 10
+                                    font.family: "Monospace"
+                                    color: Services.Theme.textDisabled
+                                }
+
+                                Item { Layout.fillWidth: true }
+
+                                RowLayout {
+                                    spacing: 6
+
+                                    // Previous Button
+                                    Rectangle {
+                                        readonly property bool canPrev: tab6.currentPage > 0
+                                        implicitHeight: 26
+                                        implicitWidth: kb_prevTxt.implicitWidth + 16
+                                        radius: 5
+                                        color: canPrev ? (kb_prevMouse.containsMouse ? (Services.Theme.isDark ? "#282834" : "#e2e8f0") : (Services.Theme.isDark ? "#1c1c24" : "#f1f5f9")) : "transparent"
+                                        border.color: Services.Theme.border; border.width: 1
+                                        opacity: canPrev ? 1.0 : 0.4
+
+                                        Text {
+                                            id: kb_prevTxt
+                                            anchors.centerIn: parent
+                                            text: "‹ Previous"
+                                            font.pixelSize: 10
+                                            font.weight: Font.DemiBold
+                                            color: Services.Theme.textPrimary
+                                        }
+
+                                        MouseArea {
+                                            id: kb_prevMouse; anchors.fill: parent; hoverEnabled: parent.canPrev
+                                            cursorShape: parent.canPrev ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                            onClicked: {
+                                                if (parent.canPrev) tab6.currentPage--
+                                            }
+                                        }
+                                    }
+
+                                    // Page Number Indicator
+                                    Rectangle {
+                                        implicitHeight: 26
+                                        implicitWidth: kb_pageNumTxt.implicitWidth + 14
+                                        radius: 5
+                                        color: Services.Theme.isDark ? "#16161c" : "#e5e7eb"
+
+                                        Text {
+                                            id: kb_pageNumTxt
+                                            anchors.centerIn: parent
+                                            text: "Page " + (tab6.currentPage + 1) + " of " + tab6.totalPages
+                                            font.pixelSize: 10
+                                            font.bold: true
+                                            color: Services.Theme.textPrimary
+                                        }
+                                    }
+
+                                    // Next Button
+                                    Rectangle {
+                                        readonly property bool canNext: tab6.currentPage < (tab6.totalPages - 1)
+                                        implicitHeight: 26
+                                        implicitWidth: kb_nextTxt.implicitWidth + 16
+                                        radius: 5
+                                        color: canNext ? (kb_nextMouse.containsMouse ? (Services.Theme.isDark ? "#282834" : "#e2e8f0") : (Services.Theme.isDark ? "#1c1c24" : "#f1f5f9")) : "transparent"
+                                        border.color: Services.Theme.border; border.width: 1
+                                        opacity: canNext ? 1.0 : 0.4
+
+                                        Text {
+                                            id: kb_nextTxt
+                                            anchors.centerIn: parent
+                                            text: "Next ›"
+                                            font.pixelSize: 10
+                                            font.weight: Font.DemiBold
+                                            color: Services.Theme.textPrimary
+                                        }
+
+                                        MouseArea {
+                                            id: kb_nextMouse; anchors.fill: parent; hoverEnabled: parent.canNext
+                                            cursorShape: parent.canNext ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                            onClicked: {
+                                                if (parent.canNext) tab6.currentPage++
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
 
                         // ═════════════════════════════════════════════
                         // TAB 7: BACKUP & RESET

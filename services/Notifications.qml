@@ -170,6 +170,7 @@ Singleton {
 
             const isKdeConnect = root.isKdeConnectNotif(notif)
             const isMessaging = root.isMessagingApp(notif)
+            const isBattery = root.isBatteryNotification(notif)
             const actionsList = notif.actions.map(a => ({ identifier: a.identifier, text: a.text }))
 
             // Add inline reply action if messaging or hasInlineReply or KDE Connect
@@ -190,6 +191,7 @@ Singleton {
                 hasInlineReply: isMessaging || notif.hasInlineReply || isKdeConnect,
                 isMessaging: isMessaging,
                 isKdeConnect: isKdeConnect,
+                isBattery: isBattery,
                 kdeNotifId: "",
                 kdeReplyId: "",
                 inlineReplyPlaceholder: notif.inlineReplyPlaceholder || "",
@@ -210,12 +212,16 @@ Singleton {
                 }
                 root.newNotification(entry)
 
-                if (notif.urgency === NotificationUrgency.Critical)
-                    SoundFeedback.playError()
-                else if (notif.urgency === NotificationUrgency.Low)
-                    SoundFeedback.playInfo()
-                else
-                    SoundFeedback.playNotification()
+                const isFullscreen = Services.Workspaces ? Services.Workspaces.isFullscreen : false
+                const allowSoundInFullscreen = (Services.Config && Services.Config.notificationShowInFullscreen) || isBattery
+                if (!isFullscreen || allowSoundInFullscreen) {
+                    if (notif.urgency === NotificationUrgency.Critical)
+                        SoundFeedback.playError()
+                    else if (notif.urgency === NotificationUrgency.Low)
+                        SoundFeedback.playInfo()
+                    else
+                        SoundFeedback.playNotification()
+                }
 
                 const timeout = notif.expireTimeout > 0 ? notif.expireTimeout
                     : (notif.urgency === NotificationUrgency.Critical ? 7000 : (Services.Config ? (Services.Config.notificationTimeout * 1000) : 5000))
@@ -334,6 +340,25 @@ Singleton {
             if (popupModel.get(i).notifId === id) return popupModel.get(i)
         }
         return null
+    }
+
+    function isBatteryNotification(entry) {
+        if (!entry) return false
+        if (entry.isBattery) return true
+        const app = (entry.appName || "").toLowerCase()
+        const summary = (entry.summary || "").toLowerCase()
+        const body = (entry.body || "").toLowerCase()
+        const icon = (entry.appIcon || "").toLowerCase()
+        if (app.includes("battery") || app.includes("power") || app.includes("upower")) return true
+        if (summary.includes("battery") || summary.includes("baterai") || summary.includes("daya baterai")) return true
+        if (icon.includes("battery")) return true
+        try {
+            const hints = entry.hints || {}
+            for (const k in hints) {
+                if (k.toLowerCase().includes("battery")) return true
+            }
+        } catch (e) { }
+        return false
     }
 
     function isKdeConnectNotif(n) {
@@ -564,6 +589,7 @@ Singleton {
     function addSystemNotification(entry) {
         if (!entry) return -1
         const id = entry.notifId || (++nextSystemNotifId)
+        const isBattery = entry.isBattery !== undefined ? entry.isBattery : root.isBatteryNotification(entry)
         const fullEntry = {
             notifId: id,
             appName: entry.appName || "System Warning",
@@ -577,6 +603,7 @@ Singleton {
             hasInlineReply: false,
             isMessaging: false,
             isKdeConnect: false,
+            isBattery: isBattery,
             kdeNotifId: "",
             kdeReplyId: "",
             inlineReplyPlaceholder: "",
@@ -669,6 +696,7 @@ Singleton {
                 hasInlineReply: item.hasInlineReply || false,
                 isMessaging: item.isMessaging || false,
                 isKdeConnect: item.isKdeConnect || false,
+                isBattery: item.isBattery || false,
                 kdeNotifId: item.kdeNotifId || "",
                 kdeReplyId: item.kdeReplyId || "",
                 inlineReplyPlaceholder: item.inlineReplyPlaceholder || "",

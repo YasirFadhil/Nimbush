@@ -12,6 +12,7 @@ Singleton {
     property string activeWorkspaceName: "1"
     property var workspaceIds: []       // sorted array of int workspace ids currently open
     property string activeWindowTitle: ""
+    property bool isFullscreen: false
 
     // "hyprland", "niri", or "auto"
     property string detectedCompositor: {
@@ -96,6 +97,9 @@ Singleton {
                 const data = JSON.parse(initProc.output)
                 root.activeWorkspaceId = data.id
                 root.activeWorkspaceName = String(data.id)
+                if (data.hasfullscreen !== undefined) {
+                    root.isFullscreen = Boolean(data.hasfullscreen)
+                }
             } catch (e) {}
         }
     }
@@ -129,8 +133,10 @@ Singleton {
             try {
                 const data = JSON.parse(windowProc.output)
                 root.activeWindowTitle = data.title || ""
+                root.isFullscreen = Boolean(data.fullscreen && data.fullscreen > 0)
             } catch (e) {
                 root.activeWindowTitle = ""
+                root.isFullscreen = false
             }
             windowProc.output = ""
         }
@@ -174,6 +180,9 @@ Singleton {
                     root.activeWindowTitle = commaIdx >= 0 ? rest.substring(commaIdx + 1) : ""
                 } else if (line.startsWith("activewindowv2>>")) {
                     root.refreshActiveWindow()
+                } else if (line.startsWith("fullscreen>>")) {
+                    const fsVal = line.substring("fullscreen>>".length).trim()
+                    root.isFullscreen = (fsVal === "1" || fsVal === "2" || fsVal === "true")
                 }
             }
         }
@@ -222,8 +231,12 @@ Singleton {
             try {
                 const data = JSON.parse(niriWindowProc.output)
                 root.activeWindowTitle = (data && data.title) ? data.title : ""
+                if (data && data.is_fullscreen !== undefined) {
+                    root.isFullscreen = Boolean(data.is_fullscreen)
+                }
             } catch (e) {
                 root.activeWindowTitle = ""
+                root.isFullscreen = false
             }
             niriWindowProc.output = ""
         }

@@ -10,6 +10,21 @@ Singleton {
     readonly property int playerCount: Mpris.players.values ? Mpris.players.values.length : 0
     property bool manualOverride: false
 
+    // True if active player is from a remote device / phone (e.g. KDE Connect, GSConnect)
+    readonly property bool isRemote: {
+        if (!root.activePlayer) return false
+        const id = (root.activePlayer.identity || "").toLowerCase()
+        const desk = (root.activePlayer.desktopEntry || "").toLowerCase()
+        const bus = (root.activePlayer.dbusName || "").toLowerCase()
+        return id.includes("kdeconnect") || desk.includes("kdeconnect") || bus.includes("kdeconnect")
+            || id.includes("gsconnect") || desk.includes("gsconnect") || bus.includes("gsconnect")
+            || id.includes("vivo") || id.includes("samsung") || id.includes("xiaomi")
+            || id.includes("oppo") || id.includes("pixel") || id.includes("iphone")
+            || id.includes("phone") || id.includes("android")
+            || desk.includes("phone") || desk.includes("android")
+    }
+    readonly property bool isLocal: !root.isRemote
+
     function pickActive() {
         const players = Mpris.players.values
         root.playersList = players
