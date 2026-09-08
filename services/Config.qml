@@ -46,6 +46,7 @@ Singleton {
     property bool clockShowDate: true
     property string clockDateFormat: "short"      // "short" | "full"
     property string islandStyle: "expanded"       // "expanded" | "compact" | "minimal" | "hidden"
+    property bool islandCavaWave: true            // Live CAVA audio spectrum visualizer
     property string workspaceStyle: "pills"       // "pills" | "numbers" | "dots" | "icons"
     property bool workspaceShowAll: true
     property string barMonitorMode: "all"         // "all" | "primary" | "custom"
@@ -258,6 +259,7 @@ Singleton {
         if (data.clockShowDate !== undefined) clockShowDate = Boolean(data.clockShowDate)
         if (data.clockDateFormat !== undefined) clockDateFormat = data.clockDateFormat
         if (data.islandStyle !== undefined) islandStyle = data.islandStyle
+        if (data.islandCavaWave !== undefined) islandCavaWave = Boolean(data.islandCavaWave)
         if (data.workspaceStyle !== undefined) workspaceStyle = data.workspaceStyle
         if (data.workspaceShowAll !== undefined) workspaceShowAll = Boolean(data.workspaceShowAll)
         if (data.barMonitorMode !== undefined) barMonitorMode = data.barMonitorMode
@@ -368,6 +370,7 @@ Singleton {
             clockShowDate: clockShowDate,
             clockDateFormat: clockDateFormat,
             islandStyle: islandStyle,
+            islandCavaWave: islandCavaWave,
             workspaceStyle: workspaceStyle,
             workspaceShowAll: workspaceShowAll,
             barMonitorMode: barMonitorMode,
@@ -469,6 +472,7 @@ Singleton {
         clockShowDate = true
         clockDateFormat = "short"
         islandStyle = "expanded"
+        islandCavaWave = true
         workspaceStyle = "pills"
         workspaceShowAll = true
 
@@ -635,6 +639,7 @@ Singleton {
     function setClockShowDate(val) { clockShowDate = val; saveConfig() }
     function setClockDateFormat(fmt) { clockDateFormat = fmt; saveConfig() }
     function setIslandStyle(style) { islandStyle = style; saveConfig() }
+    function setIslandCavaWave(val) { islandCavaWave = val; saveConfig() }
     function setWorkspaceStyle(style) { workspaceStyle = style; saveConfig() }
     function setWorkspaceShowAll(val) { workspaceShowAll = val; saveConfig() }
     function setBarMonitorMode(mode) { barMonitorMode = mode; saveConfig() }

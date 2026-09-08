@@ -1107,43 +1107,23 @@ Item {
         }
 
         // ==================== Mini Audio Wave Visualizer (Right Edge) ====================
-        Row {
+        MediaModule.CavaWave {
             id: mediaVisualizer
             anchors.right: island.right
             anchors.rightMargin: 12
             anchors.verticalCenter: island.verticalCenter
-            spacing: 2.5
             z: 3
+            barCount: 4
+            barWidth: 2.8
+            barSpacing: 2.2
+            minHeight: 3.5
+            maxHeight: 16.0
+            barColor: Services.Theme.success
+            isPlaying: root.mediaPlaying
+            active: visible
             visible: !Services.OverlayManager.isLocked && root.mediaPlaying && !root.expanded && !root.notifActive
             opacity: visible ? 1 : 0
             Behavior on opacity { NumberAnimation { duration: 250 } }
-
-            Repeater {
-                model: 3
-                Rectangle {
-                    required property int index
-                    width: 2.5
-                    height: 10
-                    radius: 1.25
-                    color: Services.Theme.success
-                    anchors.verticalCenter: parent.verticalCenter
-
-                    SequentialAnimation on height {
-                        running: mediaVisualizer.visible
-                        loops: Animation.Infinite
-                        NumberAnimation {
-                            to: index === 0 ? 12 : (index === 1 ? 5 : 10)
-                            duration: index === 0 ? 280 : (index === 1 ? 400 : 340)
-                            easing.type: Easing.InOutSine
-                        }
-                        NumberAnimation {
-                            to: index === 0 ? 4 : (index === 1 ? 12 : 4)
-                            duration: index === 0 ? 320 : (index === 1 ? 300 : 380)
-                            easing.type: Easing.InOutSine
-                        }
-                    }
-                }
-            }
         }
 
         // ==================== Dedicated Collapsed Track Title / Notif Text Zone ====================

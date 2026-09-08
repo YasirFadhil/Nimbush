@@ -3486,6 +3486,15 @@ FloatingWindow {
                                         onSelected: (val) => { if (Services.Config) Services.Config.setIslandStyle(val) }
                                     }
                                 }
+
+                                SettingsDivider {}
+
+                                SettingsSwitch {
+                                    title: "Live CAVA Wave Visualizer"
+                                    subtitle: "Visualize audio frequencies in real time using CAVA when media is playing"
+                                    checked: Services.Config ? Services.Config.islandCavaWave : true
+                                    onToggled: (st) => { if (Services.Config) Services.Config.setIslandCavaWave(st) }
+                                }
                             }
 
                             SettingsSection {
@@ -5998,7 +6007,7 @@ FloatingWindow {
                                             title: "Natural Scrolling"
                                             subtitle: "Reverse scrolling direction (swipe up scrolls content up)"
                                             checked: Services.Compositor ? Services.Compositor.hyprTouchpadNatural : true
-                                            onToggled: () => { if (Services.Compositor) Services.Compositor.toggleHyprTouchpadNatural() }
+                                            onToggled: (val) => { if (Services.Compositor) Services.Compositor.setHyprTouchpadNatural(val) }
                                         }
 
                                         SettingsDivider {}
@@ -6007,7 +6016,7 @@ FloatingWindow {
                                             title: "Tap to Click"
                                             subtitle: "Tap touchpad surface to trigger primary click"
                                             checked: Services.Compositor ? Services.Compositor.hyprTouchpadTap : true
-                                            onToggled: () => { if (Services.Compositor) Services.Compositor.toggleHyprTouchpadTap() }
+                                            onToggled: (val) => { if (Services.Compositor) Services.Compositor.setHyprTouchpadTap(val) }
                                         }
 
                                         SettingsDivider {}
@@ -6016,7 +6025,7 @@ FloatingWindow {
                                             title: "Disable While Typing (DWT)"
                                             subtitle: "Prevent accidental palm clicks when typing on the keyboard"
                                             checked: Services.Compositor ? Services.Compositor.hyprTouchpadDwt : true
-                                            onToggled: () => { if (Services.Compositor) Services.Compositor.toggleHyprTouchpadDwt() }
+                                            onToggled: (val) => { if (Services.Compositor) Services.Compositor.setHyprTouchpadDwt(val) }
                                         }
 
                                         SettingsDivider {}
@@ -6025,7 +6034,7 @@ FloatingWindow {
                                             title: "Touchpad 3-Finger Workspace Swipe"
                                             subtitle: "Smooth 1:1 trackpad swipe gesture to switch active workspace"
                                             checked: Services.Compositor ? Services.Compositor.hyprWorkspaceSwipe : true
-                                            onToggled: () => { if (Services.Compositor) Services.Compositor.toggleHyprWorkspaceSwipe() }
+                                            onToggled: (val) => { if (Services.Compositor) Services.Compositor.setHyprWorkspaceSwipe(val) }
                                         }
 
                                         SettingsDivider {}

@@ -492,7 +492,10 @@ def query_all():
 
     schema = "org.gnome.desktop.interface"
     cur_gtk = get_gsettings(schema, "gtk-theme") or (gtk_themes[0] if gtk_themes else "Adwaita")
-    cur_icon = get_gsettings(schema, "icon-theme") or (icon_themes[0] if icon_themes else "MacTahoe-dark")
+    persisted_icon = get_persisted_icon_theme()
+    cur_icon = persisted_icon or get_gsettings(schema, "icon-theme") or (icon_themes[0] if icon_themes else "MacTahoe-dark")
+    if not persisted_icon and cur_icon:
+        save_icon_theme_env(cur_icon)
     cur_cursor = get_gsettings(schema, "cursor-theme") or (cursor_themes[0] if cursor_themes else "Adwaita")
     
     cur_cursor_size_raw = get_gsettings(schema, "cursor-size")
@@ -624,6 +627,105 @@ def set_gtk_theme(name):
     apply_gtk_theme_links(name)
     return {"status": "ok", "gtk_theme": name}
 
+def save_icon_theme_env(name):
+    if not name:
+        return
+    try:
+        state_dir = os.path.join(HOME, ".config/quickshell/state")
+        os.makedirs(state_dir, exist_ok=True)
+        env_file = os.path.join(state_dir, "icon-theme.env")
+        with open(env_file, "w", encoding="utf-8") as f:
+            f.write(f"QS_ICON_THEME={name}\n")
+    except Exception:
+        pass
+
+def get_persisted_icon_theme():
+    env_file = os.path.join(HOME, ".config/quickshell/state/icon-theme.env")
+    if os.path.exists(env_file):
+        try:
+            with open(env_file, "r", encoding="utf-8") as f:
+                for line in f:
+                    if line.startswith("QS_ICON_THEME="):
+                        val = line.strip().split("=", 1)[1].strip().strip('"\'')
+                        if val:
+                            return val
+        except Exception:
+            pass
+    return ""
+
+def get_quickshell_pids():
+    pids = []
+    out = run_proc(["qs", "list"], timeout=1.5)
+    for line in out.splitlines():
+        if "Process ID:" in line:
+            try:
+                p = int(line.split("Process ID:")[1].strip())
+                if p > 0 and os.path.exists(f"/proc/{p}"):
+                    pids.append(p)
+            except Exception:
+                pass
+    if not pids:
+        raw = run_proc(["pgrep", "-f", "bin/quickshell"], timeout=1.0)
+        for p in raw.split():
+            try:
+                pids.append(int(p))
+            except Exception:
+                pass
+    return pids
+
+def restart_quickshell():
+    for unit in ["quickshell.service", "quickshell-shell.service"]:
+        try:
+            r = run_proc(["systemctl", "--user", "is-active", unit], timeout=1.0)
+            if r == "active":
+                subprocess.run(["systemctl", "--user", "restart", unit], timeout=2.0)
+                return {"status": "ok", "method": "systemd", "unit": unit}
+        except Exception:
+            pass
+
+    old_pids = get_quickshell_pids()
+    old_pids_str = " ".join(str(p) for p in old_pids)
+    log_file = os.path.expanduser("~/.cache/quickshell/restart.log")
+    os.makedirs(os.path.dirname(log_file), exist_ok=True)
+
+    restart_script = f"""
+echo "=== Restart started at $(date) ===" >> "{log_file}"
+sleep 0.4
+qs kill 2>> "{log_file}" || true
+
+if [ -n "{old_pids_str}" ]; then
+    for pid in {old_pids_str}; do
+        for i in $(seq 1 40); do
+            if [ ! -d "/proc/$pid" ]; then
+                break
+            fi
+            sleep 0.1
+        done
+        if [ -d "/proc/$pid" ]; then
+            kill -9 "$pid" 2>> "{log_file}" || true
+            sleep 0.1
+        fi
+    done
+fi
+
+for i in $(seq 1 20); do
+    if ! pgrep -f "bin/quickshell" >/dev/null 2>&1 && ! pgrep -x .quickshell-wra >/dev/null 2>&1; then
+        break
+    fi
+    sleep 0.1
+done
+
+if [ -f "$HOME/.config/quickshell/state/icon-theme.env" ]; then
+    source "$HOME/.config/quickshell/state/icon-theme.env" 2>> "{log_file}"
+    export QS_ICON_THEME
+fi
+
+sleep 0.3
+exec qs -n >> "{log_file}" 2>&1
+"""
+    subprocess.Popen(["bash", "-c", restart_script], start_new_session=True)
+    return {"status": "ok", "method": "detached_process"}
+
 def set_icon_theme(name):
     if not name:
         return {"error": "no theme specified"}
@@ -683,6 +785,7 @@ def set_icon_theme(name):
 
     cur_cursor = get_gsettings("org.gnome.desktop.interface", "cursor-theme") or "MacTahoe-dark"
     update_default_cursor_theme(cur_cursor)
+    save_icon_theme_env(name)
     return {"status": "ok", "icon_theme": name}
 
 def set_cursor(name, size):
@@ -877,6 +980,9 @@ def main():
         print(json.dumps(res))
     elif cmd == "set_font_rendering" and len(sys.argv) >= 5:
         res = set_font_rendering(sys.argv[2], sys.argv[3], sys.argv[4])
+        print(json.dumps(res))
+    elif cmd == "restart_quickshell":
+        res = restart_quickshell()
         print(json.dumps(res))
     else:
         print(json.dumps({"error": f"Unknown command: {cmd}"}))

@@ -558,19 +558,31 @@ Singleton {
         setOption("scrolling_fullscreen_on_one_column", hyprScrollingFullscreenOnOneColumn)
     }
 
-    function toggleHyprTouchpadNatural() {
-        hyprTouchpadNatural = !hyprTouchpadNatural
+    function setHyprTouchpadNatural(val) {
+        hyprTouchpadNatural = Boolean(val)
         setOption("touchpad_natural", hyprTouchpadNatural)
     }
 
-    function toggleHyprTouchpadTap() {
-        hyprTouchpadTap = !hyprTouchpadTap
+    function toggleHyprTouchpadNatural() {
+        setHyprTouchpadNatural(!hyprTouchpadNatural)
+    }
+
+    function setHyprTouchpadTap(val) {
+        hyprTouchpadTap = Boolean(val)
         setOption("touchpad_tap", hyprTouchpadTap)
     }
 
-    function toggleHyprTouchpadDwt() {
-        hyprTouchpadDwt = !hyprTouchpadDwt
+    function toggleHyprTouchpadTap() {
+        setHyprTouchpadTap(!hyprTouchpadTap)
+    }
+
+    function setHyprTouchpadDwt(val) {
+        hyprTouchpadDwt = Boolean(val)
         setOption("touchpad_dwt", hyprTouchpadDwt)
+    }
+
+    function toggleHyprTouchpadDwt() {
+        setHyprTouchpadDwt(!hyprTouchpadDwt)
     }
 
     function setHyprSensitivity(val) {
@@ -615,14 +627,22 @@ Singleton {
         setOption("follow_mouse", hyprFollowMouse)
     }
 
-    function toggleHyprWorkspaceSwipe() {
-        hyprWorkspaceSwipe = !hyprWorkspaceSwipe
+    function setHyprWorkspaceSwipe(val) {
+        hyprWorkspaceSwipe = Boolean(val)
         setOption("workspace_swipe", hyprWorkspaceSwipe)
     }
 
-    function toggleHyprSwipeInvert() {
-        hyprSwipeInvert = !hyprSwipeInvert
+    function toggleHyprWorkspaceSwipe() {
+        setHyprWorkspaceSwipe(!hyprWorkspaceSwipe)
+    }
+
+    function setHyprSwipeInvert(val) {
+        hyprSwipeInvert = Boolean(val)
         setOption("workspace_swipe_invert", hyprSwipeInvert)
+    }
+
+    function toggleHyprSwipeInvert() {
+        setHyprSwipeInvert(!hyprSwipeInvert)
     }
 
     function setMonitorScale(monName, scaleVal, saveToConfig) {

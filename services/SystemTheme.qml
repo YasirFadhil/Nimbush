@@ -67,8 +67,10 @@ Singleton {
     }
 
     function setIconTheme(name) {
-        if (!name) return
+        if (!name || name === currentIconTheme) return
         currentIconTheme = name
+        execProc.lastAction = "set_icon_theme"
+        execProc.pendingThemeName = name
         execProc.running = false
         execProc.command = ["python3", helperScript, "set_icon_theme", name]
         execProc.running = true
@@ -239,7 +241,32 @@ Singleton {
 
     Process {
         id: execProc
+        property string lastAction: ""
+        property string pendingThemeName: ""
+
         onExited: (exitCode, exitStatus) => {
+            if (lastAction === "set_icon_theme" && exitCode === 0) {
+                var themeName = pendingThemeName || root.currentIconTheme
+                lastAction = ""
+                pendingThemeName = ""
+
+                notifyProc.command = [
+                    "notify-send", "-a", "Nimbush", "-i", "preferences-desktop-theme",
+                    "Icon Theme Updated", "Restarting Nimbush to apply " + themeName + "..."
+                ]
+                notifyProc.running = true
+
+                restartProc.running = true
+            }
         }
+    }
+
+    Process {
+        id: notifyProc
+    }
+
+    Process {
+        id: restartProc
+        command: ["python3", root.helperScript, "restart_quickshell"]
     }
 }

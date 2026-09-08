@@ -617,26 +617,50 @@ def update_lua_option(content, opt_name, opt_val):
         pat = r'(touchpad\s*=\s*\{[\s\S]*?natural_scroll\s*=\s*)(?:true|false)'
         if re.search(pat, content):
             return re.sub(pat, r'\g<1>' + val_str, content, count=1)
+        pat_tp = r'(touchpad\s*=\s*\{)'
+        if re.search(pat_tp, content):
+            return re.sub(pat_tp, r'\g<1>\n            natural_scroll = ' + val_str + ',', content, count=1)
+        pat_inp = r'(input\s*=\s*\{)'
+        if re.search(pat_inp, content):
+            return re.sub(pat_inp, r'\g<1>\n        touchpad = {\n            natural_scroll = ' + val_str + ',\n        },', content, count=1)
 
     if opt_name == "touchpad_tap":
         pat = r'(touchpad\s*=\s*\{[\s\S]*?tap_to_click\s*=\s*)(?:true|false)'
         if re.search(pat, content):
             return re.sub(pat, r'\g<1>' + val_str, content, count=1)
+        pat_tp = r'(touchpad\s*=\s*\{)'
+        if re.search(pat_tp, content):
+            return re.sub(pat_tp, r'\g<1>\n            tap_to_click = ' + val_str + ',', content, count=1)
+        pat_inp = r'(input\s*=\s*\{)'
+        if re.search(pat_inp, content):
+            return re.sub(pat_inp, r'\g<1>\n        touchpad = {\n            tap_to_click = ' + val_str + ',\n        },', content, count=1)
 
     if opt_name == "touchpad_dwt":
         pat = r'(touchpad\s*=\s*\{[\s\S]*?disable_while_typing\s*=\s*)(?:true|false)'
         if re.search(pat, content):
             return re.sub(pat, r'\g<1>' + val_str, content, count=1)
+        pat_tp = r'(touchpad\s*=\s*\{)'
+        if re.search(pat_tp, content):
+            return re.sub(pat_tp, r'\g<1>\n            disable_while_typing = ' + val_str + ',', content, count=1)
+        pat_inp = r'(input\s*=\s*\{)'
+        if re.search(pat_inp, content):
+            return re.sub(pat_inp, r'\g<1>\n        touchpad = {\n            disable_while_typing = ' + val_str + ',\n        },', content, count=1)
 
     if opt_name == "workspace_swipe":
         pat = r'(workspace_swipe\s*=\s*)(?:true|false)'
         if re.search(pat, content):
             return re.sub(pat, r'\g<1>' + val_str, content, count=1)
+        pat_gest = r'(gestures\s*=\s*\{)'
+        if re.search(pat_gest, content):
+            return re.sub(pat_gest, r'\g<1>\n        workspace_swipe = ' + val_str + ',', content, count=1)
 
     if opt_name == "workspace_swipe_invert":
         pat = r'(workspace_swipe_invert\s*=\s*)(?:true|false)'
         if re.search(pat, content):
             return re.sub(pat, r'\g<1>' + val_str, content, count=1)
+        pat_gest = r'(gestures\s*=\s*\{)'
+        if re.search(pat_gest, content):
+            return re.sub(pat_gest, r'\g<1>\n        workspace_swipe_invert = ' + val_str + ',', content, count=1)
 
     return content
 
@@ -704,7 +728,31 @@ def update_hyprconf_option(content, opt_name, opt_val):
         "touchpad_dwt": r'(touchpad\s*\{[\s\S]*?disable_while_typing\s*=\s*)(?:true|false|[0-1])',
     }
 
-    if opt_name in ("workspace_anim", "workspace_anim_speed", "workspace_anim_bezier", "workspace_anim_style"):
+    if opt_name in nested_patterns:
+        pat = nested_patterns[opt_name]
+        if re.search(pat, content):
+            return re.sub(pat, r'\g<1>' + val_str, content, count=1)
+        if opt_name == "touchpad_dwt":
+            pat_tp = r'(touchpad\s*\{)'
+            if re.search(pat_tp, content):
+                return re.sub(pat_tp, r'\g<1>\n        disable_while_typing = ' + val_str, content, count=1)
+            pat_inp = r'(input\s*\{)'
+            if re.search(pat_inp, content):
+                return re.sub(pat_inp, r'\g<1>\n    touchpad {\n        disable_while_typing = ' + val_str + '\n    }', content, count=1)
+        if opt_name == "touchpad_tap":
+            pat_tp = r'(touchpad\s*\{)'
+            if re.search(pat_tp, content):
+                return re.sub(pat_tp, r'\g<1>\n        tap-to-click = ' + val_str, content, count=1)
+            pat_inp = r'(input\s*\{)'
+            if re.search(pat_inp, content):
+                return re.sub(pat_inp, r'\g<1>\n    touchpad {\n        tap-to-click = ' + val_str + '\n    }', content, count=1)
+        if opt_name == "touchpad_natural":
+            pat_tp = r'(touchpad\s*\{)'
+            if re.search(pat_tp, content):
+                return re.sub(pat_tp, r'\g<1>\n        natural_scroll = ' + val_str, content, count=1)
+            pat_inp = r'(input\s*\{)'
+            if re.search(pat_inp, content):
+                return re.sub(pat_inp, r'\g<1>\n    touchpad {\n        natural_scroll = ' + val_str + '\n    }', content, count=1)
         ws_info = get_workspace_anim_info()
         en_val = "1" if (opt_val if opt_name == "workspace_anim" else ws_info["workspace_anim"]) else "0"
         spd_val = str(opt_val) if opt_name == "workspace_anim_speed" else str(ws_info["workspace_anim_speed"])
@@ -2397,7 +2445,7 @@ local mainMod = "SUPER"
 
 -- ── 1. Autostart Quickshell Desktop Environment & Clipboard Daemons ─────────
 hl.on("hyprland.start", function ()
-    hl.exec_cmd("qs")
+    hl.exec_cmd("bash -c 'source ~/.config/quickshell/state/icon-theme.env 2>/dev/null; export QS_ICON_THEME; exec qs -n'")
     hl.exec_cmd("wl-paste --type text --watch cliphist store")
     hl.exec_cmd("wl-paste --type image --watch cliphist store")
 end)
@@ -2951,7 +2999,7 @@ def modularize_hypr_conf():
 # ══════════════════════════════════════════════════════════════════════════════
 
 # ── 1. Autostart Quickshell Desktop Environment & Clipboard Daemons ─────────
-exec-once = qs
+exec-once = bash -c 'source ~/.config/quickshell/state/icon-theme.env 2>/dev/null; export QS_ICON_THEME; exec qs -n'
 exec-once = wl-paste --type text --watch cliphist store
 exec-once = wl-paste --type image --watch cliphist store
 
@@ -3319,7 +3367,7 @@ def modularize_niri_kdl():
 // ══════════════════════════════════════════════════════════════════════════════
 
 // ── 1. Autostart Quickshell Desktop Environment ──────────────────────────────
-spawn-at-startup "qs"
+spawn-at-startup "bash" "-c" "source ~/.config/quickshell/state/icon-theme.env 2>/dev/null; export QS_ICON_THEME; exec qs -n"
 
 // ── 2. Quickshell IPC Keybindings ─────────────────────────────────────────────
 binds {

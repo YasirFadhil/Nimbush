@@ -24,6 +24,7 @@
   "clockShowDate": true,
   "clockDateFormat": "short",
   "islandStyle": "expanded",
+  "islandCavaWave": true,
   "workspaceStyle": "pills",
   "workspaceShowAll": true,
   "barMonitorMode": "all",
