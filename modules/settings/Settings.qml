@@ -2189,7 +2189,7 @@ FloatingWindow {
 
                     Text {
                         text: {
-                            const tabs = ["Appearance", "Bar & Island", "Notifications", "Sound & Audio", "Lock & Power", "Compositor", "Keybindings", "Backup & Reset", "About"]
+                            const tabs = ["Appearance", "Bar & Dock", "Notifications", "Sound & Audio", "Lock & Power", "Compositor", "Keybindings", "Backup & Reset", "About"]
                             return tabs[rootWindow.currentTab] || "Preferences"
                         }
                         font.pixelSize: 13
@@ -2342,7 +2342,7 @@ FloatingWindow {
 
                         readonly property var allNavTabs: [
                             { id: 0, title: "Appearance",    icon: Services.Icons.palette,       color: "#3b82f6", cat: "Personalization", kw: "appearance theme dark light wallpaper accent color font gtk icon cursor scale radius matugen compositor typography hinting antialiasing" },
-                            { id: 1, title: "Bar & Island",   icon: Services.Icons.controlcenter, color: "#8b5cf6", cat: "Personalization", kw: "bar dynamic island notch workspaces clock date format pills dashboard weather cuaca widgets metrics hardware" },
+                            { id: 1, title: "Bar & Dock",     icon: Services.Icons.controlcenter, color: "#8b5cf6", cat: "Personalization", kw: "bar dock application running pinned magnification island dynamic island notch workspaces clock date format pills dashboard weather cuaca widgets metrics hardware" },
                             { id: 2, title: "Notifications",  icon: Services.Icons.bell,          color: "#f97316", cat: "Personalization", kw: "notifications dnd do not disturb timeout retention banner history" },
                             { id: 3, title: "Sound & Audio",  icon: Services.Icons.speaker,       color: "#ec4899", cat: "Personalization", kw: "sound audio volume feedback clicks effects mute" },
                             { id: 4, title: "Lock & Power",   icon: Services.Icons.power,         color: "#ef4444", cat: "System",          kw: "lock screen power battery sleep timeout auth media clock blur" },
@@ -3381,16 +3381,122 @@ FloatingWindow {
                         }
 
                         // ═════════════════════════════════════════════
-                        // TAB 1: BAR & DYNAMIC ISLAND
+                        // TAB 1: BAR & DOCK (SEGMENTED)
                         // ═════════════════════════════════════════════
                         ColumnLayout {
                             id: tab1
                             Layout.fillWidth: true
                             spacing: 14
 
-                            SettingsSection {
-                                title: "Bar Architecture & Position"
-                                icon: Services.Icons.controlcenter
+                            property int barSubTab: 0 // 0: Status Bar & Island, 1: Application Dock
+                            property string appSearchText: ""
+                            property bool isAddingApp: false
+
+                            // ── Segmented Switcher: [ Status Bar & Island | Application Dock ] ──
+                            Rectangle {
+                                id: barSubTabBar
+                                Layout.fillWidth: true
+                                height: 38
+                                radius: 8
+                                color: Services.Theme.isDark ? "#16161c" : "#e8ecf2"
+                                border.color: Services.Theme.border
+                                border.width: 1
+                                clip: true
+
+                                readonly property int subTabCount: 2
+                                readonly property real itemWidth: Math.max(0, (barSubTabBar.width - 6 - (subTabCount - 1) * 3) / subTabCount)
+
+                                Rectangle {
+                                    id: barLiquidPill
+                                    z: 1
+                                    y: 3
+                                    height: parent.height - 6
+                                    radius: 6
+                                    x: 3 + tab1.barSubTab * (barSubTabBar.itemWidth + 3)
+                                    width: barSubTabBar.itemWidth
+                                    color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.22)
+                                    border.color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.55)
+                                    border.width: 1
+
+                                    Behavior on x {
+                                        NumberAnimation { duration: 250; easing.type: Easing.OutCubic }
+                                    }
+                                }
+
+                                Row {
+                                    anchors.fill: parent
+                                    anchors.margins: 3
+                                    spacing: 3
+                                    z: 2
+
+                                    Item {
+                                        width: barSubTabBar.itemWidth
+                                        height: parent.height
+
+                                        RowLayout {
+                                            anchors.centerIn: parent
+                                            spacing: 8
+                                            Text {
+                                                text: Services.Icons.controlcenter || "󰕮"
+                                                font.family: Services.Theme.fontSymbols
+                                                font.pixelSize: 13
+                                                color: tab1.barSubTab === 0 ? Services.Theme.accent : Services.Theme.textSecondary
+                                            }
+                                            Text {
+                                                text: "Status Bar & Island"
+                                                font.pixelSize: 12
+                                                font.weight: tab1.barSubTab === 0 ? Font.DemiBold : Font.Normal
+                                                color: tab1.barSubTab === 0 ? Services.Theme.textPrimary : Services.Theme.textSecondary
+                                            }
+                                        }
+
+                                        MouseArea {
+                                            anchors.fill: parent
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: tab1.barSubTab = 0
+                                        }
+                                    }
+
+                                    Item {
+                                        width: barSubTabBar.itemWidth
+                                        height: parent.height
+
+                                        RowLayout {
+                                            anchors.centerIn: parent
+                                            spacing: 8
+                                            Text {
+                                                text: Services.Icons.pin || "󰤩"
+                                                font.family: Services.Theme.fontSymbols
+                                                font.pixelSize: 13
+                                                color: tab1.barSubTab === 1 ? Services.Theme.accent : Services.Theme.textSecondary
+                                            }
+                                            Text {
+                                                text: "Application Dock"
+                                                font.pixelSize: 12
+                                                font.weight: tab1.barSubTab === 1 ? Font.DemiBold : Font.Normal
+                                                color: tab1.barSubTab === 1 ? Services.Theme.textPrimary : Services.Theme.textSecondary
+                                            }
+                                        }
+
+                                        MouseArea {
+                                            anchors.fill: parent
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: tab1.barSubTab = 1
+                                        }
+                                    }
+                                }
+                            }
+
+                            // ── SUBTAB 0: STATUS BAR & DYNAMIC ISLAND ─────────────────
+                            ColumnLayout {
+                                id: barIslandContent
+                                Layout.fillWidth: true
+                                spacing: 14
+                                visible: tab1.barSubTab === 0
+
+                                SettingsSection {
+                                    title: "Bar Architecture & Position"
+                                    icon: Services.Icons.controlcenter
 
                                 SettingsRow {
                                     title: "Bar Architecture Preset"
@@ -3776,6 +3882,538 @@ FloatingWindow {
                                 }
                             }
                         }
+
+                        // ── SUBTAB 1: APPLICATION DOCK ────────────────────────────
+                        ColumnLayout {
+                            id: dockContent
+                            Layout.fillWidth: true
+                            spacing: 14
+                            visible: tab1.barSubTab === 1
+
+                            // 1. General & Behavior Section
+                            SettingsSection {
+                                title: "Dock General & Behavior"
+                                icon: Services.Icons.controlcenter
+
+                                SettingsSwitch {
+                                    title: "Enable Application Dock"
+                                    subtitle: "Display floating application dock"
+                                    checked: Services.Config ? Services.Config.dockEnabled : true
+                                    onToggled: (st) => { if (Services.Config) Services.Config.setDockEnabled(st) }
+                                }
+
+                                SettingsDivider {}
+
+                                SettingsRow {
+                                    title: "Screen Placement"
+                                    subtitle: "Position dock along the screen edge"
+
+                                    SettingsDropdown {
+                                        currentValue: Services.Config ? Services.Config.dockPosition : "bottom"
+                                        model: [
+                                            { id: "bottom", label: "Bottom Edge (Default)" },
+                                            { id: "left",   label: "Left Edge" },
+                                            { id: "right",  label: "Right Edge" }
+                                        ]
+                                        onSelected: (val) => { if (Services.Config) Services.Config.setDockPosition(val) }
+                                    }
+                                }
+
+                                SettingsDivider {}
+
+                                SettingsSwitch {
+                                    title: "Auto-Hide Dock"
+                                    subtitle: "Slide dock away when cursor leaves the edge"
+                                    checked: Services.Config ? Services.Config.dockAutoHide : false
+                                    onToggled: (st) => { if (Services.Config) Services.Config.setDockAutoHide(st) }
+                                }
+
+                                SettingsDivider {}
+
+                                SettingsRow {
+                                    title: "Display Assignment"
+                                    subtitle: "Choose which connected monitor(s) render the dock"
+
+                                    SettingsDropdown {
+                                        currentValue: Services.Config ? Services.Config.dockMonitorMode : "all"
+                                        model: [
+                                            { id: "all",     label: "All Connected Displays" },
+                                            { id: "primary", label: "Primary / Focused Display Only" }
+                                        ]
+                                        onSelected: (val) => { if (Services.Config) Services.Config.setDockMonitorMode(val) }
+                                    }
+                                }
+
+                                SettingsDivider {}
+
+                                SettingsRow {
+                                    title: "Screen Edge Distance"
+                                    subtitle: "Margin offset between dock and screen edge"
+
+                                    SettingsDropdown {
+                                        currentValue: Services.Config ? Services.Config.dockFloatingDistance : 6
+                                        model: [
+                                            { id: 0,  label: "0px (Attached / Flush)" },
+                                            { id: 6,  label: "6px (Standard Floating)" },
+                                            { id: 12, label: "12px (Spacious Floating)" },
+                                            { id: 18, label: "18px (High Floating)" }
+                                        ]
+                                        onSelected: (val) => { if (Services.Config) Services.Config.setDockFloatingDistance(Number(val)) }
+                                    }
+                                }
+                            }
+
+                            // 2. Appearance & Magnification Section
+                            SettingsSection {
+                                title: "Appearance & Magnification"
+                                icon: Services.Icons.palette
+
+                                SettingsRow {
+                                    title: "Icon Size"
+                                    subtitle: "Base dimension of application icons in pixels"
+
+                                    SettingsDropdown {
+                                        currentValue: Services.Config ? Services.Config.dockIconSize : 48
+                                        model: [
+                                            { id: 36, label: "36px (Compact)" },
+                                            { id: 44, label: "44px (Medium)" },
+                                            { id: 48, label: "48px (Standard)" },
+                                            { id: 56, label: "56px (Large)" },
+                                            { id: 64, label: "64px (Extra Large)" }
+                                        ]
+                                        onSelected: (val) => { if (Services.Config) Services.Config.setDockIconSize(Number(val)) }
+                                    }
+                                }
+
+                                SettingsDivider {}
+
+                                SettingsSwitch {
+                                    title: "Hover Magnification"
+                                    subtitle: "Smoothly zoom icons as mouse cursor approaches"
+                                    checked: Services.Config ? Services.Config.dockMagnification : true
+                                    onToggled: (st) => { if (Services.Config) Services.Config.setDockMagnification(st) }
+                                }
+
+                                SettingsDivider {
+                                    visible: Services.Config ? Services.Config.dockMagnification : true
+                                }
+
+                                SettingsRow {
+                                    visible: Services.Config ? Services.Config.dockMagnification : true
+                                    title: "Magnification Scale"
+                                    subtitle: "Peak zoom factor on hover"
+
+                                    SettingsDropdown {
+                                        currentValue: Services.Config ? Services.Config.dockMagnificationScale : 1.35
+                                        model: [
+                                            { id: 1.20, label: "1.20x (Subtle)" },
+                                            { id: 1.35, label: "1.35x (Balanced)" },
+                                            { id: 1.50, label: "1.50x (Prominent)" },
+                                            { id: 1.75, label: "1.75x (Dramatic)" }
+                                        ]
+                                        onSelected: (val) => { if (Services.Config) Services.Config.setDockMagnificationScale(Number(val)) }
+                                    }
+                                }
+
+                                SettingsDivider {}
+
+                                SettingsSwitch {
+                                    title: "Running App Indicators"
+                                    subtitle: "Display status marker beneath active applications"
+                                    checked: Services.Config ? Services.Config.dockShowIndicators : true
+                                    onToggled: (st) => { if (Services.Config) Services.Config.setDockShowIndicators(st) }
+                                }
+
+                                SettingsDivider {
+                                    visible: Services.Config ? Services.Config.dockShowIndicators : true
+                                }
+
+                                SettingsRow {
+                                    visible: Services.Config ? Services.Config.dockShowIndicators : true
+                                    title: "Indicator Style"
+                                    subtitle: "Visual style of the active application marker"
+
+                                    SettingsDropdown {
+                                        currentValue: Services.Config ? Services.Config.dockIndicatorStyle : "dot"
+                                        model: [
+                                            { id: "dot",  label: "Dot (Classic Circle)" },
+                                            { id: "line", label: "Line (Horizontal Bar)" },
+                                            { id: "pill", label: "Pill (Rounded Dash)" },
+                                            { id: "glow", label: "Glow (Underglow Bar)" }
+                                        ]
+                                        onSelected: (val) => { if (Services.Config) Services.Config.setDockIndicatorStyle(val) }
+                                    }
+                                }
+
+                                SettingsDivider {}
+
+                                SettingsSwitch {
+                                    title: "Application Name Tooltips"
+                                    subtitle: "Display floating title pill when hovering over an application"
+                                    checked: Services.Config ? Services.Config.dockShowTooltips : true
+                                    onToggled: (st) => { if (Services.Config) Services.Config.setDockShowTooltips(st) }
+                                }
+
+                                SettingsDivider {}
+
+                                SettingsSwitch {
+                                    title: "Window Count Badges"
+                                    subtitle: "Show badge indicator when an app has multiple open windows"
+                                    checked: Services.Config ? Services.Config.dockShowWindowCount : true
+                                    onToggled: (st) => { if (Services.Config) Services.Config.setDockShowWindowCount(st) }
+                                }
+
+                                SettingsDivider {}
+
+                                SettingsSwitch {
+                                    title: "Launch Bounce Animation"
+                                    subtitle: "Tactile spring bounce effect when launching or switching to an app"
+                                    checked: Services.Config ? Services.Config.dockBounceOnClick : true
+                                    onToggled: (st) => { if (Services.Config) Services.Config.setDockBounceOnClick(st) }
+                                }
+
+                                SettingsDivider {}
+
+                                SettingsSwitch {
+                                    title: "Pinned Apps Separator"
+                                    subtitle: "Display hairline divider separating pinned favorites from running apps"
+                                    checked: Services.Config ? Services.Config.dockShowSeparator : true
+                                    onToggled: (st) => { if (Services.Config) Services.Config.setDockShowSeparator(st) }
+                                }
+                            }
+
+                            // 3. Pinned Applications Management Section
+                            SettingsSection {
+                                title: "Pinned Applications (" + ((Services.Config && Services.Config.dockPinnedApps) ? Services.Config.dockPinnedApps.length : 0) + ")"
+                                icon: Services.Icons.pin || "󰤩"
+
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    Layout.margins: 12
+                                    spacing: 8
+
+                                    // Top Action Header
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 8
+
+                                        Text {
+                                            text: "Manage pinned favorites on your Dock"
+                                            font.pixelSize: Services.Theme.fontSizeSm
+                                            color: Services.Theme.textSecondary
+                                            Layout.fillWidth: true
+                                        }
+
+                                        Rectangle {
+                                            implicitWidth: addAppBtnText.implicitWidth + 24
+                                            height: 28
+                                            radius: 6
+                                            color: tab1.isAddingApp ? Services.Theme.surfaceVariant : Services.Theme.accent
+                                            border.color: Services.Theme.accent
+                                            border.width: 1
+
+                                            RowLayout {
+                                                anchors.centerIn: parent
+                                                spacing: 6
+                                                Text {
+                                                    text: tab1.isAddingApp ? "✕" : "+"
+                                                    font.pixelSize: 12
+                                                    font.bold: true
+                                                    color: tab1.isAddingApp ? Services.Theme.textPrimary : Services.Theme.bgOnAccent
+                                                }
+                                                Text {
+                                                    id: addAppBtnText
+                                                    text: tab1.isAddingApp ? "Close Picker" : "Add Application"
+                                                    font.pixelSize: 11
+                                                    font.weight: Font.DemiBold
+                                                    color: tab1.isAddingApp ? Services.Theme.textPrimary : Services.Theme.bgOnAccent
+                                                }
+                                            }
+
+                                            MouseArea {
+                                                anchors.fill: parent
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: {
+                                                    tab1.isAddingApp = !tab1.isAddingApp
+                                                    tab1.appSearchText = ""
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    // Quick App Picker Search Box
+                                    Rectangle {
+                                        Layout.fillWidth: true
+                                        implicitHeight: addAppCol.implicitHeight + 16
+                                        visible: tab1.isAddingApp
+                                        radius: 10
+                                        color: Services.Theme.bgElevated
+                                        border.color: Services.Theme.borderHighlight
+                                        border.width: 1
+
+                                        ColumnLayout {
+                                            id: addAppCol
+                                            anchors.fill: parent
+                                            anchors.margins: 10
+                                            spacing: 8
+
+                                            Rectangle {
+                                                Layout.fillWidth: true
+                                                height: 32
+                                                radius: 6
+                                                color: Services.Theme.surface
+                                                border.color: appSearchInput.activeFocus ? Services.Theme.accent : Services.Theme.border
+                                                border.width: 1
+
+                                                RowLayout {
+                                                    anchors.fill: parent
+                                                    anchors.leftMargin: 8; anchors.rightMargin: 8
+                                                    spacing: 6
+
+                                                    Text {
+                                                        text: Services.Icons.search || "🔍"
+                                                        font.family: Services.Theme.fontSymbols
+                                                        font.pixelSize: 11
+                                                        color: Services.Theme.textSecondary
+                                                    }
+
+                                                    TextInput {
+                                                        id: appSearchInput
+                                                        Layout.fillWidth: true
+                                                        text: tab1.appSearchText
+                                                        font.pixelSize: 12
+                                                        color: Services.Theme.textPrimary
+                                                        selectByMouse: true
+                                                        onTextChanged: tab1.appSearchText = text
+                                                    }
+
+                                                    Text {
+                                                        visible: tab1.appSearchText.length > 0
+                                                        text: "✕"
+                                                        font.pixelSize: 10
+                                                        color: Services.Theme.textSecondary
+                                                        MouseArea {
+                                                            anchors.fill: parent
+                                                            cursorShape: Qt.PointingHandCursor
+                                                            onClicked: { tab1.appSearchText = ""; appSearchInput.text = "" }
+                                                        }
+                                                    }
+                                                }
+                                            }
+
+                                            Flow {
+                                                Layout.fillWidth: true
+                                                spacing: 6
+
+                                                readonly property var candidates: {
+                                                    const raw = (DesktopEntries.applications && DesktopEntries.applications.values) ? DesktopEntries.applications.values : []
+                                                    const q = tab1.appSearchText.toLowerCase().trim()
+                                                    const res = []
+                                                    for (let i = 0; i < raw.length && res.length < 24; i++) {
+                                                        const a = raw[i]
+                                                        if (!a || !a.id) continue
+                                                        if (Services.DockService && Services.DockService.isPinned(a.id)) continue
+                                                        if (q.length === 0 || (a.name && a.name.toLowerCase().includes(q)) || (a.id && a.id.toLowerCase().includes(q))) {
+                                                            res.push(a)
+                                                        }
+                                                    }
+                                                    return res
+                                                }
+
+                                                Repeater {
+                                                    model: parent.candidates
+                                                    delegate: Rectangle {
+                                                        required property var modelData
+                                                        implicitWidth: addAppRow.implicitWidth + 16
+                                                        height: 32
+                                                        radius: 6
+                                                        color: candMouse.containsMouse ? Services.Theme.bgHover : Services.Theme.surface
+                                                        border.color: candMouse.containsMouse ? Services.Theme.accent : Services.Theme.border
+                                                        border.width: 1
+
+                                                        RowLayout {
+                                                            id: addAppRow
+                                                            anchors.centerIn: parent
+                                                            spacing: 6
+
+                                                            Text {
+                                                                text: modelData.name || modelData.id
+                                                                font.pixelSize: 11
+                                                                color: Services.Theme.textPrimary
+                                                            }
+
+                                                            Text {
+                                                                text: "+"
+                                                                font.pixelSize: 12
+                                                                font.bold: true
+                                                                color: Services.Theme.accent
+                                                            }
+                                                        }
+
+                                                        MouseArea {
+                                                            id: candMouse
+                                                            anchors.fill: parent
+                                                            hoverEnabled: true
+                                                            cursorShape: Qt.PointingHandCursor
+                                                            onClicked: {
+                                                                if (Services.DockService && modelData.id) {
+                                                                    Services.DockService.pinApp(modelData.id)
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    // Visual List of Currently Pinned Apps
+                                    ColumnLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 4
+
+                                        Repeater {
+                                            model: (Services.Config && Services.Config.dockPinnedApps) ? Services.Config.dockPinnedApps : []
+
+                                            delegate: Rectangle {
+                                                id: pinnedCard
+                                                required property var modelData
+                                                required property int index
+                                                Layout.fillWidth: true
+                                                height: 44
+                                                radius: 8
+                                                color: Services.Theme.bgElevated
+                                                border.color: Services.Theme.border
+                                                border.width: 1
+
+                                                readonly property var appObj: Services.DockService ? Services.DockService.findAppByDesktopId(pinnedCard.modelData) : null
+                                                readonly property string appName: appObj ? (appObj.name || pinnedCard.modelData) : pinnedCard.modelData.replace(/\.desktop$/, '')
+
+                                                RowLayout {
+                                                    anchors.fill: parent
+                                                    anchors.leftMargin: 12
+                                                    anchors.rightMargin: 12
+                                                    spacing: 12
+
+                                                    Image {
+                                                        Layout.preferredWidth: 26
+                                                        Layout.preferredHeight: 26
+                                                        source: {
+                                                            const raw = pinnedCard.appObj ? (typeof pinnedCard.appObj.icon === "string" ? pinnedCard.appObj.icon : pinnedCard.appObj.icon?.name) : ""
+                                                            if (!raw) return ""
+                                                            if (Services.SystemTheme) {
+                                                                const res = Services.SystemTheme.getIcon(raw)
+                                                                if (res && res.length > 0) return res
+                                                            }
+                                                            const qp = Quickshell.iconPath(raw, true)
+                                                            return (qp && qp.startsWith("/")) ? ("file://" + qp) : (qp || "")
+                                                        }
+                                                        fillMode: Image.PreserveAspectFit
+                                                        asynchronous: true
+                                                        smooth: true
+                                                    }
+
+                                                    ColumnLayout {
+                                                        Layout.fillWidth: true
+                                                        spacing: 1
+
+                                                        Text {
+                                                            text: pinnedCard.appName
+                                                            font.pixelSize: 12
+                                                            font.weight: Font.Medium
+                                                            color: Services.Theme.textPrimary
+                                                            elide: Text.ElideRight
+                                                            Layout.fillWidth: true
+                                                        }
+
+                                                        Text {
+                                                            text: pinnedCard.modelData
+                                                            font.family: Services.Theme.fontMono
+                                                            font.pixelSize: 10
+                                                            color: Services.Theme.textDisabled
+                                                            elide: Text.ElideRight
+                                                            Layout.fillWidth: true
+                                                        }
+                                                    }
+
+                                                    // Reorder: Up Button
+                                                    Rectangle {
+                                                        width: 24; height: 24; radius: 5
+                                                        visible: pinnedCard.index > 0
+                                                        color: upMouse.containsMouse ? Services.Theme.bgHover : "transparent"
+                                                        Text {
+                                                            anchors.centerIn: parent
+                                                            text: "▲"
+                                                            font.pixelSize: 9
+                                                            color: upMouse.containsMouse ? Services.Theme.accent : Services.Theme.textSecondary
+                                                        }
+                                                        MouseArea {
+                                                            id: upMouse
+                                                            anchors.fill: parent
+                                                            hoverEnabled: true
+                                                            cursorShape: Qt.PointingHandCursor
+                                                            onClicked: {
+                                                                if (Services.DockService) {
+                                                                    Services.DockService.movePinned(pinnedCard.index, pinnedCard.index - 1)
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+
+                                                    // Reorder: Down Button
+                                                    Rectangle {
+                                                        width: 24; height: 24; radius: 5
+                                                        visible: pinnedCard.index < ((Services.Config.dockPinnedApps ? Services.Config.dockPinnedApps.length : 0) - 1)
+                                                        color: downMouse.containsMouse ? Services.Theme.bgHover : "transparent"
+                                                        Text {
+                                                            anchors.centerIn: parent
+                                                            text: "▼"
+                                                            font.pixelSize: 9
+                                                            color: downMouse.containsMouse ? Services.Theme.accent : Services.Theme.textSecondary
+                                                        }
+                                                        MouseArea {
+                                                            id: downMouse
+                                                            anchors.fill: parent
+                                                            hoverEnabled: true
+                                                            cursorShape: Qt.PointingHandCursor
+                                                            onClicked: {
+                                                                if (Services.DockService) {
+                                                                    Services.DockService.movePinned(pinnedCard.index, pinnedCard.index + 1)
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+
+                                                    // Remove / Unpin Button
+                                                    Rectangle {
+                                                        width: 24; height: 24; radius: 5
+                                                        color: unpinMouse.containsMouse ? Qt.rgba(0.9, 0.2, 0.2, 0.15) : "transparent"
+                                                        Text {
+                                                            anchors.centerIn: parent
+                                                            text: "✕"
+                                                            font.pixelSize: 11
+                                                            color: unpinMouse.containsMouse ? Services.Theme.danger : Services.Theme.textSecondary
+                                                        }
+                                                        MouseArea {
+                                                            id: unpinMouse
+                                                            anchors.fill: parent
+                                                            hoverEnabled: true
+                                                            cursorShape: Qt.PointingHandCursor
+                                                            onClicked: {
+                                                                if (Services.DockService) {
+                                                                    Services.DockService.unpinApp(pinnedCard.modelData)
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
 
                         // ═════════════════════════════════════════════
                         // TAB 2: NOTIFICATIONS

@@ -24,6 +24,7 @@ singleton SystemTheme 1.0 SystemTheme.qml
 singleton Weather 1.0 Weather.qml
 singleton DeviceShare 1.0 DeviceShare.qml
 singleton Cava 1.0 Cava.qml
+singleton DockService 1.0 DockService.qml
 AvatarFrame 1.0 AvatarFrame.qml
 
 

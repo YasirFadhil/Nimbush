@@ -113,6 +113,28 @@ Singleton {
     property string notificationPosition: "top_right" // "top_right" | "top_center" | "top_left" | "bottom_right"
     property bool notificationShowInFullscreen: false
 
+    // ── Application Dock ─────────────────────────────────────────────────────
+    property bool dockEnabled: true
+    property string dockPosition: "bottom"        // "bottom" | "left" | "right"
+    property bool dockAutoHide: false
+    property int dockIconSize: 48                 // 36 | 44 | 48 | 56 | 64
+    property bool dockMagnification: true
+    property real dockMagnificationScale: 1.35    // 1.1 to 1.8
+    property bool dockShowIndicators: true
+    property string dockIndicatorStyle: "dot"     // "dot" | "line" | "pill" | "glow"
+    property bool dockShowTooltips: true
+    property bool dockShowWindowCount: true
+    property bool dockBounceOnClick: true
+    property bool dockShowSeparator: true
+    property int dockFloatingDistance: 6          // 0 | 6 | 12 | 18
+    property string dockMonitorMode: "all"        // "all" | "primary"
+    property var dockPinnedApps: [
+        "kitty.desktop",
+        "helium.desktop",
+        "antigravity-ide.desktop",
+        "thunar.desktop"
+    ]
+
     // ── Lockscreen & System ──────────────────────────────────────────────────
     property string lockscreenClockStyle: "hero"  // "hero" | "modern" | "compact" | "minimal" | "vertical" | "typographic" | "radial" | "cyber"
     property string lockscreenAuthStyle: "pill"   // "pill" | "card"
@@ -311,6 +333,22 @@ Singleton {
         if (data.clipboardLimit !== undefined) clipboardLimit = Number(data.clipboardLimit)
         if (data.launcherMaxResults !== undefined) launcherMaxResults = Number(data.launcherMaxResults)
 
+        if (data.dockEnabled !== undefined) dockEnabled = Boolean(data.dockEnabled)
+        if (data.dockPosition !== undefined) dockPosition = String(data.dockPosition)
+        if (data.dockAutoHide !== undefined) dockAutoHide = Boolean(data.dockAutoHide)
+        if (data.dockIconSize !== undefined) dockIconSize = Number(data.dockIconSize)
+        if (data.dockMagnification !== undefined) dockMagnification = Boolean(data.dockMagnification)
+        if (data.dockMagnificationScale !== undefined) dockMagnificationScale = Number(data.dockMagnificationScale)
+        if (data.dockShowIndicators !== undefined) dockShowIndicators = Boolean(data.dockShowIndicators)
+        if (data.dockIndicatorStyle !== undefined) dockIndicatorStyle = String(data.dockIndicatorStyle)
+        if (data.dockShowTooltips !== undefined) dockShowTooltips = Boolean(data.dockShowTooltips)
+        if (data.dockShowWindowCount !== undefined) dockShowWindowCount = Boolean(data.dockShowWindowCount)
+        if (data.dockBounceOnClick !== undefined) dockBounceOnClick = Boolean(data.dockBounceOnClick)
+        if (data.dockShowSeparator !== undefined) dockShowSeparator = Boolean(data.dockShowSeparator)
+        if (data.dockFloatingDistance !== undefined) dockFloatingDistance = Number(data.dockFloatingDistance)
+        if (data.dockMonitorMode !== undefined) dockMonitorMode = String(data.dockMonitorMode)
+        if (data.dockPinnedApps !== undefined && Array.isArray(data.dockPinnedApps)) dockPinnedApps = data.dockPinnedApps
+
         if (data.dashboardWidget !== undefined) dashboardWidget = data.dashboardWidget
         if (data.weatherLocationMode !== undefined) weatherLocationMode = data.weatherLocationMode
         if (data.weatherCustomCity !== undefined) weatherCustomCity = String(data.weatherCustomCity)
@@ -426,6 +464,22 @@ Singleton {
             dashboardShowActions: dashboardShowActions,
             dashboardMetricsStyle: dashboardMetricsStyle,
 
+            dockEnabled: dockEnabled,
+            dockPosition: dockPosition,
+            dockAutoHide: dockAutoHide,
+            dockIconSize: dockIconSize,
+            dockMagnification: dockMagnification,
+            dockMagnificationScale: dockMagnificationScale,
+            dockShowIndicators: dockShowIndicators,
+            dockIndicatorStyle: dockIndicatorStyle,
+            dockShowTooltips: dockShowTooltips,
+            dockShowWindowCount: dockShowWindowCount,
+            dockBounceOnClick: dockBounceOnClick,
+            dockShowSeparator: dockShowSeparator,
+            dockFloatingDistance: dockFloatingDistance,
+            dockMonitorMode: dockMonitorMode,
+            dockPinnedApps: dockPinnedApps,
+
             firstRunCompleted: firstRunCompleted,
             customSettingsVersion: customSettingsVersion
         }
@@ -523,6 +577,27 @@ Singleton {
         dashboardShowSpecs = true
         dashboardShowActions = true
         dashboardMetricsStyle = "cards"
+
+        dockEnabled = true
+        dockPosition = "bottom"
+        dockAutoHide = false
+        dockIconSize = 48
+        dockMagnification = true
+        dockMagnificationScale = 1.35
+        dockShowIndicators = true
+        dockIndicatorStyle = "dot"
+        dockShowTooltips = true
+        dockShowWindowCount = true
+        dockBounceOnClick = true
+        dockShowSeparator = true
+        dockFloatingDistance = 6
+        dockMonitorMode = "all"
+        dockPinnedApps = [
+            "kitty.desktop",
+            "helium.desktop",
+            "antigravity-ide.desktop",
+            "thunar.desktop"
+        ]
 
         firstRunCompleted = true
         saveConfig()
@@ -719,6 +794,22 @@ Singleton {
     function clearCustomAvatar() { customAvatar = ""; saveConfig() }
     function setClipboardLimit(val) { clipboardLimit = val; saveConfig() }
     function setLauncherMaxResults(val) { launcherMaxResults = val; saveConfig() }
+
+    function setDockEnabled(val) { dockEnabled = val; saveConfig() }
+    function setDockPosition(val) { dockPosition = val; saveConfig() }
+    function setDockAutoHide(val) { dockAutoHide = val; saveConfig() }
+    function setDockIconSize(val) { dockIconSize = val; saveConfig() }
+    function setDockMagnification(val) { dockMagnification = val; saveConfig() }
+    function setDockMagnificationScale(val) { dockMagnificationScale = val; saveConfig() }
+    function setDockShowIndicators(val) { dockShowIndicators = val; saveConfig() }
+    function setDockIndicatorStyle(val) { dockIndicatorStyle = val; saveConfig() }
+    function setDockShowTooltips(val) { dockShowTooltips = val; saveConfig() }
+    function setDockShowWindowCount(val) { dockShowWindowCount = val; saveConfig() }
+    function setDockBounceOnClick(val) { dockBounceOnClick = val; saveConfig() }
+    function setDockShowSeparator(val) { dockShowSeparator = val; saveConfig() }
+    function setDockFloatingDistance(val) { dockFloatingDistance = val; saveConfig() }
+    function setDockMonitorMode(val) { dockMonitorMode = val; saveConfig() }
+    function setDockPinnedApps(apps) { dockPinnedApps = apps; saveConfig() }
 
     function setDashboardWidget(val) { dashboardWidget = val; saveConfig() }
     function setWeatherLocationMode(val) {

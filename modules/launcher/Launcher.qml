@@ -1,6 +1,7 @@
 import Quickshell
 import Quickshell.Widgets
 import Quickshell.Wayland
+import Quickshell.Io
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -23,7 +24,25 @@ PanelWindow {
     readonly property bool hasQuery: searchField.text.trim().length > 0
     readonly property bool isExpanded: hasQuery
 
+    property var contextMenuApp: null
+    property real contextMenuX: 0
+    property real contextMenuY: 0
+    readonly property bool isContextMenuOpen: contextMenuApp !== null
+
+    function openContextMenu(app, x, y) {
+        contextMenuApp = app
+        const menuWidth = 220
+        const menuHeight = 180
+        contextMenuX = Math.max(10, Math.min(x, panel.width - menuWidth - 10))
+        contextMenuY = Math.max(10, Math.min(y, panel.height - menuHeight - 10))
+    }
+
+    function closeContextMenu() {
+        contextMenuApp = null
+    }
+
     function show() {
+        closeContextMenu()
         Services.OverlayManager.closeAllExcept(launcherWindow)
         hideTimer.stop()
         visible = true
@@ -39,6 +58,7 @@ PanelWindow {
 
     function hide() {
         if (!isOpen) return
+        closeContextMenu()
         isOpen = false
         hideTimer.restart()
     }
@@ -99,7 +119,265 @@ PanelWindow {
             ColorAnimation { duration: 200; easing.type: Easing.OutCubic }
         }
 
-        MouseArea { anchors.fill: parent }
+        MouseArea { 
+            anchors.fill: parent 
+            onClicked: {
+                if (launcherWindow.isContextMenuOpen) {
+                    launcherWindow.closeContextMenu()
+                }
+            }
+        }
+
+        // ── Floating App Context Menu ────────────────────────────────────────
+        MouseArea {
+            anchors.fill: parent
+            visible: launcherWindow.isContextMenuOpen
+            z: 98
+            onClicked: launcherWindow.closeContextMenu()
+        }
+
+        Rectangle {
+            id: contextMenuBox
+            visible: launcherWindow.isContextMenuOpen
+            z: 99
+            x: launcherWindow.contextMenuX
+            y: launcherWindow.contextMenuY
+            width: 220
+            height: menuCol.implicitHeight + 16
+            radius: 12
+            color: Services.Theme.bgElevated
+            border.color: Services.Theme.borderHighlight
+            border.width: 1
+
+            // Specular top highlight
+            Rectangle {
+                anchors.top: parent.top
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.topMargin: 1
+                anchors.leftMargin: 6
+                anchors.rightMargin: 6
+                height: 1
+                color: Qt.rgba(1, 1, 1, 0.15)
+            }
+
+            ColumnLayout {
+                id: menuCol
+                anchors.top: parent.top
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.margins: 8
+                spacing: 4
+
+                // Header with App Title & Desktop ID
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    Layout.margins: 4
+                    spacing: 2
+
+                    Text {
+                        text: launcherWindow.contextMenuApp ? (launcherWindow.contextMenuApp.name || "") : ""
+                        font.pixelSize: Services.Theme.fontSizeMd
+                        font.weight: Font.DemiBold
+                        color: Services.Theme.textPrimary
+                        elide: Text.ElideRight
+                        Layout.fillWidth: true
+                    }
+
+                    Text {
+                        text: launcherWindow.contextMenuApp ? (launcherWindow.contextMenuApp.id || "Desktop Application") : ""
+                        font.family: Services.Theme.fontMono
+                        font.pixelSize: 10
+                        color: Services.Theme.textDisabled
+                        elide: Text.ElideRight
+                        Layout.fillWidth: true
+                    }
+                }
+
+                Rectangle {
+                    Layout.fillWidth: true
+                    height: 1
+                    color: Services.Theme.border
+                    opacity: 0.6
+                }
+
+                // 1. Launch Action
+                Rectangle {
+                    Layout.fillWidth: true
+                    height: 30
+                    radius: 6
+                    color: launchMouse.containsMouse ? Services.Theme.bgHover : "transparent"
+
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.leftMargin: 8; anchors.rightMargin: 8
+                        spacing: 8
+
+                        Text {
+                            text: Services.Icons.play || "▶"
+                            font.family: Services.Theme.fontSymbols
+                            font.pixelSize: 12
+                            color: Services.Theme.accent
+                        }
+                        Text {
+                            text: "Launch"
+                            font.pixelSize: Services.Theme.fontSizeSm
+                            color: Services.Theme.textPrimary
+                            Layout.fillWidth: true
+                        }
+                    }
+
+                    MouseArea {
+                        id: launchMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            const app = launcherWindow.contextMenuApp
+                            launcherWindow.closeContextMenu()
+                            launcherWindow.hide()
+                            if (app && typeof app.execute === "function") {
+                                app.execute()
+                            }
+                        }
+                    }
+                }
+
+                // 2. Pin / Unpin Action
+                Rectangle {
+                    Layout.fillWidth: true
+                    height: 30
+                    radius: 6
+                    readonly property bool pinned: (launcherWindow.contextMenuApp && Services.DockService) ? Services.DockService.isPinned(launcherWindow.contextMenuApp.id) : false
+                    color: pinMouse.containsMouse ? Services.Theme.bgHover : "transparent"
+
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.leftMargin: 8; anchors.rightMargin: 8
+                        spacing: 8
+
+                        Text {
+                            text: Services.Icons.pin || "󰤩"
+                            font.family: Services.Theme.fontSymbols
+                            font.pixelSize: 12
+                            color: parent.parent.pinned ? Services.Theme.danger : Services.Theme.accent
+                        }
+                        Text {
+                            text: parent.parent.pinned ? "Unpin from Dock" : "Pin to Dock"
+                            font.pixelSize: Services.Theme.fontSizeSm
+                            color: parent.parent.pinned ? Services.Theme.danger : Services.Theme.textPrimary
+                            Layout.fillWidth: true
+                        }
+                    }
+
+                    MouseArea {
+                        id: pinMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            const app = launcherWindow.contextMenuApp
+                            if (app && app.id && Services.DockService) {
+                                Services.DockService.togglePin(app.id)
+                            }
+                            launcherWindow.closeContextMenu()
+                        }
+                    }
+                }
+
+                // 3. Desktop Entry Actions (e.g. New Window, Private Window)
+                Repeater {
+                    model: (launcherWindow.contextMenuApp && launcherWindow.contextMenuApp.actions) ? launcherWindow.contextMenuApp.actions : []
+                    delegate: Rectangle {
+                        required property var modelData
+                        Layout.fillWidth: true
+                        height: 30
+                        radius: 6
+                        color: actMouse.containsMouse ? Services.Theme.bgHover : "transparent"
+
+                        RowLayout {
+                            anchors.fill: parent
+                            anchors.leftMargin: 8; anchors.rightMargin: 8
+                            spacing: 8
+
+                            Text {
+                                text: "✦"
+                                font.pixelSize: 10
+                                color: Services.Theme.textSecondary
+                            }
+                            Text {
+                                text: modelData.name || "Action"
+                                font.pixelSize: Services.Theme.fontSizeSm
+                                color: Services.Theme.textPrimary
+                                elide: Text.ElideRight
+                                Layout.fillWidth: true
+                            }
+                        }
+
+                        MouseArea {
+                            id: actMouse
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: {
+                                launcherWindow.closeContextMenu()
+                                launcherWindow.hide()
+                                if (typeof modelData.execute === "function") {
+                                    modelData.execute()
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // 4. Copy Desktop ID
+                Rectangle {
+                    Layout.fillWidth: true
+                    height: 28
+                    radius: 6
+                    color: copyMouse.containsMouse ? Services.Theme.bgHover : "transparent"
+
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.leftMargin: 8; anchors.rightMargin: 8
+                        spacing: 8
+
+                        Text {
+                            text: Services.Icons.disk || "📋"
+                            font.family: Services.Theme.fontSymbols
+                            font.pixelSize: 11
+                            color: Services.Theme.textSecondary
+                        }
+                        Text {
+                            text: "Copy App ID"
+                            font.pixelSize: Services.Theme.fontSizeXs
+                            color: Services.Theme.textSecondary
+                            Layout.fillWidth: true
+                        }
+                    }
+
+                    Process {
+                        id: copyProc
+                        command: []
+                    }
+
+                    MouseArea {
+                        id: copyMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            const app = launcherWindow.contextMenuApp
+                            if (app && app.id) {
+                                copyProc.command = ["sh", "-c", "printf '%s' \"$1\" | wl-copy", "sh", app.id]
+                                copyProc.running = true
+                            }
+                            launcherWindow.closeContextMenu()
+                        }
+                    }
+                }
+            }
+        }
 
         ColumnLayout {
             id: listCol
@@ -179,6 +457,11 @@ PanelWindow {
                             }
                             event.accepted = true
                         } else if (event.key === Qt.Key_Escape) {
+                            if (launcherWindow.isContextMenuOpen) {
+                                launcherWindow.closeContextMenu()
+                                event.accepted = true
+                                return
+                            }
                             launcherWindow.hide()
                             event.accepted = true
                         }
@@ -366,16 +649,23 @@ PanelWindow {
                         id: hoverArea
                         anchors.fill: parent
                         hoverEnabled: true
+                        acceptedButtons: Qt.LeftButton | Qt.RightButton
                         cursorShape: Qt.PointingHandCursor
                         onPositionChanged: {
                             if (resultList.currentIndex !== appItem.index) {
                                 resultList.currentIndex = appItem.index
                             }
                         }
-                        onClicked: {
-                            launcherWindow.hide()
-                            if (typeof appItem.modelData.execute === "function") {
-                                appItem.modelData.execute()
+                        onClicked: (mouse) => {
+                            if (mouse.button === Qt.RightButton) {
+                                const pt = mapToItem(panel, mouse.x, mouse.y)
+                                launcherWindow.openContextMenu(appItem.modelData, pt.x, pt.y)
+                            } else {
+                                launcherWindow.closeContextMenu()
+                                launcherWindow.hide()
+                                if (typeof appItem.modelData.execute === "function") {
+                                    appItem.modelData.execute()
+                                }
                             }
                         }
                     }

@@ -22,6 +22,7 @@ import "modules/battery" as BatteryModule
 import "modules/volume" as VolumeModule
 import "modules/emoji" as EmojiModule
 import "modules/sysmon" as SysmonModule
+import "modules/dock" as DockModule
 
 ShellRoot {
     // Native QML wallpaper layer (serves as wallpaper renderer and fallback for swww)
@@ -38,6 +39,8 @@ ShellRoot {
     Clipboard.ClipboardHistory { id: clipboardWindow }
     PowerMenu.PowerMenu { id: powerMenu }
     Bar.Bar {}
+    DockModule.Dock { id: dockWindow }
+    DockModule.DockMenu { id: dockMenuWindow }
     ControlCenter.ControlCenter { id: controlCenter }
     BatteryModule.Battery { id: batteryWindow }
     VolumeModule.Volume { id: volumeWindow }
@@ -322,6 +325,21 @@ ShellRoot {
         function toggle(): void { if (!Services.OverlayManager.isLocked) welcomeWindow.toggle() }
         function show():   void { if (!Services.OverlayManager.isLocked) welcomeWindow.show() }
         function hide():   void { welcomeWindow.hide() }
+    }
+
+    // ── Application Dock ─────────────────────────────────────────────────────
+    IpcHandler {
+        target: "dock"
+        function toggle(): void {
+            if (Services.Config) {
+                Services.Config.setDockEnabled(!Services.Config.dockEnabled)
+            }
+        }
+        function enable(): void { if (Services.Config) Services.Config.setDockEnabled(true) }
+        function disable(): void { if (Services.Config) Services.Config.setDockEnabled(false) }
+        function refresh(): void {
+            if (Services.DockService) Services.DockService.refreshClients()
+        }
     }
 
     // ── Shell lifecycle / reload ──────────────────────────────────────────────
