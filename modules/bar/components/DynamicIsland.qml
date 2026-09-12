@@ -162,7 +162,7 @@ Item {
     // Camera Active State & Monitoring
     property bool cameraActive: false
     readonly property bool isMediaSatellite: !Services.OverlayManager.isLocked && mediaPlaying && (notifActive || sysHudActive || wallpaperMode || dropSendMode || isDropSending)
-    readonly property bool isCameraSatellite: cameraActive && (mediaPlaying || (mediaStopping && !mediaTextCollapsed) || showCollapsedText || expanded)
+    readonly property bool isCameraSatellite: cameraActive && (mediaPlaying || mediaStopping || showCollapsedText || expanded)
     readonly property int satelliteExtraWidth: (isMediaSatellite ? 40 : 0) + (isCameraSatellite ? 40 : 0) + ((capsLockActive && !expanded) ? 40 : 0)
 
     // CapsLock Active State & Monitoring
@@ -183,7 +183,7 @@ Item {
 
     Timer {
         id: mediaStopPhase1Timer
-        interval: 240
+        interval: 220
         repeat: false
         onTriggered: {
             root.mediaTextCollapsed = true
@@ -193,7 +193,7 @@ Item {
 
     Timer {
         id: mediaStopPhase2Timer
-        interval: 320
+        interval: 400
         repeat: false
         onTriggered: {
             root.mediaIconTransformed = true
@@ -656,7 +656,7 @@ Item {
     // Island Dimensions
     readonly property bool showCollapsedText: !lockBlocked && (notifActive || mediaPlaying)
     readonly property int calculatedCollapsedWidth: {
-        if (showCollapsedText || (mediaStopping && !mediaIconTransformed)) {
+        if (showCollapsedText || (mediaStopping && !mediaTextCollapsed)) {
             const extraPadding = mediaPlaying ? 72 : 52
             return Math.min(220, Math.max(140, collapsedText.implicitWidth + extraPadding))
         }
@@ -870,14 +870,14 @@ Item {
         // Seamless, Continuous Fluid Morphing (Zero delay, zero hitching, pure iOS ease)
         Behavior on width {
             NumberAnimation {
-                duration: 380
-                easing.type: Easing.OutExpo
+                duration: 400
+                easing.type: Easing.OutCubic
             }
         }
         Behavior on height {
             NumberAnimation {
-                duration: 380
-                easing.type: Easing.OutExpo
+                duration: 400
+                easing.type: Easing.OutCubic
             }
         }
         Behavior on radius {
@@ -986,7 +986,7 @@ Item {
             states: [
                 State {
                     name: "ICON_LEFT"
-                    when: !Services.OverlayManager.isLocked && (root.showCollapsedText || (root.mediaStopping && !root.mediaIconTransformed))
+                    when: !Services.OverlayManager.isLocked && (root.showCollapsedText || root.mediaStopping)
                     AnchorChanges {
                         target: statusIconContainer
                         anchors.horizontalCenter: undefined
@@ -1014,7 +1014,7 @@ Item {
                 },
                 State {
                     name: "IDLE_CENTER"
-                    when: !Services.OverlayManager.isLocked && !root.showCollapsedText && !(root.mediaStopping && !root.mediaIconTransformed) && !root.cameraActive
+                    when: !Services.OverlayManager.isLocked && !root.showCollapsedText && !root.mediaStopping && !root.cameraActive
                     AnchorChanges {
                         target: statusIconContainer
                         anchors.horizontalCenter: island.horizontalCenter
@@ -1024,7 +1024,7 @@ Item {
                 },
                 State {
                     name: "CAMERA_RIGHT"
-                    when: !Services.OverlayManager.isLocked && (!root.showCollapsedText && !(root.mediaStopping && !root.mediaIconTransformed) && root.cameraActive)
+                    when: !Services.OverlayManager.isLocked && (!root.showCollapsedText && !root.mediaStopping && root.cameraActive)
                     AnchorChanges {
                         target: statusIconContainer
                         anchors.horizontalCenter: undefined
@@ -1041,13 +1041,13 @@ Item {
             transitions: [
                 Transition {
                     from: "ICON_LEFT"; to: "IDLE_CENTER"
-                    AnchorAnimation { duration: 320; easing.type: Easing.OutBack; easing.overshoot: 1.4 }
-                    NumberAnimation { properties: "anchors.leftMargin"; duration: 320; easing.type: Easing.OutBack; easing.overshoot: 1.4 }
+                    AnchorAnimation { duration: 320; easing.type: Easing.OutCubic }
+                    NumberAnimation { properties: "anchors.leftMargin"; duration: 320; easing.type: Easing.OutCubic }
                 },
                 Transition {
-                    AnchorAnimation { duration: 320; easing.type: Easing.OutExpo }
-                    NumberAnimation { properties: "anchors.rightMargin"; duration: 320; easing.type: Easing.OutExpo }
-                    NumberAnimation { properties: "anchors.leftMargin"; duration: 320; easing.type: Easing.OutExpo }
+                    AnchorAnimation { duration: 320; easing.type: Easing.OutCubic }
+                    NumberAnimation { properties: "anchors.rightMargin"; duration: 320; easing.type: Easing.OutCubic }
+                    NumberAnimation { properties: "anchors.leftMargin"; duration: 320; easing.type: Easing.OutCubic }
                 }
             ]
 
@@ -1057,7 +1057,7 @@ Item {
                 text: {
                     if (Services.OverlayManager.isLocked) return "󰌾"
                     if (root.notifActive) return "󰂚"
-                    if (root.mediaPlaying || (root.mediaStopping && !root.mediaTextCollapsed)) return "󰎈"
+                    if (root.mediaPlaying || root.mediaStopping) return "󰎈"
                     return "●"
                 }
                 font.family: Services.Theme.fontSymbols
@@ -1065,7 +1065,7 @@ Item {
                 color: {
                     if (Services.OverlayManager.isLocked) return Services.Theme.accent
                     if (root.notifActive) return Services.Theme.accent
-                    if (root.mediaPlaying || (root.mediaStopping && !root.mediaTextCollapsed) || root.cameraActive) return Services.Theme.success
+                    if (root.mediaPlaying || root.mediaStopping || root.cameraActive) return Services.Theme.success
                     return Services.Theme.textDisabled
                 }
                 scale: textScale
@@ -1078,8 +1078,8 @@ Item {
 
                 SequentialAnimation {
                     id: iconScaleAnim
-                    NumberAnimation { target: statusIconTxt; property: "textScale"; to: 0.2; duration: 120; easing.type: Easing.InQuad }
-                    NumberAnimation { target: statusIconTxt; property: "textScale"; to: 1.0; duration: 380; easing.type: Easing.OutBack }
+                    NumberAnimation { target: statusIconTxt; property: "textScale"; to: 0.7; duration: 90; easing.type: Easing.InQuad }
+                    NumberAnimation { target: statusIconTxt; property: "textScale"; to: 1.0; duration: 220; easing.type: Easing.OutQuad }
                 }
 
                 // Green Blinking when camera active and no music text
@@ -1092,16 +1092,21 @@ Item {
 
                 Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
+                rotation: (!Services.OverlayManager.isLocked && root.mediaPlaying && !root.expanded) ? rotation : 0
+
+                Behavior on rotation {
+                    RotationAnimation {
+                        direction: RotationAnimation.Clockwise
+                        duration: 400
+                        easing.type: Easing.OutCubic
+                    }
+                }
+
                 RotationAnimation on rotation {
                     from: 0; to: 360
                     duration: 4000
                     loops: Animation.Infinite
                     running: !Services.OverlayManager.isLocked && root.mediaPlaying && !root.expanded
-                    onRunningChanged: {
-                        if (!running) {
-                            statusIconTxt.rotation = 0
-                        }
-                    }
                 }
             }
         }
@@ -1121,9 +1126,14 @@ Item {
             barColor: Services.Theme.success
             isPlaying: root.mediaPlaying
             active: visible
-            visible: !Services.OverlayManager.isLocked && root.mediaPlaying && !root.expanded && !root.notifActive
-            opacity: visible ? 1 : 0
-            Behavior on opacity { NumberAnimation { duration: 250 } }
+            readonly property bool activeState: !Services.OverlayManager.isLocked && root.mediaPlaying && !root.expanded && !root.notifActive
+            visible: activeState || opacity > 0.01
+            opacity: activeState ? 1.0 : 0.0
+            scale: activeState ? 1.0 : 0.3
+            transformOrigin: Item.Center
+
+            Behavior on opacity { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
+            Behavior on scale   { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
         }
 
         // ==================== Dedicated Collapsed Track Title / Notif Text Zone ====================
@@ -1141,10 +1151,13 @@ Item {
             readonly property bool activeState: !Services.OverlayManager.isLocked && !root.expanded && showCollapsedText
 
             clip: true
-            opacity: activeState ? 1 : 0
-            visible: opacity > 0
+            transformOrigin: Item.Left
+            opacity: activeState ? 1.0 : 0.0
+            scale: activeState ? 1.0 : 0.8
+            visible: activeState || opacity > 0.01
 
-            Behavior on opacity { NumberAnimation { duration: 180; easing.type: Easing.OutQuad } }
+            Behavior on opacity { NumberAnimation { duration: 220; easing.type: Easing.OutQuad } }
+            Behavior on scale   { NumberAnimation { duration: 220; easing.type: Easing.OutQuad } }
 
             Text {
                 id: collapsedText
