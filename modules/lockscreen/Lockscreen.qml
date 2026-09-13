@@ -35,6 +35,31 @@ Scope {
     property bool lockscreenPwrOpen: false
     property bool userRevealedInput: false
 
+    property bool isFaceVerified: false
+    property bool isFaceContracted: false
+    property bool isFaceTimeoutContracted: false
+    property bool deviceLockedPeekActive: false
+    property bool hasPeekedLocked: false
+    property int faceIdRetryCount: 0
+    readonly property int maxFaceIdRetries: 1
+
+    readonly property bool isFaceActive: Boolean(
+        Services.FaceId &&
+        Services.FaceId.isEnabled &&
+        Services.FaceId.isEnrolled &&
+        (
+            Services.FaceId.status === "starting" ||
+            Services.FaceId.status === "camera_ready" ||
+            Services.FaceId.status === "scanning" ||
+            Services.FaceId.status === "detected" ||
+            (Services.FaceId.status === "success" && !root.isFaceContracted) ||
+            (Services.FaceId.status === "timeout" && !root.isFaceTimeoutContracted)
+        ) &&
+        root.isLocked
+    )
+
+    readonly property bool isDeviceLockedPeek: root.deviceLockedPeekActive && !root.isFaceActive
+
     readonly property string lockLayout: Services.Config ? (Services.Config.lockscreenLayout || "default") : "default"
     readonly property bool isCompact: lockLayout === "compact"
     readonly property bool isMinimal: lockLayout === "minimal"
@@ -82,6 +107,17 @@ Scope {
         onTriggered: root.isRevealed = true
     }
 
+    onIsRevealedChanged: {
+        if (root.isRevealed) {
+            root.deviceLockedPeekActive = false
+            deviceLockedPeekStartTimer.restart()
+        } else {
+            deviceLockedPeekStartTimer.stop()
+            deviceLockedPeekDurationTimer.stop()
+            root.deviceLockedPeekActive = false
+        }
+    }
+
     Timer {
         id: unlockTimer
         interval: 220
@@ -93,13 +129,73 @@ Scope {
     }
 
     Timer {
-        id: faceIdScanTimer
-        interval: 2000
+        id: deviceLockedPeekStartTimer
+        interval: 400
+        repeat: false
+        onTriggered: root.triggerDeviceLockedPeek()
+    }
+
+    Timer {
+        id: deviceLockedPeekDurationTimer
+        interval: 1800
         repeat: false
         onTriggered: {
-            console.log("[Lockscreen] Face ID trigger after lock delay. isLocked:", root.isLocked, "FaceId:", Services.FaceId, "isEnabled:", Services.FaceId?.isEnabled)
-            if (root.isLocked && Services.FaceId && Services.FaceId.isEnabled) {
-                Services.FaceId.startScan()
+            console.log("[Lockscreen] Device Locked peek duration elapsed -> contracting peek, waiting delay before Face ID")
+            root.deviceLockedPeekActive = false
+            root.hasPeekedLocked = true
+            if (Services.FaceId && Services.FaceId.isEnabled && Services.FaceId.isEnrolled && !root.isFaceVerified && !Services.FaceId.isScanning) {
+                faceIdScanTimer.restart()
+            }
+        }
+    }
+
+    Timer {
+        id: faceIdScanTimer
+        interval: 2500
+        repeat: false
+        onTriggered: {
+            console.log("[Lockscreen] Face ID delay timer triggered. isLocked:", root.isLocked, "FaceId:", Services.FaceId, "isEnabled:", Services.FaceId?.isEnabled)
+            if (root.isLocked && Services.FaceId && Services.FaceId.isEnabled && Services.FaceId.isEnrolled && !root.isFaceVerified && !Services.FaceId.isScanning) {
+                root.triggerFaceIdScan()
+            }
+        }
+    }
+
+    Timer {
+        id: faceIdContractTimer
+        interval: 1000
+        repeat: false
+        onTriggered: {
+            console.log("[Lockscreen] Face ID contract timer triggered -> contracting island")
+            root.isFaceContracted = true
+        }
+    }
+
+    Timer {
+        id: faceIdTimeoutShrinkTimer
+        interval: 1400
+        repeat: false
+        onTriggered: {
+            root.isFaceTimeoutContracted = true
+            if (Services.FaceId) Services.FaceId.stopScan()
+            if (root.isLocked && !root.isFaceVerified && root.faceIdRetryCount < root.maxFaceIdRetries) {
+                console.log("[Lockscreen] Face ID failed, scheduling retry in 3s. Current retryCount:", root.faceIdRetryCount)
+                faceIdRetryTimer.restart()
+            } else {
+                console.log("[Lockscreen] Face ID failed, max retries reached (" + root.faceIdRetryCount + "). No more auto retries.")
+            }
+        }
+    }
+
+    Timer {
+        id: faceIdRetryTimer
+        interval: 3000
+        repeat: false
+        onTriggered: {
+            if (root.isLocked && !root.isFaceVerified && !root.isFaceActive && root.faceIdRetryCount < root.maxFaceIdRetries) {
+                root.faceIdRetryCount++
+                console.log("[Lockscreen] Executing Face ID auto-retry #" + root.faceIdRetryCount)
+                root.triggerFaceIdScan()
             }
         }
     }
@@ -114,6 +210,46 @@ Scope {
         }
     }
 
+    function triggerDeviceLockedPeek() {
+        console.log("[Lockscreen] triggerDeviceLockedPeek called. isLocked:", root.isLocked, "isFaceVerified:", root.isFaceVerified, "isFaceActive:", root.isFaceActive)
+        if (!root.isLocked || root.isFaceVerified || root.isFaceActive) return
+        deviceLockedPeekStartTimer.stop()
+        root.deviceLockedPeekActive = true
+        deviceLockedPeekDurationTimer.restart()
+    }
+
+    function triggerFaceIdScan() {
+        console.log("[Lockscreen] triggerFaceIdScan called. isLocked:", root.isLocked, "isEnabled:", Services.FaceId?.isEnabled, "isEnrolled:", Services.FaceId?.isEnrolled)
+        if (!root.isLocked || !Services.FaceId || !Services.FaceId.isEnabled || !Services.FaceId.isEnrolled) return
+        if (Services.FaceId.isScanning) return
+        if (root.isFaceVerified) return
+
+        deviceLockedPeekStartTimer.stop()
+        deviceLockedPeekDurationTimer.stop()
+        faceIdScanTimer.stop()
+        faceIdRetryTimer.stop()
+        root.deviceLockedPeekActive = false
+        root.hasPeekedLocked = true
+
+        faceIdContractTimer.stop()
+        faceIdTimeoutShrinkTimer.stop()
+        root.isFaceContracted = false
+        root.isFaceTimeoutContracted = false
+        Services.FaceId.startScan()
+    }
+
+    function stopFaceIdScan() {
+        console.log("[Lockscreen] stopFaceIdScan called")
+        faceIdScanTimer.stop()
+        faceIdRetryTimer.stop()
+        faceIdContractTimer.stop()
+        faceIdTimeoutShrinkTimer.stop()
+        faceIdUnlockDelayTimer.stop()
+        root.isFaceContracted = false
+        root.isFaceTimeoutContracted = false
+        if (Services.FaceId) Services.FaceId.stopScan()
+    }
+
     Connections {
         target: Services.FaceId
         function onAuthenticated(user, confidence) {
@@ -123,10 +259,26 @@ Scope {
             root.isError = false
             root.errorMessage = ""
             root.isAuthenticating = false
+            root.hasPeekedLocked = true
+            root.isFaceVerified = true
+            root.faceIdRetryCount = 0
 
             if (Services.FaceId.autoUnlock) {
                 faceIdUnlockDelayTimer.restart()
+            } else {
+                faceIdContractTimer.restart()
             }
+        }
+
+        function onStatusChanged() {
+            if (Services.FaceId && Services.FaceId.status === "timeout") {
+                faceIdTimeoutShrinkTimer.restart()
+            }
+        }
+
+        function onScanFailed(reason) {
+            console.log("[Lockscreen] Face ID scan failed:", reason)
+            faceIdTimeoutShrinkTimer.restart()
         }
     }
 
@@ -134,6 +286,18 @@ Scope {
         if (isLocked) return
         if (Services.FaceId) Services.FaceId.resetStatus()
         faceIdUnlockDelayTimer.stop()
+        faceIdContractTimer.stop()
+        faceIdTimeoutShrinkTimer.stop()
+        faceIdRetryTimer.stop()
+        deviceLockedPeekStartTimer.stop()
+        deviceLockedPeekDurationTimer.stop()
+        faceIdScanTimer.stop()
+        root.faceIdRetryCount = 0
+        root.deviceLockedPeekActive = false
+        root.isFaceContracted = false
+        root.isFaceTimeoutContracted = false
+        root.isFaceVerified = false
+        root.hasPeekedLocked = false
         isLocked = true
         passwordInput = ""
         pendingPassword = ""
@@ -147,9 +311,7 @@ Scope {
         updateTime()
         sessionLock.locked = true
         revealTimer.start()
-        if (Services.FaceId && Services.FaceId.isEnabled) {
-            faceIdScanTimer.restart()
-        }
+        deviceLockedPeekStartTimer.restart()
     }
 
     function close() {
@@ -198,6 +360,10 @@ Scope {
         if (isAuthenticating) return
         const pw = passwordInput.trim()
         if (pw.length === 0) {
+            if ((Services.FaceId && Services.FaceId.status === "success") || root.isFaceVerified) {
+                root.unlockSuccess()
+                return
+            }
             triggerShake("Enter password")
             return
         }
@@ -236,6 +402,15 @@ Scope {
         capsLockOn = false
         lockscreenCcOpen = false
         lockscreenPwrOpen = false
+        faceIdUnlockDelayTimer.stop()
+        faceIdContractTimer.stop()
+        faceIdTimeoutShrinkTimer.stop()
+        faceIdRetryTimer.stop()
+        root.faceIdRetryCount = 0
+        root.isFaceContracted = false
+        root.isFaceTimeoutContracted = false
+        root.isFaceVerified = false
+        root.hasPeekedLocked = false
         if (Services.FaceId) Services.FaceId.stopScan()
         unlockTimer.start()
     }
@@ -298,6 +473,7 @@ Scope {
         }
     }
 
+    // ── Session Lock Integration (Wayland ext-session-lock-v1) ──────────────
     WlSessionLock {
         id: sessionLock
 
@@ -306,6 +482,19 @@ Scope {
             Services.OverlayManager.isLocked = sessionLock.locked
             if (!sessionLock.locked) {
                 if (Services.FaceId) Services.FaceId.stopScan()
+                faceIdUnlockDelayTimer.stop()
+                faceIdContractTimer.stop()
+                faceIdTimeoutShrinkTimer.stop()
+                faceIdRetryTimer.stop()
+                deviceLockedPeekStartTimer.stop()
+                deviceLockedPeekDurationTimer.stop()
+                faceIdScanTimer.stop()
+                root.faceIdRetryCount = 0
+                root.deviceLockedPeekActive = false
+                root.isFaceContracted = false
+                root.isFaceTimeoutContracted = false
+                root.isFaceVerified = false
+                root.hasPeekedLocked = false
                 root.passwordInput = ""
                 root.pendingPassword = ""
                 root.isAuthenticating = false
@@ -315,9 +504,17 @@ Scope {
                 if (pam.active) pam.abort()
             } else {
                 if (Services.FaceId) Services.FaceId.resetStatus()
-                if (Services.FaceId && Services.FaceId.isEnabled) {
-                    faceIdScanTimer.restart()
-                }
+                faceIdUnlockDelayTimer.stop()
+                faceIdContractTimer.stop()
+                faceIdTimeoutShrinkTimer.stop()
+                faceIdRetryTimer.stop()
+                root.faceIdRetryCount = 0
+                root.isFaceContracted = false
+                root.isFaceTimeoutContracted = false
+                root.isFaceVerified = false
+                root.hasPeekedLocked = false
+                root.deviceLockedPeekActive = false
+                deviceLockedPeekStartTimer.restart()
             }
         }
 
@@ -343,15 +540,13 @@ Scope {
                     } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
                         if (typeof pwTextInput !== "undefined" && pwTextInput) root.passwordInput = pwTextInput.text
                         if (root.passwordInput.length === 0) {
-                            if (Services.FaceId && Services.FaceId.status === "success") {
+                            if ((Services.FaceId && Services.FaceId.status === "success") || root.isFaceVerified) {
                                 root.unlockSuccess()
                                 event.accepted = true
                                 return
                             }
                             if (Services.FaceId && Services.FaceId.isEnabled && Services.FaceId.isEnrolled && !Services.FaceId.isScanning) {
-                                faceIdScanTimer.stop()
-                                lockIsland.islandExpanded = false
-                                Services.FaceId.startScan()
+                                root.triggerFaceIdScan()
                                 event.accepted = true
                                 return
                             }
@@ -363,15 +558,13 @@ Scope {
                         root.authenticate()
                         event.accepted = true
                     } else if (event.key === Qt.Key_Space && (!pwTextInput || pwTextInput.text.length === 0)) {
-                        if (Services.FaceId && Services.FaceId.status === "success") {
+                        if ((Services.FaceId && Services.FaceId.status === "success") || root.isFaceVerified) {
                             root.unlockSuccess()
                             event.accepted = true
                             return
                         }
                         if (Services.FaceId && Services.FaceId.isEnabled && Services.FaceId.isEnrolled && !Services.FaceId.isScanning) {
-                            faceIdScanTimer.stop()
-                            lockIsland.islandExpanded = false
-                            Services.FaceId.startScan()
+                            root.triggerFaceIdScan()
                             event.accepted = true
                             return
                         }
@@ -473,7 +666,7 @@ Scope {
                     Behavior on opacity { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
                     Behavior on scale { NumberAnimation { duration: 280; easing.type: Easing.OutCubic } }
 
-                    // Center: Dynamic Island (Copied 1:1 System HUD Alert Expand 280x54px & Collapsed Capsule 48x30px from DynamicIsland.qml)
+                    // Center: Dynamic Island (Apple Face ID & Status Capsule)
                     Rectangle {
                         id: lockIsland
                         visible: root.isDefault
@@ -481,140 +674,195 @@ Scope {
                         anchors.topMargin: 4
                         anchors.horizontalCenter: parent.horizontalCenter
                         color: Services.Theme.bgDeep
-                        border.color: {
-                            if (isFaceActive && Services.FaceId && Services.FaceId.status === "success") return "#30d158"
-                            if (isFaceActive && Services.FaceId && Services.FaceId.status === "detected") return "#38bdf8"
-                            return Services.Theme.borderHighlight
-                        }
-                        border.width: (isFaceActive && Services.FaceId && (Services.FaceId.status === "success" || Services.FaceId.status === "detected")) ? 1.5 : 1
 
-                        property bool islandExpanded: false
-                        property var activeNotif: null
-
-                        readonly property bool isFaceActive: Boolean(
-                            Services.FaceId &&
-                            Services.FaceId.isEnabled &&
-                            Services.FaceId.isEnrolled &&
-                            (
-                                Services.FaceId.isScanning ||
-                                Services.FaceId.status === "starting" ||
-                                Services.FaceId.status === "detected" ||
-                                Services.FaceId.status === "success"
-                            ) &&
-                            root.isLocked &&
-                            !islandExpanded
-                        )
+                        readonly property bool isVerified: root.isFaceVerified
+                        readonly property bool isFaceActive: root.isFaceActive
+                        readonly property bool isDeviceLockedPeek: root.isDeviceLockedPeek
 
                         readonly property bool isFaceSuccess: Boolean(
-                            isFaceActive &&
+                            root.isFaceActive &&
                             Services.FaceId &&
                             Services.FaceId.status === "success"
                         )
 
-                        width: isFaceActive ? (isFaceSuccess ? 214 : 204) : (islandExpanded ? 260 : 140)
-                        height: isFaceActive ? 48 : (islandExpanded ? 48 : 32)
-                        radius: isFaceActive ? 24 : (islandExpanded ? 24 : 16)
+                        border.color: {
+                            if (root.isFaceActive && Services.FaceId && Services.FaceId.status === "detected") return "#38bdf8"
+                            if (root.isDeviceLockedPeek) return Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.35)
+                            return Services.Theme.borderSubtle
+                        }
+                        border.width: ((root.isFaceActive && Services.FaceId && Services.FaceId.status === "detected") || root.isDeviceLockedPeek) ? 1.5 : 1
 
-                        Behavior on width  { NumberAnimation { duration: 350; easing.type: Easing.OutBack } }
-                        Behavior on height { NumberAnimation { duration: 320; easing.type: Easing.OutQuad } }
-                        Behavior on radius { NumberAnimation { duration: 320; easing.type: Easing.OutQuad } }
+                        width: root.isFaceActive ? 160 : (root.isDeviceLockedPeek ? 218 : 140)
+                        height: root.isFaceActive ? 96 : (root.isDeviceLockedPeek ? 44 : 32)
+                        radius: root.isFaceActive ? 24 : (height / 2)
+
+                        Behavior on width  { NumberAnimation { duration: 360; easing.type: Easing.OutBack } }
+                        Behavior on height { NumberAnimation { duration: 360; easing.type: Easing.OutBack } }
+                        Behavior on radius {
+                            enabled: root.isFaceActive || (lockIsland.height > 50)
+                            NumberAnimation { duration: 320; easing.type: Easing.OutCubic }
+                        }
                         Behavior on border.color { ColorAnimation { duration: 250 } }
-
-                        Timer {
-                            id: lockIslandShrinkTimer
-                            interval: 4500
-                            repeat: false
-                            onTriggered: {
-                                lockIsland.islandExpanded = false
-                                lockIsland.activeNotif = null
-                            }
-                        }
-
-                        Connections {
-                            target: root
-                            function onIsRevealedChanged() {
-                                if (root.isRevealed) {
-                                    lockIsland.activeNotif = null
-                                    lockIsland.islandExpanded = true
-                                    lockIslandShrinkTimer.interval = 1600
-                                    lockIslandShrinkTimer.restart()
-                                } else {
-                                    lockIsland.islandExpanded = false
-                                    lockIslandShrinkTimer.stop()
-                                }
-                            }
-                        }
-
-                        Connections {
-                            target: Services.Notifications
-                            function onNewNotification(entry) {
-                                lockIsland.activeNotif = entry
-                                lockIsland.islandExpanded = true
-                                lockIslandShrinkTimer.interval = 4500
-                                lockIslandShrinkTimer.restart()
-                            }
-                        }
-
-                        Connections {
-                            target: Services.FaceId
-                            function onAuthenticated(user, confidence) {
-                                lockIslandShrinkTimer.stop()
-                            }
-                        }
 
                         MouseArea {
                             anchors.fill: parent
+                            z: 10
                             cursorShape: Qt.PointingHandCursor
                             onClicked: {
-                                if (Services.FaceId && Services.FaceId.status === "success") {
+                                if (root.isFaceVerified || (Services.FaceId && Services.FaceId.status === "success")) {
                                     root.unlockSuccess()
                                     return
                                 }
-                                if (Services.FaceId && Services.FaceId.isEnabled && Services.FaceId.isEnrolled && !Services.FaceId.isScanning) {
-                                    faceIdScanTimer.stop()
-                                    lockIsland.islandExpanded = false
-                                    Services.FaceId.startScan()
+                                if (root.isFaceActive || (Services.FaceId && Services.FaceId.isScanning)) {
+                                    root.stopFaceIdScan()
+                                    return
+                                }
+                                if (Services.FaceId && Services.FaceId.isEnabled && Services.FaceId.isEnrolled) {
+                                    root.faceIdRetryCount = 0
+                                    root.triggerFaceIdScan()
+                                    return
+                                }
+                                root.triggerDeviceLockedPeek()
+                            }
+                        }
+
+                        // ==================== Mode 1: Collapsed Idle Desktop Dot or Verified Pill ====================
+                        Item {
+                            id: statusIconContainer
+                            anchors.fill: parent
+                            z: 2
+                            visible: (!root.isFaceActive && !root.isDeviceLockedPeek) || opacity > 0.01
+                            opacity: (!root.isFaceActive && !root.isDeviceLockedPeek) ? 1 : 0
+                            scale: (!root.isFaceActive && !root.isDeviceLockedPeek) ? 1.0 : 0.4
+                            transformOrigin: Item.Center
+
+                            Behavior on opacity { NumberAnimation { duration: 250; easing.type: Easing.OutQuad } }
+                            Behavior on scale   { NumberAnimation { duration: 350; easing.type: Easing.OutExpo } }
+
+                            Item {
+                                id: statusIndicatorWrapper
+                                width: 20
+                                height: 20
+                                anchors.verticalCenter: parent.verticalCenter
+                                x: (root.hasPeekedLocked || root.isFaceVerified) ? 14 : (parent.width - width) / 2
+
+                                Behavior on x {
+                                    NumberAnimation { duration: 380; easing.type: Easing.OutCubic }
+                                }
+
+                                Text {
+                                    id: statusIndicatorIcon
+                                    anchors.centerIn: parent
+                                    text: {
+                                        if (root.isFaceVerified) return "󰌿"
+                                        if (root.hasPeekedLocked) return "󰌾"
+                                        return "●"
+                                    }
+                                    font.family: Services.Theme.fontSymbols
+                                    font.pixelSize: (root.isFaceVerified || root.hasPeekedLocked) ? 14 : 13
+                                    color: {
+                                        if (root.isFaceVerified) return "#30d158"
+                                        if (root.hasPeekedLocked) return Services.Theme.textPrimary
+                                        return Services.Theme.textDisabled
+                                    }
+                                    scale: iconScale
+                                    property real iconScale: 1.0
+
+                                    Behavior on color { ColorAnimation { duration: 220 } }
+
+                                    onTextChanged: {
+                                        iconMorphAnim.restart()
+                                    }
+
+                                    SequentialAnimation {
+                                        id: iconMorphAnim
+                                        NumberAnimation { target: statusIndicatorIcon; property: "iconScale"; to: 0.6; duration: 90; easing.type: Easing.InQuad }
+                                        NumberAnimation { target: statusIndicatorIcon; property: "iconScale"; to: 1.25; duration: 180; easing.type: Easing.OutBack }
+                                        NumberAnimation { target: statusIndicatorIcon; property: "iconScale"; to: 1.0; duration: 120; easing.type: Easing.InOutQuad }
+                                    }
                                 }
                             }
                         }
 
-                        // ==================== Collapsed Status (Icon + Status in 140x32 Pill) ====================
-                        RowLayout {
-                            id: statusIconContainer
-                            anchors.centerIn: parent
-                            spacing: 6
-                            z: 3
-                            visible: (!lockIsland.islandExpanded && !lockIsland.isFaceActive) || opacity > 0.01
-                            opacity: (!lockIsland.islandExpanded && !lockIsland.isFaceActive) ? 1 : 0
-                            scale: (!lockIsland.islandExpanded && !lockIsland.isFaceActive) ? 1.0 : 0.2
+                        // ==================== Mode 2: Revamped "Device Locked" Dynamic Island Peek ====================
+                        Item {
+                            id: deviceLockedPeekContainer
+                            anchors.fill: parent
+                            visible: root.isDeviceLockedPeek || opacity > 0.01
+                            opacity: root.isDeviceLockedPeek ? 1 : 0
+                            scale: root.isDeviceLockedPeek ? 1.0 : 0.75
                             transformOrigin: Item.Center
+                            z: 3
 
-                            Behavior on opacity { NumberAnimation { duration: 300; easing.type: Easing.OutQuad } }
-                            Behavior on scale   { NumberAnimation { duration: 400; easing.type: Easing.OutExpo } }
+                            Behavior on opacity { NumberAnimation { duration: 260; easing.type: Easing.OutQuad } }
+                            Behavior on scale   { NumberAnimation { duration: 380; easing.type: Easing.OutBack } }
 
-                            Text {
-                                text: "󰌾"
-                                font.family: Services.Theme.fontSymbols
-                                font.pixelSize: 13
-                                color: Services.Theme.accent
-                            }
+                            RowLayout {
+                                anchors.fill: parent
+                                anchors.leftMargin: 10
+                                anchors.rightMargin: 14
+                                spacing: 10
 
-                            Text {
-                                text: "Locked"
-                                font.family: Services.Theme.fontDisplay
-                                font.pixelSize: 11
-                                font.weight: Font.Medium
-                                color: Services.Theme.textSecondary
+                                // Left: Sleek Circular Lock Icon Badge with subtle accent glow
+                                Rectangle {
+                                    id: lockBadge
+                                    Layout.preferredWidth: 28
+                                    Layout.preferredHeight: 28
+                                    Layout.alignment: Qt.AlignVCenter
+                                    radius: 14
+                                    color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.16)
+                                    border.color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.28)
+                                    border.width: 1
+
+                                    Text {
+                                        id: lockBadgeIcon
+                                        anchors.centerIn: parent
+                                        text: "󰌾"
+                                        font.family: Services.Theme.fontSymbols
+                                        font.pixelSize: 14
+                                        color: Services.Theme.accent
+
+                                        scale: root.isDeviceLockedPeek ? 1.0 : 0.6
+                                        Behavior on scale { NumberAnimation { duration: 400; easing.type: Easing.OutBack } }
+                                    }
+                                }
+
+                                // Center: Typography Hierarchy
+                                Column {
+                                    Layout.fillWidth: true
+                                    Layout.alignment: Qt.AlignVCenter
+                                    spacing: 1
+
+                                    Text {
+                                        width: parent.width
+                                        text: "Device Locked"
+                                        color: Services.Theme.textPrimary
+                                        font.family: Services.Theme.fontDisplay
+                                        font.pixelSize: 12
+                                        font.weight: Font.DemiBold
+                                        elide: Text.ElideRight
+                                    }
+
+                                    Text {
+                                        width: parent.width
+                                        text: "Authentication required"
+                                        color: Services.Theme.textSecondary
+                                        font.family: Services.Theme.fontDisplay
+                                        font.pixelSize: 10
+                                        elide: Text.ElideRight
+                                        opacity: 0.85
+                                    }
+                                }
                             }
                         }
 
-                        // ==================== Expanded: Apple Face ID Dynamic Island ====================
+                        // ==================== Mode 3: Apple Face ID Dynamic Island ====================
                         Item {
                             id: faceIdExpandedContainer
                             anchors.fill: parent
-                            visible: (lockIsland.isFaceActive && lockIsland.activeNotif === null) || opacity > 0.01
-                            opacity: (lockIsland.isFaceActive && lockIsland.activeNotif === null) ? 1 : 0
-                            scale: (lockIsland.isFaceActive && lockIsland.activeNotif === null) ? 1.0 : 0.5
+                            visible: root.isFaceActive || opacity > 0.01
+                            opacity: root.isFaceActive ? 1 : 0
+                            scale: root.isFaceActive ? 1.0 : 0.5
                             transformOrigin: Item.Center
                             z: 4
 
@@ -654,18 +902,19 @@ Scope {
                                 }
                             }
 
-                            RowLayout {
+                            Column {
                                 anchors.centerIn: parent
-                                spacing: 10
+                                spacing: 6
+                                width: parent.width - 20
 
-                                // Authentic Apple Face ID Vector Glyph (28x28) with Spring Pop & Halo
+                                // Authentic Apple Face ID Vector Glyph (34x34) with Spring Pop & Halo
                                 Item {
                                     id: faceIconWrapper
-                                    Layout.preferredWidth: 28
-                                    Layout.preferredHeight: 28
-                                    implicitWidth: 28
-                                    implicitHeight: 28
-                                    Layout.alignment: Qt.AlignVCenter
+                                    anchors.horizontalCenter: parent.horizontalCenter
+                                    width: 34
+                                    height: 34
+                                    implicitWidth: 34
+                                    implicitHeight: 34
                                     transformOrigin: Item.Center
 
                                     property real pulseScale: 1.0
@@ -694,9 +943,9 @@ Scope {
                                     Rectangle {
                                         id: verifiedHalo
                                         anchors.centerIn: parent
-                                        width: 28
-                                        height: 28
-                                        radius: 14
+                                        width: 34
+                                        height: 34
+                                        radius: 17
                                         color: "#30d158"
                                         opacity: 0.0
                                         scale: 0.5
@@ -735,6 +984,7 @@ Scope {
                                         onStrokeColorChanged: requestPaint()
                                         onSmileAmountChanged: requestPaint()
                                         onVisibleChanged: { if (visible) requestPaint() }
+                                        Component.onCompleted: requestPaint()
 
                                         onPaint: {
                                             var ctx = getContext("2d")
@@ -808,43 +1058,46 @@ Scope {
                                     }
                                 }
 
-                                // Status text beside Face ID icon with iOS slide-in transition
+                                // Status text stacked vertically beneath Face ID icon
                                 Column {
-                                    Layout.alignment: Qt.AlignVCenter
-                                    spacing: 1
+                                    anchors.horizontalCenter: parent.horizontalCenter
+                                    spacing: 2
 
                                     Text {
+                                        anchors.horizontalCenter: parent.horizontalCenter
                                         text: "Face ID"
                                         font.family: Services.Theme.fontDisplay
-                                        font.pixelSize: 12
+                                        font.pixelSize: 11
                                         font.weight: Font.DemiBold
                                         color: Services.Theme.textPrimary
                                     }
 
                                     Item {
                                         id: statusSubtitleBox
-                                        width: Math.max(statusScanText.implicitWidth, statusSuccessText.implicitWidth, 85)
-                                        height: 16
+                                        anchors.horizontalCenter: parent.horizontalCenter
+                                        width: 130
+                                        height: 15
                                         clip: true
 
                                         readonly property bool isVerified: Boolean(Services.FaceId && Services.FaceId.status === "success")
 
                                         Text {
                                             id: statusScanText
-                                            anchors.left: parent.left
-                                            y: statusSubtitleBox.isVerified ? -18 : 0
+                                            anchors.horizontalCenter: parent.horizontalCenter
+                                            y: statusSubtitleBox.isVerified ? -16 : 0
                                             opacity: statusSubtitleBox.isVerified ? 0.0 : 1.0
 
                                             text: {
                                                 if (Services.FaceId && Services.FaceId.status === "detected") return "Verifying Face..."
-                                                if (Services.FaceId && Services.FaceId.status === "starting") return "Looking for Face..."
+                                                if (Services.FaceId && Services.FaceId.status === "scanning") return "Looking for Face..."
+                                                if (Services.FaceId && (Services.FaceId.status === "starting" || Services.FaceId.status === "camera_ready")) return "Starting..."
                                                 if (Services.FaceId && Services.FaceId.status === "timeout") return "Try Again"
-                                                if (Services.FaceId && Services.FaceId.isScanning) return "Looking for Face..."
                                                 return "Ready"
                                             }
                                             font.family: Services.Theme.fontDisplay
-                                            font.pixelSize: 11
+                                            font.pixelSize: 10
                                             font.weight: Font.Normal
+                                            horizontalAlignment: Text.AlignHCenter
                                             color: {
                                                 if (Services.FaceId && Services.FaceId.status === "detected") return "#38bdf8"
                                                 if (Services.FaceId && Services.FaceId.status === "timeout") return Services.Theme.danger
@@ -861,14 +1114,15 @@ Scope {
 
                                         Text {
                                             id: statusSuccessText
-                                            anchors.left: parent.left
-                                            y: statusSubtitleBox.isVerified ? 0 : 18
+                                            anchors.horizontalCenter: parent.horizontalCenter
+                                            y: statusSubtitleBox.isVerified ? 0 : 16
                                             opacity: statusSubtitleBox.isVerified ? 1.0 : 0.0
 
                                             text: "Verified"
                                             font.family: Services.Theme.fontDisplay
-                                            font.pixelSize: 11
+                                            font.pixelSize: 10
                                             font.weight: Font.DemiBold
+                                            horizontalAlignment: Text.AlignHCenter
                                             color: "#30d158"
 
                                             Behavior on y {
@@ -879,95 +1133,6 @@ Scope {
                                             }
                                         }
                                     }
-                                }
-                            }
-                        }
-
-                        // ==================== Expanded: Dynamic Island Notification Banner ====================
-                        Item {
-                            id: notifContentContainer
-                            anchors.fill: parent
-                            visible: lockIsland.islandExpanded || opacity > 0.01
-                            opacity: lockIsland.islandExpanded ? 1 : 0
-                            scale: lockIsland.islandExpanded ? 1.0 : 0.2
-                            transformOrigin: Item.Center
-                            z: 1
-
-                            Behavior on opacity { NumberAnimation { duration: 350; easing.type: Easing.OutQuad } }
-                            Behavior on scale   { NumberAnimation { duration: 450; easing.type: Easing.OutBack } }
-
-                            // App Icon / Image Container (Centered inside left circular cap)
-                            Rectangle {
-                                id: notifIconBox
-                                anchors.left: parent.left
-                                anchors.leftMargin: 8
-                                anchors.verticalCenter: parent.verticalCenter
-                                width: 32
-                                height: 32
-                                radius: 16
-                                color: notifAppIconImg.visible ? "transparent" : Services.Theme.surfaceVariant
-                                clip: true
-
-                                Image {
-                                    id: notifAppIconImg
-                                    anchors.fill: parent
-                                    source: {
-                                        if (!lockIsland.activeNotif) return ""
-                                        const src = lockIsland.activeNotif.image || lockIsland.activeNotif.appIcon || lockIsland.activeNotif.icon || ""
-                                        if (!src) return ""
-                                        if (src.startsWith("file://") || src.startsWith("http://") || src.startsWith("https://"))
-                                            return src
-                                        if (src.startsWith("/"))
-                                            return "file://" + src
-                                        if (Services.SystemTheme) {
-                                            const res = Services.SystemTheme.getIcon(src)
-                                            if (res && res.length > 0) return res
-                                        }
-                                        const qp = Quickshell.iconPath(src, true)
-                                        return (qp && qp.startsWith("/")) ? ("file://" + qp) : (qp || "")
-                                    }
-                                    fillMode: Image.PreserveAspectCrop
-                                    asynchronous: true
-                                    cache: true
-                                    sourceSize: Qt.size(64, 64)
-                                    visible: status === Image.Ready && source.toString().length > 0
-                                }
-
-                                Text {
-                                    anchors.centerIn: parent
-                                    text: lockIsland.activeNotif ? (Services.Icons.bell || "󰂚") : "󰌾"
-                                    font.family: Services.Theme.fontSymbols
-                                    font.pixelSize: 15
-                                    color: Services.Theme.accent
-                                    visible: !notifAppIconImg.visible
-                                }
-                            }
-
-                            // Notification Text Summary & Body (100% Guaranteed Mathematically Centered Vertically)
-                            Column {
-                                id: notifTextBox
-                                anchors.left: notifIconBox.right
-                                anchors.leftMargin: 10
-                                anchors.right: parent.right
-                                anchors.rightMargin: 14
-                                anchors.verticalCenter: parent.verticalCenter
-                                spacing: 2
-
-                                Text {
-                                    width: parent.width
-                                    text: lockIsland.activeNotif ? (lockIsland.activeNotif.summary || lockIsland.activeNotif.appName || "Notification") : "Device Locked"
-                                    color: Services.Theme.textPrimary
-                                    font.pixelSize: 12
-                                    font.weight: Font.DemiBold
-                                    elide: Text.ElideRight
-                                }
-
-                                Text {
-                                    width: parent.width
-                                    text: lockIsland.activeNotif ? (lockIsland.activeNotif.body || "") : "Authentication required"
-                                    color: Services.Theme.textSecondary
-                                    font.pixelSize: 10
-                                    elide: Text.ElideRight
                                 }
                             }
                         }
@@ -1698,14 +1863,12 @@ Scope {
                                             cursorShape: Qt.PointingHandCursor
                                             hoverEnabled: true
                                             onClicked: {
-                                                if (Services.FaceId && Services.FaceId.status === "success") {
+                                                if ((Services.FaceId && Services.FaceId.status === "success") || root.isFaceVerified) {
                                                     root.unlockSuccess()
                                                     return
                                                 }
                                                 if (Services.FaceId && Services.FaceId.isEnabled && Services.FaceId.isEnrolled && !Services.FaceId.isScanning) {
-                                                    faceIdScanTimer.stop()
-                                                    lockIsland.islandExpanded = false
-                                                    Services.FaceId.startScan()
+                                                    root.triggerFaceIdScan()
                                                 }
                                                 root.userRevealedInput = true
                                                 pwTextInput.forceActiveFocus()
@@ -1734,6 +1897,10 @@ Scope {
 
                                             onAccepted: {
                                                 root.passwordInput = text
+                                                if (text.length === 0 && ((Services.FaceId && Services.FaceId.status === "success") || root.isFaceVerified)) {
+                                                    root.unlockSuccess()
+                                                    return
+                                                }
                                                 root.authenticate()
                                             }
 
@@ -1743,6 +1910,13 @@ Scope {
                                                     root.isError = false
                                                     root.errorMessage = ""
                                                 }
+                                                if (text.length > 0) {
+                                                    faceIdRetryTimer.stop()
+                                                    if (root.deviceLockedPeekActive) {
+                                                        deviceLockedPeekDurationTimer.stop()
+                                                        root.deviceLockedPeekActive = false
+                                                    }
+                                                }
                                             }
                                         }
 
@@ -1750,8 +1924,17 @@ Scope {
                                         Text {
                                             anchors.left: parent.left
                                             anchors.verticalCenter: parent.verticalCenter
-                                            text: root.isAuthenticating ? "Authenticating..." : "Enter Password"
-                                            color: Qt.rgba(Services.Theme.textSecondary.r, Services.Theme.textSecondary.g, Services.Theme.textSecondary.b, 0.4)
+                                            text: {
+                                                if (root.isAuthenticating) return "Authenticating..."
+                                                if ((Services.FaceId && Services.FaceId.status === "success") || root.isFaceVerified) {
+                                                    if (Services.FaceId && !Services.FaceId.autoUnlock) return "Press Enter to unlock"
+                                                    return "Face ID Verified"
+                                                }
+                                                return "Enter Password"
+                                            }
+                                            color: ((Services.FaceId && Services.FaceId.status === "success") || root.isFaceVerified)
+                                                ? Services.Theme.success
+                                                : Qt.rgba(Services.Theme.textSecondary.r, Services.Theme.textSecondary.g, Services.Theme.textSecondary.b, 0.4)
                                             font.pixelSize: Services.Theme.fontSizeSm
                                             font.family: Services.Theme.fontPrimary
                                             visible: pwTextInput.text.length === 0 && !root.isAuthenticating
@@ -1885,15 +2068,18 @@ Scope {
                                     anchors.centerIn: parent
                                     text: {
                                         if (Services.FaceId && Services.FaceId.isEnabled && Services.FaceId.isEnrolled) {
-                                            if (Services.FaceId.status === "success") return "Face ID Verified"
+                                            if (Services.FaceId.status === "success" || root.isFaceVerified) {
+                                                if (!Services.FaceId.autoUnlock) return "Press Enter to unlock"
+                                                return "Face ID Verified"
+                                            }
                                             if (Services.FaceId.status === "detected") return "Verifying Face..."
-                                            if (Services.FaceId.isScanning) return "Looking for Face..."
+                                            if (Services.FaceId.status === "scanning") return "Looking for Face..."
                                             if (Services.FaceId.status === "timeout") return "Face not matched (Click to retry)"
                                             return "Face ID or Enter Password"
                                         }
                                         return "Touch ID or Enter Password"
                                     }
-                                    color: (Services.FaceId && Services.FaceId.status === "success") ? Services.Theme.success : Services.Theme.textSecondary
+                                    color: (Services.FaceId && (Services.FaceId.status === "success" || root.isFaceVerified)) ? Services.Theme.success : Services.Theme.textSecondary
                                     font.pixelSize: 11
                                     font.weight: Font.Medium
                                     style: Text.Outline
@@ -1904,12 +2090,12 @@ Scope {
                                     anchors.fill: parent
                                     cursorShape: Qt.PointingHandCursor
                                     onClicked: {
-                                        if (Services.FaceId && Services.FaceId.status === "success") {
+                                        if ((Services.FaceId && Services.FaceId.status === "success") || root.isFaceVerified) {
                                             root.unlockSuccess()
                                             return
                                         }
                                         if (Services.FaceId && Services.FaceId.isEnabled && Services.FaceId.isEnrolled && !Services.FaceId.isScanning) {
-                                            Services.FaceId.startScan()
+                                            root.triggerFaceIdScan()
                                         }
                                         root.userRevealedInput = true
                                         pwTextInput.forceActiveFocus()

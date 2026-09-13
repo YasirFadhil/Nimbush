@@ -104,7 +104,45 @@ def preprocess_face(face_gray):
     equalized = cv2.equalizeHist(resized)
     return equalized
 
-def open_camera(camera_device):
+def optimize_camera(camera_device):
+    """
+    Ensure camera hardware is tuned for low-light environments using v4l2-ctl.
+    Sets aperture priority auto-exposure, dynamic framerate, and backlight compensation.
+    """
+    dev_path = camera_device if (isinstance(camera_device, str) and os.path.exists(camera_device)) else f"/dev/video{camera_device}"
+    if os.path.exists(str(dev_path)):
+        try:
+            subprocess.run([
+                "v4l2-ctl", "-d", str(dev_path),
+                "-c", "auto_exposure=3",
+                "-c", "exposure_dynamic_framerate=1",
+                "-c", "backlight_compensation=1"
+            ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+        except Exception:
+            pass
+
+def enhance_low_light(gray):
+    """
+    Adaptive low-light enhancement for Haar Cascade face detection.
+    Combines gamma correction (shadow lifting) and CLAHE (local feature contrast)
+    so Haar Cascade can detect face contours even in near-dark rooms.
+    """
+    mean_val = float(np.mean(gray))
+    if mean_val < 75.0:
+        # Dynamic gamma based on darkness: darker -> stronger boost (down to 0.42)
+        gamma = max(0.42, min(0.85, (mean_val / 75.0) ** 0.75))
+        inv_gamma = 1.0 / gamma
+        table = np.array([((i / 255.0) ** inv_gamma) * 255 for i in range(256)]).astype("uint8")
+        brightened = cv2.LUT(gray, table)
+
+        # Localized contrast amplification for eyes, nose bridge, jawline
+        clahe = cv2.createCLAHE(clipLimit=2.8, tileGridSize=(8, 8))
+        enhanced = clahe.apply(brightened)
+        return enhanced, True, mean_val
+    return gray, False, mean_val
+
+def open_camera(camera_device, warmup=True, notify_ready=False):
+    optimize_camera(camera_device)
     dev_idx = 0
     if isinstance(camera_device, str) and camera_device.startswith("/dev/video"):
         try:
@@ -122,6 +160,14 @@ def open_camera(camera_device):
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
         cap.set(cv2.CAP_PROP_FPS, 30)
+
+        if notify_ready:
+            print(json.dumps({"status": "camera_ready", "message": "Camera hardware active"}), flush=True)
+
+        # Warm up camera sensor: read & discard first 6 frames so hardware auto-exposure settles
+        if warmup:
+            for _ in range(6):
+                cap.read()
     return cap
 
 def cmd_status():
@@ -166,7 +212,7 @@ def cmd_verify(camera_device="/dev/video0", timeout_sec=10.0, max_distance=98.0)
         print(json.dumps({"status": "error", "message": f"Failed to load Face ID model: {e}"}), flush=True)
         sys.exit(4)
 
-    cap = open_camera(camera_device)
+    cap = open_camera(camera_device, notify_ready=True)
     if not cap.isOpened():
         print(json.dumps({"status": "camera_unavailable", "device": str(camera_device)}), flush=True)
         sys.exit(5)
@@ -190,6 +236,8 @@ def cmd_verify(camera_device="/dev/video0", timeout_sec=10.0, max_distance=98.0)
                 continue
 
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+            # Pass 1: Standard detection
             faces = detector.detectMultiScale(
                 gray,
                 scaleFactor=1.1,
@@ -197,6 +245,27 @@ def cmd_verify(camera_device="/dev/video0", timeout_sec=10.0, max_distance=98.0)
                 minSize=(50, 50),
                 flags=cv2.CASCADE_SCALE_IMAGE
             )
+
+            # Pass 2: Adaptive low-light enhancement if no face found or frame is dark
+            if len(faces) == 0:
+                enhanced, is_low_light, mean_b = enhance_low_light(gray)
+                if is_low_light:
+                    faces = detector.detectMultiScale(
+                        enhanced,
+                        scaleFactor=1.08,
+                        minNeighbors=3,
+                        minSize=(45, 45),
+                        flags=cv2.CASCADE_SCALE_IMAGE
+                    )
+                    # Pass 3: Slightly relaxed minNeighbors for very dark environments
+                    if len(faces) == 0 and mean_b < 45.0:
+                        faces = detector.detectMultiScale(
+                            enhanced,
+                            scaleFactor=1.08,
+                            minNeighbors=2,
+                            minSize=(45, 45),
+                            flags=cv2.CASCADE_SCALE_IMAGE
+                        )
 
             if len(faces) == 0:
                 match_count = max(0, match_count - 1)
@@ -206,6 +275,7 @@ def cmd_verify(camera_device="/dev/video0", timeout_sec=10.0, max_distance=98.0)
             # Largest face
             faces = sorted(faces, key=lambda b: b[2] * b[3], reverse=True)
             x, y, w, h = faces[0]
+            # Crop from original gray frame to preserve monotonic LBPH texture invariants
             face_roi, _ = crop_padded_face(gray, x, y, w, h)
 
             processed = preprocess_face(face_roi)
@@ -381,6 +451,10 @@ def cmd_enroll(camera_device="/dev/video0", samples_needed=24, show_preview=True
             faces = []
             if cur_phase["dir"] == "center":
                 raw_faces = detector.detectMultiScale(gray, scaleFactor=1.15, minNeighbors=4, minSize=(80, 80))
+                if len(raw_faces) == 0:
+                    enh, is_low, _ = enhance_low_light(gray)
+                    if is_low:
+                        raw_faces = detector.detectMultiScale(enh, scaleFactor=1.10, minNeighbors=3, minSize=(70, 70))
                 for (x, y, w, h) in raw_faces:
                     cx = x + w / 2
                     if 190 <= cx <= 450:
@@ -391,6 +465,10 @@ def cmd_enroll(camera_device="/dev/video0", samples_needed=24, show_preview=True
                     for f in p_faces:
                         faces.append((f[0], f[1], f[2], f[3]))
                 raw_faces = detector.detectMultiScale(gray, scaleFactor=1.15, minNeighbors=3, minSize=(70, 70))
+                if len(raw_faces) == 0:
+                    enh, is_low, _ = enhance_low_light(gray)
+                    if is_low:
+                        raw_faces = detector.detectMultiScale(enh, scaleFactor=1.10, minNeighbors=3, minSize=(65, 65))
                 for f in raw_faces:
                     faces.append((f[0], f[1], f[2], f[3]))
             elif cur_phase["dir"] == "right":
@@ -401,6 +479,10 @@ def cmd_enroll(camera_device="/dev/video0", samples_needed=24, show_preview=True
                     for (fx, fy, fw_b, fh_b) in p_faces:
                         faces.append((fw - fx - fw_b, fy, fw_b, fh_b))
                 raw_faces = detector.detectMultiScale(gray, scaleFactor=1.15, minNeighbors=3, minSize=(70, 70))
+                if len(raw_faces) == 0:
+                    enh, is_low, _ = enhance_low_light(gray)
+                    if is_low:
+                        raw_faces = detector.detectMultiScale(enh, scaleFactor=1.10, minNeighbors=3, minSize=(65, 65))
                 for f in raw_faces:
                     faces.append((f[0], f[1], f[2], f[3]))
 
