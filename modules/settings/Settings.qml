@@ -2345,7 +2345,7 @@ FloatingWindow {
                             { id: 1, title: "Bar & Dock",     icon: Services.Icons.controlcenter, color: "#8b5cf6", cat: "Personalization", kw: "bar dock application running pinned magnification island dynamic island notch workspaces clock date format pills dashboard weather cuaca widgets metrics hardware" },
                             { id: 2, title: "Notifications",  icon: Services.Icons.bell,          color: "#f97316", cat: "Personalization", kw: "notifications dnd do not disturb timeout retention banner history" },
                             { id: 3, title: "Sound & Audio",  icon: Services.Icons.speaker,       color: "#ec4899", cat: "Personalization", kw: "sound audio volume feedback clicks effects mute" },
-                            { id: 4, title: "Lock & Power",   icon: Services.Icons.power,         color: "#ef4444", cat: "System",          kw: "lock screen power battery sleep timeout auth media clock blur" },
+                            { id: 4, title: "Lock & Power",   icon: Services.Icons.power,         color: "#ef4444", cat: "System",          kw: "lock screen power battery sleep timeout auth media clock blur faceid biometric face camera webcam" },
                             { id: 5, title: "Compositor",     icon: Services.Icons.display,       color: "#06b6d4", cat: "System",          kw: "compositor window blur borders animations displays monitors scaling input touchpad gestures power gaming" },
                             { id: 6, title: "Keybindings",    icon: Services.Icons.keyboard,      color: "#eab308", cat: "System",          kw: "keybindings shortcuts hotkeys binds compositor hyprland super mod" },
                             { id: 7, title: "Backup & Reset", icon: Services.Icons.undo,          color: "#10b981", cat: "Maintenance",     kw: "backup restore reset defaults export import config" },
@@ -4105,6 +4105,41 @@ FloatingWindow {
                                         }
 
                                         Rectangle {
+                                            implicitWidth: resetPinnedBtnText.implicitWidth + 20
+                                            height: 28
+                                            radius: 6
+                                            color: resetPinnedMouse.containsMouse ? Services.Theme.bgHover : Services.Theme.surfaceVariant
+                                            border.color: Services.Theme.border
+                                            border.width: 1
+
+                                            RowLayout {
+                                                anchors.centerIn: parent
+                                                spacing: 4
+                                                Text {
+                                                    text: "↺"
+                                                    font.pixelSize: 11
+                                                    color: Services.Theme.textSecondary
+                                                }
+                                                Text {
+                                                    id: resetPinnedBtnText
+                                                    text: "Reset Defaults"
+                                                    font.pixelSize: 11
+                                                    color: Services.Theme.textSecondary
+                                                }
+                                            }
+
+                                            MouseArea {
+                                                id: resetPinnedMouse
+                                                anchors.fill: parent
+                                                hoverEnabled: true
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: {
+                                                    if (Services.DockService) Services.DockService.resetToDefaultPinned()
+                                                }
+                                            }
+                                        }
+
+                                        Rectangle {
                                             implicitWidth: addAppBtnText.implicitWidth + 24
                                             height: 28
                                             radius: 6
@@ -4333,54 +4368,6 @@ FloatingWindow {
                                                             color: Services.Theme.textDisabled
                                                             elide: Text.ElideRight
                                                             Layout.fillWidth: true
-                                                        }
-                                                    }
-
-                                                    // Reorder: Up Button
-                                                    Rectangle {
-                                                        width: 24; height: 24; radius: 5
-                                                        visible: pinnedCard.index > 0
-                                                        color: upMouse.containsMouse ? Services.Theme.bgHover : "transparent"
-                                                        Text {
-                                                            anchors.centerIn: parent
-                                                            text: "▲"
-                                                            font.pixelSize: 9
-                                                            color: upMouse.containsMouse ? Services.Theme.accent : Services.Theme.textSecondary
-                                                        }
-                                                        MouseArea {
-                                                            id: upMouse
-                                                            anchors.fill: parent
-                                                            hoverEnabled: true
-                                                            cursorShape: Qt.PointingHandCursor
-                                                            onClicked: {
-                                                                if (Services.DockService) {
-                                                                    Services.DockService.movePinned(pinnedCard.index, pinnedCard.index - 1)
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-
-                                                    // Reorder: Down Button
-                                                    Rectangle {
-                                                        width: 24; height: 24; radius: 5
-                                                        visible: pinnedCard.index < ((Services.Config.dockPinnedApps ? Services.Config.dockPinnedApps.length : 0) - 1)
-                                                        color: downMouse.containsMouse ? Services.Theme.bgHover : "transparent"
-                                                        Text {
-                                                            anchors.centerIn: parent
-                                                            text: "▼"
-                                                            font.pixelSize: 9
-                                                            color: downMouse.containsMouse ? Services.Theme.accent : Services.Theme.textSecondary
-                                                        }
-                                                        MouseArea {
-                                                            id: downMouse
-                                                            anchors.fill: parent
-                                                            hoverEnabled: true
-                                                            cursorShape: Qt.PointingHandCursor
-                                                            onClicked: {
-                                                                if (Services.DockService) {
-                                                                    Services.DockService.movePinned(pinnedCard.index, pinnedCard.index + 1)
-                                                                }
-                                                            }
                                                         }
                                                     }
 
@@ -4735,6 +4722,195 @@ FloatingWindow {
 
                                         // Spacer pushing content to the left
                                         Item { Layout.fillWidth: true }
+                                    }
+                                }
+                            }
+
+                            // Face ID & Biometrics Section
+                            SettingsSection {
+                                title: "Face ID & Biometrics"
+                                icon: "󰄀"
+
+                                SettingsSwitch {
+                                    title: "Face ID Unlock"
+                                    subtitle: "Unlock your desktop using webcam facial recognition"
+                                    checked: Services.Config ? Services.Config.faceIdEnabled : true
+                                    onToggled: (newState) => {
+                                        if (Services.Config) Services.Config.setFaceIdEnabled(newState)
+                                    }
+                                }
+
+                                SettingsDivider {}
+
+                                SettingsSwitch {
+                                    title: "Instant Auto-Unlock"
+                                    subtitle: "Automatically dismiss lockscreen when face is recognized"
+                                    checked: Services.Config ? Services.Config.faceIdAutoUnlock : true
+                                    onToggled: (newState) => {
+                                        if (Services.Config) Services.Config.setFaceIdAutoUnlock(newState)
+                                    }
+                                }
+
+                                SettingsDivider {}
+
+                                SettingsRow {
+                                    title: "Biometric Data"
+                                    subtitle: (Services.FaceId && Services.FaceId.isEnrolling)
+                                        ? (Services.FaceId.statusMessage || "Enrolling face...")
+                                        : ((Services.FaceId && Services.FaceId.isEnrolled)
+                                            ? "Face registered for " + (Services.OsInfo.username || Quickshell.env("USER") || "user")
+                                            : "No face registered yet")
+
+                                    RowLayout {
+                                        spacing: 8
+                                        Layout.alignment: Qt.AlignVCenter
+
+                                        // Status Pill Badge
+                                        Rectangle {
+                                            height: 24
+                                            implicitWidth: statusPillTxt.implicitWidth + 14
+                                            radius: 12
+                                            color: (Services.FaceId && Services.FaceId.isEnrolled)
+                                                ? Qt.rgba(48/255, 209/255, 88/255, 0.15)
+                                                : Qt.rgba(1, 1, 1, 0.06)
+                                            border.color: (Services.FaceId && Services.FaceId.isEnrolled)
+                                                ? Qt.rgba(48/255, 209/255, 88/255, 0.4)
+                                                : Services.Theme.border
+                                            border.width: 1
+
+                                            Text {
+                                                id: statusPillTxt
+                                                anchors.centerIn: parent
+                                                text: (Services.FaceId && Services.FaceId.isEnrolling)
+                                                    ? ((Services.FaceId.enrollStepName && Services.FaceId.enrollStepName.length > 0)
+                                                        ? (Services.FaceId.enrollStepName === "Confirmation"
+                                                            ? "Reviewing..."
+                                                            : ("Step " + Services.FaceId.enrollStepNumber + "/3: " + Services.FaceId.enrollStepName))
+                                                        : ("Enrolling " + Math.round((Services.FaceId ? Services.FaceId.enrollProgress : 0) * 100) + "%"))
+                                                    : ((Services.FaceId && Services.FaceId.isEnrolled) ? "Enrolled" : "Not Set Up")
+                                                font.pixelSize: 11
+                                                font.weight: Font.Medium
+                                                color: (Services.FaceId && Services.FaceId.isEnrolling)
+                                                    ? Services.Theme.accent
+                                                    : ((Services.FaceId && Services.FaceId.isEnrolled) ? "#30d158" : Services.Theme.textSecondary)
+                                            }
+                                        }
+
+                                        // Enroll / Re-enroll Button
+                                        Rectangle {
+                                            visible: !Services.FaceId || !Services.FaceId.isEnrolling
+                                            height: 28
+                                            implicitWidth: enrollBtnTxt.implicitWidth + 20
+                                            radius: 6
+                                            color: enrollMouse.containsMouse
+                                                ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.25)
+                                                : Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.14)
+                                            border.color: Services.Theme.accent
+                                            border.width: 1
+
+                                            Text {
+                                                id: enrollBtnTxt
+                                                anchors.centerIn: parent
+                                                text: (Services.FaceId && Services.FaceId.isEnrolled) ? "Re-enroll" : "Set Up..."
+                                                font.pixelSize: 11
+                                                font.weight: Font.DemiBold
+                                                color: Services.Theme.accent
+                                            }
+
+                                            MouseArea {
+                                                id: enrollMouse
+                                                anchors.fill: parent
+                                                hoverEnabled: true
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: {
+                                                    if (Services.FaceId) Services.FaceId.startEnroll()
+                                                }
+                                            }
+                                        }
+
+                                        // Cancel Button
+                                        Rectangle {
+                                            visible: Services.FaceId && Services.FaceId.isEnrolling
+                                            height: 28
+                                            implicitWidth: cancelBtnTxt.implicitWidth + 18
+                                            radius: 6
+                                            color: cancelMouse.containsMouse ? Qt.rgba(1, 1, 1, 0.12) : Services.Theme.bgElevated
+                                            border.color: Services.Theme.border
+                                            border.width: 1
+
+                                            Text {
+                                                id: cancelBtnTxt
+                                                anchors.centerIn: parent
+                                                text: "Cancel"
+                                                font.pixelSize: 11
+                                                font.weight: Font.Medium
+                                                color: Services.Theme.textPrimary
+                                            }
+
+                                            MouseArea {
+                                                id: cancelMouse
+                                                anchors.fill: parent
+                                                hoverEnabled: true
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: {
+                                                    if (Services.FaceId) Services.FaceId.cancelEnroll()
+                                                }
+                                            }
+                                        }
+
+                                        // Remove Button
+                                        Rectangle {
+                                            visible: Services.FaceId && Services.FaceId.isEnrolled && !Services.FaceId.isEnrolling
+                                            height: 28
+                                            implicitWidth: clearBtnTxt.implicitWidth + 18
+                                            radius: 6
+                                            color: clearMouse.containsMouse ? Qt.rgba(0.95, 0.25, 0.25, 0.15) : "transparent"
+                                            border.color: clearMouse.containsMouse ? Qt.rgba(0.95, 0.25, 0.25, 0.4) : Services.Theme.border
+                                            border.width: 1
+
+                                            Text {
+                                                id: clearBtnTxt
+                                                anchors.centerIn: parent
+                                                text: "Remove"
+                                                font.pixelSize: 11
+                                                font.weight: Font.Medium
+                                                color: Services.Theme.danger || "#ef4444"
+                                            }
+
+                                            MouseArea {
+                                                id: clearMouse
+                                                anchors.fill: parent
+                                                hoverEnabled: true
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: {
+                                                    if (Services.FaceId) Services.FaceId.clearData()
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                SettingsDivider {}
+
+                                SettingsRow {
+                                    title: "Camera Device"
+                                    subtitle: "Webcam sensor for facial scanning"
+
+                                    SettingsDropdown {
+                                        currentValue: Services.Config ? Services.Config.faceIdCameraDevice : "/dev/video0"
+                                        model: {
+                                            var devs = (Services.FaceId && Services.FaceId.availableDevices && Services.FaceId.availableDevices.length > 0)
+                                                ? Services.FaceId.availableDevices
+                                                : ["/dev/video0", "/dev/video1", "/dev/video2"]
+                                            var items = []
+                                            for (var i = 0; i < devs.length; i++) {
+                                                items.push({ id: devs[i], label: devs[i] })
+                                            }
+                                            return items
+                                        }
+                                        onSelected: (val) => {
+                                            if (Services.Config) Services.Config.setFaceIdCameraDevice(val)
+                                        }
                                     }
                                 }
                             }

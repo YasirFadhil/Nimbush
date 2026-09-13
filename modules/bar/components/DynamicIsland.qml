@@ -214,7 +214,7 @@ Item {
 
     Process {
         id: cameraProc
-        command: ["sh", "-c", "ls /dev/video* >/dev/null 2>&1 && fuser /dev/video* 2>/dev/null | grep -q [0-9] && echo 1 || echo 0"]
+        command: ["sh", "-c", "ls /dev/video* >/dev/null 2>&1 || { echo 0; exit 0; }; pids=$(fuser /dev/video* 2>/dev/null); [ -z \"$pids\" ] && { echo 0; exit 0; }; active=0; for p in $pids; do cmd=$(ps -p \"$p\" -o args= 2>/dev/null); case \"$cmd\" in *faceid-helper*) ;; *) active=1; break ;; esac; done; echo $active"]
         stdout: SplitParser {
             onRead: data => {
                 const isActive = data.trim() === "1"
@@ -290,7 +290,7 @@ Item {
     }
 
     onCameraActiveChanged: {
-        if (cameraActive && hudReady && root.notifCount === 0) {
+        if (cameraActive && hudReady && root.notifCount === 0 && !Services.OverlayManager.isLocked) {
             root.showSysHud("󰄀", "Camera Active", "Webcam in use", Services.Theme.success)
         }
     }
@@ -756,6 +756,18 @@ Item {
         target: Services.OverlayManager
         function onWallpaperToggleRequested() { root.toggleWallpaperMode() }
         function onWallpaperShowRequested() { root.toggleWallpaperMode() }
+        function onIsLockedChanged() {
+            if (Services.OverlayManager.isLocked) {
+                if (root.sysHudActive && root.sysHudTitle === "Camera Active") {
+                    root.sysHudActive = false
+                }
+            } else {
+                if (root.sysHudActive && root.sysHudTitle === "Camera Active") {
+                    root.sysHudActive = false
+                }
+                if (!cameraProc.running) cameraProc.running = true
+            }
+        }
     }
 
     function nextNotif() {

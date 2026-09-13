@@ -43,6 +43,8 @@
           (python3.withPackages (ps: with ps; [
             pygobject3
             dbus-python
+            opencv4
+            numpy
           ]))
           gobject-introspection
           gtk3

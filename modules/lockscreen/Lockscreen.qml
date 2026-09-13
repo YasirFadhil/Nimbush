@@ -92,8 +92,48 @@ Scope {
         }
     }
 
+    Timer {
+        id: faceIdScanTimer
+        interval: 2000
+        repeat: false
+        onTriggered: {
+            console.log("[Lockscreen] Face ID trigger after lock delay. isLocked:", root.isLocked, "FaceId:", Services.FaceId, "isEnabled:", Services.FaceId?.isEnabled)
+            if (root.isLocked && Services.FaceId && Services.FaceId.isEnabled) {
+                Services.FaceId.startScan()
+            }
+        }
+    }
+
+    Timer {
+        id: faceIdUnlockDelayTimer
+        interval: 850
+        repeat: false
+        onTriggered: {
+            console.log("[Lockscreen] Face ID auto-unlock triggered")
+            root.unlockSuccess()
+        }
+    }
+
+    Connections {
+        target: Services.FaceId
+        function onAuthenticated(user, confidence) {
+            console.log("[Lockscreen] Face ID authenticated for:", user, "autoUnlock:", Services.FaceId.autoUnlock)
+            if (!root.isLocked) return
+
+            root.isError = false
+            root.errorMessage = ""
+            root.isAuthenticating = false
+
+            if (Services.FaceId.autoUnlock) {
+                faceIdUnlockDelayTimer.restart()
+            }
+        }
+    }
+
     function open() {
         if (isLocked) return
+        if (Services.FaceId) Services.FaceId.resetStatus()
+        faceIdUnlockDelayTimer.stop()
         isLocked = true
         passwordInput = ""
         pendingPassword = ""
@@ -107,6 +147,9 @@ Scope {
         updateTime()
         sessionLock.locked = true
         revealTimer.start()
+        if (Services.FaceId && Services.FaceId.isEnabled) {
+            faceIdScanTimer.restart()
+        }
     }
 
     function close() {
@@ -193,6 +236,7 @@ Scope {
         capsLockOn = false
         lockscreenCcOpen = false
         lockscreenPwrOpen = false
+        if (Services.FaceId) Services.FaceId.stopScan()
         unlockTimer.start()
     }
 
@@ -261,6 +305,7 @@ Scope {
             root.isLocked = sessionLock.locked
             Services.OverlayManager.isLocked = sessionLock.locked
             if (!sessionLock.locked) {
+                if (Services.FaceId) Services.FaceId.stopScan()
                 root.passwordInput = ""
                 root.pendingPassword = ""
                 root.isAuthenticating = false
@@ -268,6 +313,11 @@ Scope {
                 root.capsLockOn = false
                 if (typeof pwTextInput !== "undefined" && pwTextInput) pwTextInput.text = ""
                 if (pam.active) pam.abort()
+            } else {
+                if (Services.FaceId) Services.FaceId.resetStatus()
+                if (Services.FaceId && Services.FaceId.isEnabled) {
+                    faceIdScanTimer.restart()
+                }
             }
         }
 
@@ -292,8 +342,43 @@ Scope {
                         event.accepted = true
                     } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
                         if (typeof pwTextInput !== "undefined" && pwTextInput) root.passwordInput = pwTextInput.text
+                        if (root.passwordInput.length === 0) {
+                            if (Services.FaceId && Services.FaceId.status === "success") {
+                                root.unlockSuccess()
+                                event.accepted = true
+                                return
+                            }
+                            if (Services.FaceId && Services.FaceId.isEnabled && Services.FaceId.isEnrolled && !Services.FaceId.isScanning) {
+                                faceIdScanTimer.stop()
+                                lockIsland.islandExpanded = false
+                                Services.FaceId.startScan()
+                                event.accepted = true
+                                return
+                            }
+                            if (Services.FaceId && Services.FaceId.isScanning) {
+                                event.accepted = true
+                                return
+                            }
+                        }
                         root.authenticate()
                         event.accepted = true
+                    } else if (event.key === Qt.Key_Space && (!pwTextInput || pwTextInput.text.length === 0)) {
+                        if (Services.FaceId && Services.FaceId.status === "success") {
+                            root.unlockSuccess()
+                            event.accepted = true
+                            return
+                        }
+                        if (Services.FaceId && Services.FaceId.isEnabled && Services.FaceId.isEnrolled && !Services.FaceId.isScanning) {
+                            faceIdScanTimer.stop()
+                            lockIsland.islandExpanded = false
+                            Services.FaceId.startScan()
+                            event.accepted = true
+                            return
+                        }
+                        if (Services.FaceId && Services.FaceId.isScanning) {
+                            event.accepted = true
+                            return
+                        }
                     } else if (event.key === Qt.Key_CapsLock) {
                         root.capsLockOn = !root.capsLockOn
                         event.accepted = true
@@ -396,19 +481,44 @@ Scope {
                         anchors.topMargin: 4
                         anchors.horizontalCenter: parent.horizontalCenter
                         color: Services.Theme.bgDeep
-                        border.color: Services.Theme.borderHighlight
-                        border.width: 1
+                        border.color: {
+                            if (isFaceActive && Services.FaceId && Services.FaceId.status === "success") return "#30d158"
+                            if (isFaceActive && Services.FaceId && Services.FaceId.status === "detected") return "#38bdf8"
+                            return Services.Theme.borderHighlight
+                        }
+                        border.width: (isFaceActive && Services.FaceId && (Services.FaceId.status === "success" || Services.FaceId.status === "detected")) ? 1.5 : 1
 
                         property bool islandExpanded: false
                         property var activeNotif: null
 
-                        width: islandExpanded ? 260 : 140
-                        height: islandExpanded ? 48 : 32
-                        radius: islandExpanded ? 24 : 16
+                        readonly property bool isFaceActive: Boolean(
+                            Services.FaceId &&
+                            Services.FaceId.isEnabled &&
+                            Services.FaceId.isEnrolled &&
+                            (
+                                Services.FaceId.isScanning ||
+                                Services.FaceId.status === "starting" ||
+                                Services.FaceId.status === "detected" ||
+                                Services.FaceId.status === "success"
+                            ) &&
+                            root.isLocked &&
+                            !islandExpanded
+                        )
 
-                        Behavior on width  { NumberAnimation { duration: 350; easing.type: Easing.OutQuad } }
+                        readonly property bool isFaceSuccess: Boolean(
+                            isFaceActive &&
+                            Services.FaceId &&
+                            Services.FaceId.status === "success"
+                        )
+
+                        width: isFaceActive ? (isFaceSuccess ? 214 : 204) : (islandExpanded ? 260 : 140)
+                        height: isFaceActive ? 48 : (islandExpanded ? 48 : 32)
+                        radius: isFaceActive ? 24 : (islandExpanded ? 24 : 16)
+
+                        Behavior on width  { NumberAnimation { duration: 350; easing.type: Easing.OutBack } }
                         Behavior on height { NumberAnimation { duration: 320; easing.type: Easing.OutQuad } }
                         Behavior on radius { NumberAnimation { duration: 320; easing.type: Easing.OutQuad } }
+                        Behavior on border.color { ColorAnimation { duration: 250 } }
 
                         Timer {
                             id: lockIslandShrinkTimer
@@ -426,7 +536,7 @@ Scope {
                                 if (root.isRevealed) {
                                     lockIsland.activeNotif = null
                                     lockIsland.islandExpanded = true
-                                    lockIslandShrinkTimer.interval = 2400
+                                    lockIslandShrinkTimer.interval = 1600
                                     lockIslandShrinkTimer.restart()
                                 } else {
                                     lockIsland.islandExpanded = false
@@ -445,29 +555,331 @@ Scope {
                             }
                         }
 
-                        // ==================== Collapsed Status Icon (Left Edge in 140x32 Pill) ====================
-                        Item {
+                        Connections {
+                            target: Services.FaceId
+                            function onAuthenticated(user, confidence) {
+                                lockIslandShrinkTimer.stop()
+                            }
+                        }
+
+                        MouseArea {
+                            anchors.fill: parent
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: {
+                                if (Services.FaceId && Services.FaceId.status === "success") {
+                                    root.unlockSuccess()
+                                    return
+                                }
+                                if (Services.FaceId && Services.FaceId.isEnabled && Services.FaceId.isEnrolled && !Services.FaceId.isScanning) {
+                                    faceIdScanTimer.stop()
+                                    lockIsland.islandExpanded = false
+                                    Services.FaceId.startScan()
+                                }
+                            }
+                        }
+
+                        // ==================== Collapsed Status (Icon + Status in 140x32 Pill) ====================
+                        RowLayout {
                             id: statusIconContainer
-                            anchors.left: parent.left
-                            anchors.leftMargin: 12
-                            anchors.verticalCenter: parent.verticalCenter
-                            implicitWidth: 16
-                            implicitHeight: 16
+                            anchors.centerIn: parent
+                            spacing: 6
                             z: 3
-                            visible: !lockIsland.islandExpanded || opacity > 0.01
-                            opacity: !lockIsland.islandExpanded ? 1 : 0
-                            scale: !lockIsland.islandExpanded ? 1.0 : 0.2
+                            visible: (!lockIsland.islandExpanded && !lockIsland.isFaceActive) || opacity > 0.01
+                            opacity: (!lockIsland.islandExpanded && !lockIsland.isFaceActive) ? 1 : 0
+                            scale: (!lockIsland.islandExpanded && !lockIsland.isFaceActive) ? 1.0 : 0.2
                             transformOrigin: Item.Center
 
-                            Behavior on opacity { NumberAnimation { duration: 350; easing.type: Easing.OutQuad } }
-                            Behavior on scale   { NumberAnimation { duration: 550; easing.type: Easing.OutExpo } }
+                            Behavior on opacity { NumberAnimation { duration: 300; easing.type: Easing.OutQuad } }
+                            Behavior on scale   { NumberAnimation { duration: 400; easing.type: Easing.OutExpo } }
 
                             Text {
-                                anchors.centerIn: parent
                                 text: "󰌾"
                                 font.family: Services.Theme.fontSymbols
                                 font.pixelSize: 13
                                 color: Services.Theme.accent
+                            }
+
+                            Text {
+                                text: "Locked"
+                                font.family: Services.Theme.fontDisplay
+                                font.pixelSize: 11
+                                font.weight: Font.Medium
+                                color: Services.Theme.textSecondary
+                            }
+                        }
+
+                        // ==================== Expanded: Apple Face ID Dynamic Island ====================
+                        Item {
+                            id: faceIdExpandedContainer
+                            anchors.fill: parent
+                            visible: (lockIsland.isFaceActive && lockIsland.activeNotif === null) || opacity > 0.01
+                            opacity: (lockIsland.isFaceActive && lockIsland.activeNotif === null) ? 1 : 0
+                            scale: (lockIsland.isFaceActive && lockIsland.activeNotif === null) ? 1.0 : 0.5
+                            transformOrigin: Item.Center
+                            z: 4
+
+                            Behavior on opacity { NumberAnimation { duration: 280; easing.type: Easing.OutQuad } }
+                            Behavior on scale   { NumberAnimation { duration: 350; easing.type: Easing.OutBack } }
+
+                            function triggerVerifiedTransition() {
+                                scanningPulseAnim.stop()
+                                faceIconWrapper.pulseScale = 1.0
+                                verifiedPopAnim.restart()
+                                haloBurstAnim.restart()
+                                appleFaceCanvas.requestPaint()
+                            }
+
+                            Connections {
+                                target: Services.FaceId
+                                function onStatusChanged() {
+                                    if (Services.FaceId && Services.FaceId.status === "success") {
+                                        faceIdExpandedContainer.triggerVerifiedTransition()
+                                    } else if (Services.FaceId && Services.FaceId.isScanning) {
+                                        verifiedPopAnim.stop()
+                                        haloBurstAnim.stop()
+                                        faceIconWrapper.popScale = 1.0
+                                        if (!scanningPulseAnim.running) {
+                                            scanningPulseAnim.restart()
+                                        }
+                                    } else {
+                                        scanningPulseAnim.stop()
+                                        verifiedPopAnim.stop()
+                                        haloBurstAnim.stop()
+                                        faceIconWrapper.pulseScale = 1.0
+                                        faceIconWrapper.popScale = 1.0
+                                    }
+                                }
+                                function onAuthenticated(user, confidence) {
+                                    faceIdExpandedContainer.triggerVerifiedTransition()
+                                }
+                            }
+
+                            RowLayout {
+                                anchors.centerIn: parent
+                                spacing: 10
+
+                                // Authentic Apple Face ID Vector Glyph (28x28) with Spring Pop & Halo
+                                Item {
+                                    id: faceIconWrapper
+                                    Layout.preferredWidth: 28
+                                    Layout.preferredHeight: 28
+                                    implicitWidth: 28
+                                    implicitHeight: 28
+                                    Layout.alignment: Qt.AlignVCenter
+                                    transformOrigin: Item.Center
+
+                                    property real pulseScale: 1.0
+                                    property real popScale: 1.0
+
+                                    scale: pulseScale * popScale
+
+                                    // Gentle breathing pulse during scanning
+                                    SequentialAnimation {
+                                        id: scanningPulseAnim
+                                        running: Services.FaceId && Services.FaceId.isScanning && (Services.FaceId.status !== "success")
+                                        loops: Animation.Infinite
+                                        NumberAnimation { target: faceIconWrapper; property: "pulseScale"; from: 1.0; to: 1.07; duration: 520; easing.type: Easing.InOutSine }
+                                        NumberAnimation { target: faceIconWrapper; property: "pulseScale"; from: 1.07; to: 1.0; duration: 520; easing.type: Easing.InOutSine }
+                                    }
+
+                                    // Spring bounce on verification
+                                    SequentialAnimation {
+                                        id: verifiedPopAnim
+                                        NumberAnimation { target: faceIconWrapper; property: "popScale"; to: 0.88; duration: 80; easing.type: Easing.InQuad }
+                                        NumberAnimation { target: faceIconWrapper; property: "popScale"; to: 1.20; duration: 200; easing.type: Easing.OutBack }
+                                        NumberAnimation { target: faceIconWrapper; property: "popScale"; to: 1.0; duration: 220; easing.type: Easing.InOutQuad }
+                                    }
+
+                                    // Emerald glowing halo flash behind icon on verification
+                                    Rectangle {
+                                        id: verifiedHalo
+                                        anchors.centerIn: parent
+                                        width: 28
+                                        height: 28
+                                        radius: 14
+                                        color: "#30d158"
+                                        opacity: 0.0
+                                        scale: 0.5
+                                        z: -1
+
+                                        ParallelAnimation {
+                                            id: haloBurstAnim
+                                            NumberAnimation { target: verifiedHalo; property: "scale"; from: 0.6; to: 1.6; duration: 420; easing.type: Easing.OutCubic }
+                                            SequentialAnimation {
+                                                NumberAnimation { target: verifiedHalo; property: "opacity"; from: 0.0; to: 0.40; duration: 100; easing.type: Easing.OutQuad }
+                                                NumberAnimation { target: verifiedHalo; property: "opacity"; from: 0.40; to: 0.0; duration: 320; easing.type: Easing.OutQuad }
+                                            }
+                                        }
+                                    }
+
+                                    Canvas {
+                                        id: appleFaceCanvas
+                                        anchors.fill: parent
+                                        renderTarget: Canvas.FramebufferObject
+
+                                        readonly property bool isSuccess: Boolean(Services.FaceId && Services.FaceId.status === "success")
+                                        readonly property bool isDetected: Boolean(Services.FaceId && Services.FaceId.status === "detected")
+                                        readonly property bool isTimeout: Boolean(Services.FaceId && Services.FaceId.status === "timeout")
+
+                                        property color strokeColor: isSuccess ? "#30d158" : (isDetected ? "#38bdf8" : (isTimeout ? "#ef4444" : Services.Theme.accent))
+                                        property real smileAmount: isSuccess ? 1.40 : 1.0
+                                        property real cornerRadius: 4.0
+
+                                        Behavior on strokeColor {
+                                            ColorAnimation { duration: 280; easing.type: Easing.OutQuad }
+                                        }
+                                        Behavior on smileAmount {
+                                            NumberAnimation { duration: 360; easing.type: Easing.OutBack }
+                                        }
+
+                                        onStrokeColorChanged: requestPaint()
+                                        onSmileAmountChanged: requestPaint()
+                                        onVisibleChanged: { if (visible) requestPaint() }
+
+                                        onPaint: {
+                                            var ctx = getContext("2d")
+                                            ctx.clearRect(0, 0, width, height)
+                                            ctx.strokeStyle = strokeColor
+                                            ctx.lineWidth = 1.9
+                                            ctx.lineCap = "round"
+                                            ctx.lineJoin = "round"
+
+                                            var w = width
+                                            var h = height
+                                            var r = cornerRadius
+
+                                            // Top-Left Bracket
+                                            ctx.beginPath()
+                                            ctx.moveTo(w * 0.10, h * 0.32)
+                                            ctx.lineTo(w * 0.10, h * 0.18 + r)
+                                            ctx.arcTo(w * 0.10, h * 0.10, w * 0.18 + r, h * 0.10, r)
+                                            ctx.lineTo(w * 0.34, h * 0.10)
+                                            ctx.stroke()
+
+                                            // Top-Right Bracket
+                                            ctx.beginPath()
+                                            ctx.moveTo(w * 0.66, h * 0.10)
+                                            ctx.lineTo(w * 0.82 - r, h * 0.10)
+                                            ctx.arcTo(w * 0.90, h * 0.10, w * 0.90, h * 0.18 + r, r)
+                                            ctx.lineTo(w * 0.90, h * 0.32)
+                                            ctx.stroke()
+
+                                            // Bottom-Left Bracket
+                                            ctx.beginPath()
+                                            ctx.moveTo(w * 0.10, h * 0.68)
+                                            ctx.lineTo(w * 0.10, h * 0.82 - r)
+                                            ctx.arcTo(w * 0.10, h * 0.90, w * 0.18 + r, h * 0.90, r)
+                                            ctx.lineTo(w * 0.34, h * 0.90)
+                                            ctx.stroke()
+
+                                            // Bottom-Right Bracket
+                                            ctx.beginPath()
+                                            ctx.moveTo(w * 0.66, h * 0.90)
+                                            ctx.lineTo(w * 0.82 - r, h * 0.90)
+                                            ctx.arcTo(w * 0.90, h * 0.90, w * 0.90, h * 0.82 - r, r)
+                                            ctx.lineTo(w * 0.90, h * 0.68)
+                                            ctx.stroke()
+
+                                            // Left Eye
+                                            ctx.beginPath()
+                                            ctx.moveTo(w * 0.35, h * 0.36)
+                                            ctx.lineTo(w * 0.35, h * 0.46)
+                                            ctx.stroke()
+
+                                            // Right Eye
+                                            ctx.beginPath()
+                                            ctx.moveTo(w * 0.65, h * 0.36)
+                                            ctx.lineTo(w * 0.65, h * 0.46)
+                                            ctx.stroke()
+
+                                            // Nose
+                                            ctx.beginPath()
+                                            ctx.moveTo(w * 0.50, h * 0.42)
+                                            ctx.lineTo(w * 0.50, h * 0.54)
+                                            ctx.lineTo(w * 0.58, h * 0.54)
+                                            ctx.stroke()
+
+                                            // Smile
+                                            ctx.beginPath()
+                                            ctx.moveTo(w * 0.33, h * 0.69)
+                                            ctx.quadraticCurveTo(w * 0.50, h * (0.69 + 0.11 * smileAmount), w * 0.67, h * 0.69)
+                                            ctx.stroke()
+                                        }
+                                    }
+                                }
+
+                                // Status text beside Face ID icon with iOS slide-in transition
+                                Column {
+                                    Layout.alignment: Qt.AlignVCenter
+                                    spacing: 1
+
+                                    Text {
+                                        text: "Face ID"
+                                        font.family: Services.Theme.fontDisplay
+                                        font.pixelSize: 12
+                                        font.weight: Font.DemiBold
+                                        color: Services.Theme.textPrimary
+                                    }
+
+                                    Item {
+                                        id: statusSubtitleBox
+                                        width: Math.max(statusScanText.implicitWidth, statusSuccessText.implicitWidth, 85)
+                                        height: 16
+                                        clip: true
+
+                                        readonly property bool isVerified: Boolean(Services.FaceId && Services.FaceId.status === "success")
+
+                                        Text {
+                                            id: statusScanText
+                                            anchors.left: parent.left
+                                            y: statusSubtitleBox.isVerified ? -18 : 0
+                                            opacity: statusSubtitleBox.isVerified ? 0.0 : 1.0
+
+                                            text: {
+                                                if (Services.FaceId && Services.FaceId.status === "detected") return "Verifying Face..."
+                                                if (Services.FaceId && Services.FaceId.status === "starting") return "Looking for Face..."
+                                                if (Services.FaceId && Services.FaceId.status === "timeout") return "Try Again"
+                                                if (Services.FaceId && Services.FaceId.isScanning) return "Looking for Face..."
+                                                return "Ready"
+                                            }
+                                            font.family: Services.Theme.fontDisplay
+                                            font.pixelSize: 11
+                                            font.weight: Font.Normal
+                                            color: {
+                                                if (Services.FaceId && Services.FaceId.status === "detected") return "#38bdf8"
+                                                if (Services.FaceId && Services.FaceId.status === "timeout") return Services.Theme.danger
+                                                return Services.Theme.textSecondary
+                                            }
+
+                                            Behavior on y {
+                                                NumberAnimation { duration: 280; easing.type: Easing.OutCubic }
+                                            }
+                                            Behavior on opacity {
+                                                NumberAnimation { duration: 240; easing.type: Easing.OutQuad }
+                                            }
+                                        }
+
+                                        Text {
+                                            id: statusSuccessText
+                                            anchors.left: parent.left
+                                            y: statusSubtitleBox.isVerified ? 0 : 18
+                                            opacity: statusSubtitleBox.isVerified ? 1.0 : 0.0
+
+                                            text: "Verified"
+                                            font.family: Services.Theme.fontDisplay
+                                            font.pixelSize: 11
+                                            font.weight: Font.DemiBold
+                                            color: "#30d158"
+
+                                            Behavior on y {
+                                                NumberAnimation { duration: 320; easing.type: Easing.OutBack }
+                                            }
+                                            Behavior on opacity {
+                                                NumberAnimation { duration: 280; easing.type: Easing.OutQuad }
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
 
@@ -1252,10 +1664,21 @@ Scope {
                                         Text {
                                             id: lockStateIcon
                                             anchors.centerIn: parent
-                                            text: root.isAuthenticating ? Services.Icons.spinner : (root.isError ? Services.Icons.error : Services.Icons.lock)
+                                            text: {
+                                                if (Services.FaceId && Services.FaceId.status === "success") return "󰌿"
+                                                if (Services.FaceId && Services.FaceId.isScanning) return "󰘑"
+                                                if (root.isAuthenticating) return Services.Icons.spinner
+                                                if (root.isError) return Services.Icons.error
+                                                return Services.Icons.lock
+                                            }
                                             font.family: Services.Theme.fontSymbols
                                             font.pixelSize: Services.Theme.fontSizeSm
-                                            color: root.isError ? Services.Theme.danger : (pwTextInput.activeFocus ? Services.Theme.accent : Services.Theme.textSecondary)
+                                            color: {
+                                                if (Services.FaceId && Services.FaceId.status === "success") return Services.Theme.success
+                                                if (Services.FaceId && Services.FaceId.isScanning) return Services.Theme.accent
+                                                if (root.isError) return Services.Theme.danger
+                                                return (pwTextInput.activeFocus ? Services.Theme.accent : Services.Theme.textSecondary)
+                                            }
 
                                             RotationAnimation on rotation {
                                                 id: lockSpinAnim
@@ -1267,6 +1690,25 @@ Scope {
                                                         lockStateIcon.rotation = 0
                                                     }
                                                 }
+                                            }
+                                        }
+
+                                        MouseArea {
+                                            anchors.fill: parent
+                                            cursorShape: Qt.PointingHandCursor
+                                            hoverEnabled: true
+                                            onClicked: {
+                                                if (Services.FaceId && Services.FaceId.status === "success") {
+                                                    root.unlockSuccess()
+                                                    return
+                                                }
+                                                if (Services.FaceId && Services.FaceId.isEnabled && Services.FaceId.isEnrolled && !Services.FaceId.isScanning) {
+                                                    faceIdScanTimer.stop()
+                                                    lockIsland.islandExpanded = false
+                                                    Services.FaceId.startScan()
+                                                }
+                                                root.userRevealedInput = true
+                                                pwTextInput.forceActiveFocus()
                                             }
                                         }
                                     }
@@ -1338,11 +1780,15 @@ Scope {
 
                                     property real r: centerAuthCard.ringRadius
                                     property real bw: pwTextInput.activeFocus ? 2 : 1.5
-                                    property color bc: root.isError
-                                        ? Services.Theme.danger
-                                        : (pwTextInput.activeFocus
-                                            ? Services.Theme.accent
-                                            : Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.3))
+                                    property color bc: {
+                                        if (Services.FaceId && Services.FaceId.status === "success") return Services.Theme.success
+                                        if (Services.FaceId && Services.FaceId.isScanning) return Services.Theme.accent
+                                        return root.isError
+                                            ? Services.Theme.danger
+                                            : (pwTextInput.activeFocus
+                                                ? Services.Theme.accent
+                                                : Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.3))
+                                    }
 
                                     onRChanged: requestPaint()
                                     onBwChanged: requestPaint()
@@ -1378,10 +1824,10 @@ Scope {
                                     Behavior on scale { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                                     SequentialAnimation on opacity {
-                                        running: pwTextInput.activeFocus || root.isAuthenticating
+                                        running: pwTextInput.activeFocus || root.isAuthenticating || (Services.FaceId && Services.FaceId.isScanning)
                                         loops: Animation.Infinite
-                                        NumberAnimation { from: 1.0; to: 0.5; duration: 1200; easing.type: Easing.InOutSine }
-                                        NumberAnimation { from: 0.5; to: 1.0; duration: 1200; easing.type: Easing.InOutSine }
+                                        NumberAnimation { from: 1.0; to: 0.5; duration: 1000; easing.type: Easing.InOutSine }
+                                        NumberAnimation { from: 0.5; to: 1.0; duration: 1000; easing.type: Easing.InOutSine }
                                     }
                                 }
 
@@ -1437,8 +1883,17 @@ Scope {
                                 Text {
                                     id: promptLabel
                                     anchors.centerIn: parent
-                                    text: "Touch ID or Enter Password"
-                                    color: Services.Theme.textSecondary
+                                    text: {
+                                        if (Services.FaceId && Services.FaceId.isEnabled && Services.FaceId.isEnrolled) {
+                                            if (Services.FaceId.status === "success") return "Face ID Verified"
+                                            if (Services.FaceId.status === "detected") return "Verifying Face..."
+                                            if (Services.FaceId.isScanning) return "Looking for Face..."
+                                            if (Services.FaceId.status === "timeout") return "Face not matched (Click to retry)"
+                                            return "Face ID or Enter Password"
+                                        }
+                                        return "Touch ID or Enter Password"
+                                    }
+                                    color: (Services.FaceId && Services.FaceId.status === "success") ? Services.Theme.success : Services.Theme.textSecondary
                                     font.pixelSize: 11
                                     font.weight: Font.Medium
                                     style: Text.Outline
@@ -1449,6 +1904,13 @@ Scope {
                                     anchors.fill: parent
                                     cursorShape: Qt.PointingHandCursor
                                     onClicked: {
+                                        if (Services.FaceId && Services.FaceId.status === "success") {
+                                            root.unlockSuccess()
+                                            return
+                                        }
+                                        if (Services.FaceId && Services.FaceId.isEnabled && Services.FaceId.isEnrolled && !Services.FaceId.isScanning) {
+                                            Services.FaceId.startScan()
+                                        }
                                         root.userRevealedInput = true
                                         pwTextInput.forceActiveFocus()
                                     }

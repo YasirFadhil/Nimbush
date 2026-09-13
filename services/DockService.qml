@@ -45,6 +45,7 @@ Singleton {
             property bool isPinned: false
             property bool isRunning: false
             property bool isActive: false
+            property bool isLaunching: false
             property int windowCount: 0
             property var windows: []
         }
@@ -361,6 +362,7 @@ Singleton {
                     isPinned: true,
                     isRunning: false,
                     isActive: false,
+                    isLaunching: false,
                     windowCount: 0,
                     windows: []
                 })
@@ -453,6 +455,9 @@ Singleton {
             item.windows = matchedClients
             item.windowCount = matchedClients.length
             item.isRunning = matchedClients.length > 0
+            if (item.isRunning) {
+                item.isLaunching = false
+            }
             item.isActive = matchedClients.some(w => w.address === root.activeWindowAddress)
         }
 
@@ -550,6 +555,7 @@ Singleton {
 
     function launchApp(item) {
         if (!item) return
+        item.isLaunching = true
         if (item.app && typeof item.app.execute === "function") {
             item.app.execute()
             return
@@ -655,6 +661,14 @@ Singleton {
         current.splice(toIdx, 0, item)
         if (Services.Config) {
             Services.Config.setDockPinnedApps(current)
+        }
+        rebuildDebounceTimer.restart()
+    }
+
+    function resetToDefaultPinned() {
+        if (Services.Config) {
+            const defaults = Services.Config.resolveDefaultPinnedApps()
+            Services.Config.setDockPinnedApps(defaults)
         }
         rebuildDebounceTimer.restart()
     }

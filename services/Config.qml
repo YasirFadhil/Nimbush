@@ -130,9 +130,10 @@ Singleton {
     property string dockMonitorMode: "all"        // "all" | "primary"
     property var dockPinnedApps: [
         "kitty.desktop",
-        "helium.desktop",
-        "antigravity-ide.desktop",
-        "thunar.desktop"
+        "org.gnome.Nautilus.desktop",
+        "zen.desktop",
+        "org.gnome.Snapshot.desktop",
+        "org.gnome.DiskUtility.desktop"
     ]
 
     // ── Lockscreen & System ──────────────────────────────────────────────────
@@ -158,6 +159,10 @@ Singleton {
     property string lockscreenCustomWallpaper: ""
     property bool lockscreenShowQuickPower: true
     property bool lockscreenShowStatusPill: true
+    property bool faceIdEnabled: true
+    property string faceIdCameraDevice: "/dev/video0"
+    property real faceIdConfidence: 98.0
+    property bool faceIdAutoUnlock: true
     property bool batteryShowWarnings: true
     property int batteryLowThreshold: 20
     property string customAvatar: ""
@@ -327,6 +332,10 @@ Singleton {
         if (data.lockscreenCustomWallpaper !== undefined) lockscreenCustomWallpaper = String(data.lockscreenCustomWallpaper)
         if (data.lockscreenShowQuickPower !== undefined) lockscreenShowQuickPower = Boolean(data.lockscreenShowQuickPower)
         if (data.lockscreenShowStatusPill !== undefined) lockscreenShowStatusPill = Boolean(data.lockscreenShowStatusPill)
+        if (data.faceIdEnabled !== undefined) faceIdEnabled = Boolean(data.faceIdEnabled)
+        if (data.faceIdCameraDevice !== undefined) faceIdCameraDevice = String(data.faceIdCameraDevice)
+        if (data.faceIdConfidence !== undefined) faceIdConfidence = Number(data.faceIdConfidence)
+        if (data.faceIdAutoUnlock !== undefined) faceIdAutoUnlock = Boolean(data.faceIdAutoUnlock)
         if (data.batteryShowWarnings !== undefined) batteryShowWarnings = Boolean(data.batteryShowWarnings)
         if (data.batteryLowThreshold !== undefined) batteryLowThreshold = Number(data.batteryLowThreshold)
         if (data.customAvatar !== undefined) customAvatar = String(data.customAvatar)
@@ -448,6 +457,10 @@ Singleton {
             lockscreenCustomWallpaper: lockscreenCustomWallpaper,
             lockscreenShowQuickPower: lockscreenShowQuickPower,
             lockscreenShowStatusPill: lockscreenShowStatusPill,
+            faceIdEnabled: faceIdEnabled,
+            faceIdCameraDevice: faceIdCameraDevice,
+            faceIdConfidence: faceIdConfidence,
+            faceIdAutoUnlock: faceIdAutoUnlock,
             batteryShowWarnings: batteryShowWarnings,
             batteryLowThreshold: batteryLowThreshold,
             customAvatar: customAvatar,
@@ -592,12 +605,7 @@ Singleton {
         dockShowSeparator = true
         dockFloatingDistance = 6
         dockMonitorMode = "all"
-        dockPinnedApps = [
-            "kitty.desktop",
-            "helium.desktop",
-            "antigravity-ide.desktop",
-            "thunar.desktop"
-        ]
+        dockPinnedApps = resolveDefaultPinnedApps()
 
         firstRunCompleted = true
         saveConfig()
@@ -788,6 +796,10 @@ Singleton {
     function setLockscreenCustomWallpaper(path) { lockscreenCustomWallpaper = path; saveConfig() }
     function setLockscreenShowQuickPower(val) { lockscreenShowQuickPower = val; saveConfig() }
     function setLockscreenShowStatusPill(val) { lockscreenShowStatusPill = val; saveConfig() }
+    function setFaceIdEnabled(val) { faceIdEnabled = val; saveConfig() }
+    function setFaceIdCameraDevice(path) { faceIdCameraDevice = path; saveConfig() }
+    function setFaceIdConfidence(val) { faceIdConfidence = val; saveConfig() }
+    function setFaceIdAutoUnlock(val) { faceIdAutoUnlock = val; saveConfig() }
     function setBatteryShowWarnings(val) { batteryShowWarnings = val; saveConfig() }
     function setBatteryLowThreshold(val) { batteryLowThreshold = val; saveConfig() }
     function setCustomAvatar(path) { customAvatar = path; saveConfig() }
@@ -810,6 +822,80 @@ Singleton {
     function setDockFloatingDistance(val) { dockFloatingDistance = val; saveConfig() }
     function setDockMonitorMode(val) { dockMonitorMode = val; saveConfig() }
     function setDockPinnedApps(apps) { dockPinnedApps = apps; saveConfig() }
+
+    function resolveDefaultPinnedApps() {
+        const raw = (DesktopEntries.applications && DesktopEntries.applications.values) ? DesktopEntries.applications.values : []
+
+        const terminalCandidates = [
+            "kitty.desktop", "ghostty.desktop", "com.mitchellh.ghostty.desktop",
+            "foot.desktop", "org.gnome.Console.desktop", "gnome-terminal.desktop",
+            "alacritty.desktop", "wezterm.desktop", "org.kde.konsole.desktop", "konsole.desktop",
+            "com.system76.CosmicTerm.desktop", "xterm.desktop"
+        ]
+        const fileManagerCandidates = [
+            "org.gnome.Nautilus.desktop", "nautilus.desktop", "thunar.desktop",
+            "org.kde.dolphin.desktop", "dolphin.desktop", "com.system76.CosmicFiles.desktop",
+            "nemo.desktop", "pcmanfm.desktop", "caja.desktop"
+        ]
+        const browserCandidates = [
+            "zen.desktop", "firefox.desktop", "org.mozilla.firefox.desktop",
+            "google-chrome.desktop", "chromium.desktop", "brave-browser.desktop",
+            "microsoft-edge.desktop", "helium.desktop", "org.gnome.Epiphany.desktop"
+        ]
+        const cameraCandidates = [
+            "org.gnome.Snapshot.desktop", "snapshot.desktop", "cheese.desktop",
+            "org.gnome.Cheese.desktop", "kamoso.desktop", "org.kde.kamoso.desktop",
+            "io.github.cameractrls.desktop", "cameractrls.desktop", "qv4l2.desktop", "qvidcap.desktop"
+        ]
+        const diskCandidates = [
+            "org.gnome.DiskUtility.desktop", "gnome-disk-utility.desktop",
+            "gparted.desktop", "partitionmanager.desktop", "org.kde.partitionmanager.desktop",
+            "org.gnome.baobab.desktop", "baobab.desktop"
+        ]
+
+        function findMatch(candidates, categoryName, keywordList) {
+            for (let c = 0; c < candidates.length; c++) {
+                const targetClean = candidates[c].toLowerCase().replace(/\.desktop$/, '')
+                for (let i = 0; i < raw.length; i++) {
+                    const app = raw[i]
+                    if (!app || !app.id) continue
+                    const appIdClean = app.id.toLowerCase().replace(/\.desktop$/, '')
+                    if (appIdClean === targetClean) {
+                        return app.id.endsWith(".desktop") ? app.id : (app.id + ".desktop")
+                    }
+                }
+            }
+            if (categoryName) {
+                for (let i = 0; i < raw.length; i++) {
+                    const app = raw[i]
+                    if (!app || !app.id) continue
+                    const cats = (app.categories || []).map(cat => String(cat).toLowerCase())
+                    if (cats.includes(categoryName.toLowerCase())) {
+                        return app.id.endsWith(".desktop") ? app.id : (app.id + ".desktop")
+                    }
+                }
+            }
+            if (keywordList && keywordList.length > 0) {
+                for (let i = 0; i < raw.length; i++) {
+                    const app = raw[i]
+                    if (!app || !app.id) continue
+                    const text = ((app.id || "") + " " + (app.name || "") + " " + (app.description || "")).toLowerCase()
+                    if (keywordList.some(k => text.includes(k.toLowerCase()))) {
+                        return app.id.endsWith(".desktop") ? app.id : (app.id + ".desktop")
+                    }
+                }
+            }
+            return null
+        }
+
+        const term = findMatch(terminalCandidates, "TerminalEmulator", ["terminal", "console"]) || "kitty.desktop"
+        const fm = findMatch(fileManagerCandidates, "FileManager", ["filemanager", "files", "nautilus", "thunar"]) || "org.gnome.Nautilus.desktop"
+        const browser = findMatch(browserCandidates, "WebBrowser", ["browser", "firefox", "chrome", "zen"]) || "zen.desktop"
+        const cam = findMatch(cameraCandidates, null, ["camera", "snapshot", "webcam", "kamera"]) || "org.gnome.Snapshot.desktop"
+        const disk = findMatch(diskCandidates, null, ["disk", "partition", "gparted", "diskutility"]) || "org.gnome.DiskUtility.desktop"
+
+        return [term, fm, browser, cam, disk]
+    }
 
     function setDashboardWidget(val) { dashboardWidget = val; saveConfig() }
     function setWeatherLocationMode(val) {

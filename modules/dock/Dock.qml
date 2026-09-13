@@ -60,13 +60,12 @@ Variants {
         property bool isHovered: false
 
         // ── macOS Global Magnification Progress ──────────────────────────────
-        // Smoothly blooms on enter (140ms), velvety & calm dissolve on exit (380ms OutQuad).
-        // 1:1 instantaneous zero-latency tracking while moving inside the dock.
+        // Crisp 60ms bloom on enter (instant response, zero delay), swift 100ms dissolve on exit.
         property real hoverProgress: (root.magnification && root.isHovered) ? 1.0 : 0.0
         Behavior on hoverProgress {
             NumberAnimation {
-                duration: root.isHovered ? 140 : 380
-                easing.type: root.isHovered ? Easing.OutCubic : Easing.OutQuad
+                duration: root.isHovered ? 60 : 100
+                easing.type: Easing.OutQuad
             }
         }
 
@@ -104,75 +103,78 @@ Variants {
             return (count * root.iconSize) + (hasSeparator ? separatorNominalSize : 0) + ((totalItems - 1) * itemSpacing)
         }
 
-        readonly property real nominalStartCoord: root.isVertical
-            ? ((root.height - totalNominalLength) / 2)
-            : ((root.width - totalNominalLength) / 2)
-
-        // ── Exact Harmonic Expansion Constant ────────────────────────────────
-        // Sum of cos^2 envelope across all icons is mathematically 2.0.
-        // Therefore total dock pill expansion is strictly invariant during horizontal travel.
-        readonly property real maxWaveExpansion: (root.iconSize * (root.maxScale - 1.0) * 2.0)
-
-        readonly property real stableDockWidth: root.isVertical
-            ? root.dockBarHeight
-            : (totalNominalLength + 16 + (maxWaveExpansion * root.hoverProgress))
-
-        readonly property real stableDockHeight: root.isVertical
-            ? (totalNominalLength + 16 + (maxWaveExpansion * root.hoverProgress))
-            : root.dockBarHeight
-
         function getNominalCenter(isPinnedGroup, index) {
             if (isPinnedGroup) {
-                return nominalStartCoord + (index * (root.iconSize + itemSpacing)) + (root.iconSize / 2)
+                return (index * (root.iconSize + itemSpacing)) + (root.iconSize / 2)
             } else {
-                return nominalStartCoord + (pinnedCount * (root.iconSize + itemSpacing)) + (hasSeparator ? (separatorNominalSize + itemSpacing) : 0) + (index * (root.iconSize + itemSpacing)) + (root.iconSize / 2)
+                return (pinnedCount * (root.iconSize + itemSpacing)) + (hasSeparator ? (separatorNominalSize + itemSpacing) : 0) + (index * (root.iconSize + itemSpacing)) + (root.iconSize / 2)
             }
         }
 
-        // ── Single Dock Mouse Coordinate Tracker ─────────────────────────────
-        readonly property real mouseScreenCoord: (root.isHovered && dockTracker.containsMouse) ? dockTracker.currentMouseCoord : dockTracker.lastValidMouseCoord
+        // ── Single Dock Mouse Coordinate Tracker (Dock-Relative Space) ────────
+        readonly property real mouseDockCoord: (root.isHovered && dockTracker.containsMouse) ? dockTracker.dockMousePos : dockTracker.lastValidDockMousePos
 
-        // ── 2D Approach Ramp Calculation ─────────────────────────────────────
-        function calcApproachRamp(cross) {
-            if (cross === -99999) return 1.0
-            const rampDist = 32.0
-            if (root.isBottom) {
-                if (cross >= rampDist) return 1.0
-                if (cross <= 0) return 0.0
-                const norm = (rampDist - cross) / rampDist
-                const c = Math.cos(norm * (Math.PI / 2))
-                return c * c
-            } else if (root.isRight) {
-                if (cross >= rampDist) return 1.0
-                if (cross <= 0) return 0.0
-                const norm = (rampDist - cross) / rampDist
-                const c = Math.cos(norm * (Math.PI / 2))
-                return c * c
-            } else if (root.isLeft) {
-                const rightEdge = dockTracker.width
-                const distFromRight = rightEdge - cross
-                if (distFromRight >= rampDist) return 1.0
-                if (distFromRight <= 0) return 0.0
-                const norm = (rampDist - distFromRight) / rampDist
-                const c = Math.cos(norm * (Math.PI / 2))
-                return c * c
-            }
-            return 1.0
+        // ── Pinned Drag-and-Drop Reordering State ─────────────────────────────
+        property int draggedPinnedIndex: -1
+        property int targetDropIndex: -1
+        readonly property bool isDraggingPinned: draggedPinnedIndex >= 0
+
+        function startPinnedDrag(index) {
+            draggedPinnedIndex = index
+            targetDropIndex = index
         }
 
-        readonly property real approachRamp: {
-            if (!root.isHovered || !dockTracker.containsMouse) return dockTracker.lastApproachRamp
-            return calcApproachRamp(dockTracker.currentMouseCrossCoord)
+        function updatePinnedDrag(targetIndex) {
+            if (targetDropIndex !== targetIndex) {
+                targetDropIndex = targetIndex
+            }
+        }
+
+        function finishPinnedDrag() {
+            const fromIdx = draggedPinnedIndex
+            const toIdx = targetDropIndex
+            draggedPinnedIndex = -1
+            targetDropIndex = -1
+            if (fromIdx >= 0 && toIdx >= 0 && fromIdx !== toIdx) {
+                if (Services.DockService) {
+                    Services.DockService.movePinned(fromIdx, toIdx)
+                }
+            }
+        }
+
+        function cancelPinnedDrag() {
+            draggedPinnedIndex = -1
+            targetDropIndex = -1
+        }
+
+        function getClosestPinnedSlot(coord) {
+            if (root.pinnedCount <= 1) return 0
+            let closestIdx = 0
+            let minDist = 999999
+            for (let k = 0; k < root.pinnedCount; k++) {
+                const itm = pinnedRepeater.itemAt(k)
+                if (!itm) continue
+                const center = root.isVertical ? (itm.y + itm.height / 2) : (itm.x + itm.width / 2)
+                const d = Math.abs(coord - center)
+                if (d < minDist) {
+                    minDist = d
+                    closestIdx = k
+                }
+            }
+            return closestIdx
         }
 
         // ── Masking (Wayland Input Region) ───────────────────────────────────
+        // Strictly matches dockContainer horizontally.
+        // Reaches bottom of monitor (zero bottom gap) and only 6px upward when hovered.
         mask: Region {
-            // Active Dock Region: Generous coverage for lifted icons and tooltips
             Region {
-                x: root.isVertical ? (root.isRight ? Math.max(0, dockContainer.x - 24) : 0) : Math.max(0, dockContainer.x - 16)
-                y: root.isVertical ? Math.max(0, dockContainer.y - 16) : (root.isBottom ? Math.max(0, dockContainer.y - 56) : 0)
-                width: root.isVertical ? (dockContainer.width + 28) : (dockContainer.width + 32)
-                height: root.isVertical ? (dockContainer.height + 32) : (dockContainer.height + 64)
+                x: (root.isRight && root.isHovered) ? Math.max(0, dockContainer.x - 6) : dockContainer.x
+                y: (root.isBottom && root.isHovered) ? Math.max(0, dockContainer.y - 6) : dockContainer.y
+                width: (root.isVertical && root.isHovered) ? (dockContainer.width + 6) : dockContainer.width
+                height: root.isBottom
+                    ? (dockContainer.height + root.edgeMargin + (root.isHovered ? 6 : 0))
+                    : ((root.isVertical && root.isHovered) ? (dockContainer.height + 6) : dockContainer.height)
             }
             // Auto-hide bottom edge trigger strip (when autoHide is enabled)
             Region {
@@ -246,15 +248,19 @@ Variants {
                 NumberAnimation { duration: 220; easing.type: Easing.OutCubic }
             }
 
-            // Dynamic Dimensions: fits content + generous padding (stationary during hover)
-            height: Math.round(root.stableDockHeight)
-            width: Math.round(root.stableDockWidth)
+            // Dynamic Dimensions: exactly hugs itemsLayout with 8px padding.
+            // Expands in 100% hardware lockstep with icon magnification.
+            height: root.isVertical ? Math.max(root.dockBarHeight, Math.round(itemsLayout.height + 16)) : root.dockBarHeight
+            width: root.isVertical ? root.dockBarHeight : Math.max(root.dockBarHeight, Math.round(itemsLayout.width + 16))
             radius: Math.min(22, Math.round(root.dockBarHeight * 0.35))
 
             // macOS Liquid Glass Styling
             color: Services.Theme.isDark ? Qt.rgba(0.08, 0.08, 0.12, 0.84) : Qt.rgba(0.96, 0.96, 0.98, 0.90)
-            border.color: Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.15) : Qt.rgba(0, 0, 0, 0.10)
+            border.color: Services.Theme.isDark
+                ? Qt.rgba(1, 1, 1, root.isHovered ? 0.22 : 0.14)
+                : Qt.rgba(0, 0, 0, root.isHovered ? 0.16 : 0.10)
             border.width: 1
+            Behavior on border.color { ColorAnimation { duration: 180 } }
 
             // Inner subtle border rim
             Rectangle {
@@ -267,43 +273,46 @@ Variants {
             }
 
             // ── Unified Dock Tracker MouseArea ───────────────────────────────
-            // Covers the dock container plus smooth 22px approach zone.
-            // Doesn't consume clicks (acceptedButtons: Qt.NoButton).
+            // Strictly 0 margins when idle so hover only triggers when cursor physically touches the dock pill.
+            // When already hovered, expands slightly upward so cursor can hover lifted icons.
             MouseArea {
                 id: dockTracker
                 anchors.fill: parent
-                anchors.topMargin: root.isBottom ? -32 : -8
-                anchors.bottomMargin: root.isBottom ? 0 : -8
-                anchors.leftMargin: root.isRight ? -22 : -12
-                anchors.rightMargin: root.isLeft ? -22 : -12
+                anchors.topMargin: (root.isBottom && root.isHovered) ? -6 : 0
+                anchors.bottomMargin: root.isBottom ? -root.edgeMargin : 0
+                anchors.leftMargin: (root.isRight && root.isHovered) ? -6 : 0
+                anchors.rightMargin: (root.isLeft && root.isHovered) ? -6 : 0
                 hoverEnabled: true
                 acceptedButtons: Qt.NoButton
                 cursorShape: Qt.PointingHandCursor
                 z: 100
 
-                property real currentMouseCoord: -99999
-                property real currentMouseCrossCoord: -99999
-                property real lastValidMouseCoord: root.width / 2
-                property real lastApproachRamp: 1.0
+                property real dockMousePos: -99999
+                property real lastValidDockMousePos: 0
+
+                function updateMouse(mx, my) {
+                    if (root.isVertical) {
+                        dockMousePos = dockTracker.y + my
+                    } else {
+                        dockMousePos = dockTracker.x + mx
+                    }
+                    lastValidDockMousePos = dockMousePos
+                }
 
                 onPositionChanged: (mouse) => {
-                    if (root.isVertical) {
-                        currentMouseCoord = dockContainer.y + dockTracker.y + mouse.y
-                        currentMouseCrossCoord = mouse.x
-                    } else {
-                        currentMouseCoord = dockContainer.x + dockTracker.x + mouse.x
-                        currentMouseCrossCoord = mouse.y
+                    updateMouse(mouse.x, mouse.y)
+                    if (!root.isHovered) {
+                        hideDelayTimer.stop()
+                        root.isHovered = true
                     }
-                    lastValidMouseCoord = currentMouseCoord
-                    lastApproachRamp = root.calcApproachRamp(currentMouseCrossCoord)
                 }
                 onEntered: {
                     hideDelayTimer.stop()
+                    updateMouse(dockTracker.mouseX, dockTracker.mouseY)
                     root.isHovered = true
                 }
                 onExited: {
-                    currentMouseCoord = -99999
-                    currentMouseCrossCoord = -99999
+                    dockMousePos = -99999
                     root.isHovered = false
                     if (root.autoHide) {
                         hideDelayTimer.restart()
@@ -315,6 +324,7 @@ Variants {
             Grid {
                 id: itemsLayout
                 anchors.centerIn: parent
+                anchors.alignWhenCentered: false
                 spacing: root.itemSpacing
                 flow: root.isVertical ? Grid.TopToBottom : Grid.LeftToRight
                 rows: root.isVertical ? -1 : 1
@@ -375,13 +385,12 @@ Variants {
                 // Group identification
                 readonly property bool isPinnedItem: Boolean(modelData && modelData.isPinned)
 
-                // ── Stable Nominal Center Math ───────────────────────────────
-                // ── Stable Nominal Center Math ───────────────────────────────
+                // ── Stable Nominal Center Math (Dock-Relative Space) ─────────
                 readonly property real itemNominalCenter: root.getNominalCenter(isPinnedItem, index)
-                readonly property real distToMouse: Math.abs(root.mouseScreenCoord - itemNominalCenter)
+                readonly property real distToMouse: Math.abs(root.mouseDockCoord - 8 - itemNominalCenter)
 
-                // Harmonic 2-pitch radius ensures sum(cos^2) is mathematically constant (= 2.0)
-                readonly property real radiusInfluence: (root.iconSize + root.itemSpacing) * 2.0
+                // Harmonic 2.2-pitch radius ensures a luscious, organic wave crest
+                readonly property real radiusInfluence: (root.iconSize + root.itemSpacing) * 2.2
 
                 // Mathematical macOS Raised-Cosine Harmonic Envelope
                 readonly property real rawEnvelope: {
@@ -392,14 +401,85 @@ Variants {
                 }
 
                 // ── True macOS Direct Visual Scale (Zero Latency Wave) ────────
-                readonly property real visualScale: 1.0 + ((root.maxScale - 1.0) * rawEnvelope * root.approachRamp * root.hoverProgress)
+                // ── True macOS Direct Visual Scale ───────────────────────────
+                property real visualScale: 1.0 + ((root.maxScale - 1.0) * rawEnvelope * root.hoverProgress)
+                Behavior on visualScale {
+                    enabled: root.isHovered
+                    NumberAnimation {
+                        duration: 75
+                        easing.type: Easing.OutQuad
+                    }
+                }
 
                 // ── macOS Delegate Bounds (Continuous Sub-pixel Wave Push) ───
                 width: root.isVertical ? root.iconSize : (root.iconSize * visualScale)
                 height: root.isVertical ? (root.iconSize * visualScale) : root.iconSize
 
-                // Higher scale icons render in front
-                z: Math.round(visualScale * 100)
+                // Higher scale icons render in front smoothly without integer scene-graph sorting churn
+                z: isDraggingThis ? 9999 : ((visualScale > 1.002) ? (10 + visualScale) : 1)
+
+                // ── Drag Reorder State ───────────────────────────────────────
+                readonly property bool isDraggingThis: root.draggedPinnedIndex === iconDelegate.index && iconDelegate.isPinnedItem
+                property bool wasDragged: false
+                property real pressStartX: 0
+                property real pressStartY: 0
+                property real dragOffsetX: 0
+                property real dragOffsetY: 0
+
+                readonly property real slotShift: root.iconSize * 1.1 + root.itemSpacing
+                readonly property real reorderShift: {
+                    if (!root.isDraggingPinned || !isPinnedItem || isDraggingThis) return 0
+                    if (root.draggedPinnedIndex < root.targetDropIndex) {
+                        if (index > root.draggedPinnedIndex && index <= root.targetDropIndex) {
+                            return -slotShift
+                        }
+                    } else if (root.draggedPinnedIndex > root.targetDropIndex) {
+                        if (index < root.draggedPinnedIndex && index >= root.targetDropIndex) {
+                            return slotShift
+                        }
+                    }
+                    return 0
+                }
+
+                // ── App Launch State Tracking ────────────────────────────────
+                property bool isLaunching: Boolean(modelData && modelData.isLaunching)
+
+                Timer {
+                    id: launchTimeoutTimer
+                    interval: 10000 // 10s maximum safety limit
+                    repeat: false
+                    onTriggered: {
+                        iconDelegate.isLaunching = false
+                        if (iconDelegate.modelData) iconDelegate.modelData.isLaunching = false
+                    }
+                }
+
+                function startLaunching() {
+                    iconDelegate.isLaunching = true
+                    if (iconDelegate.modelData) iconDelegate.modelData.isLaunching = true
+                    launchTimeoutTimer.restart()
+                }
+
+                Connections {
+                    target: iconDelegate.modelData || null
+                    function onIsRunningChanged() {
+                        if (iconDelegate.modelData && iconDelegate.modelData.isRunning) {
+                            launchTimeoutTimer.stop()
+                            iconDelegate.isLaunching = false
+                        }
+                    }
+                    function onWindowCountChanged() {
+                        if (iconDelegate.modelData && iconDelegate.modelData.windowCount > 0) {
+                            launchTimeoutTimer.stop()
+                            iconDelegate.isLaunching = false
+                        }
+                    }
+                    function onIsLaunchingChanged() {
+                        iconDelegate.isLaunching = Boolean(iconDelegate.modelData && iconDelegate.modelData.isLaunching)
+                        if (iconDelegate.isLaunching) launchTimeoutTimer.restart()
+                        else launchTimeoutTimer.stop()
+                    }
+                }
 
                 // ── Hover Detection for Tooltip ──────────────────────────────
                 readonly property bool isDirectlyHovered: root.isHovered && (distToMouse < (root.iconSize * 0.48))
@@ -408,28 +488,120 @@ Variants {
                 Item {
                     id: iconVisual
                     anchors.horizontalCenter: parent.horizontalCenter
+                    anchors.alignWhenCentered: false
                     anchors.bottom: parent.bottom
-                    anchors.bottomMargin: root.isBottom ? 4 : 0
+                    anchors.bottomMargin: root.isBottom ? (4 + Math.round((iconDelegate.visualScale - 1.0) * 8)) : 0
                     anchors.left: root.isLeft ? parent.left : undefined
-                    anchors.leftMargin: root.isLeft ? 4 : 0
+                    anchors.leftMargin: root.isLeft ? (4 + Math.round((iconDelegate.visualScale - 1.0) * 8)) : 0
                     anchors.right: root.isRight ? parent.right : undefined
-                    anchors.rightMargin: root.isRight ? 4 : 0
+                    anchors.rightMargin: root.isRight ? (4 + Math.round((iconDelegate.visualScale - 1.0) * 8)) : 0
                     anchors.verticalCenter: root.isVertical ? parent.verticalCenter : undefined
 
                     width: root.iconSize
                     height: root.iconSize
-                    scale: iconDelegate.visualScale
+                    scale: iconDelegate.isDraggingThis ? (iconDelegate.visualScale * 1.08) : iconDelegate.visualScale
+                    opacity: iconDelegate.isDraggingThis ? 0.88 : 1.0
                     transformOrigin: root.isBottom ? Item.Bottom : (root.isLeft ? Item.Left : (root.isRight ? Item.Right : Item.Center))
 
-                    // Tactile macOS Bounce on Launch / Click
+                    transform: [
+                        Translate {
+                            id: bounceTranslate
+                            x: 0
+                            y: 0
+                        },
+                        Translate {
+                            id: dragTranslate
+                            x: iconDelegate.isDraggingThis ? iconDelegate.dragOffsetX : 0
+                            y: iconDelegate.isDraggingThis ? iconDelegate.dragOffsetY : 0
+                        },
+                        Translate {
+                            id: reorderTranslate
+                            x: root.isVertical ? 0 : iconDelegate.reorderShift
+                            y: root.isVertical ? iconDelegate.reorderShift : 0
+                            Behavior on x { NumberAnimation { duration: 160; easing.type: Easing.OutQuad } }
+                            Behavior on y { NumberAnimation { duration: 160; easing.type: Easing.OutQuad } }
+                        }
+                    ]
+
+                    // Continuous macOS-style Launch Bounce (repeats until app window opens)
+                    SequentialAnimation {
+                        id: launchBounceAnim
+                        loops: Animation.Infinite
+                        running: iconDelegate.isLaunching
+
+                        // 1. Leap up
+                        NumberAnimation {
+                            target: bounceTranslate
+                            property: root.isVertical ? "x" : "y"
+                            to: root.isBottom ? -20 : (root.isLeft ? 20 : -20)
+                            duration: 220
+                            easing.type: Easing.OutQuad
+                        }
+
+                        // 2. Drop down
+                        NumberAnimation {
+                            target: bounceTranslate
+                            property: root.isVertical ? "x" : "y"
+                            to: 0
+                            duration: 200
+                            easing.type: Easing.InQuad
+                        }
+
+                        // 3. Impact cushion / squash
+                        NumberAnimation {
+                            target: bounceTranslate
+                            property: root.isVertical ? "x" : "y"
+                            to: root.isBottom ? 2 : (root.isLeft ? -2 : 2)
+                            duration: 60
+                            easing.type: Easing.OutQuad
+                        }
+
+                        // 4. Return to rest
+                        NumberAnimation {
+                            target: bounceTranslate
+                            property: root.isVertical ? "x" : "y"
+                            to: 0
+                            duration: 70
+                            easing.type: Easing.OutCubic
+                        }
+
+                        // Pause
+                        PauseAnimation {
+                            duration: 110
+                        }
+
+                        onStopped: {
+                            settleAnimation.restart()
+                        }
+                    }
+
+                    // Graceful landing animation when launch completes
+                    NumberAnimation {
+                        id: settleAnimation
+                        target: bounceTranslate
+                        properties: "x,y"
+                        to: 0
+                        duration: 140
+                        easing.type: Easing.OutCubic
+                    }
+
+                    // Tactile macOS Bounce on Window Focus / Click (Already running)
                     SequentialAnimation {
                         id: clickBounce
-                        property real baseScale: iconDelegate.visualScale
-                        onStarted: baseScale = iconDelegate.visualScale
-                        onFinished: iconVisual.scale = Qt.binding(() => iconDelegate.visualScale)
-                        NumberAnimation { target: iconVisual; property: "scale"; to: clickBounce.baseScale * 0.82; duration: 65;  easing.type: Easing.InQuad }
-                        NumberAnimation { target: iconVisual; property: "scale"; to: clickBounce.baseScale * 1.20; duration: 110; easing.type: Easing.OutBack; easing.overshoot: 1.6 }
-                        NumberAnimation { target: iconVisual; property: "scale"; to: iconDelegate.visualScale;   duration: 80;  easing.type: Easing.OutCubic }
+                        NumberAnimation {
+                            target: bounceTranslate
+                            property: root.isVertical ? "x" : "y"
+                            to: root.isBottom ? -8 : (root.isLeft ? 8 : -8)
+                            duration: 70
+                            easing.type: Easing.OutQuad
+                        }
+                        NumberAnimation {
+                            target: bounceTranslate
+                            property: root.isVertical ? "x" : "y"
+                            to: 0
+                            duration: 90
+                            easing.type: Easing.OutBounce
+                        }
                     }
 
                     // Fallback Badge (Letter)
@@ -514,6 +686,7 @@ Variants {
 
                     anchors.horizontalCenter: root.isBottom ? parent.horizontalCenter : undefined
                     anchors.verticalCenter: root.isVertical ? parent.verticalCenter : undefined
+                    anchors.alignWhenCentered: false
                     anchors.bottom: root.isBottom ? parent.bottom : undefined
                     anchors.left: root.isLeft ? parent.left : undefined
                     anchors.right: root.isRight ? parent.right : undefined
@@ -521,7 +694,7 @@ Variants {
                     anchors.leftMargin: root.isLeft ? -4 : 0
                     anchors.rightMargin: root.isRight ? -4 : 0
 
-                    visible: root.showIndicators && Boolean(iconDelegate.modelData && iconDelegate.modelData.isRunning)
+                    visible: root.showIndicators && Boolean(iconDelegate.modelData && iconDelegate.modelData.isRunning) && !iconDelegate.isDraggingThis
 
                     // Dynamic width based on style & orientation
                     width: {
@@ -592,9 +765,10 @@ Variants {
                     anchors.verticalCenter: root.isVertical ? parent.verticalCenter : undefined
 
                     z: 999
-                    visible: root.showTooltips && iconDelegate.isDirectlyHovered
-                    opacity: visible ? 1 : 0
-                    scale: visible ? 1 : 0.92
+                    readonly property bool shouldShow: root.showTooltips && iconDelegate.isDirectlyHovered && !root.isDraggingPinned
+                    visible: opacity > 0.01
+                    opacity: shouldShow ? 1 : 0
+                    scale: shouldShow ? 1 : 0.92
                     Behavior on opacity { NumberAnimation { duration: 120 } }
                     Behavior on scale { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
 
@@ -615,19 +789,76 @@ Variants {
                     }
                 }
 
-                // ── Click MouseArea ──────────────────────────────────────────
+                // ── Click & Drag MouseArea ──────────────────────────────────
                 // Covers the full delegate plus upward headroom for lifted icons
                 MouseArea {
                     id: clickArea
                     anchors.fill: parent
-                    anchors.topMargin: root.isBottom ? -(root.iconSize * 0.45) : 0
-                    anchors.leftMargin: root.isRight ? -(root.iconSize * 0.45) : 0
-                    anchors.rightMargin: root.isLeft ? -(root.iconSize * 0.45) : 0
+                    anchors.topMargin: root.isBottom ? -6 : 0
+                    anchors.bottomMargin: root.isBottom ? -root.edgeMargin : 0
+                    anchors.leftMargin: root.isRight ? -6 : 0
+                    anchors.rightMargin: root.isLeft ? -6 : 0
                     hoverEnabled: false
                     acceptedButtons: Qt.LeftButton | Qt.RightButton
-                    cursorShape: Qt.PointingHandCursor
+                    cursorShape: iconDelegate.isDraggingThis ? Qt.ClosedHandCursor : Qt.PointingHandCursor
+
+                    onPressed: (mouse) => {
+                        if (mouse.button === Qt.LeftButton) {
+                            iconDelegate.pressStartX = mouse.x
+                            iconDelegate.pressStartY = mouse.y
+                            iconDelegate.wasDragged = false
+                            iconDelegate.dragOffsetX = 0
+                            iconDelegate.dragOffsetY = 0
+                        }
+                    }
+
+                    onPositionChanged: (mouse) => {
+                        if (mouse.buttons & Qt.LeftButton) {
+                            const dx = mouse.x - iconDelegate.pressStartX
+                            const dy = mouse.y - iconDelegate.pressStartY
+                            const dist = Math.hypot(dx, dy)
+
+                            if (!iconDelegate.isDraggingThis && iconDelegate.isPinnedItem && dist > 8) {
+                                iconDelegate.wasDragged = true
+                                root.startPinnedDrag(iconDelegate.index)
+                            }
+
+                            if (iconDelegate.isDraggingThis) {
+                                iconDelegate.dragOffsetX = dx
+                                iconDelegate.dragOffsetY = dy
+
+                                const posInLayout = iconDelegate.mapToItem(itemsLayout, mouse.x, mouse.y)
+                                const coord = root.isVertical ? posInLayout.y : posInLayout.x
+                                const newTarget = root.getClosestPinnedSlot(coord)
+                                root.updatePinnedDrag(newTarget)
+                            }
+                        }
+                    }
+
+                    onReleased: (mouse) => {
+                        if (mouse.button === Qt.LeftButton) {
+                            if (iconDelegate.isDraggingThis) {
+                                iconDelegate.dragOffsetX = 0
+                                iconDelegate.dragOffsetY = 0
+                                root.finishPinnedDrag()
+                                return
+                            }
+                        }
+                    }
+
+                    onCanceled: () => {
+                        if (iconDelegate.isDraggingThis) {
+                            iconDelegate.dragOffsetX = 0
+                            iconDelegate.dragOffsetY = 0
+                            root.cancelPinnedDrag()
+                        }
+                    }
 
                     onClicked: (mouse) => {
+                        if (iconDelegate.wasDragged) {
+                            iconDelegate.wasDragged = false
+                            return
+                        }
                         if (mouse.button === Qt.RightButton) {
                             if (Services.DockService) {
                                 const iconScreenX = dockContainer.x + itemsLayout.x + iconDelegate.x + iconDelegate.width / 2
@@ -636,7 +867,11 @@ Variants {
                             }
                         } else {
                             if (root.bounceOnClick) {
-                                clickBounce.restart()
+                                if (iconDelegate.modelData && !iconDelegate.modelData.isRunning) {
+                                    iconDelegate.startLaunching()
+                                } else {
+                                    clickBounce.restart()
+                                }
                             }
                             if (Services.DockService) {
                                 Services.DockService.closeMenu()

@@ -46,6 +46,10 @@
   "lockscreenShowMedia": true,
   "lockscreenShowWeather": true,
   "lockscreenShowUptime": true,
+  "faceIdEnabled": true,
+  "faceIdCameraDevice": "/dev/video0",
+  "faceIdConfidence": 98.0,
+  "faceIdAutoUnlock": true,
   "clipboardLimit": 50,
   "launcherMaxResults": 8,
   "dockEnabled": true,
@@ -64,9 +68,10 @@
   "dockMonitorMode": "all",
   "dockPinnedApps": [
     "kitty.desktop",
-    "helium.desktop",
-    "antigravity-ide.desktop",
-    "thunar.desktop"
+    "org.gnome.Nautilus.desktop",
+    "zen.desktop",
+    "org.gnome.Snapshot.desktop",
+    "org.gnome.DiskUtility.desktop"
   ],
   "dashboardWidget": "weather",
   "weatherLocationMode": "auto",
