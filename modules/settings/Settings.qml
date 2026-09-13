@@ -748,7 +748,19 @@ FloatingWindow {
         property int maxButtonWidth: 175
         property int buttonHeight: 26
         property string searchQuery: ""
+        property bool openUpwards: false
         signal selected(var val)
+
+        function checkOpenDirection() {
+            var globalPos = dropBtn.mapToItem(rootWindow.contentItem || null, 0, 0)
+            if (globalPos) {
+                var spaceBelow = rootWindow.height - (globalPos.y + dropBtn.height)
+                var popupH = Math.min(dropRoot.maxPopupHeight, (dropRoot.searchable ? 36 : 0) + 160)
+                openUpwards = (spaceBelow < popupH + 20) && (globalPos.y > popupH + 20)
+            } else {
+                openUpwards = false
+            }
+        }
 
         readonly property var currentItem: {
             for (let i = 0; i < model.length; i++) {
@@ -774,16 +786,19 @@ FloatingWindow {
             width: (dropRoot.width > 0 && dropRoot.width > implicitWidth) ? dropRoot.width : implicitWidth
             height: dropRoot.buttonHeight
             radius: 6
-            color: dropMenu.visible 
+            color: (dropMenu.visible && !dropMenu.isClosing) 
                 ? (Services.Theme.isDark ? "#32323e" : "#e8e8ed")
                 : (dropArea.containsMouse 
                     ? (Services.Theme.isDark ? "#2e2e3a" : "#eaebee") 
                     : (Services.Theme.isDark ? "#262630" : "#f2f2f7"))
-            border.color: dropMenu.visible 
+            border.color: (dropMenu.visible && !dropMenu.isClosing) 
                 ? Services.Theme.accent 
                 : (Services.Theme.isDark ? "#3c3c4a" : "#d0d0d8")
             border.width: 1
 
+            // Liquid press scale
+            scale: dropArea.pressed ? 0.96 : (dropArea.containsMouse ? 1.01 : 1.0)
+            Behavior on scale { NumberAnimation { duration: 120; easing.type: Easing.OutQuad } }
             Behavior on color { ColorAnimation { duration: 150 } }
             Behavior on border.color { ColorAnimation { duration: 150 } }
 
@@ -801,12 +816,24 @@ FloatingWindow {
                     font.weight: Font.Normal
                     color: Services.Theme.textPrimary
                     elide: Text.ElideRight
+
+                    Behavior on opacity { NumberAnimation { duration: 120 } }
                 }
 
                 Text {
                     text: "▾"
                     font.pixelSize: 8
-                    color: Services.Theme.textSecondary
+                    color: (dropMenu.visible && !dropMenu.isClosing) ? Services.Theme.accent : Services.Theme.textSecondary
+                    rotation: (dropMenu.visible && !dropMenu.isClosing) ? 180 : 0
+                    transformOrigin: Item.Center
+                    Behavior on rotation {
+                        NumberAnimation {
+                            duration: 200
+                            easing.type: Easing.OutBack
+                            easing.overshoot: 1.25
+                        }
+                    }
+                    Behavior on color { ColorAnimation { duration: 150 } }
                 }
             }
 
@@ -816,9 +843,11 @@ FloatingWindow {
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
                 onClicked: {
-                    if (dropMenu.visible) dropMenu.close()
-                    else {
+                    if (dropMenu.visible && !dropMenu.isClosing) {
+                        dropMenu.requestClose()
+                    } else if (!dropMenu.visible) {
                         dropRoot.searchQuery = ""
+                        dropRoot.checkOpenDirection()
                         dropMenu.open()
                     }
                 }
@@ -826,16 +855,20 @@ FloatingWindow {
 
             Popup {
                 id: dropMenu
-                readonly property bool openUpwards: {
+                readonly property real fullHeight: {
+                    var targetH = (dropRoot.searchable ? 36 : 0) + menuCol.implicitHeight + 12
+                    var maxH = dropRoot.maxPopupHeight
                     var globalPos = dropBtn.mapToItem(rootWindow.contentItem || null, 0, 0)
                     if (globalPos) {
-                        var spaceBelow = rootWindow.height - (globalPos.y + dropBtn.height)
-                        var popupH = Math.min(dropRoot.maxPopupHeight, (dropRoot.searchable ? 36 : 0) + menuCol.implicitHeight + 12)
-                        return (spaceBelow < popupH + 16) && (globalPos.y > popupH + 16)
+                        var space = dropRoot.openUpwards ? (globalPos.y - 12) : (rootWindow.height - (globalPos.y + dropBtn.height) - 12)
+                        if (space > 60) maxH = Math.min(maxH, space)
                     }
-                    return false
+                    return Math.max(40, Math.min(maxH, targetH))
                 }
-                y: openUpwards ? (-height - 4) : (dropBtn.height + 4)
+
+                width: Math.max(dropBtn.width, 175)
+                height: fullHeight
+                y: dropRoot.openUpwards ? (-fullHeight - 8) : (dropBtn.height + 6)
                 x: {
                     var globalPos = dropBtn.mapToItem(rootWindow.contentItem || null, 0, 0)
                     var targetW = Math.max(dropBtn.width, 175)
@@ -847,45 +880,123 @@ FloatingWindow {
                     }
                     return Math.min(0, dropBtn.width - targetW)
                 }
-                width: Math.max(dropBtn.width, 175)
-                height: {
-                    var targetH = (dropRoot.searchable ? 36 : 0) + menuCol.implicitHeight + 12
-                    var maxH = dropRoot.maxPopupHeight
-                    var globalPos = dropBtn.mapToItem(rootWindow.contentItem || null, 0, 0)
-                    if (globalPos) {
-                        var space = openUpwards ? (globalPos.y - 12) : (rootWindow.height - (globalPos.y + dropBtn.height) - 12)
-                        if (space > 60) maxH = Math.min(maxH, space)
-                    }
-                    return Math.min(maxH, targetH)
-                }
-                padding: 4
+                padding: 0
+                background: null
                 closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutsideParent
                 modal: false
                 focus: true
+                enter: null
 
-                background: Rectangle {
-                    radius: 8
-                    color: Services.Theme.isDark ? "#1e1e26" : "#ffffff"
-                    border.color: Services.Theme.isDark ? "#383846" : "#d0d0dc"
-                    border.width: 1
+                // Liquid Panel Growth Progress (0.0 -> 1.0)
+                property real panelProgress: 0.0
+                property bool isClosing: false
 
-                    Rectangle {
-                        anchors.centerIn: parent
-                        anchors.verticalCenterOffset: 4
-                        width: parent.width + 4
-                        height: parent.height + 2
-                        radius: parent.radius
-                        color: Qt.rgba(0, 0, 0, 0.35)
-                        z: -1
+                function requestClose() {
+                    if (!dropMenu.visible || isClosing) return
+                    isClosing = true
+                    panelBloomAnim.stop()
+                    menuCol.reverseCascade()
+                    dropMenu.close()
+                }
+
+                NumberAnimation {
+                    id: panelBloomAnim
+                    target: dropMenu
+                    property: "panelProgress"
+                    from: 0.0
+                    to: 1.0
+                    duration: 220
+                    easing.type: Easing.OutCubic
+                }
+
+                onAboutToShow: {
+                    dropRoot.checkOpenDirection()
+                    isClosing = false
+                    panelProgress = 0.0
+                    panelBloomAnim.restart()
+                    menuCol.startCascade()
+                }
+
+                onAboutToHide: {
+                    isClosing = true
+                    panelBloomAnim.stop()
+                    menuCol.reverseCascade()
+                }
+
+                onClosed: {
+                    isClosing = false
+                    panelProgress = 0.0
+                    menuCol.resetAll()
+                }
+
+                exit: Transition {
+                    NumberAnimation {
+                        target: dropMenu
+                        property: "panelProgress"
+                        to: 0.0
+                        duration: 180
+                        easing.type: Easing.InOutQuad
                     }
                 }
 
-                contentItem: ColumnLayout {
-                    spacing: 4
+                Timer {
+                    id: selectCloseTimer
+                    interval: 75
+                    onTriggered: dropMenu.requestClose()
+                }
+
+                contentItem: Item {
+                    id: popupContainer
+                    implicitWidth: Math.max(dropBtn.width, 175)
+                    implicitHeight: dropMenu.fullHeight
+
+                    // Ambient Shadow that tracks the growing card
+                    Rectangle {
+                        anchors.fill: menuCard
+                        anchors.margins: -4
+                        anchors.verticalCenterOffset: dropRoot.openUpwards ? -2 : 4
+                        radius: menuCard.radius + 2
+                        color: Qt.rgba(0, 0, 0, 0.30)
+                        opacity: dropMenu.panelProgress
+                        visible: menuCard.height > 6
+                        z: -1
+                    }
+
+                    // The Card that GROWS out of the dropdown button
+                    Rectangle {
+                        id: menuCard
+                        anchors.bottom: dropRoot.openUpwards ? parent.bottom : undefined
+                        anchors.top: dropRoot.openUpwards ? undefined : parent.top
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        height: Math.max(0, parent.height * dropMenu.panelProgress)
+                        clip: true
+                        radius: 10
+                        color: Services.Theme.isDark ? "#1c1c24" : "#fbfbfd"
+                        border.color: Services.Theme.isDark ? Qt.rgba(255, 255, 255, 0.12) : Qt.rgba(0, 0, 0, 0.10)
+                        border.width: 1
+
+                        // Soft Inner Specular Rim
+                        Rectangle {
+                            anchors.fill: parent
+                            anchors.margins: 1
+                            radius: 9
+                            color: "transparent"
+                            border.color: Services.Theme.isDark ? Qt.rgba(255, 255, 255, 0.06) : Qt.rgba(255, 255, 255, 0.60)
+                            border.width: 1
+                            z: 2
+                        }
+
+                        ColumnLayout {
+                            anchors.fill: parent
+                            anchors.margins: 4
+                            spacing: 4
+                            opacity: Math.min(1.0, dropMenu.panelProgress * 1.5)
 
                     // Optional Search Bar for Large Lists (e.g. Fonts, Themes)
                     Rectangle {
                         visible: dropRoot.searchable
+                        opacity: dropMenu.panelProgress
                         Layout.fillWidth: true
                         height: 26
                         radius: 5
@@ -937,40 +1048,144 @@ FloatingWindow {
                         Layout.fillWidth: true
                         Layout.fillHeight: true
                         contentHeight: menuCol.implicitHeight
-                        clip: true
+                        clip: contentHeight > height
                         boundsBehavior: Flickable.StopAtBounds
                         ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
 
                         ColumnLayout {
                             id: menuCol
                             width: parent.width
-                            spacing: 2
+                            spacing: 3
+
+                            function startCascade() {
+                                for (let i = 0; i < itemRepeater.count; i++) {
+                                    let item = itemRepeater.itemAt(i)
+                                    if (item && item.triggerEntrance) {
+                                        item.triggerEntrance(i)
+                                    }
+                                }
+                            }
+
+                            function reverseCascade() {
+                                let total = itemRepeater.count
+                                for (let i = 0; i < total; i++) {
+                                    let item = itemRepeater.itemAt(i)
+                                    if (item && item.triggerExit) {
+                                        let rev = dropRoot.openUpwards ? i : (total - 1 - i)
+                                        item.triggerExit(rev)
+                                    }
+                                }
+                            }
+
+                            function resetAll() {
+                                for (let i = 0; i < itemRepeater.count; i++) {
+                                    let item = itemRepeater.itemAt(i)
+                                    if (item && item.resetItem) {
+                                        item.resetItem()
+                                    }
+                                }
+                            }
 
                             Repeater {
+                                id: itemRepeater
                                 model: dropRoot.filteredModel
                                 delegate: Rectangle {
+                                    id: itemRow
                                     required property var modelData
+                                    required property int index
                                     Layout.fillWidth: true
                                     height: 28
                                     radius: 5
                                     readonly property bool isSelected: dropRoot.currentValue === modelData.id
+                                    property bool isPressed: itemArea.pressed
+
+                                    // Staggered Cascade Waterfall Entrance & Reverse Exit
+                                    property real animProgress: 0.0
+
+                                    SequentialAnimation {
+                                        id: itemEntrance
+                                        property int staggerIndex: 0
+                                        PauseAnimation {
+                                            duration: Math.min(180, itemEntrance.staggerIndex * 22)
+                                        }
+                                        NumberAnimation {
+                                            target: itemRow
+                                            property: "animProgress"
+                                            from: 0.0
+                                            to: 1.0
+                                            duration: 200
+                                            easing.type: Easing.OutCubic
+                                        }
+                                    }
+
+                                    SequentialAnimation {
+                                        id: itemExit
+                                        property int staggerIndex: 0
+                                        PauseAnimation {
+                                            duration: Math.min(80, itemExit.staggerIndex * 12)
+                                        }
+                                        NumberAnimation {
+                                            target: itemRow
+                                            property: "animProgress"
+                                            to: 0.0
+                                            duration: 140
+                                            easing.type: Easing.InCubic
+                                        }
+                                    }
+
+                                    function triggerEntrance(idx) {
+                                        itemExit.stop()
+                                        itemEntrance.stop()
+                                        itemEntrance.staggerIndex = (idx !== undefined ? idx : itemRow.index)
+                                        animProgress = 0.0
+                                        itemEntrance.restart()
+                                    }
+
+                                    function triggerExit(idx) {
+                                        itemEntrance.stop()
+                                        itemExit.stop()
+                                        itemExit.staggerIndex = (idx !== undefined ? idx : 0)
+                                        itemExit.restart()
+                                    }
+
+                                    function resetItem() {
+                                        itemEntrance.stop()
+                                        itemExit.stop()
+                                        animProgress = 0.0
+                                    }
+
+                                    Component.onCompleted: {
+                                        if (dropMenu.visible) {
+                                             triggerEntrance(itemRow.index)
+                                        } else {
+                                             animProgress = 0.0
+                                        }
+                                    }
+
+                                    opacity: itemRow.animProgress
+                                    scale: isPressed ? 0.96 : 1.0
+                                    transform: Translate {
+                                        y: (1.0 - itemRow.animProgress) * (dropRoot.openUpwards ? 8 : -8)
+                                    }
 
                                     color: isSelected 
-                                        ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.15)
+                                        ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.16)
                                         : (itemArea.containsMouse 
-                                            ? (Services.Theme.isDark ? "#282834" : "#f0f0f6") 
+                                            ? (Services.Theme.isDark ? "#2a2a36" : "#f0f0f6") 
                                             : "transparent")
                                     border.color: isSelected 
-                                        ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.30) 
-                                        : "transparent"
+                                        ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.35) 
+                                        : (itemArea.containsMouse ? (Services.Theme.isDark ? "#383848" : "#e0e0ea") : "transparent")
                                     border.width: 1
                                     Behavior on color { ColorAnimation { duration: 120 } }
+                                    Behavior on border.color { ColorAnimation { duration: 120 } }
 
                                     RowLayout {
                                         anchors.fill: parent
-                                        anchors.leftMargin: 8
+                                        anchors.leftMargin: itemArea.containsMouse ? 10 : 8
                                         anchors.rightMargin: 8
                                         spacing: 6
+                                        Behavior on anchors.leftMargin { NumberAnimation { duration: 120; easing.type: Easing.OutQuad } }
 
                                         Text {
                                             Layout.fillWidth: true
@@ -985,9 +1200,17 @@ FloatingWindow {
                                             visible: isSelected
                                             text: Services.Icons.check || "✓"
                                             font.family: Services.Theme.fontSymbols
-                                            font.pixelSize: 9
+                                            font.pixelSize: 10
                                             font.bold: true
                                             color: Services.Theme.accent
+                                            scale: isSelected ? 1.0 : 0.0
+                                            Behavior on scale {
+                                                NumberAnimation {
+                                                    duration: 180
+                                                    easing.type: Easing.OutBack
+                                                    easing.overshoot: 1.40
+                                                }
+                                            }
                                         }
                                     }
 
@@ -998,7 +1221,7 @@ FloatingWindow {
                                         cursorShape: Qt.PointingHandCursor
                                         onClicked: {
                                             dropRoot.selected(modelData.id)
-                                            dropMenu.close()
+                                            selectCloseTimer.restart()
                                         }
                                     }
                                 }
@@ -1020,8 +1243,10 @@ FloatingWindow {
             }
         }
     }
+}
+}
 
-    // ── 4. Settings Switch (Draggable & Liquid Glass Overflow Toggle) ────────
+    // ── 4. Settings Switch (Liquid Glass Bloom, Stretch & Impact Toggle) ───────────
     component SettingsSwitch: Rectangle {
         id: switchRoot
         property string title: ""
@@ -1030,8 +1255,11 @@ FloatingWindow {
         signal toggled(bool newState)
 
         onCheckedChanged: {
+            if (swTrack.isDragging) return
             slideAndJiggle.stop()
-            slideAndJiggle.destX = switchRoot.checked ? 24 : 2
+            const targetX = switchRoot.checked ? 24 : 2
+            slideAndJiggle.destX = targetX
+            slideAndJiggle.direction = targetX > swTrack.currentX ? 1.0 : -1.0
             slideAndJiggle.restart()
         }
 
@@ -1096,48 +1324,129 @@ FloatingWindow {
 
                 readonly property real minX: 2
                 readonly property real maxX: 24
-                property real currentX: switchRoot.checked ? 24 : 2
-                property real dragX: switchRoot.checked ? 24 : 2
+                property real currentX: 2
+                property real dragX: 2
                 property bool isDragging: false
                 property real pressStartX: 0
                 property real expansion: 0.0
 
+                Component.onCompleted: {
+                    currentX = switchRoot.checked ? 24 : 2
+                    dragX = currentX
+                }
+
                 Behavior on expansion {
-                    enabled: !slideAndJiggle.running
+                    enabled: !slideAndJiggle.running && !swTrack.isDragging
                     NumberAnimation {
-                        duration: swTrack.isDragging ? 130 : 180
+                        duration: 160
                         easing.type: Easing.OutBack
-                        easing.overshoot: 1.45
+                        easing.overshoot: 1.25
                     }
                 }
 
                 SequentialAnimation {
                     id: slideAndJiggle
                     property real destX: switchRoot.checked ? 24 : 2
+                    property real direction: destX > swTrack.currentX ? 1.0 : -1.0
 
-                    // Phase 1: Fluid Liquid Bloom & Slide Across Track (140ms)
-                    ParallelAnimation {
-                        NumberAnimation { target: swTrack; property: "currentX"; to: slideAndJiggle.destX; duration: 140; easing.type: Easing.OutCubic }
-                        NumberAnimation { target: swTrack; property: "expansion"; to: 1.0; duration: 120; easing.type: Easing.OutBack; easing.overshoot: 1.45 }
+                    onStopped: {
+                        swTrack.currentX = slideAndJiggle.destX
+                        swThumb.squashX = 1.0
+                        swThumb.squashY = 1.0
+                        swTrack.expansion = 0.0
                     }
-                    // Phase 2: Instant Impact Squash (60ms)
+
+                    // Phase 1: Ngembang, Geser & Stretch (Slide, Bloom into Liquid Glass & Stretch) (160ms)
                     ParallelAnimation {
-                        NumberAnimation { target: swThumb; property: "squashX"; to: 1.26; duration: 60; easing.type: Easing.OutQuad }
-                        NumberAnimation { target: swThumb; property: "squashY"; to: 0.80; duration: 60; easing.type: Easing.OutQuad }
+                        NumberAnimation {
+                            target: swTrack
+                            property: "currentX"
+                            to: slideAndJiggle.destX
+                            duration: 160
+                            easing.type: Easing.InOutQuad
+                        }
+                        NumberAnimation {
+                            target: swTrack
+                            property: "expansion"
+                            to: 1.0
+                            duration: 120
+                            easing.type: Easing.OutQuad
+                        }
+                        NumberAnimation {
+                            target: swThumb
+                            property: "squashX"
+                            to: 1.30
+                            duration: 140
+                            easing.type: Easing.OutQuad
+                        }
+                        NumberAnimation {
+                            target: swThumb
+                            property: "squashY"
+                            to: 0.86
+                            duration: 140
+                            easing.type: Easing.OutQuad
+                        }
                     }
-                    // Phase 3: Rebound Stretch (70ms)
+
+                    // Phase 2: Gel Impact Cushion ("Kepentok Gel Natural") (85ms)
                     ParallelAnimation {
-                        NumberAnimation { target: swThumb; property: "squashX"; to: 0.88; duration: 70; easing.type: Easing.InOutQuad }
-                        NumberAnimation { target: swThumb; property: "squashY"; to: 1.12; duration: 70; easing.type: Easing.InOutQuad }
+                        NumberAnimation {
+                            target: swThumb
+                            property: "squashX"
+                            to: 0.85
+                            duration: 85
+                            easing.type: Easing.OutQuad
+                        }
+                        NumberAnimation {
+                            target: swThumb
+                            property: "squashY"
+                            to: 1.14
+                            duration: 85
+                            easing.type: Easing.OutQuad
+                        }
                     }
-                    // Phase 4: Settle Shape (70ms)
+
+                    // Phase 3: Soft Gel Rebound ("Membal Gel Organik") (75ms)
                     ParallelAnimation {
-                        NumberAnimation { target: swThumb; property: "squashX"; to: 1.0; duration: 70; easing.type: Easing.OutBack; easing.overshoot: 1.20 }
-                        NumberAnimation { target: swThumb; property: "squashY"; to: 1.0; duration: 70; easing.type: Easing.OutBack; easing.overshoot: 1.20 }
+                        NumberAnimation {
+                            target: swThumb
+                            property: "squashX"
+                            to: 1.04
+                            duration: 75
+                            easing.type: Easing.InOutQuad
+                        }
+                        NumberAnimation {
+                            target: swThumb
+                            property: "squashY"
+                            to: 0.98
+                            duration: 75
+                            easing.type: Easing.InOutQuad
+                        }
                     }
-                    // Phase 5: Smooth Fluid Shrink & Solidify (190ms with organic elastic bounce!)
+
+                    // Phase 4: Balik Normal (Settle back to Normal Round Porcelain Knob) (130ms)
                     ParallelAnimation {
-                        NumberAnimation { target: swTrack; property: "expansion"; to: 0.0; duration: 190; easing.type: Easing.OutBack; easing.overshoot: 1.30 }
+                        NumberAnimation {
+                            target: swThumb
+                            property: "squashX"
+                            to: 1.0
+                            duration: 130
+                            easing.type: Easing.OutQuad
+                        }
+                        NumberAnimation {
+                            target: swThumb
+                            property: "squashY"
+                            to: 1.0
+                            duration: 130
+                            easing.type: Easing.OutQuad
+                        }
+                        NumberAnimation {
+                            target: swTrack
+                            property: "expansion"
+                            to: 0.0
+                            duration: 130
+                            easing.type: Easing.OutQuad
+                        }
                     }
                 }
 
@@ -1149,7 +1458,6 @@ FloatingWindow {
                     height: 20 + swTrack.expansion * 6
                     radius: height / 2
                     anchors.verticalCenter: parent.verticalCenter
-                    
                     x: (swTrack.isDragging ? swTrack.dragX : swTrack.currentX) - (width - 20) / 2
 
                     property real squashX: 1.0
@@ -1267,10 +1575,16 @@ FloatingWindow {
                             swTrack.isDragging = true
                         }
                         if (swTrack.isDragging) {
+                            slideAndJiggle.stop()
                             const trackX = mouse.x - 10
                             const rawX = trackX - 10
-                            swTrack.dragX = Math.max(swTrack.minX - 4, Math.min(swTrack.maxX + 4, rawX))
-                            swTrack.currentX = Math.max(swTrack.minX, Math.min(swTrack.maxX, rawX))
+                            swTrack.dragX = Math.max(swTrack.minX, Math.min(swTrack.maxX, rawX))
+                            swTrack.currentX = swTrack.dragX
+                            swTrack.expansion = 1.0
+
+                            const dragDelta = mouse.x - swTrack.pressStartX
+                            swThumb.squashX = Math.min(1.30, Math.max(0.85, 1.0 + Math.abs(dragDelta) * 0.012))
+                            swThumb.squashY = Math.max(0.88, Math.min(1.15, 1.0 - Math.abs(dragDelta) * 0.006))
                         }
                     }
 
@@ -1284,8 +1598,8 @@ FloatingWindow {
                             if (targetState !== switchRoot.checked) {
                                 switchRoot.toggled(targetState)
                             } else {
-                                slideAndJiggle.stop()
                                 slideAndJiggle.destX = switchRoot.checked ? swTrack.maxX : swTrack.minX
+                                slideAndJiggle.direction = slideAndJiggle.destX > swTrack.currentX ? 1.0 : -1.0
                                 slideAndJiggle.restart()
                             }
                         } else {
@@ -1295,8 +1609,8 @@ FloatingWindow {
 
                     onCanceled: {
                         swTrack.isDragging = false
-                        slideAndJiggle.stop()
                         slideAndJiggle.destX = switchRoot.checked ? swTrack.maxX : swTrack.minX
+                        slideAndJiggle.direction = slideAndJiggle.destX > swTrack.currentX ? 1.0 : -1.0
                         slideAndJiggle.restart()
                     }
                 }
@@ -1376,8 +1690,16 @@ FloatingWindow {
                 height: 24
 
                 readonly property real valRatio: Math.max(0, Math.min(1, (sliderRoot.value - sliderRoot.from) / Math.max(0.0001, sliderRoot.to - sliderRoot.from)))
+                property real displayRatio: valRatio
+                Binding {
+                    target: trackContainer
+                    property: "displayRatio"
+                    value: trackContainer.valRatio
+                    when: !slideGlideAnim.running
+                }
+
                 readonly property real normalWidth: 20
-                readonly property real centerPos: normalWidth / 2 + valRatio * (trackContainer.width - normalWidth)
+                readonly property real centerPos: normalWidth / 2 + displayRatio * (trackContainer.width - normalWidth)
                 
                 property real rubberBandOffset: 0
                 Behavior on rubberBandOffset {
@@ -1388,28 +1710,126 @@ FloatingWindow {
                     }
                 }
 
-                property real expansion: (sDrag.pressed || sliderJiggleAnim.running) ? 1.0 : 0.0
+                property real expansion: (sDrag.pressed || slideGlideAnim.running) ? 1.0 : 0.0
                 Behavior on expansion {
                     NumberAnimation {
-                        duration: sDrag.pressed ? 140 : 200
+                        duration: 160
                         easing.type: Easing.OutBack
-                        easing.overshoot: sDrag.pressed ? 1.45 : 1.25
+                        easing.overshoot: 1.25
                     }
                 }
 
+                // Click-to-Jump Smooth Glide & Fluid Stretch Animation
+                SequentialAnimation {
+                    id: slideGlideAnim
+                    property real startRatio: 0
+                    property real targetRatio: 0
+                    property real targetVal: 0
+
+                    onStopped: {
+                        knob.squashX = 1.0
+                        knob.squashY = 1.0
+                        sliderRoot.moved(slideGlideAnim.targetVal)
+                    }
+
+                    // Phase 1: Ngembang, Geser & Stretch (Slide, Bloom into Liquid Glass & Stretch) (160ms)
+                    ParallelAnimation {
+                        NumberAnimation {
+                            target: trackContainer
+                            property: "displayRatio"
+                            from: slideGlideAnim.startRatio
+                            to: slideGlideAnim.targetRatio
+                            duration: 160
+                            easing.type: Easing.InOutQuad
+                        }
+                        NumberAnimation {
+                            target: knob
+                            property: "squashX"
+                            to: 1.30
+                            duration: 140
+                            easing.type: Easing.OutQuad
+                        }
+                        NumberAnimation {
+                            target: knob
+                            property: "squashY"
+                            to: 0.86
+                            duration: 140
+                            easing.type: Easing.OutQuad
+                        }
+                    }
+
+                    // Phase 2: Gel Impact Cushion ("Kepentok Gel Natural") (85ms)
+                    ParallelAnimation {
+                        NumberAnimation {
+                            target: knob
+                            property: "squashX"
+                            to: 0.85
+                            duration: 85
+                            easing.type: Easing.OutQuad
+                        }
+                        NumberAnimation {
+                            target: knob
+                            property: "squashY"
+                            to: 1.14
+                            duration: 85
+                            easing.type: Easing.OutQuad
+                        }
+                    }
+
+                    // Phase 3: Soft Gel Rebound ("Membal Gel Organik") (75ms)
+                    ParallelAnimation {
+                        NumberAnimation {
+                            target: knob
+                            property: "squashX"
+                            to: 1.04
+                            duration: 75
+                            easing.type: Easing.InOutQuad
+                        }
+                        NumberAnimation {
+                            target: knob
+                            property: "squashY"
+                            to: 0.98
+                            duration: 75
+                            easing.type: Easing.InOutQuad
+                        }
+                    }
+
+                    // Phase 4: Balik Normal (Settle back to Normal Round Porcelain Knob) (130ms)
+                    ParallelAnimation {
+                        NumberAnimation {
+                            target: knob
+                            property: "squashX"
+                            to: 1.0
+                            duration: 130
+                            easing.type: Easing.OutQuad
+                        }
+                        NumberAnimation {
+                            target: knob
+                            property: "squashY"
+                            to: 1.0
+                            duration: 130
+                            easing.type: Easing.OutQuad
+                        }
+                    }
+                }
+
+                // Boundary Impact Squash Animation (Natural Gel Cushion)
                 SequentialAnimation {
                     id: sliderJiggleAnim
+                    // Phase 1: Viscous Gel Impact Cushion (85ms)
                     ParallelAnimation {
-                        NumberAnimation { target: knob; property: "squashX"; to: 1.30; duration: 75; easing.type: Easing.OutQuad }
-                        NumberAnimation { target: knob; property: "squashY"; to: 0.76; duration: 75; easing.type: Easing.OutQuad }
+                        NumberAnimation { target: knob; property: "squashX"; to: 0.85; duration: 85; easing.type: Easing.OutQuad }
+                        NumberAnimation { target: knob; property: "squashY"; to: 1.14; duration: 85; easing.type: Easing.OutQuad }
                     }
+                    // Phase 2: Soft Gel Rebound (75ms)
                     ParallelAnimation {
-                        NumberAnimation { target: knob; property: "squashX"; to: 0.85; duration: 85; easing.type: Easing.InOutQuad }
-                        NumberAnimation { target: knob; property: "squashY"; to: 1.15; duration: 85; easing.type: Easing.InOutQuad }
+                        NumberAnimation { target: knob; property: "squashX"; to: 1.04; duration: 75; easing.type: Easing.InOutQuad }
+                        NumberAnimation { target: knob; property: "squashY"; to: 0.98; duration: 75; easing.type: Easing.InOutQuad }
                     }
+                    // Phase 3: Settle Normal (130ms)
                     ParallelAnimation {
-                        NumberAnimation { target: knob; property: "squashX"; to: 1.0; duration: 90; easing.type: Easing.OutBack; easing.overshoot: 1.25 }
-                        NumberAnimation { target: knob; property: "squashY"; to: 1.0; duration: 90; easing.type: Easing.OutBack; easing.overshoot: 1.25 }
+                        NumberAnimation { target: knob; property: "squashX"; to: 1.0; duration: 130; easing.type: Easing.OutQuad }
+                        NumberAnimation { target: knob; property: "squashY"; to: 1.0; duration: 130; easing.type: Easing.OutQuad }
                     }
                 }
 
@@ -1434,18 +1854,30 @@ FloatingWindow {
                     }
                 }
 
-                // Liquid Glass Knob (Enlarged 40x26px Liquid Drop)
+                // Liquid Glass Knob (Enlarged 40x26px Liquid Drop - Identical to SettingsSwitch)
                 Rectangle {
                     id: knob
-                    readonly property bool isActive: trackContainer.expansion > 0.01 || sDrag.pressed || sliderJiggleAnim.running
+                    readonly property bool isActive: trackContainer.expansion > 0.01 || sDrag.pressed || sliderJiggleAnim.running || slideGlideAnim.running
                     width: 20 + trackContainer.expansion * 20
                     height: 20 + trackContainer.expansion * 6
                     radius: height / 2
                     anchors.verticalCenter: trackGroove.verticalCenter
                     x: Math.max(-4, Math.min(trackContainer.width - width + 4, trackContainer.centerPos - width / 2 + trackContainer.rubberBandOffset))
-                    
-                    property real squashX: 1.0
-                    property real squashY: 1.0
+
+                    property real targetSquashX: 1.0
+                    property real targetSquashY: 1.0
+                    property real squashX: targetSquashX
+                    property real squashY: targetSquashY
+
+                    Behavior on squashX {
+                        enabled: !sliderJiggleAnim.running && !slideGlideAnim.running
+                        NumberAnimation { duration: 80; easing.type: Easing.OutQuad }
+                    }
+                    Behavior on squashY {
+                        enabled: !sliderJiggleAnim.running && !slideGlideAnim.running
+                        NumberAnimation { duration: 80; easing.type: Easing.OutQuad }
+                    }
+
                     transform: Scale {
                         origin.x: knob.width / 2
                         origin.y: knob.height / 2
@@ -1469,35 +1901,17 @@ FloatingWindow {
                         clip: true
                         opacity: trackContainer.expansion
 
-                        // Refracted Active Accent Bar (Bent with upward curve & Magnified)
+                        // Refracted Track Core (Bent upwards with convex lens curvature & optical shift, exactly like SettingsSwitch)
                         Rectangle {
                             anchors.verticalCenter: parent.verticalCenter
-                            anchors.verticalCenterOffset: -2.6
+                            anchors.verticalCenterOffset: -2.2
                             anchors.left: parent.left
-                            anchors.leftMargin: -3
-                            width: parent.width / 2 + 3
-                            height: 8
-                            radius: 4
-                            rotation: -3.5 // Pronounced optical bending angle!
-                            transformOrigin: Item.Left
-                            color: Services.Theme.accent
-                            opacity: 0.90
-                        }
-
-                        // Refracted Inactive Groove (Bending symmetrically on the right side)
-                        Rectangle {
-                            anchors.verticalCenter: parent.verticalCenter
-                            anchors.verticalCenterOffset: -2.6
-                            anchors.left: parent.horizontalCenter
-                            anchors.leftMargin: -2
                             anchors.right: parent.right
-                            anchors.rightMargin: -3
-                            height: 8
-                            radius: 4
-                            rotation: 3.5 // Symmetrical outward bending angle!
-                            transformOrigin: Item.Right
-                            color: Services.Theme.isDark ? "#3c3c4e" : "#c2c4ce"
-                            opacity: 0.72
+                            anchors.margins: -1
+                            height: parent.height * 0.78
+                            radius: height / 2
+                            color: Services.Theme.accent
+                            opacity: 0.85
                         }
                     }
 
@@ -1533,14 +1947,14 @@ FloatingWindow {
                         }
                     }
 
-                    // ── Background Optical Refraction Distortion Halo (Distorsi Groove Latar Belakang) ──
+                    // ── Background Optical Refraction Distortion Halo (Distorsi Latar Belakang) ──
                     Rectangle {
                         anchors.centerIn: parent
                         width: parent.width + 4
                         height: parent.height + 4
                         radius: height / 2
                         color: Services.Theme.accent
-                        opacity: trackContainer.expansion * 0.35
+                        opacity: trackContainer.expansion * 0.40
                         z: -1
                     }
 
@@ -1566,10 +1980,26 @@ FloatingWindow {
                     anchors.topMargin: -8
                     anchors.bottomMargin: -8
                     preventStealing: true
-                    hoverEnabled: false
+                    hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
 
                     property bool wasAtLimit: false
+                    property real lastMouseX: 0
+                    property real pressStartX: 0
+                    property bool isDragging: false
+
+                    function calcVal(mouseX) {
+                        const pad = trackContainer.normalWidth / 2
+                        const available = trackContainer.width - trackContainer.normalWidth
+                        if (available <= 0) return sliderRoot.value
+
+                        const ratio = Math.max(0, Math.min(1, (mouseX - pad) / available))
+                        let raw = sliderRoot.from + ratio * (sliderRoot.to - sliderRoot.from)
+                        if (sliderRoot.stepSize > 0) {
+                            raw = Math.round((raw - sliderRoot.from) / sliderRoot.stepSize) * sliderRoot.stepSize + sliderRoot.from
+                        }
+                        return Math.max(sliderRoot.from, Math.min(sliderRoot.to, raw))
+                    }
 
                     function updateVal(mouseX) {
                         const pad = trackContainer.normalWidth / 2
@@ -1593,32 +2023,73 @@ FloatingWindow {
                         }
                         wasAtLimit = atLimit
 
-                        const ratio = Math.max(0, Math.min(1, (mouseX - pad) / available))
-                        let raw = sliderRoot.from + ratio * (sliderRoot.to - sliderRoot.from)
-                        if (sliderRoot.stepSize > 0) {
-                            raw = Math.round((raw - sliderRoot.from) / sliderRoot.stepSize) * sliderRoot.stepSize + sliderRoot.from
-                        }
-                        raw = Math.max(sliderRoot.from, Math.min(sliderRoot.to, raw))
+                        const raw = calcVal(mouseX)
                         sliderRoot.moved(raw)
                     }
 
                     onPressed: (mouse) => {
                         wasAtLimit = false
-                        updateVal(mouse.x)
+                        pressStartX = mouse.x
+                        lastMouseX = mouse.x
+                        isDragging = false
+
+                        const currentPos = trackContainer.centerPos
+                        // If clicking away from knob (more than 14px away), smoothly glide with liquid gel stretch!
+                        if (Math.abs(mouse.x - currentPos) > 14) {
+                            const pad = trackContainer.normalWidth / 2
+                            const available = trackContainer.width - trackContainer.normalWidth
+                            const targetRatio = Math.max(0, Math.min(1, (mouse.x - pad) / available))
+                            const targetVal = calcVal(mouse.x)
+
+                            slideGlideAnim.stop()
+                            sliderJiggleAnim.stop()
+                            slideGlideAnim.startRatio = trackContainer.displayRatio
+                            slideGlideAnim.targetRatio = targetRatio
+                            slideGlideAnim.targetVal = targetVal
+                            slideGlideAnim.restart()
+                        } else {
+                            slideGlideAnim.stop()
+                            updateVal(mouse.x)
+                        }
                     }
-                    onPositionChanged: (mouse) => { if (pressed) updateVal(mouse.x) }
+
+                    onPositionChanged: (mouse) => {
+                        if (!pressed) return
+                        if (Math.abs(mouse.x - pressStartX) > 4) {
+                            isDragging = true
+                            slideGlideAnim.stop()
+                        }
+                        if (isDragging) {
+                            const deltaX = mouse.x - lastMouseX
+                            lastMouseX = mouse.x
+                            const speed = Math.abs(deltaX)
+                            knob.targetSquashX = Math.min(1.28, 1.0 + speed * 0.025)
+                            knob.targetSquashY = Math.max(0.88, 1.0 - speed * 0.012)
+                            updateVal(mouse.x)
+                        }
+                    }
+
                     onReleased: {
+                        isDragging = false
+                        knob.targetSquashX = 1.0
+                        knob.targetSquashY = 1.0
                         if (trackContainer.rubberBandOffset !== 0) {
                             sliderJiggleAnim.restart()
                         }
                         trackContainer.rubberBandOffset = 0
                         wasAtLimit = false
                     }
+
                     onCanceled: {
+                        isDragging = false
+                        knob.targetSquashX = 1.0
+                        knob.targetSquashY = 1.0
                         trackContainer.rubberBandOffset = 0
                         wasAtLimit = false
                     }
+
                     onWheel: (wheel) => {
+                        slideGlideAnim.stop()
                         let delta = (wheel.angleDelta.y > 0 ? 1 : -1) * (sliderRoot.stepSize || 1)
                         let raw = Math.max(sliderRoot.from, Math.min(sliderRoot.to, sliderRoot.value + delta))
                         if (raw === sliderRoot.from || raw === sliderRoot.to) {
@@ -9259,14 +9730,14 @@ FloatingWindow {
                                                     text: modelData.label
                                                     font.pixelSize: 11
                                                     font.weight: isCur ? Font.DemiBold : Font.Normal
-                                                    color: isCur ? Services.Theme.textPrimary : (subMouse.containsMouse ? Services.Theme.textPrimary : Services.Theme.textSecondary)
+                                                    color: isCur ? Services.Theme.textPrimary : (keySubMouse.containsMouse ? Services.Theme.textPrimary : Services.Theme.textSecondary)
                                                     horizontalAlignment: Text.AlignHCenter
                                                     elide: Text.ElideRight
                                                     Behavior on color { ColorAnimation { duration: 200 } }
                                                 }
 
                                                 MouseArea {
-                                                    id: subMouse
+                                                    id: keySubMouse
                                                     anchors.fill: parent
                                                     hoverEnabled: true
                                                     cursorShape: Qt.PointingHandCursor
