@@ -226,7 +226,7 @@ Item {
                         left: parent.left; right: parent.right
                         top: posLabel.bottom; topMargin: 2
                     }
-                    height: 18
+                    height: 22
                     isPlaying: card.isPlaying
                     waveColor: card.t.accent
                     trackColor: card.t.surfaceVariant
@@ -272,20 +272,65 @@ Item {
                     MouseArea { id: prvArea; anchors.fill: parent; hoverEnabled: true; enabled: card.player?.canGoPrevious ?? false; onClicked: card.player.previous() }
                 }
 
-                // Play / Pause (large, filled)
+                // Play / Pause (Natural Optical Glass Lens)
                 Rectangle {
-                    width: 36; height: 36; radius: 10
-                    color: playArea.containsMouse ? Qt.lighter(card.t.accent, 1.12) : card.t.accent
-                    Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                    id: npPlayGlassBtn
+                    width: 36; height: 36; radius: 18
+
+                    // Natural convex lens gradient
+                    gradient: Gradient {
+                        orientation: Gradient.Vertical
+                        GradientStop {
+                            position: 0.0
+                            color: playArea.pressed
+                                ? Qt.rgba(255, 255, 255, 0.18)
+                                : (playArea.containsMouse ? Qt.rgba(255, 255, 255, 0.12) : Qt.rgba(255, 255, 255, 0.07))
+                        }
+                        GradientStop {
+                            position: 0.55
+                            color: playArea.pressed
+                                ? Qt.rgba(255, 255, 255, 0.08)
+                                : (playArea.containsMouse ? Qt.rgba(255, 255, 255, 0.05) : Qt.rgba(255, 255, 255, 0.02))
+                        }
+                        GradientStop {
+                            position: 1.0
+                            color: playArea.pressed
+                                ? Qt.rgba(0, 0, 0, 0.06)
+                                : (playArea.containsMouse ? Qt.rgba(0, 0, 0, 0.04) : Qt.rgba(0, 0, 0, 0.08))
+                        }
+                    }
+
+                    // Whisper-thin natural glass rim reflection
+                    border.color: playArea.pressed
+                        ? Qt.rgba(255, 255, 255, 0.28)
+                        : (playArea.containsMouse ? Qt.rgba(255, 255, 255, 0.18) : Qt.rgba(255, 255, 255, 0.09))
+                    border.width: 1
+
+                    scale: playArea.pressed ? 0.92 : (playArea.containsMouse ? 1.06 : 1.0)
+                    Behavior on scale { NumberAnimation { duration: 180; easing.type: Easing.OutBack; easing.overshoot: 1.2 } }
+                    Behavior on border.color { ColorAnimation { duration: 200; easing.type: Easing.OutCubic } }
                     Layout.alignment: Qt.AlignVCenter
+
+                    // Soft physical contact shadow
+                    Rectangle {
+                        anchors.centerIn: parent
+                        anchors.verticalCenterOffset: 1.5
+                        width: parent.width - 2
+                        height: parent.height - 2
+                        radius: parent.radius
+                        color: Qt.rgba(0, 0, 0, 0.30)
+                        z: -1
+                    }
 
                     Text {
                         anchors.centerIn: parent
                         text: Services.Icons.mediaPlayPause(card.isPlaying)
-                        font.family: Services.Theme.fontSymbols; font.pixelSize: Services.Theme.fontSize2xl
-                        color: Services.Theme.bgDeep
+                        font.family: Services.Theme.fontSymbols
+                        font.pixelSize: Services.Theme.fontSize2xl
+                        color: Services.Theme.textPrimary
+                        opacity: playArea.containsMouse ? 1.0 : 0.92
                     }
-                    MouseArea { id: playArea; anchors.fill: parent; hoverEnabled: true; enabled: card.player?.canTogglePlaying ?? true; onClicked: card.player.togglePlaying() }
+                    MouseArea { id: playArea; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; enabled: card.player?.canTogglePlaying ?? true; onClicked: card.player.togglePlaying() }
                 }
 
                 // Next

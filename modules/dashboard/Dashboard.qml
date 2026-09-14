@@ -102,14 +102,14 @@ PanelWindow {
             border.width: 1
             clip: true
 
-            opacity: root.isOpen ? 1 : 0
+            opacity: root.isOpen ? 1.0 : 0.0
+            scale: root.isOpen ? 1.0 : 0.96
             transform: Translate {
-                y: root.isOpen ? 0 : (root.isBottom ? 24 : -24)
-                Behavior on y { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
+                y: root.isOpen ? 0 : (root.isBottom ? 20 : -20)
+                Behavior on y { NumberAnimation { duration: 280; easing.type: Easing.OutCubic } }
             }
-            scale: root.isOpen ? 1 : 0.97
-            Behavior on scale { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
-            Behavior on opacity { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
+            Behavior on opacity { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
+            Behavior on scale   { NumberAnimation { duration: 280; easing.type: Easing.OutBack } }
 
             MouseArea { anchors.fill: parent; onClicked: {} }
 

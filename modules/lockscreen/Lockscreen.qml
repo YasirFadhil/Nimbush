@@ -42,6 +42,7 @@ Scope {
     property bool hasPeekedLocked: false
     property int faceIdRetryCount: 0
     readonly property int maxFaceIdRetries: 1
+    property bool faceIdCancelledByUser: false
 
     readonly property bool isFaceActive: Boolean(
         Services.FaceId &&
@@ -178,11 +179,11 @@ Scope {
         onTriggered: {
             root.isFaceTimeoutContracted = true
             if (Services.FaceId) Services.FaceId.stopScan()
-            if (root.isLocked && !root.isFaceVerified && root.faceIdRetryCount < root.maxFaceIdRetries) {
+            if (!root.faceIdCancelledByUser && root.isLocked && !root.isFaceVerified && root.faceIdRetryCount < root.maxFaceIdRetries) {
                 console.log("[Lockscreen] Face ID failed, scheduling retry in 3s. Current retryCount:", root.faceIdRetryCount)
                 faceIdRetryTimer.restart()
             } else {
-                console.log("[Lockscreen] Face ID failed, max retries reached (" + root.faceIdRetryCount + "). No more auto retries.")
+                console.log("[Lockscreen] Face ID cancelled or max retries reached. No more auto retries.")
             }
         }
     }
@@ -192,7 +193,7 @@ Scope {
         interval: 3000
         repeat: false
         onTriggered: {
-            if (root.isLocked && !root.isFaceVerified && !root.isFaceActive && root.faceIdRetryCount < root.maxFaceIdRetries) {
+            if (!root.faceIdCancelledByUser && root.isLocked && !root.isFaceVerified && !root.isFaceActive && root.faceIdRetryCount < root.maxFaceIdRetries) {
                 root.faceIdRetryCount++
                 console.log("[Lockscreen] Executing Face ID auto-retry #" + root.faceIdRetryCount)
                 root.triggerFaceIdScan()
@@ -224,6 +225,7 @@ Scope {
         if (Services.FaceId.isScanning) return
         if (root.isFaceVerified) return
 
+        root.faceIdCancelledByUser = false
         deviceLockedPeekStartTimer.stop()
         deviceLockedPeekDurationTimer.stop()
         faceIdScanTimer.stop()
@@ -239,7 +241,9 @@ Scope {
     }
 
     function stopFaceIdScan() {
-        console.log("[Lockscreen] stopFaceIdScan called")
+        console.log("[Lockscreen] stopFaceIdScan called (user cancelled)")
+        root.faceIdCancelledByUser = true
+        root.faceIdRetryCount = root.maxFaceIdRetries
         faceIdScanTimer.stop()
         faceIdRetryTimer.stop()
         faceIdContractTimer.stop()
@@ -278,7 +282,9 @@ Scope {
 
         function onScanFailed(reason) {
             console.log("[Lockscreen] Face ID scan failed:", reason)
-            faceIdTimeoutShrinkTimer.restart()
+            if (!root.faceIdCancelledByUser) {
+                faceIdTimeoutShrinkTimer.restart()
+            }
         }
     }
 
@@ -293,6 +299,7 @@ Scope {
         deviceLockedPeekDurationTimer.stop()
         faceIdScanTimer.stop()
         root.faceIdRetryCount = 0
+        root.faceIdCancelledByUser = false
         root.deviceLockedPeekActive = false
         root.isFaceContracted = false
         root.isFaceTimeoutContracted = false
@@ -407,6 +414,7 @@ Scope {
         faceIdTimeoutShrinkTimer.stop()
         faceIdRetryTimer.stop()
         root.faceIdRetryCount = 0
+        root.faceIdCancelledByUser = false
         root.isFaceContracted = false
         root.isFaceTimeoutContracted = false
         root.isFaceVerified = false
@@ -490,6 +498,7 @@ Scope {
                 deviceLockedPeekDurationTimer.stop()
                 faceIdScanTimer.stop()
                 root.faceIdRetryCount = 0
+                root.faceIdCancelledByUser = false
                 root.deviceLockedPeekActive = false
                 root.isFaceContracted = false
                 root.isFaceTimeoutContracted = false
@@ -509,6 +518,7 @@ Scope {
                 faceIdTimeoutShrinkTimer.stop()
                 faceIdRetryTimer.stop()
                 root.faceIdRetryCount = 0
+                root.faceIdCancelledByUser = false
                 root.isFaceContracted = false
                 root.isFaceTimeoutContracted = false
                 root.isFaceVerified = false
@@ -532,6 +542,12 @@ Scope {
                 // Keyboard Handler - Strictly prevents ESC from unlocking
                 Keys.onPressed: (event) => {
                     if (event.key === Qt.Key_Escape) {
+                        if (root.lockscreenCcOpen || root.lockscreenPwrOpen) {
+                            root.lockscreenCcOpen = false
+                            root.lockscreenPwrOpen = false
+                            event.accepted = true
+                            return
+                        }
                         root.passwordInput = ""
                         root.userRevealedInput = false
                         if (typeof pwTextInput !== "undefined" && pwTextInput) pwTextInput.text = ""
@@ -658,7 +674,7 @@ Scope {
                     anchors.left: parent.left
                     anchors.right: parent.right
                     height: 48
-                    z: 100
+                    z: 10000
                     visible: !root.isCompact
                     opacity: (root.isRevealed && !root.isCompact) ? 1.0 : 0.0
                     scale: root.isRevealed ? 1.0 : 0.96
@@ -745,9 +761,13 @@ Scope {
                                 height: 20
                                 anchors.verticalCenter: parent.verticalCenter
                                 x: (root.hasPeekedLocked || root.isFaceVerified) ? 14 : (parent.width - width) / 2
+                                rotation: root.isFaceVerified ? 720 : (root.hasPeekedLocked ? 360 : 0)
 
                                 Behavior on x {
                                     NumberAnimation { duration: 380; easing.type: Easing.OutCubic }
+                                }
+                                Behavior on rotation {
+                                    NumberAnimation { duration: 380; easing.type: Easing.OutBack; easing.overshoot: 1.25 }
                                 }
 
                                 Text {
@@ -776,8 +796,8 @@ Scope {
 
                                     SequentialAnimation {
                                         id: iconMorphAnim
-                                        NumberAnimation { target: statusIndicatorIcon; property: "iconScale"; to: 0.6; duration: 90; easing.type: Easing.InQuad }
-                                        NumberAnimation { target: statusIndicatorIcon; property: "iconScale"; to: 1.25; duration: 180; easing.type: Easing.OutBack }
+                                        NumberAnimation { target: statusIndicatorIcon; property: "iconScale"; to: 0.4; duration: 90; easing.type: Easing.InBack }
+                                        NumberAnimation { target: statusIndicatorIcon; property: "iconScale"; to: 1.3; duration: 200; easing.type: Easing.OutBack }
                                         NumberAnimation { target: statusIndicatorIcon; property: "iconScale"; to: 1.0; duration: 120; easing.type: Easing.InOutQuad }
                                     }
                                 }
@@ -1138,23 +1158,28 @@ Scope {
                         }
                     }
 
-                    // Mode A: Default Pill Box (Default Layout)
+                    // Mode A: Combined Status & Control Center Pill (Desktop-Styled)
                     Rectangle {
+                        id: combinedControlPill
                         anchors.right: parent.right
-                        anchors.rightMargin: 20
-                        anchors.verticalCenter: parent.verticalCenter
-                        height: 30
-                        implicitWidth: combinedCcRow.implicitWidth + 22
-                        radius: 15
-                        color: ccMouse.containsMouse ? Services.Theme.bgHover : Services.Theme.surfaceVariant
-                        border.color: root.lockscreenCcOpen ? Services.Theme.accent : Services.Theme.border
+                        anchors.rightMargin: 18
+                        anchors.top: parent.top
+                        anchors.topMargin: 6
+                        height: 28
+                        implicitWidth: combinedContentRow.implicitWidth + 24
+                        width: implicitWidth
+                        radius: 14
+                        color: pillMouse.containsMouse ? Services.Theme.bgHover : Services.Theme.surface
+                        border.color: root.lockscreenCcOpen ? Services.Theme.accent : (pillMouse.containsMouse ? Services.Theme.borderHighlight : Services.Theme.border)
                         border.width: 1
                         visible: root.isDefault && (Services.Config ? Services.Config.lockscreenShowStatusPill : true)
+
+                        Behavior on width { NumberAnimation { duration: 280; easing.type: Easing.OutBack; easing.overshoot: 1.05 } }
                         Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                         Behavior on border.color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                         RowLayout {
-                            id: combinedCcRow
+                            id: combinedContentRow
                             anchors.centerIn: parent
                             spacing: 8
 
@@ -1167,33 +1192,43 @@ Scope {
                                 color: (Services.Wifi && Services.Wifi.connected) ? Services.Theme.accent : Services.Theme.textDisabled
                             }
 
-                            // Bluetooth Status Icon (if enabled)
+                            // Bluetooth Status Icon (if enabled and connected)
                             Text {
-                                visible: Services.Bluetooth && Services.Bluetooth.enabled
-                                text: (Services.Bluetooth && Services.Bluetooth.hasConnectedDevice)
-                                      ? Services.Icons.btDeviceIcon(Services.Bluetooth.connectedDeviceIcon, Services.Bluetooth.connectedDeviceName)
-                                      : Services.Icons.bluetooth
+                                visible: Services.Bluetooth && Services.Bluetooth.enabled && Services.Bluetooth.hasConnectedDevice
+                                text: Services.Icons.btDeviceIcon(Services.Bluetooth.connectedDeviceIcon, Services.Bluetooth.connectedDeviceName)
                                 font.family: Services.Theme.fontSymbols
                                 font.pixelSize: Services.Theme.fontSizeSm
-                                color: (Services.Bluetooth && Services.Bluetooth.hasConnectedDevice) ? Services.Theme.accent : Services.Theme.textDisabled
+                                color: Services.Theme.accent
                             }
 
                             // Battery Icon & Percentage
                             RowLayout {
                                 spacing: 4
+                                visible: Services.Config ? Services.Config.showBatteryTray : true
 
                                 Text {
-                                    text: Services.Icons.powerIcon(Services.Power.charging, Math.round((Services.Power.percentage || 0) * 100))
+                                    id: batIconText
+                                    text: Services.Icons.powerIcon(Services.Power.charging, (Services.Power.percentage || 0) * 100)
                                     font.family: Services.Theme.fontSymbols
                                     font.pixelSize: Services.Theme.fontSizeMd
-                                    color: Services.Power.charging ? Services.Theme.success : (Services.Power.isLow ? Services.Theme.danger : (Services.Power.isWarning ? Services.Theme.warning : Services.Theme.textPrimary))
+                                    color: Services.Power.isLow ? "#ff4444" : (Services.Power.isWarning ? "#e06c75" : (Services.PowerProfile.saverEnabled ? "#ff9800" : ((pillMouse.containsMouse || root.lockscreenCcOpen) ? Services.Theme.accent : Services.Theme.textPrimary)))
+                                    Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+
+                                    SequentialAnimation {
+                                        running: Services.Power.isLow
+                                        loops: Animation.Infinite
+                                        NumberAnimation { target: batIconText; property: "opacity"; to: 0.2; duration: 500; easing.type: Easing.InOutQuad }
+                                        NumberAnimation { target: batIconText; property: "opacity"; to: 1.0; duration: 500; easing.type: Easing.InOutQuad }
+                                    }
                                 }
 
                                 Text {
                                     text: Math.round((Services.Power.percentage || 0) * 100) + "%"
+                                    font.family: Services.Theme.fontMono
                                     font.pixelSize: Services.Theme.fontSizeMd
                                     font.bold: true
-                                    color: Services.Power.isLow ? Services.Theme.danger : (Services.Power.isWarning ? Services.Theme.warning : Services.Theme.textPrimary)
+                                    color: Services.Power.isLow ? "#ff4444" : (Services.Power.isWarning ? "#e06c75" : (Services.PowerProfile.saverEnabled ? "#ff9800" : ((pillMouse.containsMouse || root.lockscreenCcOpen) ? Services.Theme.accent : Services.Theme.textSecondary)))
+                                    Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                                 }
                             }
 
@@ -1202,25 +1237,71 @@ Scope {
                                 width: 1
                                 height: 12
                                 color: Services.Theme.border
+                                opacity: 0.8
                             }
 
-                            // Control Center Toggle Icon
-                            Text {
-                                text: Services.Icons.sliders
-                                font.family: Services.Theme.fontSymbols
-                                font.pixelSize: 12
-                                color: root.lockscreenCcOpen ? Services.Theme.accent : Services.Theme.textPrimary
+                            // Control Center Toggle Glyph (Morphs & Spins 180° into Close Icon)
+                            Item {
+                                width: 14
+                                height: 14
+                                Layout.alignment: Qt.AlignVCenter
+
+                                Item {
+                                    anchors.centerIn: parent
+                                    width: 14
+                                    height: 14
+                                    rotation: root.lockscreenCcOpen ? 180 : 0
+                                    Behavior on rotation {
+                                        NumberAnimation {
+                                            duration: 320
+                                            easing.type: Easing.OutBack
+                                            easing.overshoot: 1.3
+                                        }
+                                    }
+
+                                    // Sliders icon (Morphs out)
+                                    Text {
+                                        anchors.centerIn: parent
+                                        text: Services.Icons.controlcenter
+                                        font.family: Services.Theme.fontSymbols
+                                        font.pixelSize: 13
+                                        font.weight: Font.Bold
+                                        color: (pillMouse.containsMouse || root.lockscreenCcOpen) ? Services.Theme.accent : Services.Theme.textPrimary
+                                        opacity: root.lockscreenCcOpen ? 0.0 : 1.0
+                                        scale: root.lockscreenCcOpen ? 0.4 : 1.0
+                                        rotation: root.lockscreenCcOpen ? -90 : 0
+                                        Behavior on opacity { NumberAnimation { duration: 180 } }
+                                        Behavior on scale { NumberAnimation { duration: 220; easing.type: Easing.OutBack } }
+                                        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                                    }
+
+                                    // Close icon (Morphs in)
+                                    Text {
+                                        anchors.centerIn: parent
+                                        text: Services.Icons.close
+                                        font.family: Services.Theme.fontSymbols
+                                        font.pixelSize: 10
+                                        font.weight: Font.Bold
+                                        color: (pillMouse.containsMouse || root.lockscreenCcOpen) ? Services.Theme.accent : Services.Theme.textPrimary
+                                        opacity: root.lockscreenCcOpen ? 1.0 : 0.0
+                                        scale: root.lockscreenCcOpen ? 1.0 : 0.4
+                                        rotation: root.lockscreenCcOpen ? 0 : 90
+                                        Behavior on opacity { NumberAnimation { duration: 180 } }
+                                        Behavior on scale { NumberAnimation { duration: 220; easing.type: Easing.OutBack } }
+                                        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                                    }
+                                }
                             }
                         }
 
                         MouseArea {
-                            id: ccMouse
+                            id: pillMouse
                             anchors.fill: parent
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
-                            onClicked: {
-                                root.lockscreenCcOpen = !root.lockscreenCcOpen
-                            }
+                            preventStealing: true
+                            z: 10
+                            onClicked: root.lockscreenCcOpen = !root.lockscreenCcOpen
                         }
                     }
 
@@ -1791,11 +1872,11 @@ Scope {
 
                                 visible: opacity > 0.01
                                 opacity: centerAuthCard.showPasswordBox ? 1.0 : 0.0
-                                scale: centerAuthCard.showPasswordBox ? 1.0 : 0.94
-                                transformOrigin: Item.Bottom
+                                scale: centerAuthCard.showPasswordBox ? 1.0 : 0.88
+                                transformOrigin: Item.Center
 
-                                Behavior on opacity { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
-                                Behavior on scale { NumberAnimation { duration: 220; easing.type: Easing.OutBack } }
+                                Behavior on opacity { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                                Behavior on scale { NumberAnimation { duration: 280; easing.type: Easing.OutBack; easing.overshoot: 1.15 } }
                                 Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                                 Behavior on border.color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
@@ -1843,6 +1924,23 @@ Scope {
                                                 if (Services.FaceId && Services.FaceId.isScanning) return Services.Theme.accent
                                                 if (root.isError) return Services.Theme.danger
                                                 return (pwTextInput.activeFocus ? Services.Theme.accent : Services.Theme.textSecondary)
+                                            }
+                                            scale: lockIconMorphScale
+                                            property real lockIconMorphScale: 1.0
+
+                                            Behavior on color { ColorAnimation { duration: 250 } }
+
+                                            onTextChanged: {
+                                                if (!root.isAuthenticating) {
+                                                    lockMorphAnim.restart()
+                                                }
+                                            }
+
+                                            SequentialAnimation {
+                                                id: lockMorphAnim
+                                                NumberAnimation { target: lockStateIcon; property: "lockIconMorphScale"; to: 0.45; duration: 80; easing.type: Easing.InQuad }
+                                                NumberAnimation { target: lockStateIcon; property: "lockIconMorphScale"; to: 1.25; duration: 170; easing.type: Easing.OutBack }
+                                                NumberAnimation { target: lockStateIcon; property: "lockIconMorphScale"; to: 1.0; duration: 100; easing.type: Easing.OutQuad }
                                             }
 
                                             RotationAnimation on rotation {
@@ -2057,11 +2155,13 @@ Scope {
                                 id: authPrompt
                                 visible: opacity > 0.01
                                 opacity: (!centerAuthCard.showPasswordBox && !root.isCompact) ? 0.85 : 0.0
+                                scale: (!centerAuthCard.showPasswordBox && !root.isCompact) ? 1.0 : 0.82
                                 anchors.horizontalCenter: parent.horizontalCenter
                                 y: 160
                                 width: promptLabel.implicitWidth + 20
                                 height: 20
-                                Behavior on opacity { NumberAnimation { duration: 200 } }
+                                Behavior on opacity { NumberAnimation { duration: 240; easing.type: Easing.OutCubic } }
+                                Behavior on scale { NumberAnimation { duration: 280; easing.type: Easing.OutBack; easing.overshoot: 1.15 } }
 
                                 Text {
                                     id: promptLabel
@@ -2084,6 +2184,17 @@ Scope {
                                     font.weight: Font.Medium
                                     style: Text.Outline
                                     styleColor: Services.Theme.overlayDim
+
+                                    scale: promptMorphScale
+                                    property real promptMorphScale: 1.0
+                                    onTextChanged: promptMorphAnim.restart()
+
+                                    SequentialAnimation {
+                                        id: promptMorphAnim
+                                        NumberAnimation { target: promptLabel; property: "promptMorphScale"; to: 0.65; duration: 80; easing.type: Easing.InQuad }
+                                        NumberAnimation { target: promptLabel; property: "promptMorphScale"; to: 1.15; duration: 160; easing.type: Easing.OutBack }
+                                        NumberAnimation { target: promptLabel; property: "promptMorphScale"; to: 1.0; duration: 100; easing.type: Easing.OutQuad }
+                                    }
                                 }
 
                                 MouseArea {
@@ -2292,6 +2403,10 @@ Scope {
                                     Rectangle {
                                         width: 24; height: 24; radius: 6
                                         color: prevCornerMouse.containsMouse ? Services.Theme.bgHover : "transparent"
+                                        scale: prevCornerMouse.pressed ? 0.88 : (prevCornerMouse.containsMouse ? 1.12 : 1.0)
+                                        Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutBack } }
+                                        Behavior on color { ColorAnimation { duration: 180 } }
+
                                         Text {
                                             anchors.centerIn: parent
                                             text: Services.Icons.mediaPrev
@@ -2308,17 +2423,70 @@ Scope {
                                         }
                                     }
 
-                                    // Play / Pause / Stop
+                                    // Play / Pause / Stop (Natural Optical Glass Lens)
                                     Rectangle {
-                                        width: 26; height: 26; radius: 6
-                                        color: playCornerMouse.containsMouse ? Services.Theme.white : Services.Theme.accent
+                                        id: playCornerGlass
+                                        width: 26; height: 26; radius: 13
+                                        gradient: Gradient {
+                                            orientation: Gradient.Vertical
+                                            GradientStop {
+                                                position: 0.0
+                                                color: playCornerMouse.pressed
+                                                    ? Qt.rgba(255, 255, 255, 0.20)
+                                                    : (playCornerMouse.containsMouse ? Qt.rgba(255, 255, 255, 0.14) : Qt.rgba(255, 255, 255, 0.08))
+                                            }
+                                            GradientStop {
+                                                position: 0.55
+                                                color: playCornerMouse.pressed
+                                                    ? Qt.rgba(255, 255, 255, 0.09)
+                                                    : (playCornerMouse.containsMouse ? Qt.rgba(255, 255, 255, 0.05) : Qt.rgba(255, 255, 255, 0.02))
+                                            }
+                                            GradientStop {
+                                                position: 1.0
+                                                color: playCornerMouse.pressed
+                                                    ? Qt.rgba(0, 0, 0, 0.06)
+                                                    : (playCornerMouse.containsMouse ? Qt.rgba(0, 0, 0, 0.04) : Qt.rgba(0, 0, 0, 0.08))
+                                            }
+                                        }
+                                        border.width: 1
+                                        border.color: playCornerMouse.pressed
+                                            ? Qt.rgba(255, 255, 255, 0.28)
+                                            : (playCornerMouse.containsMouse ? Qt.rgba(255, 255, 255, 0.18) : Qt.rgba(255, 255, 255, 0.09))
+                                        scale: playCornerMouse.pressed ? 0.90 : (playCornerMouse.containsMouse ? 1.08 : 1.0)
+                                        Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutBack } }
+                                        Behavior on border.color { ColorAnimation { duration: 200 } }
+
+                                        // Soft physical contact shadow
+                                        Rectangle {
+                                            anchors.centerIn: parent
+                                            anchors.verticalCenterOffset: 1.5
+                                            width: parent.width - 2
+                                            height: parent.height - 2
+                                            radius: parent.radius
+                                            color: Qt.rgba(0, 0, 0, 0.30)
+                                            z: -1
+                                        }
+
                                         Text {
+                                            id: playIconText
                                             anchors.centerIn: parent
                                             text: Services.Icons.mediaPlayPause(root.isPlaying)
                                             font.family: Services.Theme.fontSymbols
                                             font.pixelSize: 11
-                                            color: Services.Theme.bgDeep
+                                            color: Services.Theme.textPrimary
+                                            opacity: playCornerMouse.containsMouse ? 1.0 : 0.92
+                                            scale: playMorphScale
+                                            property real playMorphScale: 1.0
+
+                                            onTextChanged: playMorphAnim.restart()
+                                            SequentialAnimation {
+                                                id: playMorphAnim
+                                                NumberAnimation { target: playIconText; property: "playMorphScale"; to: 0.65; duration: 80; easing.type: Easing.InQuad }
+                                                NumberAnimation { target: playIconText; property: "playMorphScale"; to: 1.18; duration: 160; easing.type: Easing.OutBack }
+                                                NumberAnimation { target: playIconText; property: "playMorphScale"; to: 1.0; duration: 90; easing.type: Easing.OutQuad }
+                                            }
                                         }
+
                                         MouseArea {
                                             id: playCornerMouse
                                             anchors.fill: parent
@@ -2332,6 +2500,10 @@ Scope {
                                     Rectangle {
                                         width: 24; height: 24; radius: 6
                                         color: nextCornerMouse.containsMouse ? Services.Theme.bgHover : "transparent"
+                                        scale: nextCornerMouse.pressed ? 0.88 : (nextCornerMouse.containsMouse ? 1.12 : 1.0)
+                                        Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutBack } }
+                                        Behavior on color { ColorAnimation { duration: 180 } }
+
                                         Text {
                                             anchors.centerIn: parent
                                             text: Services.Icons.mediaNext
@@ -2383,11 +2555,31 @@ Scope {
                                     Layout.maximumWidth: 240
                                 }
 
-                                Text {
-                                    text: Services.Icons.mediaPlayPause(root.isPlaying)
-                                    font.family: Services.Theme.fontSymbols
-                                    font.pixelSize: 11
-                                    color: Services.Theme.accent
+                                Item {
+                                    width: 14
+                                    height: 14
+                                    Layout.alignment: Qt.AlignVCenter
+                                    rotation: root.isPlaying ? 180 : 0
+                                    Behavior on rotation { NumberAnimation { duration: 300; easing.type: Easing.OutBack; easing.overshoot: 1.25 } }
+
+                                    Text {
+                                        id: minPlayIconText
+                                        anchors.centerIn: parent
+                                        text: Services.Icons.mediaPlayPause(root.isPlaying)
+                                        font.family: Services.Theme.fontSymbols
+                                        font.pixelSize: 11
+                                        color: Services.Theme.accent
+                                        scale: minPlayMorphScale
+                                        property real minPlayMorphScale: 1.0
+
+                                        onTextChanged: minPlayMorphAnim.restart()
+                                        SequentialAnimation {
+                                            id: minPlayMorphAnim
+                                            NumberAnimation { target: minPlayIconText; property: "minPlayMorphScale"; to: 0.5; duration: 80; easing.type: Easing.InQuad }
+                                            NumberAnimation { target: minPlayIconText; property: "minPlayMorphScale"; to: 1.25; duration: 160; easing.type: Easing.OutBack }
+                                            NumberAnimation { target: minPlayIconText; property: "minPlayMorphScale"; to: 1.0; duration: 90; easing.type: Easing.OutQuad }
+                                        }
+                                    }
 
                                     MouseArea {
                                         anchors.fill: parent
@@ -2400,246 +2592,259 @@ Scope {
                             }
                         }
 
-                        // ── 4. Bottom Right: Power Button & Floating Power Menu Panel (Default & Minimal Layouts) ──
-                        Item {
+                        // Power Menu Backdrop Dismiss (Clicking outside closes it)
+                        MouseArea {
+                            anchors.fill: parent
+                            z: 998
+                            enabled: root.lockscreenPwrOpen
+                            visible: root.lockscreenPwrOpen
+                            onClicked: root.lockscreenPwrOpen = false
+                        }
+
+                        // ── 4. Bottom Right: Vertical Morphing Power Capsule (Expands Upwards, Icon-Only) ──
+                        Rectangle {
+                            id: pwrPillCapsule
                             anchors.right: parent.right
                             anchors.bottom: parent.bottom
                             anchors.rightMargin: 24
                             anchors.bottomMargin: root.isRevealed ? 24 : 0
-                            width: root.isMinimal ? 32 : 38
-                            height: root.isMinimal ? 32 : 38
+                            z: 999
+
+                            width: root.isMinimal ? 34 : 40
+                            radius: width / 2
+                            clip: true
+
+                            // Expands vertically upwards when open, circle when closed
+                            height: root.lockscreenPwrOpen ? (root.isMinimal ? 142 : 160) : width
+
                             visible: !root.isCompact && (Services.Config ? Services.Config.lockscreenShowQuickPower : true)
                             opacity: (root.isRevealed && !root.isCompact) ? 1.0 : 0.0
+
+                            color: root.lockscreenPwrOpen
+                                ? Qt.rgba(Services.Theme.surface.r, Services.Theme.surface.g, Services.Theme.surface.b, 0.96)
+                                : (pwrBottomMouse.containsMouse 
+                                    ? Qt.rgba(Services.Theme.danger.r, Services.Theme.danger.g, Services.Theme.danger.b, 0.22)
+                                    : Qt.rgba(Services.Theme.bgDeep.r, Services.Theme.bgDeep.g, Services.Theme.bgDeep.b, 0.82))
+
+                            border.color: root.lockscreenPwrOpen
+                                ? Services.Theme.borderHighlight
+                                : (pwrBottomMouse.containsMouse ? Services.Theme.danger : Services.Theme.border)
+                            border.width: 1
+
+                            Behavior on height { NumberAnimation { duration: 320; easing.type: Easing.OutBack; easing.overshoot: 1.15 } }
                             Behavior on anchors.bottomMargin { NumberAnimation { duration: 450; easing.type: Easing.OutCubic } }
                             Behavior on opacity { NumberAnimation { duration: 350; easing.type: Easing.OutCubic } }
+                            Behavior on color { ColorAnimation { duration: 220; easing.type: Easing.OutCubic } }
+                            Behavior on border.color { ColorAnimation { duration: 220; easing.type: Easing.OutCubic } }
 
-                            // Floating Power Menu Panel (Opens right above the button)
-                            Rectangle {
-                                id: pwrMenuPopup
-                                anchors.bottom: pwrBtnRound.top
-                                anchors.right: parent.right
-                                anchors.bottomMargin: 12
-                                width: 220
-                                implicitHeight: pwrMenuCol.implicitHeight + 20
-                                radius: Services.Theme.radiusLg
-                                color: Qt.rgba(Services.Theme.surface.r, Services.Theme.surface.g, Services.Theme.surface.b, 0.95)
-                                border.color: Services.Theme.borderHighlight
-                                border.width: 1
-                                clip: true
-
-                                visible: root.lockscreenPwrOpen
+                            // ── Action Icons Column (Emerges upwards from bottom button) ──
+                            Column {
+                                id: pwrActionsCol
+                                anchors.top: parent.top
+                                anchors.topMargin: root.isMinimal ? 5 : 7
+                                anchors.horizontalCenter: parent.horizontalCenter
+                                spacing: root.isMinimal ? 4 : 5
+                                visible: opacity > 0.01
                                 opacity: root.lockscreenPwrOpen ? 1.0 : 0.0
-                                scale: root.lockscreenPwrOpen ? 1.0 : 0.85
-                                transformOrigin: Item.BottomRight
-                                Behavior on opacity { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
-                                Behavior on scale { NumberAnimation { duration: 200; easing.type: Easing.OutBack } }
+                                scale: root.lockscreenPwrOpen ? 1.0 : 0.5
+                                transformOrigin: Item.Bottom
 
-                                MouseArea {
-                                    anchors.fill: parent
-                                    onClicked: {}
+                                Behavior on opacity { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
+                                Behavior on scale { NumberAnimation { duration: 280; easing.type: Easing.OutBack; easing.overshoot: 1.2 } }
+
+                                // 1. Sleep Action Button
+                                Rectangle {
+                                    width: root.isMinimal ? 26 : 30
+                                    height: width
+                                    radius: width / 2
+                                    anchors.horizontalCenter: parent.horizontalCenter
+                                    color: sleepActionMouse.containsMouse ? Services.Theme.bgHover : "transparent"
+                                    border.color: sleepActionMouse.containsMouse ? Services.Theme.borderHighlight : "transparent"
+                                    border.width: 1
+                                    scale: sleepActionMouse.pressed ? 0.88 : (sleepActionMouse.containsMouse ? 1.12 : 1.0)
+                                    Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutBack } }
+                                    Behavior on color { ColorAnimation { duration: 180 } }
+
+                                    Text {
+                                        anchors.centerIn: parent
+                                        text: Services.Icons.pmSleep
+                                        font.family: Services.Theme.fontSymbols
+                                        font.pixelSize: root.isMinimal ? 12 : 14
+                                        color: sleepActionMouse.containsMouse ? Services.Theme.accent : Services.Theme.textPrimary
+                                        Behavior on color { ColorAnimation { duration: 180 } }
+                                    }
+
+                                    MouseArea {
+                                        id: sleepActionMouse
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: {
+                                            root.lockscreenPwrOpen = false
+                                            suspendProc.running = true
+                                        }
+                                    }
                                 }
 
-                                ColumnLayout {
-                                    id: pwrMenuCol
-                                    anchors.fill: parent
-                                    anchors.margins: 10
-                                    spacing: 6
+                                // Separator 1
+                                Rectangle {
+                                    width: 14
+                                    height: 1
+                                    anchors.horizontalCenter: parent.horizontalCenter
+                                    color: Services.Theme.border
+                                    opacity: 0.5
+                                }
 
-                                    // Header
-                                    RowLayout {
-                                        Layout.fillWidth: true
-                                        spacing: 6
+                                // 2. Reboot Action Button
+                                Rectangle {
+                                    width: root.isMinimal ? 26 : 30
+                                    height: width
+                                    radius: width / 2
+                                    anchors.horizontalCenter: parent.horizontalCenter
+                                    color: rebootActionMouse.containsMouse ? Qt.rgba(Services.Theme.warning.r, Services.Theme.warning.g, Services.Theme.warning.b, 0.2) : "transparent"
+                                    border.color: rebootActionMouse.containsMouse ? Services.Theme.warning : "transparent"
+                                    border.width: 1
+                                    scale: rebootActionMouse.pressed ? 0.88 : (rebootActionMouse.containsMouse ? 1.12 : 1.0)
+                                    Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutBack } }
+                                    Behavior on color { ColorAnimation { duration: 180 } }
 
-                                        Text {
-                                            text: "Power Options"
-                                            font.pixelSize: 11
-                                            font.bold: true
-                                            color: Services.Theme.textPrimary
-                                        }
-                                        Item { Layout.fillWidth: true }
-                                        Rectangle {
-                                            width: 20; height: 20; radius: 10
-                                            color: pwrCloseMouse.containsMouse ? Services.Theme.bgHover : "transparent"
-                                            Text {
-                                                anchors.centerIn: parent
-                                                text: Services.Icons.close
-                                                font.family: Services.Theme.fontSymbols
-                                                font.pixelSize: 9
-                                                color: Services.Theme.textSecondary
-                                            }
-                                            MouseArea {
-                                                id: pwrCloseMouse
-                                                anchors.fill: parent
-                                                hoverEnabled: true
-                                                cursorShape: Qt.PointingHandCursor
-                                                onClicked: root.lockscreenPwrOpen = false
-                                            }
-                                        }
+                                    Text {
+                                        anchors.centerIn: parent
+                                        text: Services.Icons.pmReboot
+                                        font.family: Services.Theme.fontSymbols
+                                        font.pixelSize: root.isMinimal ? 12 : 14
+                                        color: rebootActionMouse.containsMouse ? Services.Theme.warning : Services.Theme.textPrimary
+                                        Behavior on color { ColorAnimation { duration: 180 } }
                                     }
 
-                                    Rectangle {
-                                        Layout.fillWidth: true
-                                        height: 1
-                                        color: Services.Theme.border
-                                    }
-
-                                    // Sleep Option
-                                    Rectangle {
-                                        Layout.fillWidth: true
-                                        implicitHeight: 36
-                                        radius: Services.Theme.radiusSm
-                                        color: sleepMouse.containsMouse ? Services.Theme.bgHover : "transparent"
-                                        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
-
-                                        RowLayout {
-                                            anchors.fill: parent
-                                            anchors.margins: 8
-                                            spacing: 10
-
-                                            Text {
-                                                text: Services.Icons.pmSleep
-                                                font.family: Services.Theme.fontSymbols
-                                                font.pixelSize: 14
-                                                color: sleepMouse.containsMouse ? Services.Theme.accent : Services.Theme.accentDim
-                                            }
-                                            ColumnLayout {
-                                                Layout.fillWidth: true
-                                                spacing: 0
-                                                Text { text: "Sleep"; font.pixelSize: 11; font.bold: true; color: Services.Theme.textPrimary }
-                                                Text { text: "Suspend session"; font.pixelSize: 8; color: Services.Theme.textDisabled }
-                                            }
-                                        }
-
-                                        MouseArea {
-                                            id: sleepMouse
-                                            anchors.fill: parent
-                                            hoverEnabled: true
-                                            cursorShape: Qt.PointingHandCursor
-                                            onClicked: {
-                                                root.lockscreenPwrOpen = false
-                                                suspendProc.running = true
-                                            }
+                                    MouseArea {
+                                        id: rebootActionMouse
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: {
+                                            root.lockscreenPwrOpen = false
+                                            rebootProc.running = true
                                         }
                                     }
+                                }
 
-                                    // Reboot Option
-                                    Rectangle {
-                                        Layout.fillWidth: true
-                                        implicitHeight: 36
-                                        radius: Services.Theme.radiusSm
-                                        color: rebootMouse.containsMouse ? Qt.rgba(Services.Theme.warning.r, Services.Theme.warning.g, Services.Theme.warning.b, 0.15) : "transparent"
-                                        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                                // Separator 2
+                                Rectangle {
+                                    width: 14
+                                    height: 1
+                                    anchors.horizontalCenter: parent.horizontalCenter
+                                    color: Services.Theme.border
+                                    opacity: 0.5
+                                }
 
-                                        RowLayout {
-                                            anchors.fill: parent
-                                            anchors.margins: 8
-                                            spacing: 10
+                                // 3. Power Off Action Button
+                                Rectangle {
+                                    width: root.isMinimal ? 26 : 30
+                                    height: width
+                                    radius: width / 2
+                                    anchors.horizontalCenter: parent.horizontalCenter
+                                    color: shutdownActionMouse.containsMouse ? Qt.rgba(Services.Theme.danger.r, Services.Theme.danger.g, Services.Theme.danger.b, 0.25) : "transparent"
+                                    border.color: shutdownActionMouse.containsMouse ? Services.Theme.danger : "transparent"
+                                    border.width: 1
+                                    scale: shutdownActionMouse.pressed ? 0.88 : (shutdownActionMouse.containsMouse ? 1.12 : 1.0)
+                                    Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutBack } }
+                                    Behavior on color { ColorAnimation { duration: 180 } }
 
-                                            Text {
-                                                text: Services.Icons.pmReboot
-                                                font.family: Services.Theme.fontSymbols
-                                                font.pixelSize: 14
-                                                color: Services.Theme.warning
-                                            }
-                                            ColumnLayout {
-                                                Layout.fillWidth: true
-                                                spacing: 0
-                                                Text { text: "Reboot"; font.pixelSize: 11; font.bold: true; color: Services.Theme.textPrimary }
-                                                Text { text: "Restart system"; font.pixelSize: 8; color: Services.Theme.textDisabled }
-                                            }
-                                        }
-
-                                        MouseArea {
-                                            id: rebootMouse
-                                            anchors.fill: parent
-                                            hoverEnabled: true
-                                            cursorShape: Qt.PointingHandCursor
-                                            onClicked: {
-                                                root.lockscreenPwrOpen = false
-                                                rebootProc.running = true
-                                            }
-                                        }
+                                    Text {
+                                        anchors.centerIn: parent
+                                        text: Services.Icons.pmShutdown
+                                        font.family: Services.Theme.fontSymbols
+                                        font.pixelSize: root.isMinimal ? 12 : 14
+                                        color: Services.Theme.danger
                                     }
 
-                                    // Shutdown Option
-                                    Rectangle {
-                                        Layout.fillWidth: true
-                                        implicitHeight: 36
-                                        radius: Services.Theme.radiusSm
-                                        color: shutdownMouse.containsMouse ? Qt.rgba(Services.Theme.danger.r, Services.Theme.danger.g, Services.Theme.danger.b, 0.2) : "transparent"
-                                        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
-
-                                        RowLayout {
-                                            anchors.fill: parent
-                                            anchors.margins: 8
-                                            spacing: 10
-
-                                            Text {
-                                                text: Services.Icons.pmShutdown
-                                                font.family: Services.Theme.fontSymbols
-                                                font.pixelSize: 14
-                                                color: Services.Theme.danger
-                                            }
-                                            ColumnLayout {
-                                                Layout.fillWidth: true
-                                                spacing: 0
-                                                Text { text: "Power Off"; font.pixelSize: 11; font.bold: true; color: Services.Theme.danger }
-                                                Text { text: "Turn off PC"; font.pixelSize: 8; color: Services.Theme.textDisabled }
-                                            }
-                                        }
-
-                                        MouseArea {
-                                            id: shutdownMouse
-                                            anchors.fill: parent
-                                            hoverEnabled: true
-                                            cursorShape: Qt.PointingHandCursor
-                                            onClicked: {
-                                                root.lockscreenPwrOpen = false
-                                                shutdownProc.running = true
-                                            }
+                                    MouseArea {
+                                        id: shutdownActionMouse
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: {
+                                            root.lockscreenPwrOpen = false
+                                            shutdownProc.running = true
                                         }
                                     }
+                                }
+
+                                // Separator 3 (Divider between actions and bottom toggle)
+                                Rectangle {
+                                    width: 18
+                                    height: 1
+                                    anchors.horizontalCenter: parent.horizontalCenter
+                                    color: Services.Theme.border
+                                    opacity: 0.6
                                 }
                             }
 
-                            // Single Circular Power Button
-                            Rectangle {
-                                id: pwrBtnRound
-                                anchors.fill: parent
-                                radius: root.isMinimal ? 16 : 19
-                                color: root.isMinimal
-                                    ? (pwrBtnMouse.containsMouse ? Qt.rgba(Services.Theme.danger.r, Services.Theme.danger.g, Services.Theme.danger.b, 0.2) : "transparent")
-                                    : ((root.lockscreenPwrOpen || pwrBtnMouse.containsMouse) 
-                                        ? Qt.rgba(Services.Theme.danger.r, Services.Theme.danger.g, Services.Theme.danger.b, 0.25)
-                                        : Qt.rgba(Services.Theme.bgDeep.r, Services.Theme.bgDeep.g, Services.Theme.bgDeep.b, 0.75))
-                                border.color: root.isMinimal
-                                    ? (pwrBtnMouse.containsMouse ? Services.Theme.danger : "transparent")
-                                    : ((root.lockscreenPwrOpen || pwrBtnMouse.containsMouse) ? Services.Theme.danger : Services.Theme.border)
-                                border.width: root.isMinimal ? (pwrBtnMouse.containsMouse ? 1 : 0) : 1
-                                opacity: root.isMinimal ? (pwrBtnMouse.containsMouse || root.lockscreenPwrOpen ? 1.0 : 0.6) : 1.0
-                                scale: pwrBtnMouse.pressed ? 0.92 : 1.0
-                                Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
-                                Behavior on border.color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
-                                Behavior on opacity { NumberAnimation { duration: 150 } }
-                                Behavior on scale { NumberAnimation { duration: 100 } }
+                            // ── Base Morphing & Rotating Power Button (At bottom of capsule) ──
+                            Item {
+                                id: pwrBottomBtn
+                                width: parent.width
+                                height: parent.width
+                                anchors.bottom: parent.bottom
+                                anchors.horizontalCenter: parent.horizontalCenter
 
-                                Text {
+                                // Rotating icon container
+                                Item {
+                                    id: pwrRotateWrapper
                                     anchors.centerIn: parent
-                                    text: Services.Icons.power
-                                    font.family: Services.Theme.fontSymbols
-                                    font.pixelSize: root.isMinimal ? 13 : 15
-                                    color: (root.lockscreenPwrOpen || pwrBtnMouse.containsMouse) ? Services.Theme.danger : Services.Theme.textSecondary
-                                    Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                                    width: parent.width
+                                    height: parent.height
+                                    rotation: root.lockscreenPwrOpen ? 180 : 0
+                                    Behavior on rotation {
+                                        NumberAnimation {
+                                            duration: 350
+                                            easing.type: Easing.OutBack
+                                            easing.overshoot: 1.3
+                                        }
+                                    }
+
+                                    // State A: Power Icon
+                                    Text {
+                                        anchors.centerIn: parent
+                                        text: Services.Icons.power
+                                        font.family: Services.Theme.fontSymbols
+                                        font.pixelSize: root.isMinimal ? 14 : 16
+                                        color: pwrBottomMouse.containsMouse ? Services.Theme.danger : Services.Theme.textSecondary
+                                        opacity: root.lockscreenPwrOpen ? 0.0 : 1.0
+                                        scale: root.lockscreenPwrOpen ? 0.4 : 1.0
+                                        rotation: root.lockscreenPwrOpen ? -90 : 0
+                                        Behavior on opacity { NumberAnimation { duration: 200 } }
+                                        Behavior on scale { NumberAnimation { duration: 220; easing.type: Easing.OutBack } }
+                                        Behavior on rotation { NumberAnimation { duration: 280 } }
+                                        Behavior on color { ColorAnimation { duration: 200 } }
+                                    }
+
+                                    // State B: Close Icon (✕)
+                                    Text {
+                                        anchors.centerIn: parent
+                                        text: Services.Icons.close
+                                        font.family: Services.Theme.fontSymbols
+                                        font.pixelSize: root.isMinimal ? 11 : 13
+                                        color: pwrBottomMouse.containsMouse ? Services.Theme.textPrimary : Services.Theme.textSecondary
+                                        opacity: root.lockscreenPwrOpen ? 1.0 : 0.0
+                                        scale: root.lockscreenPwrOpen ? 1.0 : 0.4
+                                        rotation: root.lockscreenPwrOpen ? 0 : 90
+                                        Behavior on opacity { NumberAnimation { duration: 200 } }
+                                        Behavior on scale { NumberAnimation { duration: 220; easing.type: Easing.OutBack } }
+                                        Behavior on rotation { NumberAnimation { duration: 280 } }
+                                        Behavior on color { ColorAnimation { duration: 200 } }
+                                    }
                                 }
 
                                 MouseArea {
-                                    id: pwrBtnMouse
+                                    id: pwrBottomMouse
                                     anchors.fill: parent
                                     hoverEnabled: true
                                     cursorShape: Qt.PointingHandCursor
                                     onClicked: {
                                         root.lockscreenPwrOpen = !root.lockscreenPwrOpen
-                                        if (root.lockscreenPwrOpen) root.lockscreenCcOpen = false
+                                        if (root.lockscreenPwrOpen && root.lockscreenCcOpen) root.lockscreenCcOpen = false
                                     }
                                 }
                             }
@@ -2653,9 +2858,7 @@ Scope {
                     id: ccLockscreenOverlay
                     anchors.fill: parent
                     z: 9999
-                    visible: root.lockscreenCcOpen
-                    opacity: root.lockscreenCcOpen ? 1 : 0
-                    Behavior on opacity { NumberAnimation { duration: 180 } }
+                    visible: root.lockscreenCcOpen || ccCard.opacity > 0.01
 
                     MouseArea {
                         anchors.fill: parent
@@ -2663,10 +2866,19 @@ Scope {
                     }
 
                     LockscreenControlCenter {
+                        id: ccCard
                         anchors.top: parent.top
                         anchors.right: parent.right
-                        anchors.topMargin: 54
-                        anchors.rightMargin: 20
+                        anchors.topMargin: 42
+                        anchors.rightMargin: 18
+                        opacity: root.lockscreenCcOpen ? 1.0 : 0.0
+                        scale: root.lockscreenCcOpen ? 1.0 : 0.96
+                        transform: Translate {
+                            y: root.lockscreenCcOpen ? 0 : -20
+                            Behavior on y { NumberAnimation { duration: 280; easing.type: Easing.OutCubic } }
+                        }
+                        Behavior on opacity { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
+                        Behavior on scale { NumberAnimation { duration: 280; easing.type: Easing.OutBack } }
                         onRequestClose: root.lockscreenCcOpen = false
                     }
                 }

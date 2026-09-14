@@ -238,14 +238,14 @@ PanelWindow {
             border.width: 1
             clip: true
 
-            opacity: Services.OverlayManager.controlCenterVisible ? 1 : 0
+            opacity: Services.OverlayManager.controlCenterVisible ? 1.0 : 0.0
+            scale: Services.OverlayManager.controlCenterVisible ? 1.0 : 0.96
             transform: Translate {
-                y: Services.OverlayManager.controlCenterVisible ? 0 : (root.isBottom ? 32 : -32)
-                Behavior on y { NumberAnimation { duration: 240; easing.type: Easing.OutBack; easing.overshoot: 0.5 } }
+                y: Services.OverlayManager.controlCenterVisible ? 0 : (root.isBottom ? 20 : -20)
+                Behavior on y { NumberAnimation { duration: 280; easing.type: Easing.OutCubic } }
             }
-            scale: Services.OverlayManager.controlCenterVisible ? 1 : 0.96
-            Behavior on scale { NumberAnimation { duration: 240; easing.type: Easing.OutCubic } }
-            Behavior on opacity { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
+            Behavior on opacity { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
+            Behavior on scale   { NumberAnimation { duration: 280; easing.type: Easing.OutBack } }
 
             MouseArea { anchors.fill: parent; onClicked: {} }
 

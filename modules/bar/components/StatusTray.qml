@@ -332,7 +332,7 @@ RowLayout {
 
         Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
         Behavior on border.color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
-        Behavior on Layout.preferredWidth { NumberAnimation { duration: 350; easing.type: Easing.OutCubic } }
+        Behavior on Layout.preferredWidth { NumberAnimation { duration: 320; easing.type: Easing.OutBack; easing.overshoot: 1.08 } }
         Behavior on Layout.rightMargin { NumberAnimation { duration: 350; easing.type: Easing.OutCubic } }
         Behavior on opacity { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
 

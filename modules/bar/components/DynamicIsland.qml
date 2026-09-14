@@ -193,7 +193,7 @@ Item {
 
     Timer {
         id: mediaStopPhase2Timer
-        interval: 400
+        interval: 360
         repeat: false
         onTriggered: {
             root.mediaIconTransformed = true
@@ -879,23 +879,23 @@ Item {
         border.color: root.isCritical ? Services.Theme.danger : (root.expanded ? Services.Theme.borderHighlight : Services.Theme.borderSubtle)
         border.width: root.isCritical ? 1.5 : 1
 
-        // Seamless, Continuous Fluid Morphing (Zero delay, zero hitching, pure iOS ease)
+        // Seamless, Continuous Fluid Morphing (Zero delay, zero hitching, pure iOS ease - synchronized with Lockscreen)
         Behavior on width {
             NumberAnimation {
-                duration: 400
-                easing.type: Easing.OutCubic
+                duration: 360
+                easing.type: Easing.OutBack
             }
         }
         Behavior on height {
             NumberAnimation {
-                duration: 400
-                easing.type: Easing.OutCubic
+                duration: 360
+                easing.type: Easing.OutBack
             }
         }
         Behavior on radius {
             enabled: !island.isCapsuleShape || root.notifActive
             NumberAnimation {
-                duration: 280
+                duration: 320
                 easing.type: Easing.OutCubic
             }
         }
@@ -989,11 +989,11 @@ Item {
             readonly property bool activeState: !root.expanded
             visible: activeState || opacity > 0.01
             opacity: activeState ? 1 : 0
-            scale: activeState ? 1.0 : 0.2
+            scale: activeState ? 1.0 : 0.4
             transformOrigin: Item.Center
 
-            Behavior on opacity { NumberAnimation { duration: 350; easing.type: Easing.OutQuad } }
-            Behavior on scale   { NumberAnimation { duration: 550; easing.type: Easing.OutExpo } }
+            Behavior on opacity { NumberAnimation { duration: 260; easing.type: Easing.OutQuad } }
+            Behavior on scale   { NumberAnimation { duration: 360; easing.type: Easing.OutBack } }
 
             states: [
                 State {
@@ -1063,46 +1063,115 @@ Item {
                 }
             ]
 
-            Text {
-                id: statusIconTxt
+            transform: Scale {
+                id: statusIconSquishScale
+                origin.x: 8
+                origin.y: 8
+                xScale: 1.0
+                yScale: 1.0
+            }
+
+            SequentialAnimation {
+                id: statusIconSquishAnim
+                ParallelAnimation {
+                    NumberAnimation { target: statusIconSquishScale; property: "xScale"; to: 1.25; duration: 110; easing.type: Easing.OutQuad }
+                    NumberAnimation { target: statusIconSquishScale; property: "yScale"; to: 0.80; duration: 110; easing.type: Easing.OutQuad }
+                }
+                ParallelAnimation {
+                    NumberAnimation { target: statusIconSquishScale; property: "xScale"; to: 0.94; duration: 140; easing.type: Easing.OutQuad }
+                    NumberAnimation { target: statusIconSquishScale; property: "yScale"; to: 1.06; duration: 140; easing.type: Easing.OutQuad }
+                }
+                ParallelAnimation {
+                    NumberAnimation { target: statusIconSquishScale; property: "xScale"; to: 1.0; duration: 100; easing.type: Easing.OutCubic }
+                    NumberAnimation { target: statusIconSquishScale; property: "yScale"; to: 1.0; duration: 100; easing.type: Easing.OutCubic }
+                }
+            }
+
+            readonly property string targetGlyph: {
+                if (Services.OverlayManager.isLocked) return "󰌾"
+                if (root.notifActive) return "󰂚"
+                if (root.mediaPlaying || root.mediaStopping) return "󰎈"
+                return ""
+            }
+
+            readonly property color targetGlyphColor: {
+                if (Services.OverlayManager.isLocked) return Services.Theme.accent
+                if (root.notifActive) return Services.Theme.accent
+                if (root.mediaPlaying || root.mediaStopping || root.cameraActive) return Services.Theme.success
+                return Services.Theme.textDisabled
+            }
+
+            readonly property bool isIdleDot: targetGlyph === ""
+
+            onTargetGlyphChanged: {
+                statusIconSquishAnim.restart()
+                morphToNextGlyph(targetGlyph, targetGlyphColor)
+            }
+
+            onTargetGlyphColorChanged: {
+                if (useSlotA) {
+                    slotAGlyph.color = targetGlyphColor
+                } else {
+                    slotBGlyph.color = targetGlyphColor
+                }
+            }
+
+            property bool useSlotA: true
+
+            function morphToNextGlyph(glyph, glyphColor) {
+                if (glyph === "") {
+                    slotAAnimOut.restart()
+                    slotBAnimOut.restart()
+                    return
+                }
+
+                if (useSlotA) {
+                    slotBGlyph.text = glyph
+                    slotBGlyph.color = glyphColor
+                    slotAAnimOut.restart()
+                    slotBAnimIn.restart()
+                    useSlotA = false
+                } else {
+                    slotAGlyph.text = glyph
+                    slotAGlyph.color = glyphColor
+                    slotBAnimOut.restart()
+                    slotAAnimIn.restart()
+                    useSlotA = true
+                }
+            }
+
+            // Pure Geometric Dot for Idle State (Fluid Bloom & Splash)
+            Rectangle {
+                id: idleDot
                 anchors.centerIn: parent
-                text: {
-                    if (Services.OverlayManager.isLocked) return "󰌾"
-                    if (root.notifActive) return "󰂚"
-                    if (root.mediaPlaying || root.mediaStopping) return "󰎈"
-                    return "●"
-                }
-                font.family: Services.Theme.fontSymbols
-                font.pixelSize: 13
-                color: {
-                    if (Services.OverlayManager.isLocked) return Services.Theme.accent
-                    if (root.notifActive) return Services.Theme.accent
-                    if (root.mediaPlaying || root.mediaStopping || root.cameraActive) return Services.Theme.success
-                    return Services.Theme.textDisabled
-                }
-                scale: textScale
+                width: 7
+                height: 7
+                radius: 3.5
+                color: root.cameraActive ? Services.Theme.success : Services.Theme.textDisabled
+                visible: opacity > 0.01
+                opacity: statusIconContainer.isIdleDot ? 1.0 : 0.0
+                scale: statusIconContainer.isIdleDot ? 1.0 : 0.2
 
-                property real textScale: 1.0
+                Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                Behavior on opacity { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
+                Behavior on scale { NumberAnimation { duration: 320; easing.type: Easing.OutBack } }
 
-                onTextChanged: {
-                    iconScaleAnim.restart()
-                }
-
-                SequentialAnimation {
-                    id: iconScaleAnim
-                    NumberAnimation { target: statusIconTxt; property: "textScale"; to: 0.7; duration: 90; easing.type: Easing.InQuad }
-                    NumberAnimation { target: statusIconTxt; property: "textScale"; to: 1.0; duration: 220; easing.type: Easing.OutQuad }
-                }
-
-                // Green Blinking when camera active and no music text
+                // Green Blinking when camera active while idle
                 SequentialAnimation on opacity {
-                    running: root.cameraActive && !root.showCollapsedText && !root.expanded
+                    running: root.cameraActive && statusIconContainer.isIdleDot && !root.showCollapsedText && !root.expanded
                     loops: Animation.Infinite
                     NumberAnimation { from: 1.0; to: 0.25; duration: 700; easing.type: Easing.InOutSine }
                     NumberAnimation { from: 0.25; to: 1.0; duration: 700; easing.type: Easing.InOutSine }
                 }
+            }
 
-                Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+            // Rotating Glyph Container with Dual-Layer Morph Slots
+            Item {
+                id: glyphRotator
+                anchors.centerIn: parent
+                width: 16
+                height: 16
+                visible: !statusIconContainer.isIdleDot || slotAGlyph.opacity > 0.01 || slotBGlyph.opacity > 0.01
 
                 rotation: (!Services.OverlayManager.isLocked && root.mediaPlaying && !root.expanded) ? rotation : 0
 
@@ -1119,6 +1188,54 @@ Item {
                     duration: 4000
                     loops: Animation.Infinite
                     running: !Services.OverlayManager.isLocked && root.mediaPlaying && !root.expanded
+                }
+
+                Text {
+                    id: slotAGlyph
+                    anchors.centerIn: parent
+                    text: statusIconContainer.targetGlyph
+                    font.family: Services.Theme.fontSymbols
+                    font.pixelSize: 13
+                    color: statusIconContainer.targetGlyphColor
+                    opacity: !statusIconContainer.isIdleDot ? 1.0 : 0.0
+                    scale: !statusIconContainer.isIdleDot ? 1.0 : 0.3
+                    transformOrigin: Item.Center
+                    Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                }
+
+                Text {
+                    id: slotBGlyph
+                    anchors.centerIn: parent
+                    text: ""
+                    font.family: Services.Theme.fontSymbols
+                    font.pixelSize: 13
+                    color: statusIconContainer.targetGlyphColor
+                    opacity: 0.0
+                    scale: 0.3
+                    transformOrigin: Item.Center
+                    Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                }
+
+                ParallelAnimation {
+                    id: slotAAnimIn
+                    NumberAnimation { target: slotAGlyph; property: "opacity"; from: 0.0; to: 1.0; duration: 260; easing.type: Easing.OutCubic }
+                    NumberAnimation { target: slotAGlyph; property: "scale"; from: 0.35; to: 1.0; duration: 320; easing.type: Easing.OutBack }
+                }
+                ParallelAnimation {
+                    id: slotAAnimOut
+                    NumberAnimation { target: slotAGlyph; property: "opacity"; to: 0.0; duration: 180; easing.type: Easing.InQuad }
+                    NumberAnimation { target: slotAGlyph; property: "scale"; to: 0.25; duration: 180; easing.type: Easing.InQuad }
+                }
+
+                ParallelAnimation {
+                    id: slotBAnimIn
+                    NumberAnimation { target: slotBGlyph; property: "opacity"; from: 0.0; to: 1.0; duration: 260; easing.type: Easing.OutCubic }
+                    NumberAnimation { target: slotBGlyph; property: "scale"; from: 0.35; to: 1.0; duration: 320; easing.type: Easing.OutBack }
+                }
+                ParallelAnimation {
+                    id: slotBAnimOut
+                    NumberAnimation { target: slotBGlyph; property: "opacity"; to: 0.0; duration: 180; easing.type: Easing.InQuad }
+                    NumberAnimation { target: slotBGlyph; property: "scale"; to: 0.25; duration: 180; easing.type: Easing.InQuad }
                 }
             }
         }
@@ -1224,13 +1341,13 @@ Item {
             readonly property bool activeState: !Services.OverlayManager.isLocked && root.expanded && root.notifActive && !root.dropSendMode && !root.isDropSending
             visible: activeState || opacity > 0.01
             opacity: activeState ? 1 : 0
-            scale: activeState ? 1.0 : 0.15
+            scale: activeState ? 1.0 : 0.7
             transformOrigin: Item.Center
             enabled: activeState
             z: 1
 
-            Behavior on opacity { NumberAnimation { duration: 350; easing.type: Easing.OutQuad } }
-            Behavior on scale   { NumberAnimation { duration: 550; easing.type: Easing.OutExpo } }
+            Behavior on opacity { NumberAnimation { duration: 260; easing.type: Easing.OutQuad } }
+            Behavior on scale   { NumberAnimation { duration: 360; easing.type: Easing.OutBack } }
 
             // Header: Icon, AppName, Queue Indicator, Controls & Close
             RowLayout {
@@ -1596,38 +1713,136 @@ Item {
             readonly property bool activeState: (root.sysHudTitle.includes("Caps Lock") || root.sysHudTitle.includes("Welcome") || !Services.OverlayManager.isLocked) && root.expanded && !root.notifActive && !root.wallpaperMode && root.sysHudActive && !root.dropSendMode && !root.isDropSending
             visible: activeState || opacity > 0.01
             opacity: activeState ? 1 : 0
-            scale: activeState ? 1.0 : 0.15
+            scale: activeState ? 1.0 : 0.7
             transformOrigin: Item.Center
             enabled: activeState
             z: 1
 
-            Behavior on opacity { NumberAnimation { duration: 350; easing.type: Easing.OutQuad } }
-            Behavior on scale   { NumberAnimation { duration: 550; easing.type: Easing.OutExpo } }
+            Behavior on opacity { NumberAnimation { duration: 260; easing.type: Easing.OutQuad } }
+            Behavior on scale   { NumberAnimation { duration: 360; easing.type: Easing.OutBack } }
 
             Rectangle {
+                id: sysHudBubble
                 implicitWidth: 32
                 implicitHeight: 32
                 radius: 16
                 color: Services.Theme.surfaceVariant
                 Layout.alignment: Qt.AlignVCenter
+                clip: true
+
+                transform: Scale {
+                    id: sysHudBubbleScale
+                    origin.x: 16
+                    origin.y: 16
+                    xScale: 1.0
+                    yScale: 1.0
+                }
+
+                SequentialAnimation {
+                    id: sysHudBubblePunch
+                    ParallelAnimation {
+                        NumberAnimation { target: sysHudBubbleScale; property: "xScale"; to: 1.15; duration: 90; easing.type: Easing.OutQuad }
+                        NumberAnimation { target: sysHudBubbleScale; property: "yScale"; to: 1.15; duration: 90; easing.type: Easing.OutQuad }
+                    }
+                    ParallelAnimation {
+                        NumberAnimation { target: sysHudBubbleScale; property: "xScale"; to: 1.0; duration: 200; easing.type: Easing.OutBack }
+                        NumberAnimation { target: sysHudBubbleScale; property: "yScale"; to: 1.0; duration: 200; easing.type: Easing.OutBack }
+                    }
+                }
+
+                property string hudCurrentIcon: root.sysHudIcon
+                property color hudCurrentColor: root.sysHudColor
+                property bool hudUseSlotA: true
+
+                onHudCurrentIconChanged: {
+                    sysHudBubblePunch.restart()
+                    if (hudUseSlotA) {
+                        hudSlotB.text = hudCurrentIcon
+                        hudSlotB.color = hudCurrentColor
+                        hudSlotAAnimOut.restart()
+                        hudSlotBAnimIn.restart()
+                        hudUseSlotA = false
+                    } else {
+                        hudSlotA.text = hudCurrentIcon
+                        hudSlotA.color = hudCurrentColor
+                        hudSlotBAnimOut.restart()
+                        hudSlotAAnimIn.restart()
+                        hudUseSlotA = true
+                    }
+                }
+
+                onHudCurrentColorChanged: {
+                    if (hudUseSlotA) {
+                        hudSlotA.color = hudCurrentColor
+                    } else {
+                        hudSlotB.color = hudCurrentColor
+                    }
+                }
 
                 Text {
+                    id: hudSlotA
                     anchors.centerIn: parent
                     text: root.sysHudIcon
                     font.family: Services.Theme.fontSymbols
                     font.pixelSize: 15
                     color: root.sysHudColor
+                    opacity: 1.0
+                    scale: 1.0
+                    Behavior on color { ColorAnimation { duration: 200; easing.type: Easing.OutCubic } }
                 }
 
-                // Red Cross overlay when Caps Lock is Off
                 Text {
+                    id: hudSlotB
+                    anchors.centerIn: parent
+                    text: ""
+                    font.family: Services.Theme.fontSymbols
+                    font.pixelSize: 15
+                    color: root.sysHudColor
+                    opacity: 0.0
+                    scale: 0.4
+                    Behavior on color { ColorAnimation { duration: 200; easing.type: Easing.OutCubic } }
+                }
+
+                ParallelAnimation {
+                    id: hudSlotAAnimIn
+                    NumberAnimation { target: hudSlotA; property: "opacity"; from: 0.0; to: 1.0; duration: 220; easing.type: Easing.OutCubic }
+                    NumberAnimation { target: hudSlotA; property: "scale"; from: 0.4; to: 1.0; duration: 260; easing.type: Easing.OutBack }
+                }
+                ParallelAnimation {
+                    id: hudSlotAAnimOut
+                    NumberAnimation { target: hudSlotA; property: "opacity"; to: 0.0; duration: 160; easing.type: Easing.InQuad }
+                    NumberAnimation { target: hudSlotA; property: "scale"; to: 0.4; duration: 160; easing.type: Easing.InQuad }
+                }
+
+                ParallelAnimation {
+                    id: hudSlotBAnimIn
+                    NumberAnimation { target: hudSlotB; property: "opacity"; from: 0.0; to: 1.0; duration: 220; easing.type: Easing.OutCubic }
+                    NumberAnimation { target: hudSlotB; property: "scale"; from: 0.4; to: 1.0; duration: 260; easing.type: Easing.OutBack }
+                }
+                ParallelAnimation {
+                    id: hudSlotBAnimOut
+                    NumberAnimation { target: hudSlotB; property: "opacity"; to: 0.0; duration: 160; easing.type: Easing.InQuad }
+                    NumberAnimation { target: hudSlotB; property: "scale"; to: 0.4; duration: 160; easing.type: Easing.InQuad }
+                }
+
+                // Red Cross overlay when Caps Lock is Off with smooth rotation & spring pop
+                Text {
+                    id: capsOffCross
                     anchors.centerIn: parent
                     text: "✕"
                     font.family: Services.Theme.fontSymbols
                     font.pixelSize: 12
                     font.bold: true
                     color: Services.Theme.danger
-                    visible: root.sysHudTitle === "Caps Lock Off"
+                    readonly property bool isCapsOff: root.sysHudTitle === "Caps Lock Off"
+                    opacity: isCapsOff ? 1.0 : 0.0
+                    scale: isCapsOff ? 1.0 : 0.1
+                    rotation: isCapsOff ? 0 : -45
+                    visible: opacity > 0.01
+
+                    Behavior on opacity { NumberAnimation { duration: 200; easing.type: Easing.OutQuad } }
+                    Behavior on scale { NumberAnimation { duration: 260; easing.type: Easing.OutBack } }
+                    Behavior on rotation { NumberAnimation { duration: 260; easing.type: Easing.OutCubic } }
                 }
             }
 
@@ -1664,13 +1879,13 @@ Item {
             readonly property bool activeState: !Services.OverlayManager.isLocked && root.expanded && !root.notifActive && !root.wallpaperMode && !root.sysHudActive && root.isMediaPeek && !root.dropSendMode && !root.isDropSending
             visible: activeState || opacity > 0.01
             opacity: activeState ? 1 : 0
-            scale: activeState ? 1.0 : 0.15
+            scale: activeState ? 1.0 : 0.7
             transformOrigin: Item.Center
             enabled: activeState
             z: 1
 
-            Behavior on opacity { NumberAnimation { duration: 350; easing.type: Easing.OutQuad } }
-            Behavior on scale   { NumberAnimation { duration: 550; easing.type: Easing.OutExpo } }
+            Behavior on opacity { NumberAnimation { duration: 260; easing.type: Easing.OutQuad } }
+            Behavior on scale   { NumberAnimation { duration: 360; easing.type: Easing.OutBack } }
 
             // Compact Track Artwork / Icon
             Rectangle {
@@ -1757,13 +1972,13 @@ Item {
             readonly property bool activeState: !Services.OverlayManager.isLocked && root.expanded && !root.notifActive && !root.sysHudActive && !root.isMediaPeek && root.hasMedia && !root.wallpaperMode && !root.dropSendMode && !root.isDropSending
             visible: activeState || opacity > 0.01
             opacity: activeState ? 1 : 0
-            scale: activeState ? 1.0 : 0.15
+            scale: activeState ? 1.0 : 0.7
             transformOrigin: Item.Center
             enabled: activeState
             z: 1
 
-            Behavior on opacity { NumberAnimation { duration: 350; easing.type: Easing.OutQuad } }
-            Behavior on scale   { NumberAnimation { duration: 550; easing.type: Easing.OutExpo } }
+            Behavior on opacity { NumberAnimation { duration: 260; easing.type: Easing.OutQuad } }
+            Behavior on scale   { NumberAnimation { duration: 360; easing.type: Easing.OutBack } }
 
             // Row 1: Track Art + Info + App Badge
             RowLayout {
@@ -1863,7 +2078,7 @@ Item {
             // Row 2: Progress Bar & Timers
             Item {
                 Layout.fillWidth: true
-                implicitHeight: 20
+                implicitHeight: 22
                 visible: root.activePlayer !== null
 
                 Text {
@@ -1894,7 +2109,7 @@ Item {
                         leftMargin: 8; rightMargin: 8
                         verticalCenter: parent.verticalCenter
                     }
-                    height: 16
+                    height: 20
                     isPlaying: root.mediaPlaying
                     waveColor: Services.Theme.accent
                     trackColor: Services.Theme.surfaceVariant
@@ -1971,25 +2186,81 @@ Item {
 
                 Item { Layout.fillWidth: true }
 
-                // Play / Pause (Circular Filled Button)
+                // Play / Pause (Natural Optical Glass Lens)
                 Rectangle {
-                    implicitWidth: 36; implicitHeight: 36
-                    radius: 18
-                    color: playArea.containsMouse ? Qt.lighter(Services.Theme.accent, 1.15) : Services.Theme.accent
-                    scale: playArea.containsMouse ? 1.06 : 1.0
+                    id: playGlassBtn
+                    implicitWidth: 38; implicitHeight: 38
+                    radius: 19
 
-                    Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
-                    Behavior on scale { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
+                    // Natural convex lens gradient: subtle top ambient light, crystal body, soft base depth
+                    gradient: Gradient {
+                        GradientStop {
+                            position: 0.0
+                            color: playArea.pressed
+                                ? Qt.rgba(255, 255, 255, 0.18)
+                                : (playArea.containsMouse ? Qt.rgba(255, 255, 255, 0.12) : Qt.rgba(255, 255, 255, 0.07))
+                        }
+                        GradientStop {
+                            position: 0.55
+                            color: playArea.pressed
+                                ? Qt.rgba(255, 255, 255, 0.08)
+                                : (playArea.containsMouse ? Qt.rgba(255, 255, 255, 0.05) : Qt.rgba(255, 255, 255, 0.02))
+                        }
+                        GradientStop {
+                            position: 1.0
+                            color: playArea.pressed
+                                ? Qt.rgba(0, 0, 0, 0.06)
+                                : (playArea.containsMouse ? Qt.rgba(0, 0, 0, 0.04) : Qt.rgba(0, 0, 0, 0.08))
+                        }
+                    }
+
+                    // Whisper-thin natural glass rim reflection
+                    border.color: playArea.pressed
+                        ? Qt.rgba(255, 255, 255, 0.28)
+                        : (playArea.containsMouse ? Qt.rgba(255, 255, 255, 0.18) : Qt.rgba(255, 255, 255, 0.09))
+                    border.width: 1
+
+                    scale: playArea.pressed ? 0.92 : (playArea.containsMouse ? 1.06 : 1.0)
+                    Behavior on scale { NumberAnimation { duration: 180; easing.type: Easing.OutBack; easing.overshoot: 1.2 } }
+                    Behavior on border.color { ColorAnimation { duration: 200; easing.type: Easing.OutCubic } }
+
+                    // Soft physical contact shadow under the glass
+                    Rectangle {
+                        anchors.centerIn: parent
+                        anchors.verticalCenterOffset: 1.5
+                        width: parent.width - 2
+                        height: parent.height - 2
+                        radius: parent.radius
+                        color: Qt.rgba(0, 0, 0, 0.30)
+                        z: -1
+                    }
 
                     Text {
+                        id: playGlassIcon
                         anchors.centerIn: parent
                         text: Services.Icons.mediaPlayPause(root.mediaPlaying)
                         font.family: Services.Theme.fontSymbols
-                        font.pixelSize: 14
-                        color: Services.Theme.bgDeep
+                        font.pixelSize: 15
+                        color: Services.Theme.textPrimary
+                        opacity: playArea.containsMouse ? 1.0 : 0.92
+                        scale: playIconScale
+
+                        property real playIconScale: 1.0
+
+                        onTextChanged: playGlassMorphAnim.restart()
+
+                        SequentialAnimation {
+                            id: playGlassMorphAnim
+                            NumberAnimation { target: playGlassIcon; property: "playIconScale"; to: 0.70; duration: 80; easing.type: Easing.InQuad }
+                            NumberAnimation { target: playGlassIcon; property: "playIconScale"; to: 1.15; duration: 150; easing.type: Easing.OutBack }
+                            NumberAnimation { target: playGlassIcon; property: "playIconScale"; to: 1.0; duration: 80; easing.type: Easing.OutQuad }
+                        }
                     }
+
                     MouseArea {
-                        id: playArea; anchors.fill: parent; hoverEnabled: true
+                        id: playArea
+                        anchors.fill: parent
+                        hoverEnabled: true
                         cursorShape: (root.activePlayer?.canTogglePlaying ?? true) ? Qt.PointingHandCursor : Qt.ArrowCursor
                         enabled: root.activePlayer?.canTogglePlaying ?? true
                         onClicked: (mouse) => { root.activePlayer?.togglePlaying(); mouse.accepted = true }
@@ -2066,13 +2337,13 @@ Item {
             readonly property bool activeState: !Services.OverlayManager.isLocked && root.expanded && !root.notifActive && root.wallpaperMode && !root.dropSendMode && !root.isDropSending
             visible: activeState || opacity > 0.01
             opacity: activeState ? 1 : 0
-            scale: activeState ? 1.0 : 0.15
+            scale: activeState ? 1.0 : 0.75
             transformOrigin: Item.Center
             enabled: activeState
             z: 1
 
-            Behavior on opacity { NumberAnimation { duration: 300; easing.type: Easing.OutQuad } }
-            Behavior on scale   { NumberAnimation { duration: 450; easing.type: Easing.OutExpo } }
+            Behavior on opacity { NumberAnimation { duration: 260; easing.type: Easing.OutQuad } }
+            Behavior on scale   { NumberAnimation { duration: 360; easing.type: Easing.OutBack } }
 
             // Row 1: Minimal Header
             RowLayout {
@@ -2990,10 +3261,59 @@ Item {
         Behavior on scale   { NumberAnimation { duration: 500; easing.type: Easing.OutBack } }
         Behavior on anchors.leftMargin { NumberAnimation { duration: 550; easing.type: Easing.OutBack } }
 
+        transform: Scale {
+            id: mediaSatTransform
+            origin.x: 16
+            origin.y: 16
+            xScale: 1.0
+            yScale: 1.0
+        }
+
+        onIsSatelliteChanged: {
+            if (isSatellite) {
+                mediaSatDetachAnim.restart()
+            } else {
+                mediaSatRetractAnim.restart()
+            }
+        }
+
+        SequentialAnimation {
+            id: mediaSatDetachAnim
+            ParallelAnimation {
+                NumberAnimation { target: mediaSatTransform; property: "xScale"; to: 1.34; duration: 150; easing.type: Easing.OutQuad }
+                NumberAnimation { target: mediaSatTransform; property: "yScale"; to: 0.74; duration: 150; easing.type: Easing.OutQuad }
+            }
+            ParallelAnimation {
+                NumberAnimation { target: mediaSatTransform; property: "xScale"; to: 0.88; duration: 180; easing.type: Easing.OutQuad }
+                NumberAnimation { target: mediaSatTransform; property: "yScale"; to: 1.14; duration: 180; easing.type: Easing.OutQuad }
+            }
+            ParallelAnimation {
+                NumberAnimation { target: mediaSatTransform; property: "xScale"; to: 1.0; duration: 160; easing.type: Easing.OutCubic }
+                NumberAnimation { target: mediaSatTransform; property: "yScale"; to: 1.0; duration: 160; easing.type: Easing.OutCubic }
+            }
+        }
+
+        SequentialAnimation {
+            id: mediaSatRetractAnim
+            ParallelAnimation {
+                NumberAnimation { target: mediaSatTransform; property: "xScale"; to: 1.25; duration: 180; easing.type: Easing.InQuad }
+                NumberAnimation { target: mediaSatTransform; property: "yScale"; to: 0.80; duration: 180; easing.type: Easing.InQuad }
+            }
+            ParallelAnimation {
+                NumberAnimation { target: mediaSatTransform; property: "xScale"; to: 1.0; duration: 100; easing.type: Easing.OutQuad }
+                NumberAnimation { target: mediaSatTransform; property: "yScale"; to: 1.0; duration: 100; easing.type: Easing.OutQuad }
+            }
+        }
+
         // Mini Audio Wave Visualizer inside Media Satellite Dot
         Row {
             anchors.centerIn: parent
             spacing: 2.5
+            opacity: mediaSatelliteDot.isSatellite ? 1.0 : 0.0
+            scale: mediaSatelliteDot.isSatellite ? 1.0 : 0.3
+            Behavior on opacity { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
+            Behavior on scale   { NumberAnimation { duration: 320; easing.type: Easing.OutBack } }
+
             Repeater {
                 model: 3
                 Rectangle {
@@ -3056,11 +3376,59 @@ Item {
         Behavior on scale   { NumberAnimation { duration: 500; easing.type: Easing.OutBack } }
         Behavior on anchors.leftMargin { NumberAnimation { duration: 550; easing.type: Easing.OutBack } }
 
+        transform: Scale {
+            id: camSatTransform
+            origin.x: 16
+            origin.y: 16
+            xScale: 1.0
+            yScale: 1.0
+        }
+
+        onIsSatelliteChanged: {
+            if (isSatellite) {
+                camSatDetachAnim.restart()
+            } else {
+                camSatRetractAnim.restart()
+            }
+        }
+
+        SequentialAnimation {
+            id: camSatDetachAnim
+            ParallelAnimation {
+                NumberAnimation { target: camSatTransform; property: "xScale"; to: 1.34; duration: 150; easing.type: Easing.OutQuad }
+                NumberAnimation { target: camSatTransform; property: "yScale"; to: 0.74; duration: 150; easing.type: Easing.OutQuad }
+            }
+            ParallelAnimation {
+                NumberAnimation { target: camSatTransform; property: "xScale"; to: 0.88; duration: 180; easing.type: Easing.OutQuad }
+                NumberAnimation { target: camSatTransform; property: "yScale"; to: 1.14; duration: 180; easing.type: Easing.OutQuad }
+            }
+            ParallelAnimation {
+                NumberAnimation { target: camSatTransform; property: "xScale"; to: 1.0; duration: 160; easing.type: Easing.OutCubic }
+                NumberAnimation { target: camSatTransform; property: "yScale"; to: 1.0; duration: 160; easing.type: Easing.OutCubic }
+            }
+        }
+
+        SequentialAnimation {
+            id: camSatRetractAnim
+            ParallelAnimation {
+                NumberAnimation { target: camSatTransform; property: "xScale"; to: 1.25; duration: 180; easing.type: Easing.InQuad }
+                NumberAnimation { target: camSatTransform; property: "yScale"; to: 0.80; duration: 180; easing.type: Easing.InQuad }
+            }
+            ParallelAnimation {
+                NumberAnimation { target: camSatTransform; property: "xScale"; to: 1.0; duration: 100; easing.type: Easing.OutQuad }
+                NumberAnimation { target: camSatTransform; property: "yScale"; to: 1.0; duration: 100; easing.type: Easing.OutQuad }
+            }
+        }
+
         // Camera Icon with blinking green privacy effect
         Item {
             anchors.centerIn: parent
             width: 16
             height: 16
+            opacity: cameraSatelliteDot.isSatellite ? 1.0 : 0.0
+            scale: cameraSatelliteDot.isSatellite ? 1.0 : 0.3
+            Behavior on opacity { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
+            Behavior on scale   { NumberAnimation { duration: 320; easing.type: Easing.OutBack } }
 
             Text {
                 id: camSatIcon
@@ -3083,8 +3451,9 @@ Item {
     // ==================== CapsLock Satellite Dot (Right of Island / Camera / Media) ====================
     Rectangle {
         id: capsLockDot
+        readonly property bool isSatellite: root.capsLockActive && !root.expanded
         anchors.left: (cameraSatelliteDot.isSatellite && cameraSatelliteDot.visible) ? cameraSatelliteDot.right : ((mediaSatelliteDot.isSatellite && mediaSatelliteDot.visible) ? mediaSatelliteDot.right : island.right)
-        anchors.leftMargin: (root.capsLockActive && !root.expanded) ? 8 : -32
+        anchors.leftMargin: isSatellite ? 8 : -32
         anchors.top: island.top
         anchors.topMargin: Math.max(0, (root.collapsedHeight - implicitHeight) / 2)
         implicitWidth: 32
@@ -3096,20 +3465,68 @@ Item {
         z: 1
         visible: root.capsLockActive || opacity > 0 || scale > 0
 
-        opacity: (root.capsLockActive && !root.expanded) ? 1 : 0
-        scale: (root.capsLockActive && !root.expanded) ? 1 : 0
+        opacity: isSatellite ? 1 : 0
+        scale: isSatellite ? 1 : 0
 
         Behavior on opacity { NumberAnimation { duration: 350; easing.type: Easing.OutCubic } }
         Behavior on scale   { NumberAnimation { duration: 500; easing.type: Easing.OutBack } }
         Behavior on anchors.leftMargin { NumberAnimation { duration: 550; easing.type: Easing.OutBack } }
 
-        // CapsLock Icon
+        transform: Scale {
+            id: capsSatTransform
+            origin.x: 16
+            origin.y: 16
+            xScale: 1.0
+            yScale: 1.0
+        }
+
+        onIsSatelliteChanged: {
+            if (isSatellite) {
+                capsSatDetachAnim.restart()
+            } else {
+                capsSatRetractAnim.restart()
+            }
+        }
+
+        SequentialAnimation {
+            id: capsSatDetachAnim
+            ParallelAnimation {
+                NumberAnimation { target: capsSatTransform; property: "xScale"; to: 1.34; duration: 150; easing.type: Easing.OutQuad }
+                NumberAnimation { target: capsSatTransform; property: "yScale"; to: 0.74; duration: 150; easing.type: Easing.OutQuad }
+            }
+            ParallelAnimation {
+                NumberAnimation { target: capsSatTransform; property: "xScale"; to: 0.88; duration: 180; easing.type: Easing.OutQuad }
+                NumberAnimation { target: capsSatTransform; property: "yScale"; to: 1.14; duration: 180; easing.type: Easing.OutQuad }
+            }
+            ParallelAnimation {
+                NumberAnimation { target: capsSatTransform; property: "xScale"; to: 1.0; duration: 160; easing.type: Easing.OutCubic }
+                NumberAnimation { target: capsSatTransform; property: "yScale"; to: 1.0; duration: 160; easing.type: Easing.OutCubic }
+            }
+        }
+
+        SequentialAnimation {
+            id: capsSatRetractAnim
+            ParallelAnimation {
+                NumberAnimation { target: capsSatTransform; property: "xScale"; to: 1.25; duration: 180; easing.type: Easing.InQuad }
+                NumberAnimation { target: capsSatTransform; property: "yScale"; to: 0.80; duration: 180; easing.type: Easing.InQuad }
+            }
+            ParallelAnimation {
+                NumberAnimation { target: capsSatTransform; property: "xScale"; to: 1.0; duration: 100; easing.type: Easing.OutQuad }
+                NumberAnimation { target: capsSatTransform; property: "yScale"; to: 1.0; duration: 100; easing.type: Easing.OutQuad }
+            }
+        }
+
+        // CapsLock Icon with delayed floating bloom
         Text {
             anchors.centerIn: parent
             text: "󰘶"
             font.family: Services.Theme.fontSymbols
             font.pixelSize: 13
             color: Services.Theme.alertYellow
+            opacity: capsLockDot.isSatellite ? 1.0 : 0.0
+            scale: capsLockDot.isSatellite ? 1.0 : 0.3
+            Behavior on opacity { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
+            Behavior on scale   { NumberAnimation { duration: 320; easing.type: Easing.OutBack } }
         }
     }
 

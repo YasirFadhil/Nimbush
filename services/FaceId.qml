@@ -57,7 +57,10 @@ Singleton {
         }
     }
 
+    property bool intentionalStop: false
+
     function startScan() {
+        intentionalStop = false
         if (!isEnabled) {
             status = "idle"
             return
@@ -81,6 +84,7 @@ Singleton {
     }
 
     function resetStatus() {
+        intentionalStop = true
         if (verifyProc.running) {
             verifyProc.running = false
         }
@@ -90,6 +94,7 @@ Singleton {
     }
 
     function stopScan() {
+        intentionalStop = true
         if (verifyProc.running) {
             verifyProc.running = false
         }
@@ -190,6 +195,11 @@ Singleton {
 
         onExited: (code, status) => {
             root.isScanning = false
+            if (root.intentionalStop) {
+                root.intentionalStop = false
+                root.status = "idle"
+                return
+            }
             if (code !== 0 && root.status !== "success") {
                 if (root.status !== "timeout" && root.status !== "camera_unavailable" && root.status !== "not_enrolled") {
                     root.status = "failed"

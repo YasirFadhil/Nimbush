@@ -64,14 +64,14 @@ PanelWindow {
             border.width: 1
             clip: true
 
-            opacity: root.visible ? 1 : 0
+            opacity: root.visible ? 1.0 : 0.0
+            scale: root.visible ? 1.0 : 0.96
             transform: Translate {
-                y: root.visible ? 0 : (root.isBottom ? 24 : -24)
-                Behavior on y { NumberAnimation { duration: 220; easing.type: Easing.OutBack; easing.overshoot: 0.5 } }
+                y: root.visible ? 0 : (root.isBottom ? 20 : -20)
+                Behavior on y { NumberAnimation { duration: 280; easing.type: Easing.OutCubic } }
             }
-            scale: root.visible ? 1 : 0.96
-            Behavior on scale { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
-            Behavior on opacity { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
+            Behavior on opacity { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
+            Behavior on scale   { NumberAnimation { duration: 280; easing.type: Easing.OutBack } }
 
             // Prevent clicks inside card from closing backdrop
             MouseArea { anchors.fill: parent; onClicked: {} }
