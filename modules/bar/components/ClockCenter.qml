@@ -10,8 +10,38 @@ Rectangle {
     readonly property bool isFloating: barStyle === "floating"
     readonly property bool isUnified: barStyle === "unified"
 
+    // ── Tray layout contract ──────────────────────────────────────
+    property bool trayCompact: false
+    property bool trayYielded: false
+    property int hPadOverride: -1
+
+    readonly property int baseHPad: isMinimal ? 12 : 20
+    readonly property int hPad: hPadOverride >= 0 ? hPadOverride : baseHPad
+
+    TextMetrics {
+        id: mClockFull
+        font: clockText.font
+        text: {
+            const is24 = Services.Config ? Services.Config.clock24h : true
+            const sec  = Services.Config ? Services.Config.clockShowSeconds : false
+            const date = Services.Config ? Services.Config.clockShowDate : true
+            const fmt  = Services.Config ? Services.Config.clockDateFormat : "short"
+            let p = ""
+            if (date) p = (fmt === "full" ? "Wednesday, 30 September  " : "Wed, 30 Sep  ")
+            return p + (is24 ? (sec ? "00:00:00" : "00:00") : (sec ? "00:00:00 AM" : "00:00 AM"))
+        }
+    }
+    TextMetrics {
+        id: mClockCompact
+        font: clockText.font
+        text: (Services.Config && Services.Config.clock24h) ? "00:00" : "00:00 AM"
+    }
+
+    readonly property real trayWidthFull: Math.ceil(mClockFull.width) + baseHPad
+    readonly property real trayWidthCompact: trayWidthFull
+
     implicitHeight: isMinimal ? 24 : 28
-    implicitWidth: clockText.implicitWidth + (isMinimal ? 12 : 20)
+    implicitWidth: trayCompact ? trayWidthCompact : trayWidthFull
     radius: isMinimal ? 6 : (isIslands ? 14 : 10)
 
     color: clockArea.containsMouse ? Services.Theme.bgHover 
@@ -28,6 +58,8 @@ Rectangle {
     Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
     Behavior on border.color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
+    onTrayCompactChanged: clockText.updateTime()
+
     Text {
         id: clockText
         anchors.centerIn: parent
@@ -40,12 +72,14 @@ Rectangle {
         function updateTime() {
             const is24 = Services.Config ? Services.Config.clock24h : true
             const showSec = Services.Config ? Services.Config.clockShowSeconds : false
-            const showDate = Services.Config ? Services.Config.clockShowDate : true
-            const dateFmt = Services.Config ? Services.Config.clockDateFormat : "short"
+            // compact memaksa: tanpa tanggal, tanpa detik
+            const showDate = clockPill.trayCompact ? false : (Services.Config ? Services.Config.clockShowDate : true)
+            const useSec   = clockPill.trayCompact ? false : showSec
+            const dateFmt  = Services.Config ? Services.Config.clockDateFormat : "short"
 
             const timePattern = is24 
-                ? (showSec ? "HH:mm:ss" : "HH:mm")
-                : (showSec ? "hh:mm:ss A" : "hh:mm A")
+                ? (useSec ? "HH:mm:ss" : "HH:mm")
+                : (useSec ? "hh:mm:ss A" : "hh:mm A")
 
             let datePrefix = ""
             if (showDate) {

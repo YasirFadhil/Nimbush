@@ -693,6 +693,23 @@ Item {
         return 52
     }
 
+    // ── Bar layout negotiation ────────────────────────────────────
+    // Lebar yang di-"klaim" island dari bar, sudah termasuk kompensasi overshoot animasi.
+    readonly property real reservedWidth: {
+        const base = expanded ? calculatedExpandedWidth : calculatedCollapsedWidth
+        return base + satelliteExtraWidth + (expanded ? overshootAllowance : 0)
+    }
+
+    // Behavior on width memakai Easing.OutBack, yang MELAMPAUI nilai target sebelum settle.
+    readonly property real overshootAllowance: 28
+
+    readonly property string demand: {
+        if (!expanded) return "idle"
+        if (dropSendMode || isDropSending || wallpaperMode) return "greedy"
+        if (isMediaPeek) return "peek"
+        return "normal"
+    }
+
     // Format seconds → "m:ss"
     function fmtTime(sec) {
         const s = Math.max(0, Math.floor(sec ?? 0))

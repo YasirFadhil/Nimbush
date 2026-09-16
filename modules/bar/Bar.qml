@@ -168,9 +168,14 @@ Variants {
                     id: statusTray
                     Layout.alignment: Qt.AlignVCenter
                     barWidth: root.width
-                    islandRightEdge: root.showDynamicIsland ? (((root.width + (dynamicIsland.expanded ? dynamicIsland.calculatedExpandedWidth : dynamicIsland.calculatedCollapsedWidth)) / 2) + dynamicIsland.satelliteExtraWidth) : 0
-                    islandCollapsedRightEdge: root.showDynamicIsland ? ((root.width + dynamicIsland.calculatedCollapsedWidth) / 2) : 0
-                    isIslandExpanded: root.showDynamicIsland && (dynamicIsland.expanded || dynamicIsland.satelliteExtraWidth > 0)
+                    rightMargin: root.isFloating ? 18 : (root.isUnified ? 16 : 12)
+
+                    // Lebar yang diklaim oleh elemen tengah — island, atau jam tengah pada mode non-island.
+                    centerReservedWidth: root.showDynamicIsland
+                        ? dynamicIsland.reservedWidth
+                        : (centerClockContainer.visible ? centerClockContainer.width : 0)
+
+                    islandDemand: root.showDynamicIsland ? dynamicIsland.demand : "idle"
                 }
             }
         }
@@ -181,9 +186,11 @@ Variants {
             visible: !root.showDynamicIsland && (Services.Config ? Services.Config.showClockTray : true)
             anchors.centerIn: barRow
             height: root.barHeight
+            width: centerClock.implicitWidth
             z: 10
 
             Components.ClockCenter {
+                id: centerClock
                 anchors.centerIn: parent
             }
         }
