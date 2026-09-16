@@ -200,24 +200,24 @@ ShellRoot {
     // ── Battery Panel ────────────────────────────────────────────────────────
     IpcHandler {
         target: "battery"
-        function toggle(): void { if (!Services.OverlayManager.isLocked) batteryWindow.toggle() }
-        function show():   void { if (!Services.OverlayManager.isLocked) batteryWindow.show() }
+        function toggle(): void { if (!Services.OverlayManager.isLocked && !Services.OverlayManager.isWizardActive) batteryWindow.toggle() }
+        function show():   void { if (!Services.OverlayManager.isLocked && !Services.OverlayManager.isWizardActive) batteryWindow.show() }
         function hide():   void { batteryWindow.hide() }
     }
 
     // ── Volume Panel ─────────────────────────────────────────────────────────
     IpcHandler {
         target: "volume"
-        function toggle(): void { if (!Services.OverlayManager.isLocked) volumeWindow.toggle() }
-        function show():   void { if (!Services.OverlayManager.isLocked) volumeWindow.show() }
+        function toggle(): void { if (!Services.OverlayManager.isLocked && !Services.OverlayManager.isWizardActive) volumeWindow.toggle() }
+        function show():   void { if (!Services.OverlayManager.isLocked && !Services.OverlayManager.isWizardActive) volumeWindow.show() }
         function hide():   void { volumeWindow.hide() }
     }
 
     // ── System & Task Manager Panel ──────────────────────────────────────────
     IpcHandler {
         target: "sysmon"
-        function toggle(): void { if (!Services.OverlayManager.isLocked) sysmonWindow.toggle() }
-        function show():   void { if (!Services.OverlayManager.isLocked) sysmonWindow.show() }
+        function toggle(): void { if (!Services.OverlayManager.isLocked && !Services.OverlayManager.isWizardActive) sysmonWindow.toggle() }
+        function show():   void { if (!Services.OverlayManager.isLocked && !Services.OverlayManager.isWizardActive) sysmonWindow.show() }
         function hide():   void { sysmonWindow.hide() }
     }
 
@@ -225,14 +225,14 @@ ShellRoot {
     IpcHandler {
         target: "calendar"
         function toggle(): void {
-            if (!Services.OverlayManager.isLocked) {
+            if (!Services.OverlayManager.isLocked && !Services.OverlayManager.isWizardActive) {
                 const newState = !Services.OverlayManager.calendarVisible
                 if (newState) Services.OverlayManager.closeAllExcept("calendar")
                 Services.OverlayManager.calendarVisible = newState
             }
         }
         function show(): void {
-            if (!Services.OverlayManager.isLocked) {
+            if (!Services.OverlayManager.isLocked && !Services.OverlayManager.isWizardActive) {
                 Services.OverlayManager.closeAllExcept("calendar")
                 Services.OverlayManager.calendarVisible = true
             }
@@ -243,54 +243,54 @@ ShellRoot {
     // ── Dashboard ────────────────────────────────────────────────────────────
     IpcHandler {
         target: "dashboard"
-        function toggle(): void { if (!Services.OverlayManager.isLocked) dashboardWindow.toggle() }
-        function show():   void { if (!Services.OverlayManager.isLocked) dashboardWindow.show() }
+        function toggle(): void { if (!Services.OverlayManager.isLocked && !Services.OverlayManager.isWizardActive) dashboardWindow.toggle() }
+        function show():   void { if (!Services.OverlayManager.isLocked && !Services.OverlayManager.isWizardActive) dashboardWindow.show() }
         function hide():   void { dashboardWindow.hide() }
     }
 
     // ── Launcher ─────────────────────────────────────────────────────────────
     IpcHandler {
         target: "launcher"
-        function toggle(): void { if (!Services.OverlayManager.isLocked) launcherWindow.toggle() }
-        function show():   void { if (!Services.OverlayManager.isLocked) launcherWindow.show() }
+        function toggle(): void { if (!Services.OverlayManager.isLocked && !Services.OverlayManager.isWizardActive) launcherWindow.toggle() }
+        function show():   void { if (!Services.OverlayManager.isLocked && !Services.OverlayManager.isWizardActive) launcherWindow.show() }
         function hide():   void { launcherWindow.hide() }
     }
 
     // ── Wallpaper Selector (Integrated in Dynamic Island) ───────────────────
     IpcHandler {
         target: "wallpaper"
-        function toggle(): void { if (!Services.OverlayManager.isLocked) Services.OverlayManager.wallpaperToggleRequested() }
-        function show():   void { if (!Services.OverlayManager.isLocked) Services.OverlayManager.wallpaperShowRequested() }
-        function hide():   void { if (!Services.OverlayManager.isLocked) Services.OverlayManager.wallpaperToggleRequested() }
+        function toggle(): void { if (!Services.OverlayManager.isLocked && !Services.OverlayManager.isWizardActive) Services.OverlayManager.wallpaperToggleRequested() }
+        function show():   void { if (!Services.OverlayManager.isLocked && !Services.OverlayManager.isWizardActive) Services.OverlayManager.wallpaperShowRequested() }
+        function hide():   void { if (!Services.OverlayManager.isLocked && !Services.OverlayManager.isWizardActive) Services.OverlayManager.wallpaperToggleRequested() }
     }
 
     IpcHandler {
         target: "wallpaperSelector"
-        function toggle(): void { if (!Services.OverlayManager.isLocked) Services.OverlayManager.wallpaperToggleRequested() }
-        function show():   void { if (!Services.OverlayManager.isLocked) Services.OverlayManager.wallpaperShowRequested() }
-        function hide():   void { if (!Services.OverlayManager.isLocked) Services.OverlayManager.wallpaperToggleRequested() }
+        function toggle(): void { if (!Services.OverlayManager.isLocked && !Services.OverlayManager.isWizardActive) Services.OverlayManager.wallpaperToggleRequested() }
+        function show():   void { if (!Services.OverlayManager.isLocked && !Services.OverlayManager.isWizardActive) Services.OverlayManager.wallpaperShowRequested() }
+        function hide():   void { if (!Services.OverlayManager.isLocked && !Services.OverlayManager.isWizardActive) Services.OverlayManager.wallpaperToggleRequested() }
     }
 
     // ── Emoji Picker ─────────────────────────────────────────────────────────
     IpcHandler {
         target: "emoji"
-        function toggle(): void { if (!Services.OverlayManager.isLocked) emojiPickerWindow.toggle() }
-        function show():   void { if (!Services.OverlayManager.isLocked) emojiPickerWindow.show() }
+        function toggle(): void { if (!Services.OverlayManager.isLocked && !Services.OverlayManager.isWizardActive) emojiPickerWindow.toggle() }
+        function show():   void { if (!Services.OverlayManager.isLocked && !Services.OverlayManager.isWizardActive) emojiPickerWindow.show() }
         function hide():   void { emojiPickerWindow.hide() }
     }
 
     IpcHandler {
         target: "emojiPicker"
-        function toggle(): void { if (!Services.OverlayManager.isLocked) emojiPickerWindow.toggle() }
-        function show():   void { if (!Services.OverlayManager.isLocked) emojiPickerWindow.show() }
+        function toggle(): void { if (!Services.OverlayManager.isLocked && !Services.OverlayManager.isWizardActive) emojiPickerWindow.toggle() }
+        function show():   void { if (!Services.OverlayManager.isLocked && !Services.OverlayManager.isWizardActive) emojiPickerWindow.show() }
         function hide():   void { emojiPickerWindow.hide() }
     }
 
     // ── Clipboard ────────────────────────────────────────────────────────────
     IpcHandler {
         target: "clipboard"
-        function toggle(): void { if (!Services.OverlayManager.isLocked) clipboardWindow.toggle() }
-        function show():   void { if (!Services.OverlayManager.isLocked) clipboardWindow.show() }
+        function toggle(): void { if (!Services.OverlayManager.isLocked && !Services.OverlayManager.isWizardActive) clipboardWindow.toggle() }
+        function show():   void { if (!Services.OverlayManager.isLocked && !Services.OverlayManager.isWizardActive) clipboardWindow.show() }
         function hide():   void { clipboardWindow.hide() }
     }
 
@@ -314,8 +314,8 @@ ShellRoot {
     // ── Settings ─────────────────────────────────────────────────────────────
     IpcHandler {
         target: "settings"
-        function toggle(): void { if (!Services.OverlayManager.isLocked) settingsWindow.toggle() }
-        function show(): void { if (!Services.OverlayManager.isLocked) settingsWindow.show() }
+        function toggle(): void { if (!Services.OverlayManager.isLocked && !Services.OverlayManager.isWizardActive) settingsWindow.toggle() }
+        function show(): void { if (!Services.OverlayManager.isLocked && !Services.OverlayManager.isWizardActive) settingsWindow.show() }
         function hide(): void { settingsWindow.hide() }
     }
 

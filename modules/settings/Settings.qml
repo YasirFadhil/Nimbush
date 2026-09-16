@@ -10198,6 +10198,53 @@ FloatingWindow {
                                         }
                                     }
                                 }
+
+                                SettingsDivider {}
+
+                                // ── Re-run Setup Wizard ─────────────────────────────────
+                                SettingsRow {
+                                    title: "Re-run Setup Wizard"
+                                    subtitle: "Open the first-run onboarding wizard to reconfigure themes, icons, and fonts"
+
+                                    Rectangle {
+                                        id: wizBtn
+                                        height: 26
+                                        implicitWidth: wizTxt.implicitWidth + 14
+                                        radius: 4
+                                        color: wizMouse.containsMouse
+                                            ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.15)
+                                            : Services.Theme.bgElevated
+                                        border.color: wizMouse.containsMouse
+                                            ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.5)
+                                            : Services.Theme.border
+                                        border.width: 1
+                                        Behavior on color { ColorAnimation { duration: 150 } }
+
+                                        Text {
+                                            id: wizTxt
+                                            anchors.centerIn: parent
+                                            text: "Run Wizard"
+                                            font.pixelSize: 11
+                                            color: wizMouse.containsMouse ? Services.Theme.accent : Services.Theme.textPrimary
+                                            Behavior on color { ColorAnimation { duration: 150 } }
+                                        }
+
+                                        MouseArea {
+                                            id: wizMouse
+                                            anchors.fill: parent
+                                            hoverEnabled: true
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: {
+                                                if (Services.Config) {
+                                                    Services.Config.setFirstRunCompleted(false)
+                                                    Services.Config.saveConfig()
+                                                }
+                                                rootWindow.hide()
+                                                Services.OverlayManager.welcomeShowRequested()
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
 

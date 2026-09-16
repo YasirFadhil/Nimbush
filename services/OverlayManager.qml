@@ -1,11 +1,14 @@
 pragma Singleton
 import Quickshell
 import QtQuick
+import "." as Services
 
 Singleton {
     id: root
     property var _windows: []
     property bool isLocked: false
+    property bool wizardOpen: false
+    readonly property bool isWizardActive: wizardOpen || (Services.Config ? !Services.Config.firstRunCompleted : false)
     property bool controlCenterVisible: false
     property bool wifiPanelVisible: false
     property bool btPanelVisible: false
@@ -32,32 +35,35 @@ Singleton {
     signal emojiShowRequested()
 
     function openWallpaper() {
+        if (isLocked || isWizardActive) return
         closeAllExcept("wallpaper")
         wallpaperShowRequested()
     }
 
     function toggleWallpaper() {
-        if (isLocked) return
+        if (isLocked || isWizardActive) return
         wallpaperToggleRequested()
     }
 
     function openEmoji() {
+        if (isLocked || isWizardActive) return
         closeAllExcept("emoji")
         emojiShowRequested()
     }
 
     function toggleEmoji() {
-        if (isLocked) return
+        if (isLocked || isWizardActive) return
         emojiToggleRequested()
     }
 
     function openSettings(tabIndex, subTabIndex) {
+        if (isLocked || isWizardActive) return
         closeAllExcept("settings")
         settingsShowRequested(tabIndex, subTabIndex)
     }
 
     function toggleSettings() {
-        if (isLocked) return
+        if (isLocked || isWizardActive) return
         closeAllExcept("settings")
         settingsToggleRequested()
     }

@@ -32,6 +32,8 @@ Variants {
         required property var modelData
         screen: modelData
 
+        visible: !(Services.OverlayManager && Services.OverlayManager.isWizardActive)
+
         // ── Configuration Properties ─────────────────────────────────────────
         readonly property string pos: Services.Config ? Services.Config.dockPosition : "bottom"
         readonly property bool isBottom: pos === "bottom"
@@ -219,6 +221,8 @@ Variants {
         // ── Main Dock Container (Liquid Glass Floating Pill) ─────────────────
         Rectangle {
             id: dockContainer
+            opacity: (Services.OverlayManager && Services.OverlayManager.isWizardActive) ? 0.0 : 1.0
+            Behavior on opacity { NumberAnimation { duration: 320; easing.type: Easing.OutCubic } }
 
             // Center positioning on screen
             x: {

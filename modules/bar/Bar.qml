@@ -14,6 +14,8 @@ Variants {
         required property var modelData
         screen: modelData
 
+        visible: !(Services.OverlayManager && Services.OverlayManager.isWizardActive)
+
         readonly property bool isBottom: Services.Config ? (Services.Config.barPosition === "bottom") : false
     readonly property string barStyle: Services.Config ? Services.Config.barStyle : "islands"
     readonly property bool isMinimal: barStyle === "minimal"
@@ -64,6 +66,8 @@ Variants {
     Item {
         id: barContainer
         anchors.fill: parent
+        opacity: (Services.OverlayManager && Services.OverlayManager.isWizardActive) ? 0.0 : 1.0
+        Behavior on opacity { NumberAnimation { duration: 320; easing.type: Easing.OutCubic } }
 
         // ── 1. Floating Glass Bar Container ───────────────────────────────────
         Rectangle {

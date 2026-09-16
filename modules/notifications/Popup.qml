@@ -21,18 +21,57 @@ PanelWindow {
     readonly property bool hasPopups: Services.Notifications.popupList.count > 0
 
     readonly property bool isFullscreen: Services.Workspaces ? Services.Workspaces.isFullscreen : false
-    readonly property bool hasBatteryPopup: {
-        if (!Services.Notifications || !Services.Notifications.popupList) return false
-        for (let i = 0; i < Services.Notifications.popupList.count; i++) {
-            if (Services.Notifications.isBatteryNotification(Services.Notifications.popupList.get(i))) return true
+    property bool hasBatteryPopup: false
+
+    function updateBatteryPopupStatus() {
+        if (!Services.Notifications || !Services.Notifications.popupList) {
+            hasBatteryPopup = false
+            return
         }
-        return false
+        const list = Services.Notifications.popupList
+        for (let i = 0; i < list.count; i++) {
+            const item = list.get(i)
+            if (item && (item.isBattery || (Services.Notifications.isBatteryNotification && Services.Notifications.isBatteryNotification(item)))) {
+                hasBatteryPopup = true
+                return
+            }
+        }
+        hasBatteryPopup = false
+    }
+
+    Connections {
+        target: Services.Notifications ? Services.Notifications.popupList : null
+        function onCountChanged() { popupWin.updateBatteryPopupStatus() }
     }
     readonly property bool fullscreenAllowed: (Services.Config && Services.Config.notificationShowInFullscreen) || hasBatteryPopup
 
+    readonly property int cardWidth: 360
+    readonly property int sideMargin: 12
+    readonly property bool isRight: popupWin.notifPos === "top_right" || popupWin.notifPos === "bottom_right"
+    readonly property bool isLeft: popupWin.notifPos === "top_left"
+    readonly property bool isCenter: popupWin.notifPos === "top_center"
+
+    property bool closingKeepAlive: false
+    Timer {
+        id: closeTimer
+        interval: 250
+        repeat: false
+        onTriggered: popupWin.closingKeepAlive = false
+    }
+
+    onHasPopupsChanged: {
+        if (!hasPopups) {
+            closingKeepAlive = true
+            closeTimer.restart()
+        } else {
+            closeTimer.stop()
+            closingKeepAlive = false
+        }
+    }
+
     // In fullscreen mode, notifications always appear as popups (if enabled in settings or if battery alert).
     // In normal (non-fullscreen) mode, only show popups when NOT in dynamic island mode.
-    visible: hasPopups && !Services.OverlayManager.isLocked && (isFullscreen ? fullscreenAllowed : !showDynamicIsland)
+    visible: (hasPopups || closingKeepAlive) && !Services.OverlayManager.isLocked && (isFullscreen ? fullscreenAllowed : !showDynamicIsland)
 
     WlrLayershell.layer: WlrLayer.Overlay
     WlrLayershell.namespace: "quickshell:notifpopup"
@@ -44,19 +83,35 @@ PanelWindow {
     anchors {
         top: !popupWin.isBottom
         bottom: popupWin.isBottom
-        right: (popupWin.notifPos === "top_right" || popupWin.notifPos === "bottom_right" || popupWin.notifPos === "top_center")
-        left: (popupWin.notifPos === "top_left")
+        right: popupWin.isRight || popupWin.isCenter
+        left: popupWin.isLeft
     }
 
     margins {
         top: 8
         bottom: 8
-        right: (popupWin.notifPos === "top_center") ? ((Screen.width - 360) / 2) : 12
+        right: popupWin.isCenter ? ((Screen.width - popupWin.cardWidth) / 2) : 12
         left: 12
     }
 
-    implicitWidth: 360
-    implicitHeight: Math.min(Screen.height - 100, popupListView.contentHeight + 20)
+    property real lastContentHeight: 0
+    Connections {
+        target: popupListView
+        function onContentHeightChanged() {
+            if (popupListView.contentHeight > 0) {
+                popupWin.lastContentHeight = popupListView.contentHeight
+            }
+        }
+    }
+    onVisibleChanged: {
+        if (!visible) {
+            lastContentHeight = 0
+            closingKeepAlive = false
+        }
+    }
+
+    implicitWidth: popupWin.cardWidth
+    implicitHeight: Math.min(Screen.height - 100, Math.max(popupListView.contentHeight, lastContentHeight) + 20)
 
     function isReplyAction(act) {
         if (!act) return false
@@ -68,44 +123,162 @@ PanelWindow {
 
     ListView {
         id: popupListView
-        anchors.fill: parent
+        width: popupWin.cardWidth
+        height: parent.height
+        anchors.horizontalCenter: parent.horizontalCenter
         spacing: 10
         clip: false
         interactive: false
         model: Services.Notifications.popupList
 
-        // Animated add and remove
-        add: Transition {
-            NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 220; easing.type: Easing.OutCubic }
-            NumberAnimation { property: "scale"; from: 0.9; to: 1.0; duration: 240; easing.type: Easing.OutBack }
-            NumberAnimation { property: "x"; from: popupWin.notifPos === "top_left" ? -40 : 40; to: 0; duration: 240; easing.type: Easing.OutCubic }
+        displaced: Transition {
+            NumberAnimation { properties: "y"; duration: 280; easing.type: Easing.OutBack; easing.overshoot: 1.15 }
         }
         remove: Transition {
-            NumberAnimation { property: "opacity"; to: 0; duration: 180; easing.type: Easing.InCubic }
-            NumberAnimation { property: "scale"; to: 0.92; duration: 180; easing.type: Easing.InCubic }
-            NumberAnimation { property: "x"; to: popupWin.notifPos === "top_left" ? -60 : 60; duration: 180; easing.type: Easing.InCubic }
-        }
-        displaced: Transition {
-            NumberAnimation { properties: "y"; duration: 200; easing.type: Easing.OutCubic }
+            NumberAnimation { property: "opacity"; to: 0.0; duration: 150; easing.type: Easing.OutCubic }
         }
 
         delegate: Rectangle {
             id: card
             required property var modelData
             property var notifItem: modelData
-            property bool isReplying: popupWin.replyMode && popupWin.activeReplyNotifId === notifItem.notifId
-            property bool isCritical: notifItem.urgency === 2
-            readonly property bool isBattery: Services.Notifications ? Services.Notifications.isBatteryNotification(notifItem) : false
+            property bool isReplying: popupWin.replyMode && popupWin.activeReplyNotifId === (notifItem ? notifItem.notifId : -1)
+            property bool isCritical: notifItem ? notifItem.urgency === 2 : false
+            readonly property bool isBattery: (Services.Notifications && notifItem) ? Services.Notifications.isBatteryNotification(notifItem) : false
             readonly property bool cardAllowed: !popupWin.isFullscreen || (Services.Config && Services.Config.notificationShowInFullscreen) || isBattery
+
+            readonly property var cardOrigin: popupWin.isLeft ? (popupWin.isBottom ? Item.BottomLeft : Item.TopLeft) : (popupWin.isBottom ? Item.BottomRight : Item.TopRight)
+            transformOrigin: cardOrigin
+
+            property bool isDismissing: false
+            property real lockedHeight: 0
+
+            Component.onCompleted: {
+                if (implicitHeight > 0) lockedHeight = implicitHeight
+            }
+            onImplicitHeightChanged: {
+                if (implicitHeight > 0) lockedHeight = implicitHeight
+            }
 
             visible: cardAllowed
             width: popupListView.width
             implicitHeight: cardAllowed ? (cardContent.implicitHeight + 18) : 0
-            height: cardAllowed ? implicitHeight : 0
+            height: isDismissing ? lockedHeight : ((implicitHeight > 0) ? implicitHeight : lockedHeight)
             radius: Services.Theme.radiusMd
             color: Services.Theme.surfaced
             border.color: card.isCritical ? Services.Theme.danger : Services.Theme.border
             border.width: 1
+
+            transform: Translate {
+                id: cardTrans
+                x: popupWin.isLeft ? -30 : 30
+            }
+
+            scale: 0.5
+            opacity: 0.0
+
+            ParallelAnimation {
+                id: enterAnim
+                NumberAnimation {
+                    target: card
+                    property: "scale"
+                    from: 0.5
+                    to: 1.0
+                    duration: 280
+                    easing.type: Easing.OutBack
+                    easing.overshoot: 1.2
+                }
+                NumberAnimation {
+                    target: card
+                    property: "opacity"
+                    from: 0.0
+                    to: 1.0
+                    duration: 220
+                    easing.type: Easing.OutCubic
+                }
+                NumberAnimation {
+                    target: cardTrans
+                    property: "x"
+                    from: popupWin.isLeft ? -30 : 30
+                    to: 0
+                    duration: 280
+                    easing.type: Easing.OutBack
+                    easing.overshoot: 1.15
+                }
+            }
+
+            Timer {
+                id: enterTimer
+                interval: 35
+                running: true
+                repeat: false
+                onTriggered: {
+                    enterAnim.start()
+                }
+            }
+
+            function dismissCard() {
+                if (isDismissing) return
+                isDismissing = true
+                enterTimer.stop()
+                enterAnim.stop()
+                autoDismissTimer.stop()
+                if (card.height > 0) lockedHeight = card.height
+                exitAnim.start()
+            }
+
+            ParallelAnimation {
+                id: exitAnim
+                NumberAnimation {
+                    target: card
+                    property: "scale"
+                    from: card.scale
+                    to: 0.5
+                    duration: 220
+                    easing.type: Easing.OutBack
+                    easing.overshoot: 1.2
+                }
+                NumberAnimation {
+                    target: card
+                    property: "opacity"
+                    from: card.opacity
+                    to: 0.0
+                    duration: 180
+                    easing.type: Easing.OutCubic
+                }
+                NumberAnimation {
+                    target: cardTrans
+                    property: "x"
+                    from: cardTrans.x
+                    to: popupWin.isLeft ? -30 : 30
+                    duration: 220
+                    easing.type: Easing.OutCubic
+                }
+                onFinished: {
+                    if (notifItem && notifItem.notifId !== undefined) {
+                        Services.Notifications.dismiss(notifItem.notifId)
+                    }
+                }
+            }
+
+            Timer {
+                id: autoDismissTimer
+                interval: {
+                    const sec = Services.Config ? Services.Config.notificationTimeout : 5
+                    const base = (notifItem && notifItem.urgency === 2) ? 7000 : (sec * 1000)
+                    return Math.max(1000, base - 250)
+                }
+                running: !card.isReplying && !closeMouse.containsMouse && !hoverDetector.containsMouse && !card.isDismissing
+                repeat: false
+                onTriggered: card.dismissCard()
+            }
+
+            MouseArea {
+                id: hoverDetector
+                anchors.fill: parent
+                hoverEnabled: true
+                acceptedButtons: Qt.NoButton
+            }
 
             // Subtle glow
             Rectangle {
@@ -151,7 +324,7 @@ PanelWindow {
 
                             Text {
                                 anchors.centerIn: parent
-                                text: (notifItem.appName || "?").charAt(0).toUpperCase()
+                                text: (notifItem ? (notifItem.appName || "?") : "?").charAt(0).toUpperCase()
                                 color: Services.Theme.textPrimary
                                 font.bold: true
                                 font.pixelSize: 10
@@ -162,7 +335,8 @@ PanelWindow {
                             id: popIcon
                             anchors.fill: parent
                             source: {
-                                const icon = notifItem.appIcon
+                                const icon = notifItem ? (notifItem.appIcon || "") : ""
+                                if (!icon) return ""
                                 if (icon.startsWith("file://") || icon.startsWith("http://") || icon.startsWith("https://") || icon.startsWith("image://"))
                                     return icon
                                 if (icon.startsWith("/"))
@@ -183,7 +357,7 @@ PanelWindow {
                     }
 
                     Text {
-                        text: notifItem.appName || "Notification"
+                        text: (notifItem && notifItem.appName) ? notifItem.appName : "Notification"
                         color: Services.Theme.textDisabled
                         font.pixelSize: 10
                         font.bold: true
@@ -197,7 +371,9 @@ PanelWindow {
                         height: 18
                         radius: 5
                         color: closeMouse.containsMouse ? Services.Theme.danger : "transparent"
+                        scale: closeMouse.pressed ? 0.88 : (closeMouse.containsMouse ? 1.15 : 1.0)
                         Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                        Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutBack } }
 
                         Text {
                             anchors.centerIn: parent
@@ -213,7 +389,7 @@ PanelWindow {
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
                             onClicked: {
-                                Services.Notifications.dismiss(notifItem.notifId)
+                                card.dismissCard()
                             }
                         }
                     }
