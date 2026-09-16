@@ -83,11 +83,25 @@ Singleton {
         onTriggered: root.scan()
     }
 
+    Timer {
+        id: delayedScanTimer
+        interval: 350
+        repeat: false
+        onTriggered: {
+            if (Services.OverlayManager && Services.OverlayManager.wifiPanelVisible) {
+                root.refreshAll()
+            }
+        }
+    }
+
     Connections {
         target: Services.OverlayManager
         function onWifiPanelVisibleChanged() {
             if (Services.OverlayManager.wifiPanelVisible) {
-                root.refreshAll()
+                root.refresh()
+                delayedScanTimer.restart()
+            } else {
+                delayedScanTimer.stop()
             }
         }
     }

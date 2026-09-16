@@ -12,6 +12,7 @@ Singleton {
 
     // Internal cache of preprocessed search tokens
     property var _indexedApps: []
+    property var _allApps: []
 
     onAppListChanged: debounceTimer.restart()
     onQueryChanged: updateFiltered()
@@ -57,6 +58,19 @@ Singleton {
                 keywords = keywords.concat(app.categories.map(c => String(c).toLowerCase()))
             }
 
+            // Pre-resolve icon once during indexing so delegates don't do disk lookups
+            let rawIcon = ""
+            if (typeof app.icon === "string") {
+                rawIcon = app.icon
+            } else if (app.icon && app.icon.name) {
+                rawIcon = app.icon.name
+            }
+            if (rawIcon && Services.SystemTheme) {
+                app.resolvedIcon = Services.SystemTheme.getIcon(rawIcon)
+            } else {
+                app.resolvedIcon = ""
+            }
+
             indexed.push({
                 app: app,
                 name: app.name || "",
@@ -68,12 +82,14 @@ Singleton {
         }
 
         // Built-in Quickshell system shortcuts
+        const settingsIcon = Services.SystemTheme ? Services.SystemTheme.getIcon("preferences-system") : ""
         const builtins = [
             {
                 app: {
                     name: "Quickshell Settings",
                     description: "Configure theme, wallpaper, dynamic island, bar & widgets",
                     icon: "preferences-system",
+                    resolvedIcon: settingsIcon,
                     execute: function() { Services.OverlayManager.openSettings() }
                 },
                 name: "Quickshell Settings",
@@ -90,6 +106,12 @@ Singleton {
 
         // Sort base alphabetically
         indexed.sort((a, b) => a.name.localeCompare(b.name))
+
+        const all = new Array(indexed.length)
+        for (let k = 0; k < indexed.length; k++) {
+            all[k] = indexed[k].app
+        }
+        _allApps = all
         _indexedApps = indexed
         updateFiltered()
     }
@@ -102,11 +124,9 @@ Singleton {
         }
 
         if (q.length === 0) {
-            const res = new Array(_indexedApps.length)
-            for (let i = 0; i < _indexedApps.length; i++) {
-                res[i] = _indexedApps[i].app
+            if (filteredApps !== _allApps) {
+                filteredApps = _allApps
             }
-            filteredApps = res
             return
         }
 

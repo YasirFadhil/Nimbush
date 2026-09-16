@@ -90,7 +90,7 @@ Singleton {
     // React to Applications service indexing
     Connections {
         target: Services.Applications || null
-        function onFilteredAppsChanged() { rebuildDebounceTimer.restart() }
+        function on_IndexedAppsChanged() { rebuildDebounceTimer.restart() }
     }
 
     Component.onCompleted: {
@@ -662,7 +662,7 @@ Singleton {
         if (Services.Config) {
             Services.Config.setDockPinnedApps(current)
         }
-        rebuildDebounceTimer.restart()
+        _rebuildPinnedItems()
     }
 
     function resetToDefaultPinned() {

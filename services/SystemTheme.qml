@@ -69,6 +69,7 @@ Singleton {
     function setIconTheme(name) {
         if (!name || name === currentIconTheme) return
         currentIconTheme = name
+        _iconCache = {}
         execProc.lastAction = "set_icon_theme"
         execProc.pendingThemeName = name
         execProc.running = false
@@ -152,42 +153,50 @@ Singleton {
 
     // ── Native Icon Resolution ───────────────────────────────────────────────
     readonly property int iconThemeRev: 0
+    property var _iconCache: ({})
 
     function getIcon(iconName) {
         if (!iconName) return ""
         var s = typeof iconName === "string" ? iconName.trim() : (iconName.name || iconName.toString() || "").trim()
         if (!s) return ""
 
-        // If it's already an absolute file path or network URI
-        if (s.startsWith("file://") || s.startsWith("http://") || s.startsWith("https://")) return s
-        if (s.startsWith("/")) return "file://" + s
-        
-        // Strip image://icon/ if passed
-        if (s.startsWith("image://icon/")) s = s.substring(13).trim()
-        else if (s.startsWith("image://")) return s
-        if (!s) return ""
-
-        // 1. Quickshell theme resolution with fallback enabled
-        var qp = Quickshell.iconPath(s, true)
-        if (qp && qp.length > 0) {
-            return qp.startsWith("/") ? ("file://" + qp) : qp
+        if (_iconCache[s] !== undefined) {
+            return _iconCache[s]
         }
 
-        // 2. Strip file extension if desktop file supplied icon as "app.png" or "app.svg"
-        if (s.indexOf(".") !== -1) {
-            var baseName = s.replace(/\.[^/.]+$/, "")
-            if (baseName.length > 0) {
-                var qpBase = Quickshell.iconPath(baseName, true)
-                if (qpBase && qpBase.length > 0) {
-                    return qpBase.startsWith("/") ? ("file://" + qpBase) : qpBase
+        var result = ""
+
+        // If it's already an absolute file path or network URI
+        if (s.startsWith("file://") || s.startsWith("http://") || s.startsWith("https://")) {
+            result = s
+        } else if (s.startsWith("/")) {
+            result = "file://" + s
+        } else {
+            // Strip image://icon/ if passed
+            var clean = s
+            if (clean.startsWith("image://icon/")) clean = clean.substring(13).trim()
+            if (clean.startsWith("image://")) {
+                result = clean
+            } else if (clean.length > 0) {
+                // 1. Quickshell theme resolution with fallback enabled
+                var qp = Quickshell.iconPath(clean, true)
+                if (qp && qp.length > 0) {
+                    result = qp.startsWith("/") ? ("file://" + qp) : qp
+                } else if (clean.indexOf(".") !== -1) {
+                    // 2. Strip file extension if desktop file supplied icon as "app.png" or "app.svg"
+                    var baseName = clean.replace(/\.[^/.]+$/, "")
+                    if (baseName.length > 0) {
+                        var qpBase = Quickshell.iconPath(baseName, true)
+                        if (qpBase && qpBase.length > 0) {
+                            result = qpBase.startsWith("/") ? ("file://" + qpBase) : qpBase
+                        }
+                    }
                 }
             }
         }
 
-        // Return empty string when not found.
-        // NEVER return "image://icon/" + s because missing icons cause Qt to render
-        // a magenta/black checkered missing-texture pixmap that overrides QML fallbacks.
-        return ""
+        _iconCache[s] = result
+        return result
     }
 
     // ── Processes ────────────────────────────────────────────────────────────

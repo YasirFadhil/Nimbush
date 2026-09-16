@@ -157,7 +157,10 @@ Variants {
                 const itm = pinnedRepeater.itemAt(k)
                 if (!itm) continue
                 const center = root.isVertical ? (itm.y + itm.height / 2) : (itm.x + itm.width / 2)
-                const d = Math.abs(coord - center)
+                let d = Math.abs(coord - center)
+                if (k === targetDropIndex) {
+                    d -= 12
+                }
                 if (d < minDist) {
                     minDist = d
                     closestIdx = k
@@ -171,12 +174,18 @@ Variants {
         // Reaches bottom of monitor (zero bottom gap) and only 6px upward when hovered.
         mask: Region {
             Region {
-                x: (root.isRight && root.isHovered) ? Math.max(0, dockContainer.x - 6) : dockContainer.x
-                y: (root.isBottom && root.isHovered) ? Math.max(0, dockContainer.y - 6) : dockContainer.y
-                width: (root.isVertical && root.isHovered) ? (dockContainer.width + 6) : dockContainer.width
+                x: root.isRight
+                    ? Math.max(0, dockContainer.x - (root.isDraggingPinned ? 120 : (root.isHovered ? 6 : 0)))
+                    : (root.isLeft ? 0 : Math.max(0, dockContainer.x - (root.isDraggingPinned ? 60 : 0)))
+                y: root.isBottom
+                    ? Math.max(0, dockContainer.y - (root.isDraggingPinned ? 120 : (root.isHovered ? 6 : 0)))
+                    : (root.isVertical ? Math.max(0, dockContainer.y - (root.isDraggingPinned ? 60 : 0)) : dockContainer.y)
+                width: root.isVertical
+                    ? (dockContainer.width + (root.isDraggingPinned ? 120 : (root.isHovered ? 6 : 0)))
+                    : (dockContainer.width + (root.isDraggingPinned ? 120 : 0))
                 height: root.isBottom
-                    ? (dockContainer.height + root.edgeMargin + (root.isHovered ? 6 : 0))
-                    : ((root.isVertical && root.isHovered) ? (dockContainer.height + 6) : dockContainer.height)
+                    ? (dockContainer.height + root.edgeMargin + (root.isDraggingPinned ? 120 : (root.isHovered ? 6 : 0)))
+                    : ((root.isVertical && (root.isHovered || root.isDraggingPinned)) ? (dockContainer.height + 6) : dockContainer.height)
             }
             // Auto-hide bottom edge trigger strip (when autoHide is enabled)
             Region {
@@ -193,7 +202,7 @@ Variants {
             interval: 350
             repeat: false
             onTriggered: {
-                if (!hoverEdgeDetector.containsMouse && !dockTracker.containsMouse) {
+                if (!root.isDraggingPinned && !hoverEdgeDetector.containsMouse && !dockTracker.containsMouse) {
                     root.isHovered = false
                 }
             }
@@ -229,15 +238,15 @@ Variants {
                 if (root.isBottom) {
                     return Math.round((parent.width - width) / 2)
                 } else if (root.isLeft) {
-                    return !root.autoHide ? root.edgeMargin : (root.isHovered ? root.edgeMargin : (-width + 4))
+                    return !root.autoHide ? root.edgeMargin : ((root.isHovered || root.isDraggingPinned) ? root.edgeMargin : (-width + 4))
                 } else {
-                    return !root.autoHide ? (parent.width - width - root.edgeMargin) : (root.isHovered ? (parent.width - width - root.edgeMargin) : (parent.width - 4))
+                    return !root.autoHide ? (parent.width - width - root.edgeMargin) : ((root.isHovered || root.isDraggingPinned) ? (parent.width - width - root.edgeMargin) : (parent.width - 4))
                 }
             }
 
             y: {
                 if (root.isBottom) {
-                    return !root.autoHide ? (parent.height - height - root.edgeMargin) : (root.isHovered ? (parent.height - height - root.edgeMargin) : (parent.height - 4))
+                    return !root.autoHide ? (parent.height - height - root.edgeMargin) : ((root.isHovered || root.isDraggingPinned) ? (parent.height - height - root.edgeMargin) : (parent.height - 4))
                 } else {
                     return Math.round((parent.height - height) / 2)
                 }
@@ -282,13 +291,13 @@ Variants {
             MouseArea {
                 id: dockTracker
                 anchors.fill: parent
-                anchors.topMargin: (root.isBottom && root.isHovered) ? -6 : 0
+                anchors.topMargin: (root.isBottom && (root.isHovered || root.isDraggingPinned)) ? (root.isDraggingPinned ? -120 : -6) : 0
                 anchors.bottomMargin: root.isBottom ? -root.edgeMargin : 0
-                anchors.leftMargin: (root.isRight && root.isHovered) ? -6 : 0
-                anchors.rightMargin: (root.isLeft && root.isHovered) ? -6 : 0
+                anchors.leftMargin: (root.isRight && (root.isHovered || root.isDraggingPinned)) ? (root.isDraggingPinned ? -120 : -6) : 0
+                anchors.rightMargin: (root.isLeft && (root.isHovered || root.isDraggingPinned)) ? (root.isDraggingPinned ? -120 : -6) : 0
                 hoverEnabled: true
                 acceptedButtons: Qt.NoButton
-                cursorShape: Qt.PointingHandCursor
+                cursorShape: root.isDraggingPinned ? Qt.ClosedHandCursor : Qt.PointingHandCursor
                 z: 100
 
                 property real dockMousePos: -99999
@@ -316,6 +325,7 @@ Variants {
                     root.isHovered = true
                 }
                 onExited: {
+                    if (root.isDraggingPinned) return
                     dockMousePos = -99999
                     root.isHovered = false
                     if (root.autoHide) {
@@ -430,7 +440,7 @@ Variants {
                 property real dragOffsetX: 0
                 property real dragOffsetY: 0
 
-                readonly property real slotShift: root.iconSize * 1.1 + root.itemSpacing
+                readonly property real slotShift: root.iconSize + root.itemSpacing
                 readonly property real reorderShift: {
                     if (!root.isDraggingPinned || !isPinnedItem || isDraggingThis) return 0
                     if (root.draggedPinnedIndex < root.targetDropIndex) {
@@ -506,6 +516,8 @@ Variants {
                     scale: iconDelegate.isDraggingThis ? (iconDelegate.visualScale * 1.08) : iconDelegate.visualScale
                     opacity: iconDelegate.isDraggingThis ? 0.88 : 1.0
                     transformOrigin: root.isBottom ? Item.Bottom : (root.isLeft ? Item.Left : (root.isRight ? Item.Right : Item.Center))
+
+                    Behavior on opacity { NumberAnimation { duration: 120; easing.type: Easing.OutQuad } }
 
                     transform: [
                         Translate {
@@ -824,12 +836,17 @@ Variants {
 
                             if (!iconDelegate.isDraggingThis && iconDelegate.isPinnedItem && dist > 8) {
                                 iconDelegate.wasDragged = true
+                                iconDelegate.pressStartX = mouse.x
+                                iconDelegate.pressStartY = mouse.y
                                 root.startPinnedDrag(iconDelegate.index)
                             }
 
                             if (iconDelegate.isDraggingThis) {
-                                iconDelegate.dragOffsetX = dx
-                                iconDelegate.dragOffsetY = dy
+                                iconDelegate.dragOffsetX = mouse.x - iconDelegate.pressStartX
+                                iconDelegate.dragOffsetY = mouse.y - iconDelegate.pressStartY
+
+                                const posInDock = iconDelegate.mapToItem(dockTracker, mouse.x, mouse.y)
+                                dockTracker.updateMouse(posInDock.x, posInDock.y)
 
                                 const posInLayout = iconDelegate.mapToItem(itemsLayout, mouse.x, mouse.y)
                                 const coord = root.isVertical ? posInLayout.y : posInLayout.x
@@ -842,9 +859,9 @@ Variants {
                     onReleased: (mouse) => {
                         if (mouse.button === Qt.LeftButton) {
                             if (iconDelegate.isDraggingThis) {
+                                root.finishPinnedDrag()
                                 iconDelegate.dragOffsetX = 0
                                 iconDelegate.dragOffsetY = 0
-                                root.finishPinnedDrag()
                                 return
                             }
                         }
@@ -852,9 +869,9 @@ Variants {
 
                     onCanceled: () => {
                         if (iconDelegate.isDraggingThis) {
+                            root.cancelPinnedDrag()
                             iconDelegate.dragOffsetX = 0
                             iconDelegate.dragOffsetY = 0
-                            root.cancelPinnedDrag()
                         }
                     }
 

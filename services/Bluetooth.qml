@@ -131,12 +131,25 @@ Singleton {
         }
     }
 
+    Timer {
+        id: delayedBtTimer
+        interval: 350
+        repeat: false
+        onTriggered: {
+            if (Services.OverlayManager && Services.OverlayManager.btPanelVisible) {
+                root.listDevices()
+            }
+        }
+    }
+
     Connections {
         target: Services.OverlayManager
         function onBtPanelVisibleChanged() {
             if (Services.OverlayManager && Services.OverlayManager.btPanelVisible) {
                 root.refresh()
-                root.listDevices()
+                delayedBtTimer.restart()
+            } else {
+                delayedBtTimer.stop()
             }
         }
     }

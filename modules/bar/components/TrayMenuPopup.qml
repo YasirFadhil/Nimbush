@@ -14,22 +14,29 @@ PanelWindow {
     property real targetX: parent ? parent.width - 150 : 0
     readonly property bool isBottom: Services.Config ? (Services.Config.barPosition === "bottom") : false
 
+    property bool isOpen: false
+
     anchors { top: true; bottom: true; left: true; right: true }
     color: "transparent"
     exclusiveZone: 0
-    visible: activeMenu !== null
+    visible: isOpen || (popupCard && popupCard.opacity > 0.01)
     WlrLayershell.layer: WlrLayer.Top
     WlrLayershell.namespace: "quickshell:traymenu"
-    WlrLayershell.keyboardFocus: WlrKeyboardFocus.OnDemand
+    WlrLayershell.keyboardFocus: root.isOpen ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
+
+    onVisibleChanged: {
+        if (!visible) activeItem = null
+    }
 
     function openAt(item, xPos) {
         Services.OverlayManager.closeAllExcept(root)
         targetX = xPos
         activeItem = item
+        isOpen = true
     }
 
     function close() {
-        activeItem = null
+        isOpen = false
     }
     function hide() { close() }
 
@@ -42,13 +49,14 @@ PanelWindow {
 
     Item {
         id: escFocus
-        focus: root.visible
+        focus: root.isOpen
         Keys.onEscapePressed: root.close()
     }
 
     // Backdrop: clicking anywhere outside closes the popup
     MouseArea {
         anchors.fill: parent
+        enabled: root.isOpen
         onClicked: root.close()
 
         Rectangle {
@@ -63,10 +71,10 @@ PanelWindow {
             border.width: 1
             clip: true
 
-            opacity: root.visible ? 1.0 : 0.0
-            scale: root.visible ? 1.0 : 0.96
+            opacity: root.isOpen ? 1.0 : 0.0
+            scale: root.isOpen ? 1.0 : 0.96
             transform: Translate {
-                y: root.visible ? 0 : (root.isBottom ? 20 : -20)
+                y: root.isOpen ? 0 : (root.isBottom ? 20 : -20)
                 Behavior on y { NumberAnimation { duration: 280; easing.type: Easing.OutCubic } }
             }
             Behavior on opacity { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }

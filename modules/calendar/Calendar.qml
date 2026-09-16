@@ -16,7 +16,8 @@ PanelWindow {
     anchors { top: true; bottom: true; left: true; right: true }
     color: "transparent"
     exclusiveZone: 0
-    visible: Services.OverlayManager.calendarVisible
+    readonly property bool isOpen: Services.OverlayManager.calendarVisible
+    visible: isOpen || (panel && panel.opacity > 0.01)
     WlrLayershell.layer: WlrLayer.Top
     WlrLayershell.namespace: "quickshell:calendar"
     WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
@@ -32,7 +33,7 @@ PanelWindow {
 
     Item {
         id: escFocus
-        focus: Services.OverlayManager.calendarVisible
+        focus: root.isOpen
         Keys.onEscapePressed: root.close()
     }
 
@@ -62,6 +63,7 @@ PanelWindow {
 
     MouseArea {
         anchors.fill: parent
+        enabled: root.isOpen
         onClicked: root.close()
 
         Rectangle {
@@ -76,10 +78,10 @@ PanelWindow {
             border.width: 1
             clip: true
 
-            opacity: Services.OverlayManager.calendarVisible ? 1.0 : 0.0
-            scale: Services.OverlayManager.calendarVisible ? 1.0 : 0.96
+            opacity: root.isOpen ? 1.0 : 0.0
+            scale: root.isOpen ? 1.0 : 0.96
             transform: Translate {
-                y: Services.OverlayManager.calendarVisible ? 0 : (root.isBottom ? 20 : -20)
+                y: root.isOpen ? 0 : (root.isBottom ? 20 : -20)
                 Behavior on y { NumberAnimation { duration: 280; easing.type: Easing.OutCubic } }
             }
             Behavior on opacity { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
