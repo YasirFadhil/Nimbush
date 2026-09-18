@@ -1,6 +1,7 @@
 // DynamicIsland.qml
 import QtQuick
 import QtQuick.Layouts
+import QtQuick.Effects
 import Quickshell
 import Quickshell.Io
 import Quickshell.Widgets
@@ -2441,6 +2442,10 @@ Item {
                 ListView {
                     id: islandWallList
                     anchors.fill: parent
+                    anchors.topMargin: 3
+                    anchors.bottomMargin: 4
+                    anchors.leftMargin: 2
+                    anchors.rightMargin: 2
                     orientation: ListView.Horizontal
                     spacing: 8
                     clip: true
@@ -2504,54 +2509,71 @@ Item {
                         )
 
                         // Wallpaper Card
-                        Rectangle {
+                        Item {
+                            id: iCardRect
                             anchors.fill: parent
-                            radius: 10
-                            color: Services.Theme.surfaceVariant
-                            border.color: (iWallCell.isActive || iWallCell.isSelected)
-                                ? Services.Theme.accent
-                                : (iWallMouse.containsMouse ? Services.Theme.borderHighlight : Services.Theme.borderSubtle)
-                            border.width: (iWallCell.isActive || iWallCell.isSelected) ? 2 : 1
-                            clip: true
-                            scale: (iWallMouse.containsMouse || iWallCell.isSelected) ? 1.03 : 1.0
+                            anchors.margins: 2
                             visible: !iWallCell.isAdd
 
-                            Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
-                            Behavior on border.color { ColorAnimation { duration: 150 } }
-
-                            Image {
+                            // Base container holding image + gradient, masked to radius 10
+                            Item {
+                                id: iCardContent
                                 anchors.fill: parent
-                                source: (iWallCell.modelData && iWallCell.modelData.path) ? ("file://" + iWallCell.modelData.path) : ""
-                                fillMode: Image.PreserveAspectCrop
-                                asynchronous: true
-                                cache: true
-                                sourceSize: Qt.size(248, 148)
-                            }
+                                layer.enabled: true
+                                layer.effect: MultiEffect {
+                                    maskEnabled: true
+                                    maskSource: iCardMask
+                                }
 
-                            // Active Checkmark Pill
-                            Rectangle {
-                                anchors.top: parent.top; anchors.right: parent.right
-                                anchors.margins: 4
-                                width: 18; height: 18; radius: 9
-                                color: Services.Theme.accent
-                                visible: iWallCell.isActive
+                                Rectangle {
+                                    anchors.fill: parent
+                                    color: Services.Theme.surfaceVariant
+                                }
 
-                                Text {
-                                    anchors.centerIn: parent
-                                    text: "✓"
-                                    color: Services.Theme.bgOnAccent
-                                    font.pixelSize: 10
-                                    font.bold: true
+                                Image {
+                                    anchors.fill: parent
+                                    source: (iWallCell.modelData && iWallCell.modelData.path) ? ("file://" + iWallCell.modelData.path) : ""
+                                    fillMode: Image.PreserveAspectCrop
+                                    asynchronous: true
+                                    cache: true
+                                    sourceSize: Qt.size(248, 148)
+                                }
+
+                                // Bottom shadow gradient for text readability
+                                Rectangle {
+                                    anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom
+                                    height: 30
+                                    gradient: Gradient {
+                                        GradientStop { position: 0.0; color: "transparent" }
+                                        GradientStop { position: 0.4; color: Qt.rgba(0, 0, 0, 0.45) }
+                                        GradientStop { position: 1.0; color: Qt.rgba(0, 0, 0, 0.88) }
+                                    }
                                 }
                             }
 
-                            // Dynamic Icon Badge (subtle)
+                            // Rounded Mask Shape
+                            Item {
+                                id: iCardMask
+                                anchors.fill: parent
+                                visible: false
+                                layer.enabled: true
+                                Rectangle {
+                                    anchors.fill: parent
+                                    radius: 10
+                                    color: "black"
+                                }
+                            }
+
+                            // Dynamic Icon Badge (subtle, top-left)
                             Rectangle {
                                 anchors.top: parent.top; anchors.left: parent.left
-                                anchors.margins: 4
+                                anchors.margins: 6
                                 width: 18; height: 18; radius: 9
-                                color: Qt.rgba(0, 0, 0, 0.65)
+                                color: Qt.rgba(0, 0, 0, 0.72)
+                                border.color: Qt.rgba(255, 255, 255, 0.25)
+                                border.width: 1
                                 visible: iWallCell.modelData && iWallCell.modelData.isDynamic === true
+                                z: 4
 
                                 Text {
                                     anchors.centerIn: parent
@@ -2562,41 +2584,73 @@ Item {
                                 }
                             }
 
-                            // Bottom Gradient with Wallpaper Title
+                            // Active Checkmark Pill (top-right)
                             Rectangle {
-                                anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom
-                                height: 26
-                                gradient: Gradient {
-                                    GradientStop { position: 0.0; color: "transparent" }
-                                    GradientStop { position: 0.4; color: Qt.rgba(0, 0, 0, 0.4) }
-                                    GradientStop { position: 1.0; color: Qt.rgba(0, 0, 0, 0.85) }
-                                }
+                                anchors.top: parent.top; anchors.right: parent.right
+                                anchors.margins: 6
+                                width: 18; height: 18; radius: 9
+                                color: Services.Theme.accent
+                                border.color: Qt.rgba(255, 255, 255, 0.4)
+                                border.width: 1
+                                visible: iWallCell.isActive
+                                z: 4
 
                                 Text {
-                                    anchors.fill: parent
-                                    anchors.leftMargin: 6; anchors.rightMargin: 6; anchors.bottomMargin: 2
-                                    verticalAlignment: Text.AlignBottom
-                                    text: (iWallCell.modelData && iWallCell.modelData.name) ? iWallCell.modelData.name : "Wallpaper"
-                                    color: Services.Theme.white
-                                    font.pixelSize: 9
-                                    font.bold: iWallCell.isActive || iWallCell.isSelected
-                                    elide: Text.ElideRight
+                                    anchors.centerIn: parent
+                                    text: "✓"
+                                    color: Services.Theme.bgOnAccent
+                                    font.pixelSize: 10
+                                    font.bold: true
                                 }
+                            }
+
+                            // Bottom Wallpaper Title (Crisp, perfectly padded from borders)
+                            Text {
+                                anchors.left: parent.left
+                                anchors.right: parent.right
+                                anchors.bottom: parent.bottom
+                                anchors.leftMargin: 8
+                                anchors.rightMargin: 8
+                                anchors.bottomMargin: 6
+                                text: (iWallCell.modelData && iWallCell.modelData.name) ? iWallCell.modelData.name : "Wallpaper"
+                                color: Services.Theme.white
+                                font.pixelSize: 9
+                                font.bold: iWallCell.isActive || iWallCell.isSelected
+                                elide: Text.ElideRight
+                                z: 4
+                            }
+
+                            // Outer Border Ring (Exact 10px radius, perfectly aligned on top of mask)
+                            Rectangle {
+                                id: iCardBorderOverlay
+                                anchors.fill: parent
+                                radius: 10
+                                color: "transparent"
+                                z: 6
+                                antialiasing: true
+                                border.color: iWallCell.isSelected
+                                    ? Services.Theme.accent
+                                    : (iWallCell.isActive
+                                        ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.45)
+                                        : (iWallMouse.containsMouse ? Qt.rgba(255, 255, 255, 0.3) : Qt.rgba(255, 255, 255, 0.10)))
+                                border.width: iWallCell.isSelected ? 2 : 1
+                                Behavior on border.color { ColorAnimation { duration: 150 } }
+                                Behavior on border.width { NumberAnimation { duration: 150 } }
                             }
                         }
 
                         // Add Image Card
                         Rectangle {
                             anchors.fill: parent
+                            anchors.margins: 2
                             radius: 10
                             color: (iAddMouse.containsMouse || iWallCell.isSelected) ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.12) : Qt.rgba(255, 255, 255, 0.03)
-                            border.color: (iAddMouse.containsMouse || iWallCell.isSelected) ? Services.Theme.accent : Services.Theme.borderSubtle
-                            border.width: iWallCell.isSelected ? 2 : 1
-                            scale: (iAddMouse.containsMouse || iWallCell.isSelected) ? 1.03 : 1.0
+                            border.color: (iAddMouse.containsMouse || iWallCell.isSelected) ? Services.Theme.accent : Qt.rgba(255, 255, 255, 0.10)
+                            border.width: (iAddMouse.containsMouse || iWallCell.isSelected) ? 2 : 1
                             visible: iWallCell.isAdd
 
-                            Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
                             Behavior on border.color { ColorAnimation { duration: 150 } }
+                            Behavior on border.width { NumberAnimation { duration: 150 } }
 
                             ColumnLayout {
                                 anchors.centerIn: parent

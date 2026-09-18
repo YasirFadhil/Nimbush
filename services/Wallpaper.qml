@@ -36,6 +36,11 @@ Singleton {
     property var allWallpapers: []
     property bool isPicking: false
 
+    property bool hasSwww: true
+    property bool daemonReady: false
+    property string pendingWallpaper: ""
+    property string lastAppliedWallpaper: ""
+
     readonly property string configPath: homeDir + "/.cache/quickshell/wallpaper_config.json"
     readonly property string declConfigPath: homeDir + "/.config/quickshell/wallpaper_config.json"
     readonly property string pickerScript: {
@@ -52,7 +57,6 @@ Singleton {
         swwwDaemonProc.running = true
         updateAllList()
         loadConfigProc.running = true
-        applyToSwww(currentWallpaper)
     }
 
     Connections {
@@ -78,8 +82,23 @@ Singleton {
 
     function applyToSwww(filePath) {
         if (!filePath) return
+
+        if (!daemonReady) {
+            pendingWallpaper = filePath
+            return
+        }
+
+        if (swwwProc.running) {
+            pendingWallpaper = filePath
+            return
+        }
+
+        if (lastAppliedWallpaper === filePath && pendingWallpaper === "") {
+            return
+        }
+
+        lastAppliedWallpaper = filePath
         swwwProc.targetFile = filePath
-        swwwProc.running = false
         swwwProc.running = true
     }
 
@@ -124,8 +143,42 @@ Singleton {
         id: swwwDaemonProc
         command: [
             "sh", "-c",
-            "if command -v awww-daemon >/dev/null 2>&1; then (pgrep -x awww-daemon >/dev/null || nohup awww-daemon >/dev/null 2>&1 &); elif command -v swww-daemon >/dev/null 2>&1; then (pgrep -x swww-daemon >/dev/null || nohup swww-daemon >/dev/null 2>&1 &); fi"
+            "if command -v awww-daemon >/dev/null 2>&1; then " +
+            "  if ! pgrep -x awww-daemon >/dev/null 2>&1; then nohup awww-daemon </dev/null >/dev/null 2>&1 & fi; " +
+            "  for i in $(seq 1 30); do if awww query >/dev/null 2>&1; then echo 'ready'; exit 0; fi; sleep 0.05; done; " +
+            "  echo 'ready'; exit 0; " +
+            "elif command -v swww-daemon >/dev/null 2>&1; then " +
+            "  if ! pgrep -x swww-daemon >/dev/null 2>&1; then nohup swww-daemon </dev/null >/dev/null 2>&1 & fi; " +
+            "  for i in $(seq 1 30); do if swww query >/dev/null 2>&1; then echo 'ready'; exit 0; fi; sleep 0.05; done; " +
+            "  echo 'ready'; exit 0; " +
+            "else echo 'none'; exit 1; fi"
         ]
+        stdout: SplitParser {
+            onRead: data => {
+                var str = data.trim()
+                if (str.indexOf("ready") !== -1) {
+                    root.hasSwww = true
+                    root.daemonReady = true
+                } else if (str.indexOf("none") !== -1) {
+                    root.hasSwww = false
+                    root.daemonReady = false
+                }
+            }
+        }
+        onExited: (exitCode, exitStatus) => {
+            if (exitCode === 0) {
+                root.hasSwww = true
+                root.daemonReady = true
+                var target = (root.pendingWallpaper.length > 0) ? root.pendingWallpaper : root.currentWallpaper
+                root.pendingWallpaper = ""
+                if (target && target.length > 0) {
+                    root.applyToSwww(target)
+                }
+            } else {
+                root.hasSwww = false
+                root.daemonReady = false
+            }
+        }
     }
 
     Process {
@@ -133,9 +186,20 @@ Singleton {
         property string targetFile: ""
         command: [
             "sh", "-c",
-            "if command -v awww >/dev/null 2>&1; then awww img \"$1\" --transition-type grow --transition-pos center --transition-duration 0.5 --transition-fps 60 --transition-bezier .25,1,.5,1; elif command -v swww >/dev/null 2>&1; then swww img \"$1\" --transition-type grow --transition-pos center --transition-duration 0.5 --transition-fps 60 --transition-bezier .25,1,.5,1; fi",
+            "if command -v awww >/dev/null 2>&1; then " +
+            "  awww img \"$1\" --transition-type grow --transition-pos center --transition-duration 0.7 --transition-fps 60 --transition-bezier .25,1,.5,1; " +
+            "elif command -v swww >/dev/null 2>&1; then " +
+            "  swww img \"$1\" --transition-type grow --transition-pos center --transition-duration 0.7 --transition-fps 60 --transition-bezier .25,1,.5,1; " +
+            "fi",
             "_", targetFile
         ]
+        onExited: (exitCode, exitStatus) => {
+            if (root.pendingWallpaper.length > 0 && root.pendingWallpaper !== root.lastAppliedWallpaper) {
+                var next = root.pendingWallpaper
+                root.pendingWallpaper = ""
+                root.applyToSwww(next)
+            }
+        }
     }
 
     FileDialog {
@@ -166,25 +230,19 @@ Singleton {
     }
 
     function pickCustomWallpaper() {
+        if (pickerProc.running) return
         root.isPicking = true
         root.isPickingLockscreen = false
-        try {
-            nativeWallpaperDialog.open()
-        } catch (e) {
-            pickerProc.running = false
-            pickerProc.running = true
-        }
+        pickerProc.running = false
+        pickerProc.running = true
     }
 
     function pickLockscreenWallpaper() {
+        if (lockscreenPickerProc.running) return
         root.isPickingLockscreen = true
         root.isPicking = false
-        try {
-            nativeWallpaperDialog.open()
-        } catch (e) {
-            lockscreenPickerProc.running = false
-            lockscreenPickerProc.running = true
-        }
+        lockscreenPickerProc.running = false
+        lockscreenPickerProc.running = true
     }
 
     function removeCustomWallpaper(filePath) {
@@ -333,6 +391,9 @@ Singleton {
                 root.setWallpaper(isLight3 ? root.lightWallbler : root.darkWallbler)
             }
             root.updateAllList()
+            if (root.daemonReady && root.lastAppliedWallpaper !== root.currentWallpaper) {
+                root.applyToSwww(root.currentWallpaper)
+            }
         }
     }
 
