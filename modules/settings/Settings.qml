@@ -3429,8 +3429,6 @@ FloatingWindow {
                                                     radius: 8
                                                     clip: true
                                                     readonly property bool isCur: Services.Wallpaper && Services.Wallpaper.currentWallpaper === modelData.path
-                                                    border.color: isCur ? Services.Theme.accent : (wCardMouse.containsMouse ? Services.Theme.borderHighlight : Services.Theme.border)
-                                                    border.width: isCur ? 2 : 1
                                                     color: Services.Theme.bgDeep
                                                     scale: isCur ? 1.03 : (wCardMouse.pressed ? 0.96 : (wCardMouse.containsMouse ? 1.02 : 1.0))
                                                     Behavior on scale { NumberAnimation { duration: 200; easing.type: Easing.OutBack; easing.overshoot: 1.35 } }
@@ -3453,6 +3451,18 @@ FloatingWindow {
                                                         width: 18; height: 18; radius: 9
                                                         color: Services.Theme.accent
                                                         Text { anchors.centerIn: parent; text: Services.Icons.check || "✓"; font.family: Services.Theme.fontSymbols; font.pixelSize: 9; color: Services.Theme.bgOnAccent }
+                                                    }
+
+                                                    // Top-level Highlight Border Overlay (Rendered above image)
+                                                    Rectangle {
+                                                        anchors.fill: parent
+                                                        radius: 8
+                                                        color: "transparent"
+                                                        z: 6
+                                                        border.color: isCur ? Services.Theme.accent : (wCardMouse.containsMouse ? Services.Theme.borderHighlight : Qt.rgba(255, 255, 255, 0.12))
+                                                        border.width: isCur ? 2 : (wCardMouse.containsMouse ? 1.5 : 1)
+                                                        Behavior on border.color { ColorAnimation { duration: 150 } }
+                                                        Behavior on border.width { NumberAnimation { duration: 150 } }
                                                     }
 
                                                     Rectangle {
@@ -5128,32 +5138,6 @@ FloatingWindow {
                                                 }
                                             }
 
-                                            // Reset custom photo icon on corner
-                                            Rectangle {
-                                                visible: Services.OsInfo.isCustomAvatar && previewCardMouse.containsMouse
-                                                anchors.top: parent.top
-                                                anchors.right: parent.right
-                                                anchors.topMargin: -3
-                                                anchors.rightMargin: -3
-                                                width: 18; height: 18
-                                                radius: 9
-                                                color: Services.Theme.danger || "#ef4444"
-                                                z: 10
-
-                                                Text {
-                                                    anchors.centerIn: parent
-                                                    text: "✕"
-                                                    font.pixelSize: 9
-                                                    font.weight: Font.Bold
-                                                    color: "#ffffff"
-                                                }
-
-                                                MouseArea {
-                                                    anchors.fill: parent
-                                                    cursorShape: Qt.PointingHandCursor
-                                                    onClicked: Services.OsInfo.clearCustomAvatar()
-                                                }
-                                            }
 
                                             MouseArea {
                                                 id: previewCardMouse
@@ -5193,6 +5177,91 @@ FloatingWindow {
 
                                         // Spacer pushing content to the left
                                         Item { Layout.fillWidth: true }
+
+                                        // Action Buttons Group
+                                        RowLayout {
+                                            spacing: 8
+                                            Layout.alignment: Qt.AlignVCenter
+
+                                            // Choose Photo / Change Avatar Button
+                                            Rectangle {
+                                                implicitHeight: 32
+                                                implicitWidth: chooseAvatarRow.implicitWidth + 24
+                                                radius: 6
+                                                color: chooseAvatarMouse.containsMouse 
+                                                    ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.22)
+                                                    : Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.12)
+                                                border.color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.45)
+                                                border.width: 1
+
+                                                RowLayout {
+                                                    id: chooseAvatarRow
+                                                    anchors.centerIn: parent
+                                                    spacing: 6
+
+                                                    Text {
+                                                        text: "󰄀"
+                                                        font.family: Services.Theme.fontSymbols
+                                                        font.pixelSize: 13
+                                                        color: Services.Theme.accent
+                                                    }
+
+                                                    Text {
+                                                        text: Services.OsInfo.isPickingAvatar ? "Opening..." : "Choose Image"
+                                                        font.pixelSize: Services.Theme.fontSizeSm
+                                                        font.weight: Font.DemiBold
+                                                        color: Services.Theme.accent
+                                                    }
+                                                }
+
+                                                MouseArea {
+                                                    id: chooseAvatarMouse
+                                                    anchors.fill: parent
+                                                    cursorShape: Qt.PointingHandCursor
+                                                    hoverEnabled: true
+                                                    onClicked: Services.OsInfo.pickCustomAvatar()
+                                                }
+                                            }
+
+                                            // Reset Button (if custom avatar set)
+                                            Rectangle {
+                                                visible: Services.OsInfo.isCustomAvatar
+                                                implicitHeight: 32
+                                                implicitWidth: resetAvatarRow.implicitWidth + 20
+                                                radius: 6
+                                                color: resetAvatarMouse.containsMouse 
+                                                    ? (Services.Theme.isDark ? "#2a1e20" : "#fee2e2")
+                                                    : "transparent"
+                                                border.color: Services.Theme.border
+                                                border.width: 1
+
+                                                RowLayout {
+                                                    id: resetAvatarRow
+                                                    anchors.centerIn: parent
+                                                    spacing: 5
+
+                                                    Text {
+                                                        text: "✕"
+                                                        font.pixelSize: 10
+                                                        color: Services.Theme.textSecondary
+                                                    }
+
+                                                    Text {
+                                                        text: "Reset"
+                                                        font.pixelSize: Services.Theme.fontSizeSm
+                                                        color: Services.Theme.textSecondary
+                                                    }
+                                                }
+
+                                                MouseArea {
+                                                    id: resetAvatarMouse
+                                                    anchors.fill: parent
+                                                    cursorShape: Qt.PointingHandCursor
+                                                    hoverEnabled: true
+                                                    onClicked: Services.OsInfo.clearCustomAvatar()
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -5519,8 +5588,6 @@ FloatingWindow {
                                                         clip: true
                                                         readonly property string curCustomWp: Services.Config ? Services.Config.lockscreenCustomWallpaper : ""
                                                         readonly property bool isCur: curCustomWp === modelData.path || (curCustomWp === "" && Services.Wallpaper && Services.Wallpaper.currentWallpaper === modelData.path)
-                                                        border.color: isCur ? Services.Theme.accent : (lwCardMouse.containsMouse ? Services.Theme.borderHighlight : Services.Theme.border)
-                                                        border.width: isCur ? 2 : 1
                                                         color: Services.Theme.bgDeep
                                                         scale: isCur ? 1.02 : (lwCardMouse.pressed ? 0.96 : (lwCardMouse.containsMouse ? 1.02 : 1.0))
                                                         Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutBack; easing.overshoot: 1.3 } }
@@ -5544,6 +5611,18 @@ FloatingWindow {
                                                             width: 16; height: 16; radius: 8
                                                             color: Services.Theme.accent
                                                             Text { anchors.centerIn: parent; text: Services.Icons.check || "✓"; font.family: Services.Theme.fontSymbols; font.pixelSize: 8; color: Services.Theme.bgOnAccent }
+                                                        }
+
+                                                        // Top-level Highlight Border Overlay (Rendered above image)
+                                                        Rectangle {
+                                                            anchors.fill: parent
+                                                            radius: 7
+                                                            color: "transparent"
+                                                            z: 6
+                                                            border.color: isCur ? Services.Theme.accent : (lwCardMouse.containsMouse ? Services.Theme.borderHighlight : Qt.rgba(255, 255, 255, 0.12))
+                                                            border.width: isCur ? 2 : (lwCardMouse.containsMouse ? 1.5 : 1)
+                                                            Behavior on border.color { ColorAnimation { duration: 150 } }
+                                                            Behavior on border.width { NumberAnimation { duration: 150 } }
                                                         }
 
                                                         MouseArea {
@@ -9720,7 +9799,7 @@ FloatingWindow {
                                                 Rectangle {
                                                     anchors.fill: parent
                                                     radius: 5
-                                                    color: subMouse.containsMouse && !isCur ? Qt.rgba(1, 1, 1, 0.05) : "transparent"
+                                                    color: keySubMouse.containsMouse && !isCur ? Qt.rgba(1, 1, 1, 0.05) : "transparent"
                                                     Behavior on color { ColorAnimation { duration: 150 } }
                                                 }
 
@@ -10314,32 +10393,6 @@ FloatingWindow {
                                             }
                                         }
 
-                                        // Reset button if custom avatar
-                                        Rectangle {
-                                            visible: Services.OsInfo.isCustomAvatar && aboutHeroAvatarMouse.containsMouse
-                                            anchors.top: parent.top
-                                            anchors.right: parent.right
-                                            anchors.topMargin: -3
-                                            anchors.rightMargin: -3
-                                            width: 18; height: 18
-                                            radius: 9
-                                            color: Services.Theme.danger || "#ef4444"
-                                            z: 10
-
-                                            Text {
-                                                anchors.centerIn: parent
-                                                text: "✕"
-                                                font.pixelSize: 9
-                                                font.weight: Font.Bold
-                                                color: "#ffffff"
-                                            }
-
-                                            MouseArea {
-                                                anchors.fill: parent
-                                                cursorShape: Qt.PointingHandCursor
-                                                onClicked: Services.OsInfo.clearCustomAvatar()
-                                            }
-                                        }
 
                                         MouseArea {
                                             id: aboutHeroAvatarMouse
@@ -10379,6 +10432,91 @@ FloatingWindow {
 
                                     // Spacer pushing content to the left
                                     Item { Layout.fillWidth: true }
+
+                                    // Action Buttons Group
+                                    RowLayout {
+                                        spacing: 8
+                                        Layout.alignment: Qt.AlignVCenter
+
+                                        // Choose Photo / Change Avatar Button
+                                        Rectangle {
+                                            implicitHeight: 32
+                                            implicitWidth: aboutChooseAvatarRow.implicitWidth + 24
+                                            radius: 6
+                                            color: aboutChooseAvatarMouse.containsMouse 
+                                                ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.22)
+                                                : Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.12)
+                                            border.color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.45)
+                                            border.width: 1
+
+                                            RowLayout {
+                                                id: aboutChooseAvatarRow
+                                                anchors.centerIn: parent
+                                                spacing: 6
+
+                                                Text {
+                                                    text: "󰄀"
+                                                    font.family: Services.Theme.fontSymbols
+                                                    font.pixelSize: 13
+                                                    color: Services.Theme.accent
+                                                }
+
+                                                Text {
+                                                    text: Services.OsInfo.isPickingAvatar ? "Opening..." : "Choose Image"
+                                                    font.pixelSize: Services.Theme.fontSizeSm
+                                                    font.weight: Font.DemiBold
+                                                    color: Services.Theme.accent
+                                                }
+                                            }
+
+                                            MouseArea {
+                                                id: aboutChooseAvatarMouse
+                                                anchors.fill: parent
+                                                cursorShape: Qt.PointingHandCursor
+                                                hoverEnabled: true
+                                                onClicked: Services.OsInfo.pickCustomAvatar()
+                                            }
+                                        }
+
+                                        // Reset Button (if custom avatar set)
+                                        Rectangle {
+                                            visible: Services.OsInfo.isCustomAvatar
+                                            implicitHeight: 32
+                                            implicitWidth: aboutResetAvatarRow.implicitWidth + 20
+                                            radius: 6
+                                            color: aboutResetAvatarMouse.containsMouse 
+                                                ? (Services.Theme.isDark ? "#2a1e20" : "#fee2e2")
+                                                : "transparent"
+                                            border.color: Services.Theme.border
+                                            border.width: 1
+
+                                            RowLayout {
+                                                id: aboutResetAvatarRow
+                                                anchors.centerIn: parent
+                                                spacing: 5
+
+                                                Text {
+                                                    text: "✕"
+                                                    font.pixelSize: 10
+                                                    color: Services.Theme.textSecondary
+                                                }
+
+                                                Text {
+                                                    text: "Reset"
+                                                    font.pixelSize: Services.Theme.fontSizeSm
+                                                    color: Services.Theme.textSecondary
+                                                }
+                                            }
+
+                                            MouseArea {
+                                                id: aboutResetAvatarMouse
+                                                anchors.fill: parent
+                                                cursorShape: Qt.PointingHandCursor
+                                                hoverEnabled: true
+                                                onClicked: Services.OsInfo.clearCustomAvatar()
+                                            }
+                                        }
+                                    }
                                 }
                             }
 

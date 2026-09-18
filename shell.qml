@@ -262,6 +262,7 @@ ShellRoot {
         function toggle(): void { if (!Services.OverlayManager.isLocked && !Services.OverlayManager.isWizardActive) Services.OverlayManager.wallpaperToggleRequested() }
         function show():   void { if (!Services.OverlayManager.isLocked && !Services.OverlayManager.isWizardActive) Services.OverlayManager.wallpaperShowRequested() }
         function hide():   void { if (!Services.OverlayManager.isLocked && !Services.OverlayManager.isWizardActive) Services.OverlayManager.wallpaperToggleRequested() }
+        function set(path: string): void { if (Services.Wallpaper) Services.Wallpaper.setWallpaper(path) }
     }
 
     IpcHandler {
@@ -269,6 +270,7 @@ ShellRoot {
         function toggle(): void { if (!Services.OverlayManager.isLocked && !Services.OverlayManager.isWizardActive) Services.OverlayManager.wallpaperToggleRequested() }
         function show():   void { if (!Services.OverlayManager.isLocked && !Services.OverlayManager.isWizardActive) Services.OverlayManager.wallpaperShowRequested() }
         function hide():   void { if (!Services.OverlayManager.isLocked && !Services.OverlayManager.isWizardActive) Services.OverlayManager.wallpaperToggleRequested() }
+        function set(path: string): void { if (Services.Wallpaper) Services.Wallpaper.setWallpaper(path) }
     }
 
     // ── Emoji Picker ─────────────────────────────────────────────────────────

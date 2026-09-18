@@ -152,13 +152,10 @@ Singleton {
     }
 
     function pickCustomAvatar() {
+        if (avatarPickerProc.running) return
         root.isPickingAvatar = true
-        try {
-            nativeAvatarDialog.open()
-        } catch (e) {
-            avatarPickerProc.running = false
-            avatarPickerProc.running = true
-        }
+        avatarPickerProc.running = false
+        avatarPickerProc.running = true
     }
 
     function clearCustomAvatar() {
