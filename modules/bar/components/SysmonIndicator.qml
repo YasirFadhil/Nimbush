@@ -13,8 +13,34 @@ Rectangle {
 
     readonly property bool isActive: Services.OverlayManager ? Services.OverlayManager.sysmonPanelVisible : false
 
+    // ── Tray layout contract ──────────────────────────────────────
+    property bool trayCompact: false
+    property bool trayYielded: false
+    property int hPadOverride: -1
+
+    readonly property int baseHPad: isMinimal ? 12 : 20
+    readonly property int hPad: hPadOverride >= 0 ? hPadOverride : baseHPad
+    readonly property int innerSpacing: isMinimal ? 4 : 6
+
+    TextMetrics {
+        id: mIcon
+        font.family: Services.Theme.fontSymbols
+        font.pixelSize: sysmonPill.isMinimal ? Services.Theme.fontSizeMd : Services.Theme.fontSizeXl
+        text: Services.Icons.cpu
+    }
+    TextMetrics {
+        id: mPct
+        font.family: Services.Theme.fontMono
+        font.pixelSize: sysmonPill.isMinimal ? Services.Theme.fontSizeSm : Services.Theme.fontSizeMd
+        // Pakai lebar tetap 3 digit ("100%"), bukan nilai live, agar tidak recompute tiap detik
+        text: "100%"
+    }
+
+    readonly property real trayWidthCompact: Math.ceil(mIcon.width) + baseHPad
+    readonly property real trayWidthFull: trayWidthCompact + innerSpacing + Math.ceil(mPct.width)
+
     implicitHeight: isMinimal ? 24 : 28
-    implicitWidth: sysmonRow.implicitWidth + (isMinimal ? 12 : 20)
+    implicitWidth: trayCompact ? trayWidthCompact : trayWidthFull
     radius: isMinimal ? 6 : (isIslands ? 14 : 10)
 
     color: (sysmonMouse.containsMouse || isActive) ? Services.Theme.bgHover 
@@ -31,26 +57,39 @@ Rectangle {
     Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
     Behavior on border.color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
-    RowLayout {
-        id: sysmonRow
-        anchors.centerIn: parent
-        spacing: isMinimal ? 4 : 6
+    Item {
+        id: sysmonIconBox
+        anchors.verticalCenter: parent.verticalCenter
+        anchors.left: parent.left
+        anchors.leftMargin: sysmonPill.isMinimal ? 6 : 10
+        width: sysmonIconText.implicitWidth
+        height: sysmonIconText.implicitHeight
 
         Text {
+            id: sysmonIconText
+            anchors.centerIn: parent
             text: Services.Icons.cpu
             font.family: Services.Theme.fontSymbols
-            font.pixelSize: isMinimal ? Services.Theme.fontSizeMd : Services.Theme.fontSizeXl
+            font.pixelSize: sysmonPill.isMinimal ? Services.Theme.fontSizeMd : Services.Theme.fontSizeXl
             color: (sysmonMouse.containsMouse || sysmonPill.isActive) ? Services.Theme.accent : Services.Theme.textPrimary
             Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
         }
+    }
 
-        Text {
-            text: Math.round(Services.Sysmon.cpuUsage) + "%"
-            font.family: Services.Theme.fontMono
-            font.pixelSize: isMinimal ? Services.Theme.fontSizeSm : Services.Theme.fontSizeMd
-            color: (sysmonMouse.containsMouse || sysmonPill.isActive) ? Services.Theme.accent : Services.Theme.textSecondary
-            Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
-        }
+    Text {
+        id: sysmonPctText
+        anchors.verticalCenter: parent.verticalCenter
+        anchors.left: sysmonIconBox.right
+        anchors.leftMargin: sysmonPill.innerSpacing
+        text: Math.round(Services.Sysmon.cpuUsage) + "%"
+        font.family: Services.Theme.fontMono
+        font.pixelSize: sysmonPill.isMinimal ? Services.Theme.fontSizeSm : Services.Theme.fontSizeMd
+        color: (sysmonMouse.containsMouse || sysmonPill.isActive) ? Services.Theme.accent : Services.Theme.textSecondary
+        visible: opacity > 0.01
+        opacity: sysmonPill.trayCompact ? 0.0 : 1.0
+        clip: true
+        Behavior on opacity { NumberAnimation { duration: sysmonPill.trayCompact ? 160 : 260; easing.type: Easing.OutCubic } }
+        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
     }
 
     MouseArea {

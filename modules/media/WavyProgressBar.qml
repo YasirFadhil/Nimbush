@@ -18,7 +18,7 @@ Item {
 
     signal seekRequested(real ratio)
 
-    implicitHeight: 18
+    implicitHeight: 22
     implicitWidth: 200
 
     onPositionChanged: {
@@ -109,21 +109,176 @@ Item {
 
                 ctx.lineTo(progressX, cy)
                 ctx.stroke()
-
-                // 3. Thumb / Scrubber Head
-                ctx.beginPath()
-                ctx.fillStyle = root.waveColor
-                const isHovered = seekMouse.containsMouse || seekMouse.pressed
-                const thumbRadius = isHovered ? 5.5 : 4.0
-                ctx.arc(progressX, cy, thumbRadius, 0, Math.PI * 2)
-                ctx.fill()
             }
+        }
+    }
+
+    // ── Liquid Glass Scrubber Knob (True Settings Liquid Glass Architecture) ──
+    Rectangle {
+        id: knob
+        visible: root.duration > 0
+        anchors.verticalCenter: parent.verticalCenter
+
+        property real expansion: (seekMouse.containsMouse || seekMouse.pressed) ? 1.0 : 0.0
+        Behavior on expansion {
+            NumberAnimation {
+                duration: 170
+                easing.type: Easing.OutBack
+                easing.overshoot: 1.25
+            }
+        }
+
+        // Horizontal pill at rest (matching Settings screenshot), blooms naturally on interaction
+        width: 18 + expansion * 12
+        height: 12 + expansion * 4
+        radius: height / 2
+
+        x: Math.max(0, Math.min(parent.width - width, (root.value * parent.width) - (width / 2)))
+
+        // Viscous Elastic Squish
+        property real targetSquashX: seekMouse.pressed ? 1.12 : 1.0
+        property real targetSquashY: seekMouse.pressed ? 0.90 : 1.0
+        property real squashX: targetSquashX
+        property real squashY: targetSquashY
+
+        Behavior on squashX {
+            enabled: !releaseJiggleAnim.running
+            NumberAnimation { duration: 80; easing.type: Easing.OutQuad }
+        }
+        Behavior on squashY {
+            enabled: !releaseJiggleAnim.running
+            NumberAnimation { duration: 80; easing.type: Easing.OutQuad }
+        }
+
+        SequentialAnimation {
+            id: releaseJiggleAnim
+            ParallelAnimation {
+                NumberAnimation { target: knob; property: "squashX"; to: 0.92; duration: 75; easing.type: Easing.OutQuad }
+                NumberAnimation { target: knob; property: "squashY"; to: 1.08; duration: 75; easing.type: Easing.OutQuad }
+            }
+            ParallelAnimation {
+                NumberAnimation { target: knob; property: "squashX"; to: 1.02; duration: 65; easing.type: Easing.InOutQuad }
+                NumberAnimation { target: knob; property: "squashY"; to: 0.98; duration: 65; easing.type: Easing.InOutQuad }
+            }
+            ParallelAnimation {
+                NumberAnimation { target: knob; property: "squashX"; to: 1.0; duration: 110; easing.type: Easing.OutQuad }
+                NumberAnimation { target: knob; property: "squashY"; to: 1.0; duration: 110; easing.type: Easing.OutQuad }
+            }
+        }
+
+        transform: Scale {
+            origin.x: knob.width / 2
+            origin.y: knob.height / 2
+            xScale: knob.squashX
+            yScale: knob.squashY
+        }
+
+        // Fluid Cross-Fade from Solid Porcelain (#ffffff) to Translucent Frosted Glass
+        color: (Services.Theme && Services.Theme.isDark)
+            ? Qt.rgba(1.0, 1.0, 1.0, 1.0 - expansion * 0.72)
+            : Qt.rgba(1.0, 1.0, 1.0, 1.0 - expansion * 0.35)
+        border.color: expansion > 0.01
+            ? ((Services.Theme && Services.Theme.isDark) ? Qt.rgba(1.0, 1.0, 1.0, 0.55) : Qt.rgba(1.0, 1.0, 1.0, 0.85))
+            : Qt.rgba(0, 0, 0, 0.08)
+        border.width: expansion > 0.01 ? 1.2 : 1.0
+
+        // ── Optical Refraction Chamber (Pembiasan & Pembengkokan Pensil Dalam Air) ──
+        Item {
+            anchors.fill: parent
+            anchors.margins: 1.5
+            clip: true
+            opacity: knob.expansion
+
+            // Refracted Track Core (Bent upwards with convex lens curvature & optical shift, exactly like SettingsSlider)
+            Rectangle {
+                anchors.verticalCenter: parent.verticalCenter
+                anchors.verticalCenterOffset: -2.0
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.margins: -1
+                height: parent.height * 0.75
+                radius: height / 2
+                color: root.waveColor
+                opacity: 0.85
+            }
+        }
+
+        // Soft Inner Glass Refraction Bevel
+        Rectangle {
+            anchors.fill: parent
+            anchors.margins: 1
+            radius: parent.radius - 1
+            color: "transparent"
+            border.color: (Services.Theme && Services.Theme.isDark) ? Qt.rgba(1.0, 1.0, 1.0, 0.22) : Qt.rgba(1.0, 1.0, 1.0, 0.45)
+            border.width: 1
+            opacity: knob.expansion
+        }
+
+        // Top Specular Glass Crescent Flare
+        Rectangle {
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.top: parent.top
+            anchors.margins: 1.5
+            height: Math.max(2, parent.height * 0.45)
+            radius: height / 2
+            opacity: knob.expansion
+            gradient: Gradient {
+                GradientStop { 
+                    position: 0.0
+                    color: (Services.Theme && Services.Theme.isDark) ? Qt.rgba(1.0, 1.0, 1.0, 0.55) : Qt.rgba(1.0, 1.0, 1.0, 0.80)
+                }
+                GradientStop { 
+                    position: 1.0
+                    color: "transparent"
+                }
+            }
+        }
+
+        // Bottom Internal Caustic Flare (Subtle Meniscus Light Catch)
+        Rectangle {
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.bottom: parent.bottom
+            anchors.margins: 1.5
+            height: Math.max(2, parent.height * 0.30)
+            radius: height / 2
+            opacity: knob.expansion * 0.60
+            gradient: Gradient {
+                GradientStop { position: 0.0; color: "transparent" }
+                GradientStop { position: 1.0; color: Qt.rgba(1.0, 1.0, 1.0, 0.25) }
+            }
+        }
+
+        // ── Background Optical Refraction Distortion Halo (Distorsi Latar Belakang) ──
+        Rectangle {
+            anchors.centerIn: parent
+            width: parent.width + 4
+            height: parent.height + 4
+            radius: height / 2
+            color: root.waveColor
+            opacity: knob.expansion * 0.40
+            z: -1
+        }
+
+        // Natural Soft Drop Shadow
+        Rectangle {
+            anchors.centerIn: parent
+            anchors.verticalCenterOffset: 1.5
+            width: parent.width
+            height: parent.height
+            radius: parent.radius
+            color: Qt.rgba(0, 0, 0, 0.20)
+            opacity: 1.0 - knob.expansion * 0.45
+            z: -2
         }
     }
 
     MouseArea {
         id: seekMouse
         anchors.fill: parent
+        anchors.topMargin: -6
+        anchors.bottomMargin: -6
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
         onClicked: mouse => {
@@ -139,6 +294,9 @@ Item {
                 root.seekRequested(ratio)
                 canvas.requestPaint()
             }
+        }
+        onReleased: {
+            releaseJiggleAnim.restart()
         }
     }
 }

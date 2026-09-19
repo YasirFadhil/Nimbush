@@ -15,6 +15,13 @@ Rectangle {
     readonly property bool hasOverflow: allItems.length > maxVisibleCount
     readonly property var visibleItems: hasOverflow ? allItems.slice(0, maxVisibleCount) : allItems
 
+    // ── Tray layout contract ──────────────────────────────────────
+    property bool trayCompact: false
+    property bool trayYielded: false
+
+    readonly property real trayWidthFull: trayLayout.implicitWidth + 16
+    readonly property real trayWidthCompact: trayWidthFull
+
     implicitHeight: 28
     implicitWidth: trayLayout.implicitWidth + 16
     radius: 14

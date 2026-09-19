@@ -12,3 +12,8 @@ __pycache__/
 *.log
 .cache/
 state/
+scripts/.faceid-env
+scripts/.faceid-env*
+*.xml.gz
+faceid_model.xml
+faceid_sample.jpg

@@ -18,7 +18,8 @@ PanelWindow {
     anchors { top: true; bottom: true; left: true; right: true }
     color: "transparent"
     exclusiveZone: 0
-    visible: Services.OverlayManager.sysmonPanelVisible
+    readonly property bool isOpen: Services.OverlayManager.sysmonPanelVisible
+    visible: isOpen || (panel && panel.opacity > 0.01)
     WlrLayershell.layer: WlrLayer.Top
     WlrLayershell.namespace: "quickshell:sysmon"
     WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
@@ -63,7 +64,7 @@ PanelWindow {
 
     Item {
         id: escFocus
-        focus: Services.OverlayManager.sysmonPanelVisible
+        focus: root.isOpen
         Keys.onEscapePressed: root.close()
     }
 
@@ -158,6 +159,7 @@ PanelWindow {
 
     MouseArea {
         anchors.fill: parent
+        enabled: root.isOpen
         onClicked: root.close()
 
         Rectangle {
@@ -175,14 +177,14 @@ PanelWindow {
             border.width: 1
             clip: true
 
-            opacity: Services.OverlayManager.sysmonPanelVisible ? 1 : 0
+            opacity: root.isOpen ? 1.0 : 0.0
+            scale: root.isOpen ? 1.0 : 0.96
             transform: Translate {
-                y: Services.OverlayManager.sysmonPanelVisible ? 0 : (root.isBottom ? 24 : -24)
-                Behavior on y { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
+                y: root.isOpen ? 0 : (root.isBottom ? 20 : -20)
+                Behavior on y { NumberAnimation { duration: 280; easing.type: Easing.OutCubic } }
             }
-            scale: Services.OverlayManager.sysmonPanelVisible ? 1 : 0.96
-            Behavior on scale { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
-            Behavior on opacity { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
+            Behavior on opacity { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
+            Behavior on scale   { NumberAnimation { duration: 280; easing.type: Easing.OutBack } }
 
             MouseArea { anchors.fill: parent; onClicked: {} }
 

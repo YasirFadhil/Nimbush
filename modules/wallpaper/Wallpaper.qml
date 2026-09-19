@@ -4,11 +4,12 @@ import Quickshell.Wayland
 import "../../services" as Services
 
 Variants {
-    model: Quickshell.screens
+    model: (Services.Wallpaper && Services.Wallpaper.hasSwww) ? [] : Quickshell.screens
 
     delegate: PanelWindow {
         id: wallWin
         required property var modelData
+        visible: !(Services.Wallpaper && Services.Wallpaper.hasSwww)
 
         screen: modelData
         anchors { top: true; bottom: true; left: true; right: true }

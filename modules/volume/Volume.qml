@@ -21,7 +21,8 @@ PanelWindow {
     anchors { top: true; bottom: true; left: true; right: true }
     color: "transparent"
     exclusiveZone: 0
-    visible: Services.OverlayManager.volumePanelVisible
+    readonly property bool isOpen: Services.OverlayManager.volumePanelVisible
+    visible: isOpen || (panel && panel.opacity > 0.01)
     WlrLayershell.layer: WlrLayer.Top
     WlrLayershell.namespace: "quickshell:volume"
     WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
@@ -71,6 +72,7 @@ PanelWindow {
 
     MouseArea {
         anchors.fill: parent
+        enabled: Services.OverlayManager.volumePanelVisible
         onClicked: root.close()
 
         Rectangle {
@@ -88,14 +90,14 @@ PanelWindow {
             border.width: 1
             clip: true
 
-            opacity: Services.OverlayManager.volumePanelVisible ? 1 : 0
+            opacity: root.isOpen ? 1.0 : 0.0
+            scale: root.isOpen ? 1.0 : 0.96
             transform: Translate {
-                y: Services.OverlayManager.volumePanelVisible ? 0 : (root.isBottom ? 32 : -32)
-                Behavior on y { NumberAnimation { duration: 240; easing.type: Easing.OutBack; easing.overshoot: 0.5 } }
+                y: root.isOpen ? 0 : (root.isBottom ? 20 : -20)
+                Behavior on y { NumberAnimation { duration: 280; easing.type: Easing.OutCubic } }
             }
-            scale: Services.OverlayManager.volumePanelVisible ? 1 : 0.96
-            Behavior on scale { NumberAnimation { duration: 240; easing.type: Easing.OutCubic } }
-            Behavior on opacity { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
+            Behavior on opacity { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
+            Behavior on scale   { NumberAnimation { duration: 280; easing.type: Easing.OutBack } }
 
             MouseArea { anchors.fill: parent; onClicked: {} }
 

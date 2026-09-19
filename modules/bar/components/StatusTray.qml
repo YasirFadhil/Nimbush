@@ -8,34 +8,21 @@ RowLayout {
     id: root
     spacing: 0
 
+    // ── Input dari Bar ────────────────────────────────────────────
     property real barWidth: 1920
-    property real islandRightEdge: 0
-    property real islandCollapsedRightEdge: 0
-    property bool isIslandExpanded: false
+    property real rightMargin: 12
+    property real centerReservedWidth: 0
+    property string islandDemand: "idle"
 
-    readonly property int itemSpacing: isMinimal ? 4 : 8
+    // ── Konstanta tuning ──────────────────────────────────────────
+    readonly property real safetyGap: 20      // jarak napas minimum island↔tray
+    readonly property real hysteresisPx: 20   // beda ambang naik vs turun tier
+    readonly property int  restoreDelayMs: 80
 
-    // Push delta = how many px the island right edge grew from collapsed baseline.
-    readonly property real islandPushDelta: {
-        if (!isIslandExpanded || islandRightEdge <= 0 || islandCollapsedRightEdge <= 0) return 0
-        return Math.max(0, islandRightEdge - islandCollapsedRightEdge)
-    }
-
-    // Available space from island right edge to screen edge
-    readonly property real availableRightSpace: (barWidth > 0 && islandRightEdge > 0) ? (barWidth - islandRightEdge) : 9999
-
-    // Adaptively collapse items in cascade as Island expands:
-    // 1. Volume yields on standard expansions (HUD, Notif, Media) -> CPU & SysTray slide right smoothly
-    readonly property bool hideVolume: isIslandExpanded && ((availableRightSpace < 560 && islandPushDelta >= 35) || islandPushDelta >= 160)
-    // 2. Sysmon (CPU) only yields on large expansions (e.g. Wallpaper Studio 480px) -> SysTray slides next to Battery
-    readonly property bool hideSysmon: isIslandExpanded && ((availableRightSpace < 460 && islandPushDelta >= 140) || islandPushDelta >= 160)
-    // 3. SysTray only yields on extreme small-screen space constraints
-    readonly property bool hideTrayIcons: isIslandExpanded && (availableRightSpace < 380 && islandPushDelta >= 160)
-
-    // Right anchor items only hide on extreme screen constraints
-    readonly property bool hideBattery: isIslandExpanded && (availableRightSpace < 160)
-    readonly property bool hideControl: isIslandExpanded && (availableRightSpace < 110)
-    readonly property bool hideClock: isIslandExpanded && (availableRightSpace < 60)
+    // ── Ruang yang tersedia ───────────────────────────────────────
+    readonly property real centerRightEdge: (barWidth + centerReservedWidth) / 2
+    readonly property real availableWidth:
+        Math.max(0, barWidth - rightMargin - centerRightEdge - safetyGap)
 
     readonly property string barStyle: Services.Config ? Services.Config.barStyle : "islands"
     readonly property bool isIslands: barStyle === "islands"
@@ -45,6 +32,7 @@ RowLayout {
 
     readonly property int pillHeight: isMinimal ? 24 : 28
     readonly property int pillRadius: isMinimal ? 6 : (isIslands ? 14 : 10)
+    readonly property int innerSpacing: isMinimal ? 4 : 6
 
     function getPillBg(hovered) {
         if (hovered) return Services.Theme.bgHover
@@ -62,13 +50,78 @@ RowLayout {
         return "transparent"
     }
 
-    readonly property real fullUncollapsedWidth: {
-        const trayCount = (typeof SystemTray !== "undefined" && SystemTray.items && SystemTray.items.values) ? SystemTray.items.values.length : 0
-        const maxVis = sysTrayIcons ? sysTrayIcons.maxVisibleCount : 2
-        const visibleCount = Math.min(maxVis, trayCount)
-        const hasOverflow = trayCount > maxVis
-        const trayW = trayCount > 0 ? (visibleCount * 24 + (hasOverflow ? 20 : 0) + 16) : 0
-        return trayW + 370
+    // ── Daftar item dan urutan mengalah ───────────────────────────
+    readonly property var yieldOrder: [volPill, sysmonInd, sysTrayIcons, batPill, ctrlPill, clockCenterPill]
+    readonly property var compactables: [volPill, sysmonInd]
+
+    // ── Tier Spacing & Width ──────────────────────────────────────
+    readonly property int itemSpacing: isMinimal ? 4 : 8
+
+    function widthAtTier(tier) {
+        // tier 0 = full
+        // tier 1 = compact (volPill & sysmonInd only)
+        // tier 2+ = compact + yield bertahap
+        const spacing = itemSpacing
+        const compact = tier >= 1
+        let total = 0
+        let yieldCount = Math.max(0, tier - 1)
+
+        for (let i = 0; i < yieldOrder.length; i++) {
+            const item = yieldOrder[i]
+            if (!item || !item.visible) continue
+            if (i < yieldCount) continue   // item ini mengalah pada tier ini
+            const isCompactable = compactables.indexOf(item) !== -1
+            const useCompact = compact && isCompactable
+            total += (useCompact ? item.trayWidthCompact : item.trayWidthFull) + spacing
+        }
+        return Math.max(0, total - spacing)
+    }
+
+    // ── State Machine & Histeresis ────────────────────────────────
+    property int layoutTier: 0
+    readonly property int maxTier: 1 + yieldOrder.length
+
+    function recomputeLayout() {
+        const avail = availableWidth
+        let tier = layoutTier
+
+        // Naik tier (perketat) — langsung, tanpa histeresis
+        while (tier < maxTier && widthAtTier(tier) > avail) {
+            tier++
+        }
+
+        // Turun tier (longgarkan) — butuh margin histeresis
+        while (tier > 0 && widthAtTier(tier - 1) + hysteresisPx <= avail) {
+            tier--
+        }
+
+        layoutTier = tier
+    }
+
+    Timer {
+        id: restoreTimer
+        interval: root.restoreDelayMs
+        onTriggered: root.recomputeLayout()
+    }
+
+    function requestLayout() {
+        if (widthAtTier(layoutTier) > availableWidth) {
+            restoreTimer.stop()
+            recomputeLayout()
+        } else {
+            restoreTimer.restart()
+        }
+    }
+
+    onAvailableWidthChanged: requestLayout()
+    onIslandDemandChanged: requestLayout()
+    Component.onCompleted: recomputeLayout()
+
+    Connections {
+        target: Services.Config
+        function onConfigChanged() {
+            root.requestLayout()
+        }
     }
 
     // ── 1. System Tray App Icons ───────────────────────────────────────────
@@ -77,19 +130,26 @@ RowLayout {
         trayMenuPopup: trayMenuPopup
         trayOverflowPopup: trayOverflowPopup
 
-        readonly property bool shouldHide: Services.OverlayManager.isLocked || root.hideTrayIcons
+        readonly property int yieldIndex: root.yieldOrder.indexOf(sysTrayIcons)
+        readonly property bool isYielded: Services.OverlayManager.isLocked || (root.layoutTier >= 2 && yieldIndex < (root.layoutTier - 1))
+        readonly property bool isCompact: false
 
-        Layout.preferredWidth: shouldHide ? 0 : implicitWidth
+        trayCompact: false
+        trayYielded: isYielded
+
+        Layout.preferredWidth: isYielded ? 0 : trayWidthFull
         Layout.preferredHeight: implicitHeight
-        Layout.rightMargin: shouldHide ? 0 : root.itemSpacing
+        Layout.rightMargin: isYielded ? 0 : root.itemSpacing
         Layout.alignment: Qt.AlignVCenter
         clip: true
-        opacity: shouldHide ? 0.0 : 1.0
+        opacity: isYielded ? 0.0 : 1.0
         visible: Services.Config ? Services.Config.showSysTray : true
         enabled: opacity > 0.5
 
-        Behavior on Layout.preferredWidth { NumberAnimation { duration: 350; easing.type: Easing.OutCubic } }
-        Behavior on Layout.rightMargin { NumberAnimation { duration: 350; easing.type: Easing.OutCubic } }
+        onVisibleChanged: root.requestLayout()
+
+        Behavior on Layout.preferredWidth { NumberAnimation { duration: 360; easing.type: Easing.OutCubic } }
+        Behavior on Layout.rightMargin { NumberAnimation { duration: 360; easing.type: Easing.OutCubic } }
         Behavior on opacity { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
     }
 
@@ -106,32 +166,64 @@ RowLayout {
     // ── 2. CPU / Sysmon Indicator ─────────────────────────────────────────
     Components.SysmonIndicator {
         id: sysmonInd
-        readonly property bool shouldHide: Services.OverlayManager.isLocked || root.hideSysmon
+        hPadOverride: -1
 
-        Layout.preferredWidth: shouldHide ? 0 : implicitWidth
+        readonly property int yieldIndex: root.yieldOrder.indexOf(sysmonInd)
+        readonly property bool isYielded: Services.OverlayManager.isLocked || (root.layoutTier >= 2 && yieldIndex < (root.layoutTier - 1))
+        readonly property bool isCompact: root.layoutTier >= 1 && root.compactables.indexOf(sysmonInd) !== -1
+
+        trayCompact: isCompact
+        trayYielded: isYielded
+
+        Layout.preferredWidth: isYielded ? 0 : (isCompact ? trayWidthCompact : trayWidthFull)
         Layout.preferredHeight: implicitHeight
-        Layout.rightMargin: shouldHide ? 0 : root.itemSpacing
+        Layout.rightMargin: isYielded ? 0 : root.itemSpacing
         Layout.alignment: Qt.AlignVCenter
         clip: true
-        opacity: shouldHide ? 0.0 : 1.0
+        opacity: isYielded ? 0.0 : 1.0
         visible: Services.Config ? Services.Config.showSysmonTray : true
         enabled: opacity > 0.5
 
-        Behavior on Layout.preferredWidth { NumberAnimation { duration: 350; easing.type: Easing.OutCubic } }
-        Behavior on Layout.rightMargin { NumberAnimation { duration: 350; easing.type: Easing.OutCubic } }
+        Behavior on Layout.preferredWidth { NumberAnimation { duration: 360; easing.type: Easing.OutCubic } }
+        Behavior on Layout.rightMargin { NumberAnimation { duration: 360; easing.type: Easing.OutCubic } }
         Behavior on opacity { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
     }
 
     // ── 3. Volume Pill ────────────────────────────────────────────────────
     Rectangle {
         id: volPill
-        readonly property bool shouldHide: Services.OverlayManager.isLocked || root.hideVolume
+
+        readonly property int yieldIndex: root.yieldOrder.indexOf(volPill)
+        readonly property bool isYielded: Services.OverlayManager.isLocked || (root.layoutTier >= 2 && yieldIndex < (root.layoutTier - 1))
+        readonly property bool isCompact: root.layoutTier >= 1 && root.compactables.indexOf(volPill) !== -1
+
+        property bool trayCompact: isCompact
+        property bool trayYielded: isYielded
+
+        readonly property int baseHPad: root.isMinimal ? 12 : 20
+        readonly property int innerSpacing: root.isMinimal ? 4 : 6
+
+        TextMetrics {
+            id: mVolPct
+            font.family: Services.Theme.fontMono
+            font.pixelSize: root.isMinimal ? Services.Theme.fontSizeSm : Services.Theme.fontSizeMd
+            text: "100%"
+        }
+        TextMetrics {
+            id: mVolIcon
+            font.family: Services.Theme.fontSymbols
+            font.pixelSize: root.isMinimal ? Services.Theme.fontSizeMd : Services.Theme.fontSizeXl
+            text: Services.Icons.volumeIcon(Services.Audio.volume, Services.Audio.muted, Services.Audio.isHeadphone, Services.Audio.isTws)
+        }
+
+        readonly property real trayWidthCompact: Math.ceil(mVolIcon.width) + baseHPad
+        readonly property real trayWidthFull: trayWidthCompact + innerSpacing + Math.ceil(mVolPct.width)
 
         implicitHeight: root.pillHeight
-        implicitWidth: volLayout.implicitWidth + (root.isMinimal ? 12 : 20)
-        Layout.preferredWidth: shouldHide ? 0 : implicitWidth
+        implicitWidth: trayWidthFull
+        Layout.preferredWidth: isYielded ? 0 : (isCompact ? trayWidthCompact : trayWidthFull)
         Layout.preferredHeight: implicitHeight
-        Layout.rightMargin: shouldHide ? 0 : root.itemSpacing
+        Layout.rightMargin: isYielded ? 0 : root.itemSpacing
         Layout.alignment: Qt.AlignVCenter
         clip: true
         radius: root.pillRadius
@@ -139,78 +231,82 @@ RowLayout {
         border.color: root.getPillBorder(volMouse.containsMouse || Services.OverlayManager.volumePanelVisible)
         border.width: root.isMinimal ? 0 : 1
         
-        opacity: shouldHide ? 0.0 : 1.0
+        opacity: isYielded ? 0.0 : 1.0
         visible: Services.Config ? Services.Config.showVolumeTray : true
         enabled: opacity > 0.5
 
         Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
         Behavior on border.color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
-        Behavior on Layout.preferredWidth { NumberAnimation { duration: 350; easing.type: Easing.OutCubic } }
-        Behavior on Layout.rightMargin { NumberAnimation { duration: 350; easing.type: Easing.OutCubic } }
+        Behavior on Layout.preferredWidth { NumberAnimation { duration: 360; easing.type: Easing.OutCubic } }
+        Behavior on Layout.rightMargin { NumberAnimation { duration: 360; easing.type: Easing.OutCubic } }
         Behavior on opacity { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
-        RowLayout {
-            id: volLayout
-            anchors.right: parent.right
-            anchors.rightMargin: root.isMinimal ? 6 : 10
+        Item {
+            id: volIconBox
             anchors.verticalCenter: parent.verticalCenter
-            spacing: root.isMinimal ? 4 : 6
+            anchors.left: parent.left
+            anchors.leftMargin: root.isMinimal ? 6 : 10
 
-            Item {
-                id: volIconBox
-                property string icon: Services.Icons.volumeIcon(Services.Audio.volume, Services.Audio.muted, Services.Audio.isHeadphone, Services.Audio.isTws)
-                property string oldIcon: ""
-                property color iconColor: (volMouse.containsMouse || Services.OverlayManager.volumePanelVisible) ? Services.Theme.accent : Services.Theme.textPrimary
-                Behavior on iconColor { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+            property string icon: Services.Icons.volumeIcon(Services.Audio.volume, Services.Audio.muted, Services.Audio.isHeadphone, Services.Audio.isTws)
+            property string oldIcon: ""
+            property color iconColor: (volMouse.containsMouse || Services.OverlayManager.volumePanelVisible) ? Services.Theme.accent : Services.Theme.textPrimary
+            Behavior on iconColor { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
-                implicitWidth: mainVolText.implicitWidth
-                implicitHeight: mainVolText.implicitHeight
-                Layout.alignment: Qt.AlignVCenter
+            implicitWidth: mainVolText.implicitWidth
+            implicitHeight: mainVolText.implicitHeight
 
-                onIconChanged: {
-                    if (icon !== mainVolText.text) {
-                        oldIcon = mainVolText.text
-                        oldVolText.opacity = 1.0
-                        mainVolText.text = icon
-                        mainVolText.opacity = 0.0
-                        volCrossFade.restart()
-                    }
-                }
-
-                Component.onCompleted: mainVolText.text = icon
-
-                Text {
-                    id: oldVolText
-                    anchors.centerIn: parent
-                    text: volIconBox.oldIcon
-                    font.family: Services.Theme.fontSymbols
-                    font.pixelSize: root.isMinimal ? Services.Theme.fontSizeMd : Services.Theme.fontSizeXl
-                    color: volIconBox.iconColor
-                    opacity: 0.0
-                    visible: opacity > 0
-                }
-
-                Text {
-                    id: mainVolText
-                    anchors.centerIn: parent
-                    font.family: Services.Theme.fontSymbols
-                    font.pixelSize: root.isMinimal ? Services.Theme.fontSizeMd : Services.Theme.fontSizeXl
-                    color: volIconBox.iconColor
-                    opacity: 1.0
-                }
-
-                ParallelAnimation {
-                    id: volCrossFade
-                    NumberAnimation { target: oldVolText; property: "opacity"; to: 0.0; duration: 220; easing.type: Easing.OutCubic }
-                    NumberAnimation { target: mainVolText; property: "opacity"; to: 1.0; duration: 220; easing.type: Easing.OutCubic }
+            onIconChanged: {
+                if (icon !== mainVolText.text) {
+                    oldIcon = mainVolText.text
+                    oldVolText.opacity = 1.0
+                    mainVolText.text = icon
+                    mainVolText.opacity = 0.0
+                    volCrossFade.restart()
                 }
             }
+
+            Component.onCompleted: mainVolText.text = icon
+
             Text {
-                text: Math.round(Services.Audio.volume * 100) + "%"
-                font.family: Services.Theme.fontMono
-                font.pixelSize: root.isMinimal ? Services.Theme.fontSizeSm : Services.Theme.fontSizeMd
-                color: (volMouse.containsMouse || Services.OverlayManager.volumePanelVisible) ? Services.Theme.accent : Services.Theme.textSecondary
+                id: oldVolText
+                anchors.centerIn: parent
+                text: volIconBox.oldIcon
+                font.family: Services.Theme.fontSymbols
+                font.pixelSize: root.isMinimal ? Services.Theme.fontSizeMd : Services.Theme.fontSizeXl
+                color: volIconBox.iconColor
+                opacity: 0.0
+                visible: opacity > 0
             }
+
+            Text {
+                id: mainVolText
+                anchors.centerIn: parent
+                font.family: Services.Theme.fontSymbols
+                font.pixelSize: root.isMinimal ? Services.Theme.fontSizeMd : Services.Theme.fontSizeXl
+                color: volIconBox.iconColor
+                opacity: 1.0
+            }
+
+            ParallelAnimation {
+                id: volCrossFade
+                NumberAnimation { target: oldVolText; property: "opacity"; to: 0.0; duration: 200; easing.type: Easing.OutCubic }
+                NumberAnimation { target: mainVolText; property: "opacity"; to: 1.0; duration: 200; easing.type: Easing.OutCubic }
+            }
+        }
+
+        Text {
+            id: volPctText
+            anchors.verticalCenter: parent.verticalCenter
+            anchors.left: volIconBox.right
+            anchors.leftMargin: root.innerSpacing
+            text: Math.round(Services.Audio.volume * 100) + "%"
+            font.family: Services.Theme.fontMono
+            font.pixelSize: root.isMinimal ? Services.Theme.fontSizeSm : Services.Theme.fontSizeMd
+            color: (volMouse.containsMouse || Services.OverlayManager.volumePanelVisible) ? Services.Theme.accent : Services.Theme.textSecondary
+            opacity: volPill.trayCompact ? 0.0 : 1.0
+            visible: opacity > 0.01
+            clip: true
+            Behavior on opacity { NumberAnimation { duration: volPill.trayCompact ? 160 : 260; easing.type: Easing.OutCubic } }
         }
 
         MouseArea {
@@ -231,13 +327,37 @@ RowLayout {
     // ── 4. Battery Pill (Anchor) ──────────────────────────────────────────
     Rectangle {
         id: batPill
-        readonly property bool shouldHide: Services.OverlayManager.isLocked || root.hideBattery
+
+        readonly property int yieldIndex: root.yieldOrder.indexOf(batPill)
+        readonly property bool isYielded: Services.OverlayManager.isLocked || (root.layoutTier >= 2 && yieldIndex < (root.layoutTier - 1))
+
+        property bool trayCompact: false
+        property bool trayYielded: isYielded
+
+        readonly property int baseHPad: root.isMinimal ? 12 : 20
+        readonly property int innerSpacing: root.isMinimal ? 4 : 6
+
+        TextMetrics {
+            id: mBatPct
+            font.family: Services.Theme.fontMono
+            font.pixelSize: root.isMinimal ? Services.Theme.fontSizeSm : Services.Theme.fontSizeMd
+            text: "100%"
+        }
+        TextMetrics {
+            id: mBatIcon
+            font.family: Services.Theme.fontSymbols
+            font.pixelSize: root.isMinimal ? Services.Theme.fontSizeMd : Services.Theme.fontSizeXl
+            text: Services.Icons.powerIcon(Services.Power.charging, Services.Power.percentage * 100)
+        }
+
+        readonly property real trayWidthFull: Math.ceil(mBatIcon.width) + baseHPad + innerSpacing + Math.ceil(mBatPct.width)
+        readonly property real trayWidthCompact: trayWidthFull
 
         implicitHeight: root.pillHeight
-        implicitWidth: batLayout.implicitWidth + (root.isMinimal ? 12 : 20)
-        Layout.preferredWidth: shouldHide ? 0 : implicitWidth
+        implicitWidth: trayWidthFull
+        Layout.preferredWidth: isYielded ? 0 : trayWidthFull
         Layout.preferredHeight: implicitHeight
-        Layout.rightMargin: shouldHide ? 0 : root.itemSpacing
+        Layout.rightMargin: isYielded ? 0 : root.itemSpacing
         Layout.alignment: Qt.AlignVCenter
         clip: true
         radius: root.pillRadius
@@ -245,20 +365,20 @@ RowLayout {
         border.color: root.getPillBorder(batMouse.containsMouse || Services.OverlayManager.batteryPanelVisible)
         border.width: root.isMinimal ? 0 : 1
 
-        opacity: shouldHide ? 0.0 : 1.0
+        opacity: isYielded ? 0.0 : 1.0
         visible: Services.Config ? Services.Config.showBatteryTray : true
         enabled: opacity > 0.5
 
         Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
         Behavior on border.color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
-        Behavior on Layout.preferredWidth { NumberAnimation { duration: 350; easing.type: Easing.OutCubic } }
-        Behavior on Layout.rightMargin { NumberAnimation { duration: 350; easing.type: Easing.OutCubic } }
+        Behavior on Layout.preferredWidth { NumberAnimation { duration: 360; easing.type: Easing.OutCubic } }
+        Behavior on Layout.rightMargin { NumberAnimation { duration: 360; easing.type: Easing.OutCubic } }
         Behavior on opacity { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
         RowLayout {
             id: batLayout
             anchors.centerIn: parent
-            spacing: root.isMinimal ? 4 : 6
+            spacing: root.innerSpacing
 
             Text {
                 id: batIconText
@@ -286,6 +406,7 @@ RowLayout {
                 }
             }
             Text {
+                id: batPctText
                 text: Math.round(Services.Power.percentage * 100) + "%"
                 font.family: Services.Theme.fontMono
                 font.pixelSize: root.isMinimal ? Services.Theme.fontSizeSm : Services.Theme.fontSizeMd
@@ -312,13 +433,22 @@ RowLayout {
     // ── 5. Notification Bell & Control Center Pill ────────────────────────
     Rectangle {
         id: ctrlPill
-        readonly property bool shouldHide: Services.OverlayManager.isLocked || root.hideControl
+
+        readonly property int yieldIndex: root.yieldOrder.indexOf(ctrlPill)
+        readonly property bool isYielded: Services.OverlayManager.isLocked || (root.layoutTier >= 2 && yieldIndex < (root.layoutTier - 1))
+        readonly property bool isCompact: false
+
+        property bool trayCompact: false
+        property bool trayYielded: isYielded
+
+        readonly property real trayWidthFull: ctrlLayout.implicitWidth + (root.isMinimal ? 12 : 20)
+        readonly property real trayWidthCompact: trayWidthFull
 
         implicitHeight: root.pillHeight
         implicitWidth: ctrlLayout.implicitWidth + (root.isMinimal ? 12 : 20)
-        Layout.preferredWidth: shouldHide ? 0 : implicitWidth
+        Layout.preferredWidth: isYielded ? 0 : trayWidthFull
         Layout.preferredHeight: implicitHeight
-        Layout.rightMargin: shouldHide ? 0 : root.itemSpacing
+        Layout.rightMargin: isYielded ? 0 : root.itemSpacing
         Layout.alignment: Qt.AlignVCenter
         clip: true
         radius: root.pillRadius
@@ -326,14 +456,14 @@ RowLayout {
         border.color: root.getPillBorder(Services.OverlayManager.controlCenterVisible || Services.Notifications.centerVisible)
         border.width: root.isMinimal ? 0 : 1
 
-        opacity: shouldHide ? 0.0 : 1.0
+        opacity: isYielded ? 0.0 : 1.0
         visible: Services.Config ? Services.Config.showControlCenterTray : true
         enabled: opacity > 0.5
 
         Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
         Behavior on border.color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
-        Behavior on Layout.preferredWidth { NumberAnimation { duration: 350; easing.type: Easing.OutCubic } }
-        Behavior on Layout.rightMargin { NumberAnimation { duration: 350; easing.type: Easing.OutCubic } }
+        Behavior on Layout.preferredWidth { NumberAnimation { duration: 360; easing.type: Easing.OutCubic } }
+        Behavior on Layout.rightMargin { NumberAnimation { duration: 360; easing.type: Easing.OutCubic } }
         Behavior on opacity { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
         RowLayout {
@@ -357,18 +487,24 @@ RowLayout {
     // ── 6. Clock & Date Pill ──────────────────────────────────────────────
     Components.ClockCenter {
         id: clockCenterPill
-        readonly property bool shouldHide: Services.OverlayManager.isLocked || root.hideClock
+        hPadOverride: -1
 
-        Layout.preferredWidth: shouldHide ? 0 : implicitWidth
+        readonly property int yieldIndex: root.yieldOrder.indexOf(clockCenterPill)
+        readonly property bool isYielded: Services.OverlayManager.isLocked || (root.layoutTier >= 2 && yieldIndex < (root.layoutTier - 1))
+
+        trayCompact: false
+        trayYielded: isYielded
+
+        Layout.preferredWidth: isYielded ? 0 : trayWidthFull
         Layout.preferredHeight: implicitHeight
         Layout.rightMargin: 0
         Layout.alignment: Qt.AlignVCenter
         clip: true
-        opacity: shouldHide ? 0.0 : 1.0
+        opacity: isYielded ? 0.0 : 1.0
         visible: root.isIslands && (Services.Config ? Services.Config.showClockTray : true)
         enabled: opacity > 0.5
 
-        Behavior on Layout.preferredWidth { NumberAnimation { duration: 350; easing.type: Easing.OutCubic } }
+        Behavior on Layout.preferredWidth { NumberAnimation { duration: 360; easing.type: Easing.OutCubic } }
         Behavior on opacity { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
     }
 }

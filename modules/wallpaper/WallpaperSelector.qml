@@ -4,6 +4,7 @@ import Quickshell.Wayland
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtQuick.Effects
 import "../../services" as Services
 
 PanelWindow {
@@ -645,38 +646,56 @@ PanelWindow {
                         ))
 
                         // Normal Wallpaper Card
-                        Rectangle {
+                        Item {
                             id: cardRect
                             anchors.fill: parent
                             anchors.margins: 6
-                            radius: 14
-                            color: Services.Theme.bgElevated
-                            border.color: wallCell.isSelected
-                                ? Services.Theme.accent
-                                : (wallCell.isActiveWall
-                                    ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.7)
-                                    : (wallMouse.containsMouse ? Services.Theme.borderHighlight : Services.Theme.borderSubtle))
-                            border.width: wallCell.isSelected ? 2 : (wallCell.isActiveWall ? 1.5 : 1)
-                            clip: true
                             scale: wallMouse.containsMouse || wallCell.isSelected ? 1.025 : 1.0
                             visible: !wallCell.isAddCard
 
                             Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
-                            Behavior on border.color { ColorAnimation { duration: 150; easing.type: Easing.OutCubic } }
 
-                            // Image Preview
-                            Image {
+                            // Masked Image Preview
+                            Item {
+                                id: cardContent
                                 anchors.fill: parent
-                                source: (wallCell.modelData && wallCell.modelData.path) ? ("file://" + wallCell.modelData.path) : ""
-                                fillMode: Image.PreserveAspectCrop
-                                asynchronous: true
-                                cache: true
-                                sourceSize: Qt.size(480, 320)
-                                opacity: wallMouse.containsMouse || wallCell.isSelected ? 1.0 : 0.88
-                                scale: wallMouse.containsMouse ? 1.04 : 1.0
+                                layer.enabled: true
+                                layer.effect: MultiEffect {
+                                    maskEnabled: true
+                                    maskSource: cardMask
+                                }
 
-                                Behavior on opacity { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
-                                Behavior on scale { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                                Rectangle {
+                                    anchors.fill: parent
+                                    color: Services.Theme.bgElevated
+                                }
+
+                                Image {
+                                    anchors.fill: parent
+                                    source: (wallCell.modelData && wallCell.modelData.path) ? ("file://" + wallCell.modelData.path) : ""
+                                    fillMode: Image.PreserveAspectCrop
+                                    asynchronous: true
+                                    cache: true
+                                    sourceSize: Qt.size(480, 320)
+                                    opacity: wallMouse.containsMouse || wallCell.isSelected ? 1.0 : 0.88
+                                    scale: wallMouse.containsMouse ? 1.04 : 1.0
+
+                                    Behavior on opacity { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
+                                    Behavior on scale { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                                }
+                            }
+
+                            // Card Mask
+                            Item {
+                                id: cardMask
+                                anchors.fill: parent
+                                visible: false
+                                layer.enabled: true
+                                Rectangle {
+                                    anchors.fill: parent
+                                    radius: 14
+                                    color: "black"
+                                }
                             }
 
                             // Dynamic Pill (Top-Left)
@@ -819,6 +838,24 @@ PanelWindow {
                                     }
                                 }
                             }
+
+                            // Distinct Top-level Highlight Border Overlay (Rendered above image & overlays)
+                            Rectangle {
+                                id: cardBorderOverlay
+                                anchors.fill: parent
+                                radius: 14
+                                color: "transparent"
+                                z: 6
+                                border.color: wallCell.isSelected
+                                    ? Services.Theme.accent
+                                    : (wallCell.isActiveWall
+                                        ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.45)
+                                        : (wallMouse.containsMouse ? Services.Theme.borderHighlight : Qt.rgba(255, 255, 255, 0.10)))
+                                border.width: wallCell.isSelected ? 2 : (wallCell.isActiveWall ? 1.5 : (wallMouse.containsMouse ? 1.5 : 1))
+
+                                Behavior on border.color { ColorAnimation { duration: 150 } }
+                                Behavior on border.width { NumberAnimation { duration: 150 } }
+                            }
                         }
 
                         // "+ Add Wallpaper" Card (in grid)
@@ -830,10 +867,10 @@ PanelWindow {
                             color: addCardMouse.containsMouse
                                 ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.10)
                                 : Qt.rgba(255, 255, 255, 0.02)
-                            border.color: addCardMouse.containsMouse || wallCell.isSelected
+                            border.color: (addCardMouse.containsMouse || wallCell.isSelected)
                                 ? Services.Theme.accent
                                 : Services.Theme.borderSubtle
-                            border.width: addCardMouse.containsMouse || wallCell.isSelected ? 2 : 1
+                            border.width: (addCardMouse.containsMouse || wallCell.isSelected) ? 2 : 1
                             visible: wallCell.isAddCard
                             scale: addCardMouse.containsMouse || wallCell.isSelected ? 1.025 : 1.0
 

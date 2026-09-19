@@ -113,6 +113,29 @@ Singleton {
     property string notificationPosition: "top_right" // "top_right" | "top_center" | "top_left" | "bottom_right"
     property bool notificationShowInFullscreen: false
 
+    // ── Application Dock ─────────────────────────────────────────────────────
+    property bool dockEnabled: true
+    property string dockPosition: "bottom"        // "bottom" | "left" | "right"
+    property bool dockAutoHide: false
+    property int dockIconSize: 48                 // 36 | 44 | 48 | 56 | 64
+    property bool dockMagnification: true
+    property real dockMagnificationScale: 1.35    // 1.1 to 1.8
+    property bool dockShowIndicators: true
+    property string dockIndicatorStyle: "dot"     // "dot" | "line" | "pill" | "glow"
+    property bool dockShowTooltips: true
+    property bool dockShowWindowCount: true
+    property bool dockBounceOnClick: true
+    property bool dockShowSeparator: true
+    property int dockFloatingDistance: 6          // 0 | 6 | 12 | 18
+    property string dockMonitorMode: "all"        // "all" | "primary"
+    property var dockPinnedApps: [
+        "kitty.desktop",
+        "org.gnome.Nautilus.desktop",
+        "zen.desktop",
+        "org.gnome.Snapshot.desktop",
+        "org.gnome.DiskUtility.desktop"
+    ]
+
     // ── Lockscreen & System ──────────────────────────────────────────────────
     property string lockscreenClockStyle: "hero"  // "hero" | "modern" | "compact" | "minimal" | "vertical" | "typographic" | "radial" | "cyber"
     property string lockscreenAuthStyle: "pill"   // "pill" | "card"
@@ -136,6 +159,10 @@ Singleton {
     property string lockscreenCustomWallpaper: ""
     property bool lockscreenShowQuickPower: true
     property bool lockscreenShowStatusPill: true
+    property bool faceIdEnabled: true
+    property string faceIdCameraDevice: "/dev/video0"
+    property real faceIdConfidence: 98.0
+    property bool faceIdAutoUnlock: true
     property bool batteryShowWarnings: true
     property int batteryLowThreshold: 20
     property string customAvatar: ""
@@ -305,11 +332,31 @@ Singleton {
         if (data.lockscreenCustomWallpaper !== undefined) lockscreenCustomWallpaper = String(data.lockscreenCustomWallpaper)
         if (data.lockscreenShowQuickPower !== undefined) lockscreenShowQuickPower = Boolean(data.lockscreenShowQuickPower)
         if (data.lockscreenShowStatusPill !== undefined) lockscreenShowStatusPill = Boolean(data.lockscreenShowStatusPill)
+        if (data.faceIdEnabled !== undefined) faceIdEnabled = Boolean(data.faceIdEnabled)
+        if (data.faceIdCameraDevice !== undefined) faceIdCameraDevice = String(data.faceIdCameraDevice)
+        if (data.faceIdConfidence !== undefined) faceIdConfidence = Number(data.faceIdConfidence)
+        if (data.faceIdAutoUnlock !== undefined) faceIdAutoUnlock = Boolean(data.faceIdAutoUnlock)
         if (data.batteryShowWarnings !== undefined) batteryShowWarnings = Boolean(data.batteryShowWarnings)
         if (data.batteryLowThreshold !== undefined) batteryLowThreshold = Number(data.batteryLowThreshold)
         if (data.customAvatar !== undefined) customAvatar = String(data.customAvatar)
         if (data.clipboardLimit !== undefined) clipboardLimit = Number(data.clipboardLimit)
         if (data.launcherMaxResults !== undefined) launcherMaxResults = Number(data.launcherMaxResults)
+
+        if (data.dockEnabled !== undefined) dockEnabled = Boolean(data.dockEnabled)
+        if (data.dockPosition !== undefined) dockPosition = String(data.dockPosition)
+        if (data.dockAutoHide !== undefined) dockAutoHide = Boolean(data.dockAutoHide)
+        if (data.dockIconSize !== undefined) dockIconSize = Number(data.dockIconSize)
+        if (data.dockMagnification !== undefined) dockMagnification = Boolean(data.dockMagnification)
+        if (data.dockMagnificationScale !== undefined) dockMagnificationScale = Number(data.dockMagnificationScale)
+        if (data.dockShowIndicators !== undefined) dockShowIndicators = Boolean(data.dockShowIndicators)
+        if (data.dockIndicatorStyle !== undefined) dockIndicatorStyle = String(data.dockIndicatorStyle)
+        if (data.dockShowTooltips !== undefined) dockShowTooltips = Boolean(data.dockShowTooltips)
+        if (data.dockShowWindowCount !== undefined) dockShowWindowCount = Boolean(data.dockShowWindowCount)
+        if (data.dockBounceOnClick !== undefined) dockBounceOnClick = Boolean(data.dockBounceOnClick)
+        if (data.dockShowSeparator !== undefined) dockShowSeparator = Boolean(data.dockShowSeparator)
+        if (data.dockFloatingDistance !== undefined) dockFloatingDistance = Number(data.dockFloatingDistance)
+        if (data.dockMonitorMode !== undefined) dockMonitorMode = String(data.dockMonitorMode)
+        if (data.dockPinnedApps !== undefined && Array.isArray(data.dockPinnedApps)) dockPinnedApps = data.dockPinnedApps
 
         if (data.dashboardWidget !== undefined) dashboardWidget = data.dashboardWidget
         if (data.weatherLocationMode !== undefined) weatherLocationMode = data.weatherLocationMode
@@ -410,6 +457,10 @@ Singleton {
             lockscreenCustomWallpaper: lockscreenCustomWallpaper,
             lockscreenShowQuickPower: lockscreenShowQuickPower,
             lockscreenShowStatusPill: lockscreenShowStatusPill,
+            faceIdEnabled: faceIdEnabled,
+            faceIdCameraDevice: faceIdCameraDevice,
+            faceIdConfidence: faceIdConfidence,
+            faceIdAutoUnlock: faceIdAutoUnlock,
             batteryShowWarnings: batteryShowWarnings,
             batteryLowThreshold: batteryLowThreshold,
             customAvatar: customAvatar,
@@ -425,6 +476,22 @@ Singleton {
             dashboardShowSpecs: dashboardShowSpecs,
             dashboardShowActions: dashboardShowActions,
             dashboardMetricsStyle: dashboardMetricsStyle,
+
+            dockEnabled: dockEnabled,
+            dockPosition: dockPosition,
+            dockAutoHide: dockAutoHide,
+            dockIconSize: dockIconSize,
+            dockMagnification: dockMagnification,
+            dockMagnificationScale: dockMagnificationScale,
+            dockShowIndicators: dockShowIndicators,
+            dockIndicatorStyle: dockIndicatorStyle,
+            dockShowTooltips: dockShowTooltips,
+            dockShowWindowCount: dockShowWindowCount,
+            dockBounceOnClick: dockBounceOnClick,
+            dockShowSeparator: dockShowSeparator,
+            dockFloatingDistance: dockFloatingDistance,
+            dockMonitorMode: dockMonitorMode,
+            dockPinnedApps: dockPinnedApps,
 
             firstRunCompleted: firstRunCompleted,
             customSettingsVersion: customSettingsVersion
@@ -523,6 +590,22 @@ Singleton {
         dashboardShowSpecs = true
         dashboardShowActions = true
         dashboardMetricsStyle = "cards"
+
+        dockEnabled = true
+        dockPosition = "bottom"
+        dockAutoHide = false
+        dockIconSize = 48
+        dockMagnification = true
+        dockMagnificationScale = 1.35
+        dockShowIndicators = true
+        dockIndicatorStyle = "dot"
+        dockShowTooltips = true
+        dockShowWindowCount = true
+        dockBounceOnClick = true
+        dockShowSeparator = true
+        dockFloatingDistance = 6
+        dockMonitorMode = "all"
+        dockPinnedApps = resolveDefaultPinnedApps()
 
         firstRunCompleted = true
         saveConfig()
@@ -713,12 +796,106 @@ Singleton {
     function setLockscreenCustomWallpaper(path) { lockscreenCustomWallpaper = path; saveConfig() }
     function setLockscreenShowQuickPower(val) { lockscreenShowQuickPower = val; saveConfig() }
     function setLockscreenShowStatusPill(val) { lockscreenShowStatusPill = val; saveConfig() }
+    function setFaceIdEnabled(val) { faceIdEnabled = val; saveConfig() }
+    function setFaceIdCameraDevice(path) { faceIdCameraDevice = path; saveConfig() }
+    function setFaceIdConfidence(val) { faceIdConfidence = val; saveConfig() }
+    function setFaceIdAutoUnlock(val) { faceIdAutoUnlock = val; saveConfig() }
     function setBatteryShowWarnings(val) { batteryShowWarnings = val; saveConfig() }
     function setBatteryLowThreshold(val) { batteryLowThreshold = val; saveConfig() }
     function setCustomAvatar(path) { customAvatar = path; saveConfig() }
     function clearCustomAvatar() { customAvatar = ""; saveConfig() }
     function setClipboardLimit(val) { clipboardLimit = val; saveConfig() }
     function setLauncherMaxResults(val) { launcherMaxResults = val; saveConfig() }
+
+    function setDockEnabled(val) { dockEnabled = val; saveConfig() }
+    function setDockPosition(val) { dockPosition = val; saveConfig() }
+    function setDockAutoHide(val) { dockAutoHide = val; saveConfig() }
+    function setDockIconSize(val) { dockIconSize = val; saveConfig() }
+    function setDockMagnification(val) { dockMagnification = val; saveConfig() }
+    function setDockMagnificationScale(val) { dockMagnificationScale = val; saveConfig() }
+    function setDockShowIndicators(val) { dockShowIndicators = val; saveConfig() }
+    function setDockIndicatorStyle(val) { dockIndicatorStyle = val; saveConfig() }
+    function setDockShowTooltips(val) { dockShowTooltips = val; saveConfig() }
+    function setDockShowWindowCount(val) { dockShowWindowCount = val; saveConfig() }
+    function setDockBounceOnClick(val) { dockBounceOnClick = val; saveConfig() }
+    function setDockShowSeparator(val) { dockShowSeparator = val; saveConfig() }
+    function setDockFloatingDistance(val) { dockFloatingDistance = val; saveConfig() }
+    function setDockMonitorMode(val) { dockMonitorMode = val; saveConfig() }
+    function setDockPinnedApps(apps) { dockPinnedApps = apps; saveConfig() }
+
+    function resolveDefaultPinnedApps() {
+        const raw = (DesktopEntries.applications && DesktopEntries.applications.values) ? DesktopEntries.applications.values : []
+
+        const terminalCandidates = [
+            "kitty.desktop", "ghostty.desktop", "com.mitchellh.ghostty.desktop",
+            "foot.desktop", "org.gnome.Console.desktop", "gnome-terminal.desktop",
+            "alacritty.desktop", "wezterm.desktop", "org.kde.konsole.desktop", "konsole.desktop",
+            "com.system76.CosmicTerm.desktop", "xterm.desktop"
+        ]
+        const fileManagerCandidates = [
+            "org.gnome.Nautilus.desktop", "nautilus.desktop", "thunar.desktop",
+            "org.kde.dolphin.desktop", "dolphin.desktop", "com.system76.CosmicFiles.desktop",
+            "nemo.desktop", "pcmanfm.desktop", "caja.desktop"
+        ]
+        const browserCandidates = [
+            "zen.desktop", "firefox.desktop", "org.mozilla.firefox.desktop",
+            "google-chrome.desktop", "chromium.desktop", "brave-browser.desktop",
+            "microsoft-edge.desktop", "helium.desktop", "org.gnome.Epiphany.desktop"
+        ]
+        const cameraCandidates = [
+            "org.gnome.Snapshot.desktop", "snapshot.desktop", "cheese.desktop",
+            "org.gnome.Cheese.desktop", "kamoso.desktop", "org.kde.kamoso.desktop",
+            "io.github.cameractrls.desktop", "cameractrls.desktop", "qv4l2.desktop", "qvidcap.desktop"
+        ]
+        const diskCandidates = [
+            "org.gnome.DiskUtility.desktop", "gnome-disk-utility.desktop",
+            "gparted.desktop", "partitionmanager.desktop", "org.kde.partitionmanager.desktop",
+            "org.gnome.baobab.desktop", "baobab.desktop"
+        ]
+
+        function findMatch(candidates, categoryName, keywordList) {
+            for (let c = 0; c < candidates.length; c++) {
+                const targetClean = candidates[c].toLowerCase().replace(/\.desktop$/, '')
+                for (let i = 0; i < raw.length; i++) {
+                    const app = raw[i]
+                    if (!app || !app.id) continue
+                    const appIdClean = app.id.toLowerCase().replace(/\.desktop$/, '')
+                    if (appIdClean === targetClean) {
+                        return app.id.endsWith(".desktop") ? app.id : (app.id + ".desktop")
+                    }
+                }
+            }
+            if (categoryName) {
+                for (let i = 0; i < raw.length; i++) {
+                    const app = raw[i]
+                    if (!app || !app.id) continue
+                    const cats = (app.categories || []).map(cat => String(cat).toLowerCase())
+                    if (cats.includes(categoryName.toLowerCase())) {
+                        return app.id.endsWith(".desktop") ? app.id : (app.id + ".desktop")
+                    }
+                }
+            }
+            if (keywordList && keywordList.length > 0) {
+                for (let i = 0; i < raw.length; i++) {
+                    const app = raw[i]
+                    if (!app || !app.id) continue
+                    const text = ((app.id || "") + " " + (app.name || "") + " " + (app.description || "")).toLowerCase()
+                    if (keywordList.some(k => text.includes(k.toLowerCase()))) {
+                        return app.id.endsWith(".desktop") ? app.id : (app.id + ".desktop")
+                    }
+                }
+            }
+            return null
+        }
+
+        const term = findMatch(terminalCandidates, "TerminalEmulator", ["terminal", "console"]) || "kitty.desktop"
+        const fm = findMatch(fileManagerCandidates, "FileManager", ["filemanager", "files", "nautilus", "thunar"]) || "org.gnome.Nautilus.desktop"
+        const browser = findMatch(browserCandidates, "WebBrowser", ["browser", "firefox", "chrome", "zen"]) || "zen.desktop"
+        const cam = findMatch(cameraCandidates, null, ["camera", "snapshot", "webcam", "kamera"]) || "org.gnome.Snapshot.desktop"
+        const disk = findMatch(diskCandidates, null, ["disk", "partition", "gparted", "diskutility"]) || "org.gnome.DiskUtility.desktop"
+
+        return [term, fm, browser, cam, disk]
+    }
 
     function setDashboardWidget(val) { dashboardWidget = val; saveConfig() }
     function setWeatherLocationMode(val) {

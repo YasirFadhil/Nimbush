@@ -238,14 +238,14 @@ PanelWindow {
             border.width: 1
             clip: true
 
-            opacity: Services.OverlayManager.controlCenterVisible ? 1 : 0
+            opacity: Services.OverlayManager.controlCenterVisible ? 1.0 : 0.0
+            scale: Services.OverlayManager.controlCenterVisible ? 1.0 : 0.96
             transform: Translate {
-                y: Services.OverlayManager.controlCenterVisible ? 0 : (root.isBottom ? 32 : -32)
-                Behavior on y { NumberAnimation { duration: 240; easing.type: Easing.OutBack; easing.overshoot: 0.5 } }
+                y: Services.OverlayManager.controlCenterVisible ? 0 : (root.isBottom ? 20 : -20)
+                Behavior on y { NumberAnimation { duration: 280; easing.type: Easing.OutCubic } }
             }
-            scale: Services.OverlayManager.controlCenterVisible ? 1 : 0.96
-            Behavior on scale { NumberAnimation { duration: 240; easing.type: Easing.OutCubic } }
-            Behavior on opacity { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
+            Behavior on opacity { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
+            Behavior on scale   { NumberAnimation { duration: 280; easing.type: Easing.OutBack } }
 
             MouseArea { anchors.fill: parent; onClicked: {} }
 
@@ -423,14 +423,14 @@ PanelWindow {
                     id: morphingTilesRow
                     Layout.fillWidth: true
                     spacing: (Services.OverlayManager.wifiPanelVisible || Services.OverlayManager.btPanelVisible) ? 0 : 10
-                    Behavior on spacing { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                    Behavior on spacing { NumberAnimation { duration: 240; easing.type: Easing.OutCubic } }
 
                     // ── Dynamic Island Wi-Fi Card ──
                     Rectangle {
                         id: wifiTile
                         Layout.fillWidth: !Services.OverlayManager.btPanelVisible
                         Layout.preferredWidth: Services.OverlayManager.btPanelVisible ? 0 : (Services.OverlayManager.wifiPanelVisible ? 324 : 157)
-                        Layout.preferredHeight: Services.OverlayManager.wifiPanelVisible ? 248 : 72
+                        Layout.preferredHeight: Services.OverlayManager.wifiPanelVisible ? 240 : 72
                         radius: Services.Theme.radiusLg
                         color: Services.Wifi.enabled ? Services.Theme.accent : Services.Theme.surfaceVariant
                         clip: true
@@ -438,10 +438,10 @@ PanelWindow {
                         visible: opacity > 0.01
                         opacity: Services.OverlayManager.btPanelVisible ? 0 : 1
 
-                        Behavior on Layout.preferredWidth { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
-                        Behavior on Layout.preferredHeight { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
-                        Behavior on opacity { NumberAnimation { duration: 150 } }
-                        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                        Behavior on Layout.preferredWidth { NumberAnimation { duration: 240; easing.type: Easing.OutCubic } }
+                        Behavior on Layout.preferredHeight { NumberAnimation { duration: 240; easing.type: Easing.OutCubic } }
+                        Behavior on opacity { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
+                        Behavior on color { ColorAnimation { duration: 200; easing.type: Easing.OutCubic } }
 
                         ColumnLayout {
                             anchors.fill: parent
@@ -491,10 +491,9 @@ PanelWindow {
                                     implicitHeight: 36
                                     cursorShape: Qt.PointingHandCursor
                                     onClicked: {
-                                        Services.OverlayManager.wifiPanelVisible = !Services.OverlayManager.wifiPanelVisible
-                                        if (Services.OverlayManager.wifiPanelVisible) Services.Wifi.scan()
                                         Services.OverlayManager.btPanelVisible = false
                                         Services.OverlayManager.audioPanelVisible = false
+                                        Services.OverlayManager.wifiPanelVisible = !Services.OverlayManager.wifiPanelVisible
                                     }
 
                                     RowLayout {
@@ -529,9 +528,11 @@ PanelWindow {
                                         // Refresh Button (when expanded)
                                         Rectangle {
                                             width: 26; height: 26; radius: 13
-                                            visible: Services.OverlayManager.wifiPanelVisible
+                                            visible: opacity > 0.01
+                                            opacity: Services.OverlayManager.wifiPanelVisible ? 1 : 0
                                             color: refreshWifiMouse.containsMouse ? "#30000000" : "transparent"
                                             scale: refreshWifiMouse.pressed ? 0.88 : (refreshWifiMouse.containsMouse ? 1.08 : 1.0)
+                                            Behavior on opacity { NumberAnimation { duration: 160 } }
                                             Behavior on scale { NumberAnimation { duration: 120 } }
 
                                             Text {
@@ -566,16 +567,17 @@ PanelWindow {
 
                             // Divider line when expanded
                             Rectangle {
-                                visible: Services.OverlayManager.wifiPanelVisible
+                                visible: opacity > 0.01
+                                opacity: Services.OverlayManager.wifiPanelVisible ? 0.5 : 0
                                 Layout.fillWidth: true
                                 height: 1
                                 color: Services.Wifi.enabled ? "#30000000" : Services.Theme.border
-                                opacity: 0.5
+                                Behavior on opacity { NumberAnimation { duration: 160 } }
                             }
 
                             // Morphing Scrollable Networks List
                             Flickable {
-                                visible: Services.OverlayManager.wifiPanelVisible
+                                visible: opacity > 0.01
                                 opacity: Services.OverlayManager.wifiPanelVisible ? 1 : 0
                                 Layout.fillWidth: true
                                 Layout.fillHeight: true
@@ -583,7 +585,12 @@ PanelWindow {
                                 clip: true
                                 boundsBehavior: Flickable.StopAtBounds
 
-                                Behavior on opacity { NumberAnimation { duration: 200 } }
+                                Behavior on opacity {
+                                    NumberAnimation {
+                                        duration: Services.OverlayManager.wifiPanelVisible ? 200 : 90
+                                        easing.type: Easing.OutCubic
+                                    }
+                                }
 
                                 ColumnLayout {
                                     id: wifiCol
@@ -763,7 +770,7 @@ PanelWindow {
                         id: btTile
                         Layout.fillWidth: !Services.OverlayManager.wifiPanelVisible
                         Layout.preferredWidth: Services.OverlayManager.wifiPanelVisible ? 0 : (Services.OverlayManager.btPanelVisible ? 324 : 157)
-                        Layout.preferredHeight: Services.OverlayManager.btPanelVisible ? 248 : 72
+                        Layout.preferredHeight: Services.OverlayManager.btPanelVisible ? 240 : 72
                         radius: Services.Theme.radiusLg
                         color: Services.Bluetooth.enabled ? Services.Theme.accent : Services.Theme.surfaceVariant
                         clip: true
@@ -771,10 +778,10 @@ PanelWindow {
                         visible: opacity > 0.01
                         opacity: Services.OverlayManager.wifiPanelVisible ? 0 : 1
 
-                        Behavior on Layout.preferredWidth { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
-                        Behavior on Layout.preferredHeight { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
-                        Behavior on opacity { NumberAnimation { duration: 150 } }
-                        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                        Behavior on Layout.preferredWidth { NumberAnimation { duration: 240; easing.type: Easing.OutCubic } }
+                        Behavior on Layout.preferredHeight { NumberAnimation { duration: 240; easing.type: Easing.OutCubic } }
+                        Behavior on opacity { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
+                        Behavior on color { ColorAnimation { duration: 200; easing.type: Easing.OutCubic } }
 
                         ColumnLayout {
                             anchors.fill: parent
@@ -826,10 +833,9 @@ PanelWindow {
                                     implicitHeight: 36
                                     cursorShape: Qt.PointingHandCursor
                                     onClicked: {
-                                        Services.OverlayManager.btPanelVisible = !Services.OverlayManager.btPanelVisible
-                                        if (Services.OverlayManager.btPanelVisible) Services.Bluetooth.listDevices()
                                         Services.OverlayManager.wifiPanelVisible = false
                                         Services.OverlayManager.audioPanelVisible = false
+                                        Services.OverlayManager.btPanelVisible = !Services.OverlayManager.btPanelVisible
                                     }
 
                                     RowLayout {
@@ -872,9 +878,11 @@ PanelWindow {
                                         // Refresh Button (when expanded)
                                         Rectangle {
                                             width: 26; height: 26; radius: 13
-                                            visible: Services.OverlayManager.btPanelVisible
+                                            visible: opacity > 0.01
+                                            opacity: Services.OverlayManager.btPanelVisible ? 1 : 0
                                             color: refreshBtMouse.containsMouse ? "#30000000" : "transparent"
                                             scale: refreshBtMouse.pressed ? 0.88 : (refreshBtMouse.containsMouse ? 1.08 : 1.0)
+                                            Behavior on opacity { NumberAnimation { duration: 160 } }
                                             Behavior on scale { NumberAnimation { duration: 120 } }
 
                                             Text {
@@ -909,16 +917,17 @@ PanelWindow {
 
                             // Divider line when expanded
                             Rectangle {
-                                visible: Services.OverlayManager.btPanelVisible
+                                visible: opacity > 0.01
+                                opacity: Services.OverlayManager.btPanelVisible ? 0.5 : 0
                                 Layout.fillWidth: true
                                 height: 1
                                 color: Services.Bluetooth.enabled ? "#30000000" : Services.Theme.border
-                                opacity: 0.5
+                                Behavior on opacity { NumberAnimation { duration: 160 } }
                             }
 
                             // Morphing Scrollable Devices List
                             Flickable {
-                                visible: Services.OverlayManager.btPanelVisible
+                                visible: opacity > 0.01
                                 opacity: Services.OverlayManager.btPanelVisible ? 1 : 0
                                 Layout.fillWidth: true
                                 Layout.fillHeight: true
@@ -926,7 +935,12 @@ PanelWindow {
                                 clip: true
                                 boundsBehavior: Flickable.StopAtBounds
 
-                                Behavior on opacity { NumberAnimation { duration: 200 } }
+                                Behavior on opacity {
+                                    NumberAnimation {
+                                        duration: Services.OverlayManager.btPanelVisible ? 200 : 90
+                                        easing.type: Easing.OutCubic
+                                    }
+                                }
 
                                 ColumnLayout {
                                     id: btCol
@@ -1158,13 +1172,13 @@ PanelWindow {
                 Item {
                     id: quickActionsAndMediaCol
                     Layout.fillWidth: true
-                    Layout.preferredHeight: (Services.OverlayManager.wifiPanelVisible || Services.OverlayManager.btPanelVisible) ? 0 : 160
+                    Layout.preferredHeight: (Services.OverlayManager.wifiPanelVisible || Services.OverlayManager.btPanelVisible) ? 0 : 168
                     visible: opacity > 0.01
                     opacity: (Services.OverlayManager.wifiPanelVisible || Services.OverlayManager.btPanelVisible) ? 0 : 1
-                    clip: false
+                    clip: true
 
-                    Behavior on Layout.preferredHeight { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
-                    Behavior on opacity { NumberAnimation { duration: 180 } }
+                    Behavior on Layout.preferredHeight { NumberAnimation { duration: 240; easing.type: Easing.OutCubic } }
+                    Behavior on opacity { NumberAnimation { duration: (Services.OverlayManager.wifiPanelVisible || Services.OverlayManager.btPanelVisible) ? 140 : 200; easing.type: Easing.OutCubic } }
 
                     ColumnLayout {
                         anchors.fill: parent

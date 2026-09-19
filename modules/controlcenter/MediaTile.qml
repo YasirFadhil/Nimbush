@@ -230,7 +230,7 @@ Rectangle {
                 MediaModule.WavyProgressBar {
                     id: tileWavyBar
                     Layout.fillWidth: true
-                    height: 14
+                    height: 20
                     isPlaying: card.isPlaying
                     waveColor: Services.Theme.accent
                     trackColor: Services.Theme.surface
@@ -275,21 +275,62 @@ Rectangle {
                         }
                     }
 
-                    // Play/Pause (Accent Filled)
+                    // Play/Pause (Natural Optical Glass Lens)
                     Rectangle {
-                        width: 26; height: 26; radius: 13
-                        color: playHover.containsMouse ? Qt.lighter(Services.Theme.accent, 1.15) : Services.Theme.accent
-                        scale: playHover.containsMouse ? 1.06 : 1.0
-                        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
-                        Behavior on scale { NumberAnimation { duration: 100; easing.type: Easing.OutCubic } }
+                        width: 28; height: 28; radius: 14
+
+                        // Natural convex lens gradient
+                        gradient: Gradient {
+                            GradientStop {
+                                position: 0.0
+                                color: playHover.pressed
+                                    ? Qt.rgba(255, 255, 255, 0.18)
+                                    : (playHover.containsMouse ? Qt.rgba(255, 255, 255, 0.12) : Qt.rgba(255, 255, 255, 0.07))
+                            }
+                            GradientStop {
+                                position: 0.55
+                                color: playHover.pressed
+                                    ? Qt.rgba(255, 255, 255, 0.08)
+                                    : (playHover.containsMouse ? Qt.rgba(255, 255, 255, 0.05) : Qt.rgba(255, 255, 255, 0.02))
+                            }
+                            GradientStop {
+                                position: 1.0
+                                color: playHover.pressed
+                                    ? Qt.rgba(0, 0, 0, 0.06)
+                                    : (playHover.containsMouse ? Qt.rgba(0, 0, 0, 0.04) : Qt.rgba(0, 0, 0, 0.08))
+                            }
+                        }
+
+                        // Whisper-thin natural glass rim reflection
+                        border.color: playHover.pressed
+                            ? Qt.rgba(255, 255, 255, 0.28)
+                            : (playHover.containsMouse ? Qt.rgba(255, 255, 255, 0.18) : Qt.rgba(255, 255, 255, 0.09))
+                        border.width: 1
+
+                        scale: playHover.pressed ? 0.92 : (playHover.containsMouse ? 1.06 : 1.0)
+                        Behavior on scale { NumberAnimation { duration: 180; easing.type: Easing.OutBack; easing.overshoot: 1.2 } }
+                        Behavior on border.color { ColorAnimation { duration: 200; easing.type: Easing.OutCubic } }
+
+                        // Soft physical contact shadow
+                        Rectangle {
+                            anchors.centerIn: parent
+                            anchors.verticalCenterOffset: 1.5
+                            width: parent.width - 2
+                            height: parent.height - 2
+                            radius: parent.radius
+                            color: Qt.rgba(0, 0, 0, 0.30)
+                            z: -1
+                        }
 
                         Text {
                             anchors.centerIn: parent
                             text: Services.Icons.mediaPlayPause(card.isPlaying)
                             font.family: Services.Theme.fontSymbols
                             font.pixelSize: 11
-                            color: Services.Theme.bgDeep
+                            color: Services.Theme.textPrimary
+                            opacity: playHover.containsMouse ? 1.0 : 0.92
                         }
+
                         MouseArea {
                             id: playHover
                             anchors.fill: parent

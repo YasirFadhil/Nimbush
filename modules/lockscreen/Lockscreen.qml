@@ -35,6 +35,32 @@ Scope {
     property bool lockscreenPwrOpen: false
     property bool userRevealedInput: false
 
+    property bool isFaceVerified: false
+    property bool isFaceContracted: false
+    property bool isFaceTimeoutContracted: false
+    property bool deviceLockedPeekActive: false
+    property bool hasPeekedLocked: false
+    property int faceIdRetryCount: 0
+    readonly property int maxFaceIdRetries: 1
+    property bool faceIdCancelledByUser: false
+
+    readonly property bool isFaceActive: Boolean(
+        Services.FaceId &&
+        Services.FaceId.isEnabled &&
+        Services.FaceId.isEnrolled &&
+        (
+            Services.FaceId.status === "starting" ||
+            Services.FaceId.status === "camera_ready" ||
+            Services.FaceId.status === "scanning" ||
+            Services.FaceId.status === "detected" ||
+            (Services.FaceId.status === "success" && !root.isFaceContracted) ||
+            (Services.FaceId.status === "timeout" && !root.isFaceTimeoutContracted)
+        ) &&
+        root.isLocked
+    )
+
+    readonly property bool isDeviceLockedPeek: root.deviceLockedPeekActive && !root.isFaceActive
+
     readonly property string lockLayout: Services.Config ? (Services.Config.lockscreenLayout || "default") : "default"
     readonly property bool isCompact: lockLayout === "compact"
     readonly property bool isMinimal: lockLayout === "minimal"
@@ -82,6 +108,17 @@ Scope {
         onTriggered: root.isRevealed = true
     }
 
+    onIsRevealedChanged: {
+        if (root.isRevealed) {
+            root.deviceLockedPeekActive = false
+            deviceLockedPeekStartTimer.restart()
+        } else {
+            deviceLockedPeekStartTimer.stop()
+            deviceLockedPeekDurationTimer.stop()
+            root.deviceLockedPeekActive = false
+        }
+    }
+
     Timer {
         id: unlockTimer
         interval: 220
@@ -92,8 +129,182 @@ Scope {
         }
     }
 
+    Timer {
+        id: deviceLockedPeekStartTimer
+        interval: 400
+        repeat: false
+        onTriggered: root.triggerDeviceLockedPeek()
+    }
+
+    Timer {
+        id: deviceLockedPeekDurationTimer
+        interval: 1800
+        repeat: false
+        onTriggered: {
+            console.log("[Lockscreen] Device Locked peek duration elapsed -> contracting peek, waiting delay before Face ID")
+            root.deviceLockedPeekActive = false
+            root.hasPeekedLocked = true
+            if (Services.FaceId && Services.FaceId.isEnabled && Services.FaceId.isEnrolled && !root.isFaceVerified && !Services.FaceId.isScanning) {
+                faceIdScanTimer.restart()
+            }
+        }
+    }
+
+    Timer {
+        id: faceIdScanTimer
+        interval: 2500
+        repeat: false
+        onTriggered: {
+            console.log("[Lockscreen] Face ID delay timer triggered. isLocked:", root.isLocked, "FaceId:", Services.FaceId, "isEnabled:", Services.FaceId?.isEnabled)
+            if (root.isLocked && Services.FaceId && Services.FaceId.isEnabled && Services.FaceId.isEnrolled && !root.isFaceVerified && !Services.FaceId.isScanning) {
+                root.triggerFaceIdScan()
+            }
+        }
+    }
+
+    Timer {
+        id: faceIdContractTimer
+        interval: 1000
+        repeat: false
+        onTriggered: {
+            console.log("[Lockscreen] Face ID contract timer triggered -> contracting island")
+            root.isFaceContracted = true
+        }
+    }
+
+    Timer {
+        id: faceIdTimeoutShrinkTimer
+        interval: 1400
+        repeat: false
+        onTriggered: {
+            root.isFaceTimeoutContracted = true
+            if (Services.FaceId) Services.FaceId.stopScan()
+            if (!root.faceIdCancelledByUser && root.isLocked && !root.isFaceVerified && root.faceIdRetryCount < root.maxFaceIdRetries) {
+                console.log("[Lockscreen] Face ID failed, scheduling retry in 3s. Current retryCount:", root.faceIdRetryCount)
+                faceIdRetryTimer.restart()
+            } else {
+                console.log("[Lockscreen] Face ID cancelled or max retries reached. No more auto retries.")
+            }
+        }
+    }
+
+    Timer {
+        id: faceIdRetryTimer
+        interval: 3000
+        repeat: false
+        onTriggered: {
+            if (!root.faceIdCancelledByUser && root.isLocked && !root.isFaceVerified && !root.isFaceActive && root.faceIdRetryCount < root.maxFaceIdRetries) {
+                root.faceIdRetryCount++
+                console.log("[Lockscreen] Executing Face ID auto-retry #" + root.faceIdRetryCount)
+                root.triggerFaceIdScan()
+            }
+        }
+    }
+
+    Timer {
+        id: faceIdUnlockDelayTimer
+        interval: 850
+        repeat: false
+        onTriggered: {
+            console.log("[Lockscreen] Face ID auto-unlock triggered")
+            root.unlockSuccess()
+        }
+    }
+
+    function triggerDeviceLockedPeek() {
+        console.log("[Lockscreen] triggerDeviceLockedPeek called. isLocked:", root.isLocked, "isFaceVerified:", root.isFaceVerified, "isFaceActive:", root.isFaceActive)
+        if (!root.isLocked || root.isFaceVerified || root.isFaceActive) return
+        deviceLockedPeekStartTimer.stop()
+        root.deviceLockedPeekActive = true
+        deviceLockedPeekDurationTimer.restart()
+    }
+
+    function triggerFaceIdScan() {
+        console.log("[Lockscreen] triggerFaceIdScan called. isLocked:", root.isLocked, "isEnabled:", Services.FaceId?.isEnabled, "isEnrolled:", Services.FaceId?.isEnrolled)
+        if (!root.isLocked || !Services.FaceId || !Services.FaceId.isEnabled || !Services.FaceId.isEnrolled) return
+        if (Services.FaceId.isScanning) return
+        if (root.isFaceVerified) return
+
+        root.faceIdCancelledByUser = false
+        deviceLockedPeekStartTimer.stop()
+        deviceLockedPeekDurationTimer.stop()
+        faceIdScanTimer.stop()
+        faceIdRetryTimer.stop()
+        root.deviceLockedPeekActive = false
+        root.hasPeekedLocked = true
+
+        faceIdContractTimer.stop()
+        faceIdTimeoutShrinkTimer.stop()
+        root.isFaceContracted = false
+        root.isFaceTimeoutContracted = false
+        Services.FaceId.startScan()
+    }
+
+    function stopFaceIdScan() {
+        console.log("[Lockscreen] stopFaceIdScan called (user cancelled)")
+        root.faceIdCancelledByUser = true
+        root.faceIdRetryCount = root.maxFaceIdRetries
+        faceIdScanTimer.stop()
+        faceIdRetryTimer.stop()
+        faceIdContractTimer.stop()
+        faceIdTimeoutShrinkTimer.stop()
+        faceIdUnlockDelayTimer.stop()
+        root.isFaceContracted = false
+        root.isFaceTimeoutContracted = false
+        if (Services.FaceId) Services.FaceId.stopScan()
+    }
+
+    Connections {
+        target: Services.FaceId
+        function onAuthenticated(user, confidence) {
+            console.log("[Lockscreen] Face ID authenticated for:", user, "autoUnlock:", Services.FaceId.autoUnlock)
+            if (!root.isLocked) return
+
+            root.isError = false
+            root.errorMessage = ""
+            root.isAuthenticating = false
+            root.hasPeekedLocked = true
+            root.isFaceVerified = true
+            root.faceIdRetryCount = 0
+
+            if (Services.FaceId.autoUnlock) {
+                faceIdUnlockDelayTimer.restart()
+            } else {
+                faceIdContractTimer.restart()
+            }
+        }
+
+        function onStatusChanged() {
+            if (Services.FaceId && Services.FaceId.status === "timeout") {
+                faceIdTimeoutShrinkTimer.restart()
+            }
+        }
+
+        function onScanFailed(reason) {
+            console.log("[Lockscreen] Face ID scan failed:", reason)
+            if (!root.faceIdCancelledByUser) {
+                faceIdTimeoutShrinkTimer.restart()
+            }
+        }
+    }
+
     function open() {
         if (isLocked) return
+        if (Services.FaceId) Services.FaceId.resetStatus()
+        faceIdUnlockDelayTimer.stop()
+        faceIdContractTimer.stop()
+        faceIdTimeoutShrinkTimer.stop()
+        faceIdRetryTimer.stop()
+        deviceLockedPeekStartTimer.stop()
+        deviceLockedPeekDurationTimer.stop()
+        faceIdScanTimer.stop()
+        root.faceIdRetryCount = 0
+        root.faceIdCancelledByUser = false
+        root.deviceLockedPeekActive = false
+        root.isFaceContracted = false
+        root.isFaceTimeoutContracted = false
+        root.isFaceVerified = false
+        root.hasPeekedLocked = false
         isLocked = true
         passwordInput = ""
         pendingPassword = ""
@@ -107,6 +318,7 @@ Scope {
         updateTime()
         sessionLock.locked = true
         revealTimer.start()
+        deviceLockedPeekStartTimer.restart()
     }
 
     function close() {
@@ -155,6 +367,10 @@ Scope {
         if (isAuthenticating) return
         const pw = passwordInput.trim()
         if (pw.length === 0) {
+            if ((Services.FaceId && Services.FaceId.status === "success") || root.isFaceVerified) {
+                root.unlockSuccess()
+                return
+            }
             triggerShake("Enter password")
             return
         }
@@ -193,6 +409,17 @@ Scope {
         capsLockOn = false
         lockscreenCcOpen = false
         lockscreenPwrOpen = false
+        faceIdUnlockDelayTimer.stop()
+        faceIdContractTimer.stop()
+        faceIdTimeoutShrinkTimer.stop()
+        faceIdRetryTimer.stop()
+        root.faceIdRetryCount = 0
+        root.faceIdCancelledByUser = false
+        root.isFaceContracted = false
+        root.isFaceTimeoutContracted = false
+        root.isFaceVerified = false
+        root.hasPeekedLocked = false
+        if (Services.FaceId) Services.FaceId.stopScan()
         unlockTimer.start()
     }
 
@@ -254,6 +481,7 @@ Scope {
         }
     }
 
+    // ── Session Lock Integration (Wayland ext-session-lock-v1) ──────────────
     WlSessionLock {
         id: sessionLock
 
@@ -261,6 +489,21 @@ Scope {
             root.isLocked = sessionLock.locked
             Services.OverlayManager.isLocked = sessionLock.locked
             if (!sessionLock.locked) {
+                if (Services.FaceId) Services.FaceId.stopScan()
+                faceIdUnlockDelayTimer.stop()
+                faceIdContractTimer.stop()
+                faceIdTimeoutShrinkTimer.stop()
+                faceIdRetryTimer.stop()
+                deviceLockedPeekStartTimer.stop()
+                deviceLockedPeekDurationTimer.stop()
+                faceIdScanTimer.stop()
+                root.faceIdRetryCount = 0
+                root.faceIdCancelledByUser = false
+                root.deviceLockedPeekActive = false
+                root.isFaceContracted = false
+                root.isFaceTimeoutContracted = false
+                root.isFaceVerified = false
+                root.hasPeekedLocked = false
                 root.passwordInput = ""
                 root.pendingPassword = ""
                 root.isAuthenticating = false
@@ -268,6 +511,20 @@ Scope {
                 root.capsLockOn = false
                 if (typeof pwTextInput !== "undefined" && pwTextInput) pwTextInput.text = ""
                 if (pam.active) pam.abort()
+            } else {
+                if (Services.FaceId) Services.FaceId.resetStatus()
+                faceIdUnlockDelayTimer.stop()
+                faceIdContractTimer.stop()
+                faceIdTimeoutShrinkTimer.stop()
+                faceIdRetryTimer.stop()
+                root.faceIdRetryCount = 0
+                root.faceIdCancelledByUser = false
+                root.isFaceContracted = false
+                root.isFaceTimeoutContracted = false
+                root.isFaceVerified = false
+                root.hasPeekedLocked = false
+                root.deviceLockedPeekActive = false
+                deviceLockedPeekStartTimer.restart()
             }
         }
 
@@ -285,6 +542,12 @@ Scope {
                 // Keyboard Handler - Strictly prevents ESC from unlocking
                 Keys.onPressed: (event) => {
                     if (event.key === Qt.Key_Escape) {
+                        if (root.lockscreenCcOpen || root.lockscreenPwrOpen) {
+                            root.lockscreenCcOpen = false
+                            root.lockscreenPwrOpen = false
+                            event.accepted = true
+                            return
+                        }
                         root.passwordInput = ""
                         root.userRevealedInput = false
                         if (typeof pwTextInput !== "undefined" && pwTextInput) pwTextInput.text = ""
@@ -292,8 +555,39 @@ Scope {
                         event.accepted = true
                     } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
                         if (typeof pwTextInput !== "undefined" && pwTextInput) root.passwordInput = pwTextInput.text
+                        if (root.passwordInput.length === 0) {
+                            if ((Services.FaceId && Services.FaceId.status === "success") || root.isFaceVerified) {
+                                root.unlockSuccess()
+                                event.accepted = true
+                                return
+                            }
+                            if (Services.FaceId && Services.FaceId.isEnabled && Services.FaceId.isEnrolled && !Services.FaceId.isScanning) {
+                                root.triggerFaceIdScan()
+                                event.accepted = true
+                                return
+                            }
+                            if (Services.FaceId && Services.FaceId.isScanning) {
+                                event.accepted = true
+                                return
+                            }
+                        }
                         root.authenticate()
                         event.accepted = true
+                    } else if (event.key === Qt.Key_Space && (!pwTextInput || pwTextInput.text.length === 0)) {
+                        if ((Services.FaceId && Services.FaceId.status === "success") || root.isFaceVerified) {
+                            root.unlockSuccess()
+                            event.accepted = true
+                            return
+                        }
+                        if (Services.FaceId && Services.FaceId.isEnabled && Services.FaceId.isEnrolled && !Services.FaceId.isScanning) {
+                            root.triggerFaceIdScan()
+                            event.accepted = true
+                            return
+                        }
+                        if (Services.FaceId && Services.FaceId.isScanning) {
+                            event.accepted = true
+                            return
+                        }
                     } else if (event.key === Qt.Key_CapsLock) {
                         root.capsLockOn = !root.capsLockOn
                         event.accepted = true
@@ -380,7 +674,7 @@ Scope {
                     anchors.left: parent.left
                     anchors.right: parent.right
                     height: 48
-                    z: 100
+                    z: 10000
                     visible: !root.isCompact
                     opacity: (root.isRevealed && !root.isCompact) ? 1.0 : 0.0
                     scale: root.isRevealed ? 1.0 : 0.96
@@ -388,7 +682,7 @@ Scope {
                     Behavior on opacity { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
                     Behavior on scale { NumberAnimation { duration: 280; easing.type: Easing.OutCubic } }
 
-                    // Center: Dynamic Island (Copied 1:1 System HUD Alert Expand 280x54px & Collapsed Capsule 48x30px from DynamicIsland.qml)
+                    // Center: Dynamic Island (Apple Face ID & Status Capsule)
                     Rectangle {
                         id: lockIsland
                         visible: root.isDefault
@@ -396,188 +690,496 @@ Scope {
                         anchors.topMargin: 4
                         anchors.horizontalCenter: parent.horizontalCenter
                         color: Services.Theme.bgDeep
-                        border.color: Services.Theme.borderHighlight
-                        border.width: 1
 
-                        property bool islandExpanded: false
-                        property var activeNotif: null
+                        readonly property bool isVerified: root.isFaceVerified
+                        readonly property bool isFaceActive: root.isFaceActive
+                        readonly property bool isDeviceLockedPeek: root.isDeviceLockedPeek
 
-                        width: islandExpanded ? 260 : 140
-                        height: islandExpanded ? 48 : 32
-                        radius: islandExpanded ? 24 : 16
+                        readonly property bool isFaceSuccess: Boolean(
+                            root.isFaceActive &&
+                            Services.FaceId &&
+                            Services.FaceId.status === "success"
+                        )
 
-                        Behavior on width  { NumberAnimation { duration: 350; easing.type: Easing.OutQuad } }
-                        Behavior on height { NumberAnimation { duration: 320; easing.type: Easing.OutQuad } }
-                        Behavior on radius { NumberAnimation { duration: 320; easing.type: Easing.OutQuad } }
-
-                        Timer {
-                            id: lockIslandShrinkTimer
-                            interval: 4500
-                            repeat: false
-                            onTriggered: {
-                                lockIsland.islandExpanded = false
-                                lockIsland.activeNotif = null
-                            }
+                        border.color: {
+                            if (root.isFaceActive && Services.FaceId && Services.FaceId.status === "detected") return "#38bdf8"
+                            if (root.isDeviceLockedPeek) return Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.35)
+                            return Services.Theme.borderSubtle
                         }
+                        border.width: ((root.isFaceActive && Services.FaceId && Services.FaceId.status === "detected") || root.isDeviceLockedPeek) ? 1.5 : 1
 
-                        Connections {
-                            target: root
-                            function onIsRevealedChanged() {
-                                if (root.isRevealed) {
-                                    lockIsland.activeNotif = null
-                                    lockIsland.islandExpanded = true
-                                    lockIslandShrinkTimer.interval = 2400
-                                    lockIslandShrinkTimer.restart()
-                                } else {
-                                    lockIsland.islandExpanded = false
-                                    lockIslandShrinkTimer.stop()
+                        width: root.isFaceActive ? 160 : (root.isDeviceLockedPeek ? 218 : 140)
+                        height: root.isFaceActive ? 96 : (root.isDeviceLockedPeek ? 44 : 32)
+                        radius: root.isFaceActive ? 24 : (height / 2)
+
+                        Behavior on width  { NumberAnimation { duration: 360; easing.type: Easing.OutBack } }
+                        Behavior on height { NumberAnimation { duration: 360; easing.type: Easing.OutBack } }
+                        Behavior on radius {
+                            enabled: root.isFaceActive || (lockIsland.height > 50)
+                            NumberAnimation { duration: 320; easing.type: Easing.OutCubic }
+                        }
+                        Behavior on border.color { ColorAnimation { duration: 250 } }
+
+                        MouseArea {
+                            anchors.fill: parent
+                            z: 10
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: {
+                                if (root.isFaceVerified || (Services.FaceId && Services.FaceId.status === "success")) {
+                                    root.unlockSuccess()
+                                    return
                                 }
+                                if (root.isFaceActive || (Services.FaceId && Services.FaceId.isScanning)) {
+                                    root.stopFaceIdScan()
+                                    return
+                                }
+                                if (Services.FaceId && Services.FaceId.isEnabled && Services.FaceId.isEnrolled) {
+                                    root.faceIdRetryCount = 0
+                                    root.triggerFaceIdScan()
+                                    return
+                                }
+                                root.triggerDeviceLockedPeek()
                             }
                         }
 
-                        Connections {
-                            target: Services.Notifications
-                            function onNewNotification(entry) {
-                                lockIsland.activeNotif = entry
-                                lockIsland.islandExpanded = true
-                                lockIslandShrinkTimer.interval = 4500
-                                lockIslandShrinkTimer.restart()
-                            }
-                        }
-
-                        // ==================== Collapsed Status Icon (Left Edge in 140x32 Pill) ====================
+                        // ==================== Mode 1: Collapsed Idle Desktop Dot or Verified Pill ====================
                         Item {
                             id: statusIconContainer
-                            anchors.left: parent.left
-                            anchors.leftMargin: 12
-                            anchors.verticalCenter: parent.verticalCenter
-                            implicitWidth: 16
-                            implicitHeight: 16
-                            z: 3
-                            visible: !lockIsland.islandExpanded || opacity > 0.01
-                            opacity: !lockIsland.islandExpanded ? 1 : 0
-                            scale: !lockIsland.islandExpanded ? 1.0 : 0.2
+                            anchors.fill: parent
+                            z: 2
+                            visible: (!root.isFaceActive && !root.isDeviceLockedPeek) || opacity > 0.01
+                            opacity: (!root.isFaceActive && !root.isDeviceLockedPeek) ? 1 : 0
+                            scale: (!root.isFaceActive && !root.isDeviceLockedPeek) ? 1.0 : 0.4
                             transformOrigin: Item.Center
 
-                            Behavior on opacity { NumberAnimation { duration: 350; easing.type: Easing.OutQuad } }
-                            Behavior on scale   { NumberAnimation { duration: 550; easing.type: Easing.OutExpo } }
+                            Behavior on opacity { NumberAnimation { duration: 250; easing.type: Easing.OutQuad } }
+                            Behavior on scale   { NumberAnimation { duration: 350; easing.type: Easing.OutExpo } }
 
-                            Text {
-                                anchors.centerIn: parent
-                                text: "󰌾"
-                                font.family: Services.Theme.fontSymbols
-                                font.pixelSize: 13
-                                color: Services.Theme.accent
+                            Item {
+                                id: statusIndicatorWrapper
+                                width: 20
+                                height: 20
+                                anchors.verticalCenter: parent.verticalCenter
+                                x: (root.hasPeekedLocked || root.isFaceVerified) ? 14 : (parent.width - width) / 2
+                                rotation: root.isFaceVerified ? 720 : (root.hasPeekedLocked ? 360 : 0)
+
+                                Behavior on x {
+                                    NumberAnimation { duration: 380; easing.type: Easing.OutCubic }
+                                }
+                                Behavior on rotation {
+                                    NumberAnimation { duration: 380; easing.type: Easing.OutBack; easing.overshoot: 1.25 }
+                                }
+
+                                Text {
+                                    id: statusIndicatorIcon
+                                    anchors.centerIn: parent
+                                    text: {
+                                        if (root.isFaceVerified) return "󰌿"
+                                        if (root.hasPeekedLocked) return "󰌾"
+                                        return "●"
+                                    }
+                                    font.family: Services.Theme.fontSymbols
+                                    font.pixelSize: (root.isFaceVerified || root.hasPeekedLocked) ? 14 : 13
+                                    color: {
+                                        if (root.isFaceVerified) return "#30d158"
+                                        if (root.hasPeekedLocked) return Services.Theme.textPrimary
+                                        return Services.Theme.textDisabled
+                                    }
+                                    scale: iconScale
+                                    property real iconScale: 1.0
+
+                                    Behavior on color { ColorAnimation { duration: 220 } }
+
+                                    onTextChanged: {
+                                        iconMorphAnim.restart()
+                                    }
+
+                                    SequentialAnimation {
+                                        id: iconMorphAnim
+                                        NumberAnimation { target: statusIndicatorIcon; property: "iconScale"; to: 0.4; duration: 90; easing.type: Easing.InBack }
+                                        NumberAnimation { target: statusIndicatorIcon; property: "iconScale"; to: 1.3; duration: 200; easing.type: Easing.OutBack }
+                                        NumberAnimation { target: statusIndicatorIcon; property: "iconScale"; to: 1.0; duration: 120; easing.type: Easing.InOutQuad }
+                                    }
+                                }
                             }
                         }
 
-                        // ==================== Expanded: Dynamic Island Notification Banner ====================
+                        // ==================== Mode 2: Revamped "Device Locked" Dynamic Island Peek ====================
                         Item {
-                            id: notifContentContainer
+                            id: deviceLockedPeekContainer
                             anchors.fill: parent
-                            visible: lockIsland.islandExpanded || opacity > 0.01
-                            opacity: lockIsland.islandExpanded ? 1 : 0
-                            scale: lockIsland.islandExpanded ? 1.0 : 0.2
+                            visible: root.isDeviceLockedPeek || opacity > 0.01
+                            opacity: root.isDeviceLockedPeek ? 1 : 0
+                            scale: root.isDeviceLockedPeek ? 1.0 : 0.75
                             transformOrigin: Item.Center
-                            z: 1
+                            z: 3
 
-                            Behavior on opacity { NumberAnimation { duration: 350; easing.type: Easing.OutQuad } }
-                            Behavior on scale   { NumberAnimation { duration: 450; easing.type: Easing.OutBack } }
+                            Behavior on opacity { NumberAnimation { duration: 260; easing.type: Easing.OutQuad } }
+                            Behavior on scale   { NumberAnimation { duration: 380; easing.type: Easing.OutBack } }
 
-                            // App Icon / Image Container (Centered inside left circular cap)
-                            Rectangle {
-                                id: notifIconBox
-                                anchors.left: parent.left
-                                anchors.leftMargin: 8
-                                anchors.verticalCenter: parent.verticalCenter
-                                width: 32
-                                height: 32
-                                radius: 16
-                                color: notifAppIconImg.visible ? "transparent" : Services.Theme.surfaceVariant
-                                clip: true
+                            RowLayout {
+                                anchors.fill: parent
+                                anchors.leftMargin: 10
+                                anchors.rightMargin: 14
+                                spacing: 10
 
-                                Image {
-                                    id: notifAppIconImg
-                                    anchors.fill: parent
-                                    source: {
-                                        if (!lockIsland.activeNotif) return ""
-                                        const src = lockIsland.activeNotif.image || lockIsland.activeNotif.appIcon || lockIsland.activeNotif.icon || ""
-                                        if (!src) return ""
-                                        if (src.startsWith("file://") || src.startsWith("http://") || src.startsWith("https://"))
-                                            return src
-                                        if (src.startsWith("/"))
-                                            return "file://" + src
-                                        if (Services.SystemTheme) {
-                                            const res = Services.SystemTheme.getIcon(src)
-                                            if (res && res.length > 0) return res
-                                        }
-                                        const qp = Quickshell.iconPath(src, true)
-                                        return (qp && qp.startsWith("/")) ? ("file://" + qp) : (qp || "")
+                                // Left: Sleek Circular Lock Icon Badge with subtle accent glow
+                                Rectangle {
+                                    id: lockBadge
+                                    Layout.preferredWidth: 28
+                                    Layout.preferredHeight: 28
+                                    Layout.alignment: Qt.AlignVCenter
+                                    radius: 14
+                                    color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.16)
+                                    border.color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.28)
+                                    border.width: 1
+
+                                    Text {
+                                        id: lockBadgeIcon
+                                        anchors.centerIn: parent
+                                        text: "󰌾"
+                                        font.family: Services.Theme.fontSymbols
+                                        font.pixelSize: 14
+                                        color: Services.Theme.accent
+
+                                        scale: root.isDeviceLockedPeek ? 1.0 : 0.6
+                                        Behavior on scale { NumberAnimation { duration: 400; easing.type: Easing.OutBack } }
                                     }
-                                    fillMode: Image.PreserveAspectCrop
-                                    asynchronous: true
-                                    cache: true
-                                    sourceSize: Qt.size(64, 64)
-                                    visible: status === Image.Ready && source.toString().length > 0
                                 }
 
-                                Text {
-                                    anchors.centerIn: parent
-                                    text: lockIsland.activeNotif ? (Services.Icons.bell || "󰂚") : "󰌾"
-                                    font.family: Services.Theme.fontSymbols
-                                    font.pixelSize: 15
-                                    color: Services.Theme.accent
-                                    visible: !notifAppIconImg.visible
+                                // Center: Typography Hierarchy
+                                Column {
+                                    Layout.fillWidth: true
+                                    Layout.alignment: Qt.AlignVCenter
+                                    spacing: 1
+
+                                    Text {
+                                        width: parent.width
+                                        text: "Device Locked"
+                                        color: Services.Theme.textPrimary
+                                        font.family: Services.Theme.fontDisplay
+                                        font.pixelSize: 12
+                                        font.weight: Font.DemiBold
+                                        elide: Text.ElideRight
+                                    }
+
+                                    Text {
+                                        width: parent.width
+                                        text: "Authentication required"
+                                        color: Services.Theme.textSecondary
+                                        font.family: Services.Theme.fontDisplay
+                                        font.pixelSize: 10
+                                        elide: Text.ElideRight
+                                        opacity: 0.85
+                                    }
+                                }
+                            }
+                        }
+
+                        // ==================== Mode 3: Apple Face ID Dynamic Island ====================
+                        Item {
+                            id: faceIdExpandedContainer
+                            anchors.fill: parent
+                            visible: root.isFaceActive || opacity > 0.01
+                            opacity: root.isFaceActive ? 1 : 0
+                            scale: root.isFaceActive ? 1.0 : 0.5
+                            transformOrigin: Item.Center
+                            z: 4
+
+                            Behavior on opacity { NumberAnimation { duration: 280; easing.type: Easing.OutQuad } }
+                            Behavior on scale   { NumberAnimation { duration: 350; easing.type: Easing.OutBack } }
+
+                            function triggerVerifiedTransition() {
+                                scanningPulseAnim.stop()
+                                faceIconWrapper.pulseScale = 1.0
+                                verifiedPopAnim.restart()
+                                haloBurstAnim.restart()
+                                appleFaceCanvas.requestPaint()
+                            }
+
+                            Connections {
+                                target: Services.FaceId
+                                function onStatusChanged() {
+                                    if (Services.FaceId && Services.FaceId.status === "success") {
+                                        faceIdExpandedContainer.triggerVerifiedTransition()
+                                    } else if (Services.FaceId && Services.FaceId.isScanning) {
+                                        verifiedPopAnim.stop()
+                                        haloBurstAnim.stop()
+                                        faceIconWrapper.popScale = 1.0
+                                        if (!scanningPulseAnim.running) {
+                                            scanningPulseAnim.restart()
+                                        }
+                                    } else {
+                                        scanningPulseAnim.stop()
+                                        verifiedPopAnim.stop()
+                                        haloBurstAnim.stop()
+                                        faceIconWrapper.pulseScale = 1.0
+                                        faceIconWrapper.popScale = 1.0
+                                    }
+                                }
+                                function onAuthenticated(user, confidence) {
+                                    faceIdExpandedContainer.triggerVerifiedTransition()
                                 }
                             }
 
-                            // Notification Text Summary & Body (100% Guaranteed Mathematically Centered Vertically)
                             Column {
-                                id: notifTextBox
-                                anchors.left: notifIconBox.right
-                                anchors.leftMargin: 10
-                                anchors.right: parent.right
-                                anchors.rightMargin: 14
-                                anchors.verticalCenter: parent.verticalCenter
-                                spacing: 2
+                                anchors.centerIn: parent
+                                spacing: 6
+                                width: parent.width - 20
 
-                                Text {
-                                    width: parent.width
-                                    text: lockIsland.activeNotif ? (lockIsland.activeNotif.summary || lockIsland.activeNotif.appName || "Notification") : "Device Locked"
-                                    color: Services.Theme.textPrimary
-                                    font.pixelSize: 12
-                                    font.weight: Font.DemiBold
-                                    elide: Text.ElideRight
+                                // Authentic Apple Face ID Vector Glyph (34x34) with Spring Pop & Halo
+                                Item {
+                                    id: faceIconWrapper
+                                    anchors.horizontalCenter: parent.horizontalCenter
+                                    width: 34
+                                    height: 34
+                                    implicitWidth: 34
+                                    implicitHeight: 34
+                                    transformOrigin: Item.Center
+
+                                    property real pulseScale: 1.0
+                                    property real popScale: 1.0
+
+                                    scale: pulseScale * popScale
+
+                                    // Gentle breathing pulse during scanning
+                                    SequentialAnimation {
+                                        id: scanningPulseAnim
+                                        running: Services.FaceId && Services.FaceId.isScanning && (Services.FaceId.status !== "success")
+                                        loops: Animation.Infinite
+                                        NumberAnimation { target: faceIconWrapper; property: "pulseScale"; from: 1.0; to: 1.07; duration: 520; easing.type: Easing.InOutSine }
+                                        NumberAnimation { target: faceIconWrapper; property: "pulseScale"; from: 1.07; to: 1.0; duration: 520; easing.type: Easing.InOutSine }
+                                    }
+
+                                    // Spring bounce on verification
+                                    SequentialAnimation {
+                                        id: verifiedPopAnim
+                                        NumberAnimation { target: faceIconWrapper; property: "popScale"; to: 0.88; duration: 80; easing.type: Easing.InQuad }
+                                        NumberAnimation { target: faceIconWrapper; property: "popScale"; to: 1.20; duration: 200; easing.type: Easing.OutBack }
+                                        NumberAnimation { target: faceIconWrapper; property: "popScale"; to: 1.0; duration: 220; easing.type: Easing.InOutQuad }
+                                    }
+
+                                    // Emerald glowing halo flash behind icon on verification
+                                    Rectangle {
+                                        id: verifiedHalo
+                                        anchors.centerIn: parent
+                                        width: 34
+                                        height: 34
+                                        radius: 17
+                                        color: "#30d158"
+                                        opacity: 0.0
+                                        scale: 0.5
+                                        z: -1
+
+                                        ParallelAnimation {
+                                            id: haloBurstAnim
+                                            NumberAnimation { target: verifiedHalo; property: "scale"; from: 0.6; to: 1.6; duration: 420; easing.type: Easing.OutCubic }
+                                            SequentialAnimation {
+                                                NumberAnimation { target: verifiedHalo; property: "opacity"; from: 0.0; to: 0.40; duration: 100; easing.type: Easing.OutQuad }
+                                                NumberAnimation { target: verifiedHalo; property: "opacity"; from: 0.40; to: 0.0; duration: 320; easing.type: Easing.OutQuad }
+                                            }
+                                        }
+                                    }
+
+                                    Canvas {
+                                        id: appleFaceCanvas
+                                        anchors.fill: parent
+                                        renderTarget: Canvas.FramebufferObject
+
+                                        readonly property bool isSuccess: Boolean(Services.FaceId && Services.FaceId.status === "success")
+                                        readonly property bool isDetected: Boolean(Services.FaceId && Services.FaceId.status === "detected")
+                                        readonly property bool isTimeout: Boolean(Services.FaceId && Services.FaceId.status === "timeout")
+
+                                        property color strokeColor: isSuccess ? "#30d158" : (isDetected ? "#38bdf8" : (isTimeout ? "#ef4444" : Services.Theme.accent))
+                                        property real smileAmount: isSuccess ? 1.40 : 1.0
+                                        property real cornerRadius: 4.0
+
+                                        Behavior on strokeColor {
+                                            ColorAnimation { duration: 280; easing.type: Easing.OutQuad }
+                                        }
+                                        Behavior on smileAmount {
+                                            NumberAnimation { duration: 360; easing.type: Easing.OutBack }
+                                        }
+
+                                        onStrokeColorChanged: requestPaint()
+                                        onSmileAmountChanged: requestPaint()
+                                        onVisibleChanged: { if (visible) requestPaint() }
+                                        Component.onCompleted: requestPaint()
+
+                                        onPaint: {
+                                            var ctx = getContext("2d")
+                                            ctx.clearRect(0, 0, width, height)
+                                            ctx.strokeStyle = strokeColor
+                                            ctx.lineWidth = 1.9
+                                            ctx.lineCap = "round"
+                                            ctx.lineJoin = "round"
+
+                                            var w = width
+                                            var h = height
+                                            var r = cornerRadius
+
+                                            // Top-Left Bracket
+                                            ctx.beginPath()
+                                            ctx.moveTo(w * 0.10, h * 0.32)
+                                            ctx.lineTo(w * 0.10, h * 0.18 + r)
+                                            ctx.arcTo(w * 0.10, h * 0.10, w * 0.18 + r, h * 0.10, r)
+                                            ctx.lineTo(w * 0.34, h * 0.10)
+                                            ctx.stroke()
+
+                                            // Top-Right Bracket
+                                            ctx.beginPath()
+                                            ctx.moveTo(w * 0.66, h * 0.10)
+                                            ctx.lineTo(w * 0.82 - r, h * 0.10)
+                                            ctx.arcTo(w * 0.90, h * 0.10, w * 0.90, h * 0.18 + r, r)
+                                            ctx.lineTo(w * 0.90, h * 0.32)
+                                            ctx.stroke()
+
+                                            // Bottom-Left Bracket
+                                            ctx.beginPath()
+                                            ctx.moveTo(w * 0.10, h * 0.68)
+                                            ctx.lineTo(w * 0.10, h * 0.82 - r)
+                                            ctx.arcTo(w * 0.10, h * 0.90, w * 0.18 + r, h * 0.90, r)
+                                            ctx.lineTo(w * 0.34, h * 0.90)
+                                            ctx.stroke()
+
+                                            // Bottom-Right Bracket
+                                            ctx.beginPath()
+                                            ctx.moveTo(w * 0.66, h * 0.90)
+                                            ctx.lineTo(w * 0.82 - r, h * 0.90)
+                                            ctx.arcTo(w * 0.90, h * 0.90, w * 0.90, h * 0.82 - r, r)
+                                            ctx.lineTo(w * 0.90, h * 0.68)
+                                            ctx.stroke()
+
+                                            // Left Eye
+                                            ctx.beginPath()
+                                            ctx.moveTo(w * 0.35, h * 0.36)
+                                            ctx.lineTo(w * 0.35, h * 0.46)
+                                            ctx.stroke()
+
+                                            // Right Eye
+                                            ctx.beginPath()
+                                            ctx.moveTo(w * 0.65, h * 0.36)
+                                            ctx.lineTo(w * 0.65, h * 0.46)
+                                            ctx.stroke()
+
+                                            // Nose
+                                            ctx.beginPath()
+                                            ctx.moveTo(w * 0.50, h * 0.42)
+                                            ctx.lineTo(w * 0.50, h * 0.54)
+                                            ctx.lineTo(w * 0.58, h * 0.54)
+                                            ctx.stroke()
+
+                                            // Smile
+                                            ctx.beginPath()
+                                            ctx.moveTo(w * 0.33, h * 0.69)
+                                            ctx.quadraticCurveTo(w * 0.50, h * (0.69 + 0.11 * smileAmount), w * 0.67, h * 0.69)
+                                            ctx.stroke()
+                                        }
+                                    }
                                 }
 
-                                Text {
-                                    width: parent.width
-                                    text: lockIsland.activeNotif ? (lockIsland.activeNotif.body || "") : "Authentication required"
-                                    color: Services.Theme.textSecondary
-                                    font.pixelSize: 10
-                                    elide: Text.ElideRight
+                                // Status text stacked vertically beneath Face ID icon
+                                Column {
+                                    anchors.horizontalCenter: parent.horizontalCenter
+                                    spacing: 2
+
+                                    Text {
+                                        anchors.horizontalCenter: parent.horizontalCenter
+                                        text: "Face ID"
+                                        font.family: Services.Theme.fontDisplay
+                                        font.pixelSize: 11
+                                        font.weight: Font.DemiBold
+                                        color: Services.Theme.textPrimary
+                                    }
+
+                                    Item {
+                                        id: statusSubtitleBox
+                                        anchors.horizontalCenter: parent.horizontalCenter
+                                        width: 130
+                                        height: 15
+                                        clip: true
+
+                                        readonly property bool isVerified: Boolean(Services.FaceId && Services.FaceId.status === "success")
+
+                                        Text {
+                                            id: statusScanText
+                                            anchors.horizontalCenter: parent.horizontalCenter
+                                            y: statusSubtitleBox.isVerified ? -16 : 0
+                                            opacity: statusSubtitleBox.isVerified ? 0.0 : 1.0
+
+                                            text: {
+                                                if (Services.FaceId && Services.FaceId.status === "detected") return "Verifying Face..."
+                                                if (Services.FaceId && Services.FaceId.status === "scanning") return "Looking for Face..."
+                                                if (Services.FaceId && (Services.FaceId.status === "starting" || Services.FaceId.status === "camera_ready")) return "Starting..."
+                                                if (Services.FaceId && Services.FaceId.status === "timeout") return "Try Again"
+                                                return "Ready"
+                                            }
+                                            font.family: Services.Theme.fontDisplay
+                                            font.pixelSize: 10
+                                            font.weight: Font.Normal
+                                            horizontalAlignment: Text.AlignHCenter
+                                            color: {
+                                                if (Services.FaceId && Services.FaceId.status === "detected") return "#38bdf8"
+                                                if (Services.FaceId && Services.FaceId.status === "timeout") return Services.Theme.danger
+                                                return Services.Theme.textSecondary
+                                            }
+
+                                            Behavior on y {
+                                                NumberAnimation { duration: 280; easing.type: Easing.OutCubic }
+                                            }
+                                            Behavior on opacity {
+                                                NumberAnimation { duration: 240; easing.type: Easing.OutQuad }
+                                            }
+                                        }
+
+                                        Text {
+                                            id: statusSuccessText
+                                            anchors.horizontalCenter: parent.horizontalCenter
+                                            y: statusSubtitleBox.isVerified ? 0 : 16
+                                            opacity: statusSubtitleBox.isVerified ? 1.0 : 0.0
+
+                                            text: "Verified"
+                                            font.family: Services.Theme.fontDisplay
+                                            font.pixelSize: 10
+                                            font.weight: Font.DemiBold
+                                            horizontalAlignment: Text.AlignHCenter
+                                            color: "#30d158"
+
+                                            Behavior on y {
+                                                NumberAnimation { duration: 320; easing.type: Easing.OutBack }
+                                            }
+                                            Behavior on opacity {
+                                                NumberAnimation { duration: 280; easing.type: Easing.OutQuad }
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
                     }
 
-                    // Mode A: Default Pill Box (Default Layout)
+                    // Mode A: Combined Status & Control Center Pill (Desktop-Styled)
                     Rectangle {
+                        id: combinedControlPill
                         anchors.right: parent.right
-                        anchors.rightMargin: 20
-                        anchors.verticalCenter: parent.verticalCenter
-                        height: 30
-                        implicitWidth: combinedCcRow.implicitWidth + 22
-                        radius: 15
-                        color: ccMouse.containsMouse ? Services.Theme.bgHover : Services.Theme.surfaceVariant
-                        border.color: root.lockscreenCcOpen ? Services.Theme.accent : Services.Theme.border
+                        anchors.rightMargin: 18
+                        anchors.top: parent.top
+                        anchors.topMargin: 6
+                        height: 28
+                        implicitWidth: combinedContentRow.implicitWidth + 24
+                        width: implicitWidth
+                        radius: 14
+                        color: pillMouse.containsMouse ? Services.Theme.bgHover : Services.Theme.surface
+                        border.color: root.lockscreenCcOpen ? Services.Theme.accent : (pillMouse.containsMouse ? Services.Theme.borderHighlight : Services.Theme.border)
                         border.width: 1
                         visible: root.isDefault && (Services.Config ? Services.Config.lockscreenShowStatusPill : true)
+
+                        Behavior on width { NumberAnimation { duration: 280; easing.type: Easing.OutBack; easing.overshoot: 1.05 } }
                         Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                         Behavior on border.color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                         RowLayout {
-                            id: combinedCcRow
+                            id: combinedContentRow
                             anchors.centerIn: parent
                             spacing: 8
 
@@ -590,33 +1192,43 @@ Scope {
                                 color: (Services.Wifi && Services.Wifi.connected) ? Services.Theme.accent : Services.Theme.textDisabled
                             }
 
-                            // Bluetooth Status Icon (if enabled)
+                            // Bluetooth Status Icon (if enabled and connected)
                             Text {
-                                visible: Services.Bluetooth && Services.Bluetooth.enabled
-                                text: (Services.Bluetooth && Services.Bluetooth.hasConnectedDevice)
-                                      ? Services.Icons.btDeviceIcon(Services.Bluetooth.connectedDeviceIcon, Services.Bluetooth.connectedDeviceName)
-                                      : Services.Icons.bluetooth
+                                visible: Services.Bluetooth && Services.Bluetooth.enabled && Services.Bluetooth.hasConnectedDevice
+                                text: Services.Icons.btDeviceIcon(Services.Bluetooth.connectedDeviceIcon, Services.Bluetooth.connectedDeviceName)
                                 font.family: Services.Theme.fontSymbols
                                 font.pixelSize: Services.Theme.fontSizeSm
-                                color: (Services.Bluetooth && Services.Bluetooth.hasConnectedDevice) ? Services.Theme.accent : Services.Theme.textDisabled
+                                color: Services.Theme.accent
                             }
 
                             // Battery Icon & Percentage
                             RowLayout {
                                 spacing: 4
+                                visible: Services.Config ? Services.Config.showBatteryTray : true
 
                                 Text {
-                                    text: Services.Icons.powerIcon(Services.Power.charging, Math.round((Services.Power.percentage || 0) * 100))
+                                    id: batIconText
+                                    text: Services.Icons.powerIcon(Services.Power.charging, (Services.Power.percentage || 0) * 100)
                                     font.family: Services.Theme.fontSymbols
                                     font.pixelSize: Services.Theme.fontSizeMd
-                                    color: Services.Power.charging ? Services.Theme.success : (Services.Power.isLow ? Services.Theme.danger : (Services.Power.isWarning ? Services.Theme.warning : Services.Theme.textPrimary))
+                                    color: Services.Power.isLow ? "#ff4444" : (Services.Power.isWarning ? "#e06c75" : (Services.PowerProfile.saverEnabled ? "#ff9800" : ((pillMouse.containsMouse || root.lockscreenCcOpen) ? Services.Theme.accent : Services.Theme.textPrimary)))
+                                    Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+
+                                    SequentialAnimation {
+                                        running: Services.Power.isLow
+                                        loops: Animation.Infinite
+                                        NumberAnimation { target: batIconText; property: "opacity"; to: 0.2; duration: 500; easing.type: Easing.InOutQuad }
+                                        NumberAnimation { target: batIconText; property: "opacity"; to: 1.0; duration: 500; easing.type: Easing.InOutQuad }
+                                    }
                                 }
 
                                 Text {
                                     text: Math.round((Services.Power.percentage || 0) * 100) + "%"
+                                    font.family: Services.Theme.fontMono
                                     font.pixelSize: Services.Theme.fontSizeMd
                                     font.bold: true
-                                    color: Services.Power.isLow ? Services.Theme.danger : (Services.Power.isWarning ? Services.Theme.warning : Services.Theme.textPrimary)
+                                    color: Services.Power.isLow ? "#ff4444" : (Services.Power.isWarning ? "#e06c75" : (Services.PowerProfile.saverEnabled ? "#ff9800" : ((pillMouse.containsMouse || root.lockscreenCcOpen) ? Services.Theme.accent : Services.Theme.textSecondary)))
+                                    Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                                 }
                             }
 
@@ -625,25 +1237,71 @@ Scope {
                                 width: 1
                                 height: 12
                                 color: Services.Theme.border
+                                opacity: 0.8
                             }
 
-                            // Control Center Toggle Icon
-                            Text {
-                                text: Services.Icons.sliders
-                                font.family: Services.Theme.fontSymbols
-                                font.pixelSize: 12
-                                color: root.lockscreenCcOpen ? Services.Theme.accent : Services.Theme.textPrimary
+                            // Control Center Toggle Glyph (Morphs & Spins 180° into Close Icon)
+                            Item {
+                                width: 14
+                                height: 14
+                                Layout.alignment: Qt.AlignVCenter
+
+                                Item {
+                                    anchors.centerIn: parent
+                                    width: 14
+                                    height: 14
+                                    rotation: root.lockscreenCcOpen ? 180 : 0
+                                    Behavior on rotation {
+                                        NumberAnimation {
+                                            duration: 320
+                                            easing.type: Easing.OutBack
+                                            easing.overshoot: 1.3
+                                        }
+                                    }
+
+                                    // Sliders icon (Morphs out)
+                                    Text {
+                                        anchors.centerIn: parent
+                                        text: Services.Icons.controlcenter
+                                        font.family: Services.Theme.fontSymbols
+                                        font.pixelSize: 13
+                                        font.weight: Font.Bold
+                                        color: (pillMouse.containsMouse || root.lockscreenCcOpen) ? Services.Theme.accent : Services.Theme.textPrimary
+                                        opacity: root.lockscreenCcOpen ? 0.0 : 1.0
+                                        scale: root.lockscreenCcOpen ? 0.4 : 1.0
+                                        rotation: root.lockscreenCcOpen ? -90 : 0
+                                        Behavior on opacity { NumberAnimation { duration: 180 } }
+                                        Behavior on scale { NumberAnimation { duration: 220; easing.type: Easing.OutBack } }
+                                        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                                    }
+
+                                    // Close icon (Morphs in)
+                                    Text {
+                                        anchors.centerIn: parent
+                                        text: Services.Icons.close
+                                        font.family: Services.Theme.fontSymbols
+                                        font.pixelSize: 10
+                                        font.weight: Font.Bold
+                                        color: (pillMouse.containsMouse || root.lockscreenCcOpen) ? Services.Theme.accent : Services.Theme.textPrimary
+                                        opacity: root.lockscreenCcOpen ? 1.0 : 0.0
+                                        scale: root.lockscreenCcOpen ? 1.0 : 0.4
+                                        rotation: root.lockscreenCcOpen ? 0 : 90
+                                        Behavior on opacity { NumberAnimation { duration: 180 } }
+                                        Behavior on scale { NumberAnimation { duration: 220; easing.type: Easing.OutBack } }
+                                        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                                    }
+                                }
                             }
                         }
 
                         MouseArea {
-                            id: ccMouse
+                            id: pillMouse
                             anchors.fill: parent
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
-                            onClicked: {
-                                root.lockscreenCcOpen = !root.lockscreenCcOpen
-                            }
+                            preventStealing: true
+                            z: 10
+                            onClicked: root.lockscreenCcOpen = !root.lockscreenCcOpen
                         }
                     }
 
@@ -1214,11 +1872,11 @@ Scope {
 
                                 visible: opacity > 0.01
                                 opacity: centerAuthCard.showPasswordBox ? 1.0 : 0.0
-                                scale: centerAuthCard.showPasswordBox ? 1.0 : 0.94
-                                transformOrigin: Item.Bottom
+                                scale: centerAuthCard.showPasswordBox ? 1.0 : 0.88
+                                transformOrigin: Item.Center
 
-                                Behavior on opacity { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
-                                Behavior on scale { NumberAnimation { duration: 220; easing.type: Easing.OutBack } }
+                                Behavior on opacity { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                                Behavior on scale { NumberAnimation { duration: 280; easing.type: Easing.OutBack; easing.overshoot: 1.15 } }
                                 Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                                 Behavior on border.color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
@@ -1252,10 +1910,38 @@ Scope {
                                         Text {
                                             id: lockStateIcon
                                             anchors.centerIn: parent
-                                            text: root.isAuthenticating ? Services.Icons.spinner : (root.isError ? Services.Icons.error : Services.Icons.lock)
+                                            text: {
+                                                if (Services.FaceId && Services.FaceId.status === "success") return "󰌿"
+                                                if (Services.FaceId && Services.FaceId.isScanning) return "󰘑"
+                                                if (root.isAuthenticating) return Services.Icons.spinner
+                                                if (root.isError) return Services.Icons.error
+                                                return Services.Icons.lock
+                                            }
                                             font.family: Services.Theme.fontSymbols
                                             font.pixelSize: Services.Theme.fontSizeSm
-                                            color: root.isError ? Services.Theme.danger : (pwTextInput.activeFocus ? Services.Theme.accent : Services.Theme.textSecondary)
+                                            color: {
+                                                if (Services.FaceId && Services.FaceId.status === "success") return Services.Theme.success
+                                                if (Services.FaceId && Services.FaceId.isScanning) return Services.Theme.accent
+                                                if (root.isError) return Services.Theme.danger
+                                                return (pwTextInput.activeFocus ? Services.Theme.accent : Services.Theme.textSecondary)
+                                            }
+                                            scale: lockIconMorphScale
+                                            property real lockIconMorphScale: 1.0
+
+                                            Behavior on color { ColorAnimation { duration: 250 } }
+
+                                            onTextChanged: {
+                                                if (!root.isAuthenticating) {
+                                                    lockMorphAnim.restart()
+                                                }
+                                            }
+
+                                            SequentialAnimation {
+                                                id: lockMorphAnim
+                                                NumberAnimation { target: lockStateIcon; property: "lockIconMorphScale"; to: 0.45; duration: 80; easing.type: Easing.InQuad }
+                                                NumberAnimation { target: lockStateIcon; property: "lockIconMorphScale"; to: 1.25; duration: 170; easing.type: Easing.OutBack }
+                                                NumberAnimation { target: lockStateIcon; property: "lockIconMorphScale"; to: 1.0; duration: 100; easing.type: Easing.OutQuad }
+                                            }
 
                                             RotationAnimation on rotation {
                                                 id: lockSpinAnim
@@ -1267,6 +1953,23 @@ Scope {
                                                         lockStateIcon.rotation = 0
                                                     }
                                                 }
+                                            }
+                                        }
+
+                                        MouseArea {
+                                            anchors.fill: parent
+                                            cursorShape: Qt.PointingHandCursor
+                                            hoverEnabled: true
+                                            onClicked: {
+                                                if ((Services.FaceId && Services.FaceId.status === "success") || root.isFaceVerified) {
+                                                    root.unlockSuccess()
+                                                    return
+                                                }
+                                                if (Services.FaceId && Services.FaceId.isEnabled && Services.FaceId.isEnrolled && !Services.FaceId.isScanning) {
+                                                    root.triggerFaceIdScan()
+                                                }
+                                                root.userRevealedInput = true
+                                                pwTextInput.forceActiveFocus()
                                             }
                                         }
                                     }
@@ -1292,6 +1995,10 @@ Scope {
 
                                             onAccepted: {
                                                 root.passwordInput = text
+                                                if (text.length === 0 && ((Services.FaceId && Services.FaceId.status === "success") || root.isFaceVerified)) {
+                                                    root.unlockSuccess()
+                                                    return
+                                                }
                                                 root.authenticate()
                                             }
 
@@ -1301,6 +2008,13 @@ Scope {
                                                     root.isError = false
                                                     root.errorMessage = ""
                                                 }
+                                                if (text.length > 0) {
+                                                    faceIdRetryTimer.stop()
+                                                    if (root.deviceLockedPeekActive) {
+                                                        deviceLockedPeekDurationTimer.stop()
+                                                        root.deviceLockedPeekActive = false
+                                                    }
+                                                }
                                             }
                                         }
 
@@ -1308,8 +2022,17 @@ Scope {
                                         Text {
                                             anchors.left: parent.left
                                             anchors.verticalCenter: parent.verticalCenter
-                                            text: root.isAuthenticating ? "Authenticating..." : "Enter Password"
-                                            color: Qt.rgba(Services.Theme.textSecondary.r, Services.Theme.textSecondary.g, Services.Theme.textSecondary.b, 0.4)
+                                            text: {
+                                                if (root.isAuthenticating) return "Authenticating..."
+                                                if ((Services.FaceId && Services.FaceId.status === "success") || root.isFaceVerified) {
+                                                    if (Services.FaceId && !Services.FaceId.autoUnlock) return "Press Enter to unlock"
+                                                    return "Face ID Verified"
+                                                }
+                                                return "Enter Password"
+                                            }
+                                            color: ((Services.FaceId && Services.FaceId.status === "success") || root.isFaceVerified)
+                                                ? Services.Theme.success
+                                                : Qt.rgba(Services.Theme.textSecondary.r, Services.Theme.textSecondary.g, Services.Theme.textSecondary.b, 0.4)
                                             font.pixelSize: Services.Theme.fontSizeSm
                                             font.family: Services.Theme.fontPrimary
                                             visible: pwTextInput.text.length === 0 && !root.isAuthenticating
@@ -1338,11 +2061,15 @@ Scope {
 
                                     property real r: centerAuthCard.ringRadius
                                     property real bw: pwTextInput.activeFocus ? 2 : 1.5
-                                    property color bc: root.isError
-                                        ? Services.Theme.danger
-                                        : (pwTextInput.activeFocus
-                                            ? Services.Theme.accent
-                                            : Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.3))
+                                    property color bc: {
+                                        if (Services.FaceId && Services.FaceId.status === "success") return Services.Theme.success
+                                        if (Services.FaceId && Services.FaceId.isScanning) return Services.Theme.accent
+                                        return root.isError
+                                            ? Services.Theme.danger
+                                            : (pwTextInput.activeFocus
+                                                ? Services.Theme.accent
+                                                : Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.3))
+                                    }
 
                                     onRChanged: requestPaint()
                                     onBwChanged: requestPaint()
@@ -1378,10 +2105,10 @@ Scope {
                                     Behavior on scale { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                                     SequentialAnimation on opacity {
-                                        running: pwTextInput.activeFocus || root.isAuthenticating
+                                        running: pwTextInput.activeFocus || root.isAuthenticating || (Services.FaceId && Services.FaceId.isScanning)
                                         loops: Animation.Infinite
-                                        NumberAnimation { from: 1.0; to: 0.5; duration: 1200; easing.type: Easing.InOutSine }
-                                        NumberAnimation { from: 0.5; to: 1.0; duration: 1200; easing.type: Easing.InOutSine }
+                                        NumberAnimation { from: 1.0; to: 0.5; duration: 1000; easing.type: Easing.InOutSine }
+                                        NumberAnimation { from: 0.5; to: 1.0; duration: 1000; easing.type: Easing.InOutSine }
                                     }
                                 }
 
@@ -1428,27 +2155,59 @@ Scope {
                                 id: authPrompt
                                 visible: opacity > 0.01
                                 opacity: (!centerAuthCard.showPasswordBox && !root.isCompact) ? 0.85 : 0.0
+                                scale: (!centerAuthCard.showPasswordBox && !root.isCompact) ? 1.0 : 0.82
                                 anchors.horizontalCenter: parent.horizontalCenter
                                 y: 160
                                 width: promptLabel.implicitWidth + 20
                                 height: 20
-                                Behavior on opacity { NumberAnimation { duration: 200 } }
+                                Behavior on opacity { NumberAnimation { duration: 240; easing.type: Easing.OutCubic } }
+                                Behavior on scale { NumberAnimation { duration: 280; easing.type: Easing.OutBack; easing.overshoot: 1.15 } }
 
                                 Text {
                                     id: promptLabel
                                     anchors.centerIn: parent
-                                    text: "Touch ID or Enter Password"
-                                    color: Services.Theme.textSecondary
+                                    text: {
+                                        if (Services.FaceId && Services.FaceId.isEnabled && Services.FaceId.isEnrolled) {
+                                            if (Services.FaceId.status === "success" || root.isFaceVerified) {
+                                                if (!Services.FaceId.autoUnlock) return "Press Enter to unlock"
+                                                return "Face ID Verified"
+                                            }
+                                            if (Services.FaceId.status === "detected") return "Verifying Face..."
+                                            if (Services.FaceId.status === "scanning") return "Looking for Face..."
+                                            if (Services.FaceId.status === "timeout") return "Face not matched (Click to retry)"
+                                            return "Face ID or Enter Password"
+                                        }
+                                        return "Touch ID or Enter Password"
+                                    }
+                                    color: (Services.FaceId && (Services.FaceId.status === "success" || root.isFaceVerified)) ? Services.Theme.success : Services.Theme.textSecondary
                                     font.pixelSize: 11
                                     font.weight: Font.Medium
                                     style: Text.Outline
                                     styleColor: Services.Theme.overlayDim
+
+                                    scale: promptMorphScale
+                                    property real promptMorphScale: 1.0
+                                    onTextChanged: promptMorphAnim.restart()
+
+                                    SequentialAnimation {
+                                        id: promptMorphAnim
+                                        NumberAnimation { target: promptLabel; property: "promptMorphScale"; to: 0.65; duration: 80; easing.type: Easing.InQuad }
+                                        NumberAnimation { target: promptLabel; property: "promptMorphScale"; to: 1.15; duration: 160; easing.type: Easing.OutBack }
+                                        NumberAnimation { target: promptLabel; property: "promptMorphScale"; to: 1.0; duration: 100; easing.type: Easing.OutQuad }
+                                    }
                                 }
 
                                 MouseArea {
                                     anchors.fill: parent
                                     cursorShape: Qt.PointingHandCursor
                                     onClicked: {
+                                        if ((Services.FaceId && Services.FaceId.status === "success") || root.isFaceVerified) {
+                                            root.unlockSuccess()
+                                            return
+                                        }
+                                        if (Services.FaceId && Services.FaceId.isEnabled && Services.FaceId.isEnrolled && !Services.FaceId.isScanning) {
+                                            root.triggerFaceIdScan()
+                                        }
                                         root.userRevealedInput = true
                                         pwTextInput.forceActiveFocus()
                                     }
@@ -1644,6 +2403,10 @@ Scope {
                                     Rectangle {
                                         width: 24; height: 24; radius: 6
                                         color: prevCornerMouse.containsMouse ? Services.Theme.bgHover : "transparent"
+                                        scale: prevCornerMouse.pressed ? 0.88 : (prevCornerMouse.containsMouse ? 1.12 : 1.0)
+                                        Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutBack } }
+                                        Behavior on color { ColorAnimation { duration: 180 } }
+
                                         Text {
                                             anchors.centerIn: parent
                                             text: Services.Icons.mediaPrev
@@ -1660,17 +2423,70 @@ Scope {
                                         }
                                     }
 
-                                    // Play / Pause / Stop
+                                    // Play / Pause / Stop (Natural Optical Glass Lens)
                                     Rectangle {
-                                        width: 26; height: 26; radius: 6
-                                        color: playCornerMouse.containsMouse ? Services.Theme.white : Services.Theme.accent
+                                        id: playCornerGlass
+                                        width: 26; height: 26; radius: 13
+                                        gradient: Gradient {
+                                            orientation: Gradient.Vertical
+                                            GradientStop {
+                                                position: 0.0
+                                                color: playCornerMouse.pressed
+                                                    ? Qt.rgba(255, 255, 255, 0.20)
+                                                    : (playCornerMouse.containsMouse ? Qt.rgba(255, 255, 255, 0.14) : Qt.rgba(255, 255, 255, 0.08))
+                                            }
+                                            GradientStop {
+                                                position: 0.55
+                                                color: playCornerMouse.pressed
+                                                    ? Qt.rgba(255, 255, 255, 0.09)
+                                                    : (playCornerMouse.containsMouse ? Qt.rgba(255, 255, 255, 0.05) : Qt.rgba(255, 255, 255, 0.02))
+                                            }
+                                            GradientStop {
+                                                position: 1.0
+                                                color: playCornerMouse.pressed
+                                                    ? Qt.rgba(0, 0, 0, 0.06)
+                                                    : (playCornerMouse.containsMouse ? Qt.rgba(0, 0, 0, 0.04) : Qt.rgba(0, 0, 0, 0.08))
+                                            }
+                                        }
+                                        border.width: 1
+                                        border.color: playCornerMouse.pressed
+                                            ? Qt.rgba(255, 255, 255, 0.28)
+                                            : (playCornerMouse.containsMouse ? Qt.rgba(255, 255, 255, 0.18) : Qt.rgba(255, 255, 255, 0.09))
+                                        scale: playCornerMouse.pressed ? 0.90 : (playCornerMouse.containsMouse ? 1.08 : 1.0)
+                                        Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutBack } }
+                                        Behavior on border.color { ColorAnimation { duration: 200 } }
+
+                                        // Soft physical contact shadow
+                                        Rectangle {
+                                            anchors.centerIn: parent
+                                            anchors.verticalCenterOffset: 1.5
+                                            width: parent.width - 2
+                                            height: parent.height - 2
+                                            radius: parent.radius
+                                            color: Qt.rgba(0, 0, 0, 0.30)
+                                            z: -1
+                                        }
+
                                         Text {
+                                            id: playIconText
                                             anchors.centerIn: parent
                                             text: Services.Icons.mediaPlayPause(root.isPlaying)
                                             font.family: Services.Theme.fontSymbols
                                             font.pixelSize: 11
-                                            color: Services.Theme.bgDeep
+                                            color: Services.Theme.textPrimary
+                                            opacity: playCornerMouse.containsMouse ? 1.0 : 0.92
+                                            scale: playMorphScale
+                                            property real playMorphScale: 1.0
+
+                                            onTextChanged: playMorphAnim.restart()
+                                            SequentialAnimation {
+                                                id: playMorphAnim
+                                                NumberAnimation { target: playIconText; property: "playMorphScale"; to: 0.65; duration: 80; easing.type: Easing.InQuad }
+                                                NumberAnimation { target: playIconText; property: "playMorphScale"; to: 1.18; duration: 160; easing.type: Easing.OutBack }
+                                                NumberAnimation { target: playIconText; property: "playMorphScale"; to: 1.0; duration: 90; easing.type: Easing.OutQuad }
+                                            }
                                         }
+
                                         MouseArea {
                                             id: playCornerMouse
                                             anchors.fill: parent
@@ -1684,6 +2500,10 @@ Scope {
                                     Rectangle {
                                         width: 24; height: 24; radius: 6
                                         color: nextCornerMouse.containsMouse ? Services.Theme.bgHover : "transparent"
+                                        scale: nextCornerMouse.pressed ? 0.88 : (nextCornerMouse.containsMouse ? 1.12 : 1.0)
+                                        Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutBack } }
+                                        Behavior on color { ColorAnimation { duration: 180 } }
+
                                         Text {
                                             anchors.centerIn: parent
                                             text: Services.Icons.mediaNext
@@ -1735,11 +2555,31 @@ Scope {
                                     Layout.maximumWidth: 240
                                 }
 
-                                Text {
-                                    text: Services.Icons.mediaPlayPause(root.isPlaying)
-                                    font.family: Services.Theme.fontSymbols
-                                    font.pixelSize: 11
-                                    color: Services.Theme.accent
+                                Item {
+                                    width: 14
+                                    height: 14
+                                    Layout.alignment: Qt.AlignVCenter
+                                    rotation: root.isPlaying ? 180 : 0
+                                    Behavior on rotation { NumberAnimation { duration: 300; easing.type: Easing.OutBack; easing.overshoot: 1.25 } }
+
+                                    Text {
+                                        id: minPlayIconText
+                                        anchors.centerIn: parent
+                                        text: Services.Icons.mediaPlayPause(root.isPlaying)
+                                        font.family: Services.Theme.fontSymbols
+                                        font.pixelSize: 11
+                                        color: Services.Theme.accent
+                                        scale: minPlayMorphScale
+                                        property real minPlayMorphScale: 1.0
+
+                                        onTextChanged: minPlayMorphAnim.restart()
+                                        SequentialAnimation {
+                                            id: minPlayMorphAnim
+                                            NumberAnimation { target: minPlayIconText; property: "minPlayMorphScale"; to: 0.5; duration: 80; easing.type: Easing.InQuad }
+                                            NumberAnimation { target: minPlayIconText; property: "minPlayMorphScale"; to: 1.25; duration: 160; easing.type: Easing.OutBack }
+                                            NumberAnimation { target: minPlayIconText; property: "minPlayMorphScale"; to: 1.0; duration: 90; easing.type: Easing.OutQuad }
+                                        }
+                                    }
 
                                     MouseArea {
                                         anchors.fill: parent
@@ -1752,246 +2592,259 @@ Scope {
                             }
                         }
 
-                        // ── 4. Bottom Right: Power Button & Floating Power Menu Panel (Default & Minimal Layouts) ──
-                        Item {
+                        // Power Menu Backdrop Dismiss (Clicking outside closes it)
+                        MouseArea {
+                            anchors.fill: parent
+                            z: 998
+                            enabled: root.lockscreenPwrOpen
+                            visible: root.lockscreenPwrOpen
+                            onClicked: root.lockscreenPwrOpen = false
+                        }
+
+                        // ── 4. Bottom Right: Vertical Morphing Power Capsule (Expands Upwards, Icon-Only) ──
+                        Rectangle {
+                            id: pwrPillCapsule
                             anchors.right: parent.right
                             anchors.bottom: parent.bottom
                             anchors.rightMargin: 24
                             anchors.bottomMargin: root.isRevealed ? 24 : 0
-                            width: root.isMinimal ? 32 : 38
-                            height: root.isMinimal ? 32 : 38
+                            z: 999
+
+                            width: root.isMinimal ? 34 : 40
+                            radius: width / 2
+                            clip: true
+
+                            // Expands vertically upwards when open, circle when closed
+                            height: root.lockscreenPwrOpen ? (root.isMinimal ? 142 : 160) : width
+
                             visible: !root.isCompact && (Services.Config ? Services.Config.lockscreenShowQuickPower : true)
                             opacity: (root.isRevealed && !root.isCompact) ? 1.0 : 0.0
+
+                            color: root.lockscreenPwrOpen
+                                ? Qt.rgba(Services.Theme.surface.r, Services.Theme.surface.g, Services.Theme.surface.b, 0.96)
+                                : (pwrBottomMouse.containsMouse 
+                                    ? Qt.rgba(Services.Theme.danger.r, Services.Theme.danger.g, Services.Theme.danger.b, 0.22)
+                                    : Qt.rgba(Services.Theme.bgDeep.r, Services.Theme.bgDeep.g, Services.Theme.bgDeep.b, 0.82))
+
+                            border.color: root.lockscreenPwrOpen
+                                ? Services.Theme.borderHighlight
+                                : (pwrBottomMouse.containsMouse ? Services.Theme.danger : Services.Theme.border)
+                            border.width: 1
+
+                            Behavior on height { NumberAnimation { duration: 320; easing.type: Easing.OutBack; easing.overshoot: 1.15 } }
                             Behavior on anchors.bottomMargin { NumberAnimation { duration: 450; easing.type: Easing.OutCubic } }
                             Behavior on opacity { NumberAnimation { duration: 350; easing.type: Easing.OutCubic } }
+                            Behavior on color { ColorAnimation { duration: 220; easing.type: Easing.OutCubic } }
+                            Behavior on border.color { ColorAnimation { duration: 220; easing.type: Easing.OutCubic } }
 
-                            // Floating Power Menu Panel (Opens right above the button)
-                            Rectangle {
-                                id: pwrMenuPopup
-                                anchors.bottom: pwrBtnRound.top
-                                anchors.right: parent.right
-                                anchors.bottomMargin: 12
-                                width: 220
-                                implicitHeight: pwrMenuCol.implicitHeight + 20
-                                radius: Services.Theme.radiusLg
-                                color: Qt.rgba(Services.Theme.surface.r, Services.Theme.surface.g, Services.Theme.surface.b, 0.95)
-                                border.color: Services.Theme.borderHighlight
-                                border.width: 1
-                                clip: true
-
-                                visible: root.lockscreenPwrOpen
+                            // ── Action Icons Column (Emerges upwards from bottom button) ──
+                            Column {
+                                id: pwrActionsCol
+                                anchors.top: parent.top
+                                anchors.topMargin: root.isMinimal ? 5 : 7
+                                anchors.horizontalCenter: parent.horizontalCenter
+                                spacing: root.isMinimal ? 4 : 5
+                                visible: opacity > 0.01
                                 opacity: root.lockscreenPwrOpen ? 1.0 : 0.0
-                                scale: root.lockscreenPwrOpen ? 1.0 : 0.85
-                                transformOrigin: Item.BottomRight
-                                Behavior on opacity { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
-                                Behavior on scale { NumberAnimation { duration: 200; easing.type: Easing.OutBack } }
+                                scale: root.lockscreenPwrOpen ? 1.0 : 0.5
+                                transformOrigin: Item.Bottom
 
-                                MouseArea {
-                                    anchors.fill: parent
-                                    onClicked: {}
+                                Behavior on opacity { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
+                                Behavior on scale { NumberAnimation { duration: 280; easing.type: Easing.OutBack; easing.overshoot: 1.2 } }
+
+                                // 1. Sleep Action Button
+                                Rectangle {
+                                    width: root.isMinimal ? 26 : 30
+                                    height: width
+                                    radius: width / 2
+                                    anchors.horizontalCenter: parent.horizontalCenter
+                                    color: sleepActionMouse.containsMouse ? Services.Theme.bgHover : "transparent"
+                                    border.color: sleepActionMouse.containsMouse ? Services.Theme.borderHighlight : "transparent"
+                                    border.width: 1
+                                    scale: sleepActionMouse.pressed ? 0.88 : (sleepActionMouse.containsMouse ? 1.12 : 1.0)
+                                    Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutBack } }
+                                    Behavior on color { ColorAnimation { duration: 180 } }
+
+                                    Text {
+                                        anchors.centerIn: parent
+                                        text: Services.Icons.pmSleep
+                                        font.family: Services.Theme.fontSymbols
+                                        font.pixelSize: root.isMinimal ? 12 : 14
+                                        color: sleepActionMouse.containsMouse ? Services.Theme.accent : Services.Theme.textPrimary
+                                        Behavior on color { ColorAnimation { duration: 180 } }
+                                    }
+
+                                    MouseArea {
+                                        id: sleepActionMouse
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: {
+                                            root.lockscreenPwrOpen = false
+                                            suspendProc.running = true
+                                        }
+                                    }
                                 }
 
-                                ColumnLayout {
-                                    id: pwrMenuCol
-                                    anchors.fill: parent
-                                    anchors.margins: 10
-                                    spacing: 6
+                                // Separator 1
+                                Rectangle {
+                                    width: 14
+                                    height: 1
+                                    anchors.horizontalCenter: parent.horizontalCenter
+                                    color: Services.Theme.border
+                                    opacity: 0.5
+                                }
 
-                                    // Header
-                                    RowLayout {
-                                        Layout.fillWidth: true
-                                        spacing: 6
+                                // 2. Reboot Action Button
+                                Rectangle {
+                                    width: root.isMinimal ? 26 : 30
+                                    height: width
+                                    radius: width / 2
+                                    anchors.horizontalCenter: parent.horizontalCenter
+                                    color: rebootActionMouse.containsMouse ? Qt.rgba(Services.Theme.warning.r, Services.Theme.warning.g, Services.Theme.warning.b, 0.2) : "transparent"
+                                    border.color: rebootActionMouse.containsMouse ? Services.Theme.warning : "transparent"
+                                    border.width: 1
+                                    scale: rebootActionMouse.pressed ? 0.88 : (rebootActionMouse.containsMouse ? 1.12 : 1.0)
+                                    Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutBack } }
+                                    Behavior on color { ColorAnimation { duration: 180 } }
 
-                                        Text {
-                                            text: "Power Options"
-                                            font.pixelSize: 11
-                                            font.bold: true
-                                            color: Services.Theme.textPrimary
-                                        }
-                                        Item { Layout.fillWidth: true }
-                                        Rectangle {
-                                            width: 20; height: 20; radius: 10
-                                            color: pwrCloseMouse.containsMouse ? Services.Theme.bgHover : "transparent"
-                                            Text {
-                                                anchors.centerIn: parent
-                                                text: Services.Icons.close
-                                                font.family: Services.Theme.fontSymbols
-                                                font.pixelSize: 9
-                                                color: Services.Theme.textSecondary
-                                            }
-                                            MouseArea {
-                                                id: pwrCloseMouse
-                                                anchors.fill: parent
-                                                hoverEnabled: true
-                                                cursorShape: Qt.PointingHandCursor
-                                                onClicked: root.lockscreenPwrOpen = false
-                                            }
-                                        }
+                                    Text {
+                                        anchors.centerIn: parent
+                                        text: Services.Icons.pmReboot
+                                        font.family: Services.Theme.fontSymbols
+                                        font.pixelSize: root.isMinimal ? 12 : 14
+                                        color: rebootActionMouse.containsMouse ? Services.Theme.warning : Services.Theme.textPrimary
+                                        Behavior on color { ColorAnimation { duration: 180 } }
                                     }
 
-                                    Rectangle {
-                                        Layout.fillWidth: true
-                                        height: 1
-                                        color: Services.Theme.border
-                                    }
-
-                                    // Sleep Option
-                                    Rectangle {
-                                        Layout.fillWidth: true
-                                        implicitHeight: 36
-                                        radius: Services.Theme.radiusSm
-                                        color: sleepMouse.containsMouse ? Services.Theme.bgHover : "transparent"
-                                        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
-
-                                        RowLayout {
-                                            anchors.fill: parent
-                                            anchors.margins: 8
-                                            spacing: 10
-
-                                            Text {
-                                                text: Services.Icons.pmSleep
-                                                font.family: Services.Theme.fontSymbols
-                                                font.pixelSize: 14
-                                                color: sleepMouse.containsMouse ? Services.Theme.accent : Services.Theme.accentDim
-                                            }
-                                            ColumnLayout {
-                                                Layout.fillWidth: true
-                                                spacing: 0
-                                                Text { text: "Sleep"; font.pixelSize: 11; font.bold: true; color: Services.Theme.textPrimary }
-                                                Text { text: "Suspend session"; font.pixelSize: 8; color: Services.Theme.textDisabled }
-                                            }
-                                        }
-
-                                        MouseArea {
-                                            id: sleepMouse
-                                            anchors.fill: parent
-                                            hoverEnabled: true
-                                            cursorShape: Qt.PointingHandCursor
-                                            onClicked: {
-                                                root.lockscreenPwrOpen = false
-                                                suspendProc.running = true
-                                            }
+                                    MouseArea {
+                                        id: rebootActionMouse
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: {
+                                            root.lockscreenPwrOpen = false
+                                            rebootProc.running = true
                                         }
                                     }
+                                }
 
-                                    // Reboot Option
-                                    Rectangle {
-                                        Layout.fillWidth: true
-                                        implicitHeight: 36
-                                        radius: Services.Theme.radiusSm
-                                        color: rebootMouse.containsMouse ? Qt.rgba(Services.Theme.warning.r, Services.Theme.warning.g, Services.Theme.warning.b, 0.15) : "transparent"
-                                        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                                // Separator 2
+                                Rectangle {
+                                    width: 14
+                                    height: 1
+                                    anchors.horizontalCenter: parent.horizontalCenter
+                                    color: Services.Theme.border
+                                    opacity: 0.5
+                                }
 
-                                        RowLayout {
-                                            anchors.fill: parent
-                                            anchors.margins: 8
-                                            spacing: 10
+                                // 3. Power Off Action Button
+                                Rectangle {
+                                    width: root.isMinimal ? 26 : 30
+                                    height: width
+                                    radius: width / 2
+                                    anchors.horizontalCenter: parent.horizontalCenter
+                                    color: shutdownActionMouse.containsMouse ? Qt.rgba(Services.Theme.danger.r, Services.Theme.danger.g, Services.Theme.danger.b, 0.25) : "transparent"
+                                    border.color: shutdownActionMouse.containsMouse ? Services.Theme.danger : "transparent"
+                                    border.width: 1
+                                    scale: shutdownActionMouse.pressed ? 0.88 : (shutdownActionMouse.containsMouse ? 1.12 : 1.0)
+                                    Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutBack } }
+                                    Behavior on color { ColorAnimation { duration: 180 } }
 
-                                            Text {
-                                                text: Services.Icons.pmReboot
-                                                font.family: Services.Theme.fontSymbols
-                                                font.pixelSize: 14
-                                                color: Services.Theme.warning
-                                            }
-                                            ColumnLayout {
-                                                Layout.fillWidth: true
-                                                spacing: 0
-                                                Text { text: "Reboot"; font.pixelSize: 11; font.bold: true; color: Services.Theme.textPrimary }
-                                                Text { text: "Restart system"; font.pixelSize: 8; color: Services.Theme.textDisabled }
-                                            }
-                                        }
-
-                                        MouseArea {
-                                            id: rebootMouse
-                                            anchors.fill: parent
-                                            hoverEnabled: true
-                                            cursorShape: Qt.PointingHandCursor
-                                            onClicked: {
-                                                root.lockscreenPwrOpen = false
-                                                rebootProc.running = true
-                                            }
-                                        }
+                                    Text {
+                                        anchors.centerIn: parent
+                                        text: Services.Icons.pmShutdown
+                                        font.family: Services.Theme.fontSymbols
+                                        font.pixelSize: root.isMinimal ? 12 : 14
+                                        color: Services.Theme.danger
                                     }
 
-                                    // Shutdown Option
-                                    Rectangle {
-                                        Layout.fillWidth: true
-                                        implicitHeight: 36
-                                        radius: Services.Theme.radiusSm
-                                        color: shutdownMouse.containsMouse ? Qt.rgba(Services.Theme.danger.r, Services.Theme.danger.g, Services.Theme.danger.b, 0.2) : "transparent"
-                                        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
-
-                                        RowLayout {
-                                            anchors.fill: parent
-                                            anchors.margins: 8
-                                            spacing: 10
-
-                                            Text {
-                                                text: Services.Icons.pmShutdown
-                                                font.family: Services.Theme.fontSymbols
-                                                font.pixelSize: 14
-                                                color: Services.Theme.danger
-                                            }
-                                            ColumnLayout {
-                                                Layout.fillWidth: true
-                                                spacing: 0
-                                                Text { text: "Power Off"; font.pixelSize: 11; font.bold: true; color: Services.Theme.danger }
-                                                Text { text: "Turn off PC"; font.pixelSize: 8; color: Services.Theme.textDisabled }
-                                            }
-                                        }
-
-                                        MouseArea {
-                                            id: shutdownMouse
-                                            anchors.fill: parent
-                                            hoverEnabled: true
-                                            cursorShape: Qt.PointingHandCursor
-                                            onClicked: {
-                                                root.lockscreenPwrOpen = false
-                                                shutdownProc.running = true
-                                            }
+                                    MouseArea {
+                                        id: shutdownActionMouse
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: {
+                                            root.lockscreenPwrOpen = false
+                                            shutdownProc.running = true
                                         }
                                     }
+                                }
+
+                                // Separator 3 (Divider between actions and bottom toggle)
+                                Rectangle {
+                                    width: 18
+                                    height: 1
+                                    anchors.horizontalCenter: parent.horizontalCenter
+                                    color: Services.Theme.border
+                                    opacity: 0.6
                                 }
                             }
 
-                            // Single Circular Power Button
-                            Rectangle {
-                                id: pwrBtnRound
-                                anchors.fill: parent
-                                radius: root.isMinimal ? 16 : 19
-                                color: root.isMinimal
-                                    ? (pwrBtnMouse.containsMouse ? Qt.rgba(Services.Theme.danger.r, Services.Theme.danger.g, Services.Theme.danger.b, 0.2) : "transparent")
-                                    : ((root.lockscreenPwrOpen || pwrBtnMouse.containsMouse) 
-                                        ? Qt.rgba(Services.Theme.danger.r, Services.Theme.danger.g, Services.Theme.danger.b, 0.25)
-                                        : Qt.rgba(Services.Theme.bgDeep.r, Services.Theme.bgDeep.g, Services.Theme.bgDeep.b, 0.75))
-                                border.color: root.isMinimal
-                                    ? (pwrBtnMouse.containsMouse ? Services.Theme.danger : "transparent")
-                                    : ((root.lockscreenPwrOpen || pwrBtnMouse.containsMouse) ? Services.Theme.danger : Services.Theme.border)
-                                border.width: root.isMinimal ? (pwrBtnMouse.containsMouse ? 1 : 0) : 1
-                                opacity: root.isMinimal ? (pwrBtnMouse.containsMouse || root.lockscreenPwrOpen ? 1.0 : 0.6) : 1.0
-                                scale: pwrBtnMouse.pressed ? 0.92 : 1.0
-                                Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
-                                Behavior on border.color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
-                                Behavior on opacity { NumberAnimation { duration: 150 } }
-                                Behavior on scale { NumberAnimation { duration: 100 } }
+                            // ── Base Morphing & Rotating Power Button (At bottom of capsule) ──
+                            Item {
+                                id: pwrBottomBtn
+                                width: parent.width
+                                height: parent.width
+                                anchors.bottom: parent.bottom
+                                anchors.horizontalCenter: parent.horizontalCenter
 
-                                Text {
+                                // Rotating icon container
+                                Item {
+                                    id: pwrRotateWrapper
                                     anchors.centerIn: parent
-                                    text: Services.Icons.power
-                                    font.family: Services.Theme.fontSymbols
-                                    font.pixelSize: root.isMinimal ? 13 : 15
-                                    color: (root.lockscreenPwrOpen || pwrBtnMouse.containsMouse) ? Services.Theme.danger : Services.Theme.textSecondary
-                                    Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                                    width: parent.width
+                                    height: parent.height
+                                    rotation: root.lockscreenPwrOpen ? 180 : 0
+                                    Behavior on rotation {
+                                        NumberAnimation {
+                                            duration: 350
+                                            easing.type: Easing.OutBack
+                                            easing.overshoot: 1.3
+                                        }
+                                    }
+
+                                    // State A: Power Icon
+                                    Text {
+                                        anchors.centerIn: parent
+                                        text: Services.Icons.power
+                                        font.family: Services.Theme.fontSymbols
+                                        font.pixelSize: root.isMinimal ? 14 : 16
+                                        color: pwrBottomMouse.containsMouse ? Services.Theme.danger : Services.Theme.textSecondary
+                                        opacity: root.lockscreenPwrOpen ? 0.0 : 1.0
+                                        scale: root.lockscreenPwrOpen ? 0.4 : 1.0
+                                        rotation: root.lockscreenPwrOpen ? -90 : 0
+                                        Behavior on opacity { NumberAnimation { duration: 200 } }
+                                        Behavior on scale { NumberAnimation { duration: 220; easing.type: Easing.OutBack } }
+                                        Behavior on rotation { NumberAnimation { duration: 280 } }
+                                        Behavior on color { ColorAnimation { duration: 200 } }
+                                    }
+
+                                    // State B: Close Icon (✕)
+                                    Text {
+                                        anchors.centerIn: parent
+                                        text: Services.Icons.close
+                                        font.family: Services.Theme.fontSymbols
+                                        font.pixelSize: root.isMinimal ? 11 : 13
+                                        color: pwrBottomMouse.containsMouse ? Services.Theme.textPrimary : Services.Theme.textSecondary
+                                        opacity: root.lockscreenPwrOpen ? 1.0 : 0.0
+                                        scale: root.lockscreenPwrOpen ? 1.0 : 0.4
+                                        rotation: root.lockscreenPwrOpen ? 0 : 90
+                                        Behavior on opacity { NumberAnimation { duration: 200 } }
+                                        Behavior on scale { NumberAnimation { duration: 220; easing.type: Easing.OutBack } }
+                                        Behavior on rotation { NumberAnimation { duration: 280 } }
+                                        Behavior on color { ColorAnimation { duration: 200 } }
+                                    }
                                 }
 
                                 MouseArea {
-                                    id: pwrBtnMouse
+                                    id: pwrBottomMouse
                                     anchors.fill: parent
                                     hoverEnabled: true
                                     cursorShape: Qt.PointingHandCursor
                                     onClicked: {
                                         root.lockscreenPwrOpen = !root.lockscreenPwrOpen
-                                        if (root.lockscreenPwrOpen) root.lockscreenCcOpen = false
+                                        if (root.lockscreenPwrOpen && root.lockscreenCcOpen) root.lockscreenCcOpen = false
                                     }
                                 }
                             }
@@ -2005,9 +2858,7 @@ Scope {
                     id: ccLockscreenOverlay
                     anchors.fill: parent
                     z: 9999
-                    visible: root.lockscreenCcOpen
-                    opacity: root.lockscreenCcOpen ? 1 : 0
-                    Behavior on opacity { NumberAnimation { duration: 180 } }
+                    visible: root.lockscreenCcOpen || ccCard.opacity > 0.01
 
                     MouseArea {
                         anchors.fill: parent
@@ -2015,10 +2866,19 @@ Scope {
                     }
 
                     LockscreenControlCenter {
+                        id: ccCard
                         anchors.top: parent.top
                         anchors.right: parent.right
-                        anchors.topMargin: 54
-                        anchors.rightMargin: 20
+                        anchors.topMargin: 42
+                        anchors.rightMargin: 18
+                        opacity: root.lockscreenCcOpen ? 1.0 : 0.0
+                        scale: root.lockscreenCcOpen ? 1.0 : 0.96
+                        transform: Translate {
+                            y: root.lockscreenCcOpen ? 0 : -20
+                            Behavior on y { NumberAnimation { duration: 280; easing.type: Easing.OutCubic } }
+                        }
+                        Behavior on opacity { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
+                        Behavior on scale { NumberAnimation { duration: 280; easing.type: Easing.OutBack } }
                         onRequestClose: root.lockscreenCcOpen = false
                     }
                 }

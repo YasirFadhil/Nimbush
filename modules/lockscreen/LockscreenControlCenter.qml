@@ -20,18 +20,12 @@ Rectangle {
 
     property bool wifiExpanded: false
     property bool btExpanded: false
-    property bool pwrExpanded: false
     property string wifiPasswordTarget: ""
     property string wifiPasswordInput: ""
-
-    Process { id: ccSuspendProc; command: ["systemctl", "suspend"] }
-    Process { id: ccRebootProc; command: ["systemctl", "reboot"] }
-    Process { id: ccShutdownProc; command: ["systemctl", "poweroff"] }
 
     function close() {
         wifiExpanded = false
         btExpanded = false
-        pwrExpanded = false
         wifiPasswordTarget = ""
         wifiPasswordInput = ""
         root.requestClose()
@@ -246,34 +240,6 @@ Rectangle {
                 }
             }
 
-            // Power Panel Toggle Button
-            Rectangle {
-                width: 24; height: 24; radius: 12
-                color: (root.pwrExpanded || pwrMouse.containsMouse) ? Qt.rgba(Services.Theme.danger.r, Services.Theme.danger.g, Services.Theme.danger.b, 0.2) : "transparent"
-                Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
-
-                Text {
-                    anchors.centerIn: parent
-                    text: Services.Icons.power
-                    font.family: Services.Theme.fontSymbols
-                    font.pixelSize: 11
-                    color: (root.pwrExpanded || pwrMouse.containsMouse) ? Services.Theme.danger : Services.Theme.textSecondary
-                }
-
-                MouseArea {
-                    id: pwrMouse
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: {
-                        root.pwrExpanded = !root.pwrExpanded
-                        if (root.pwrExpanded) {
-                            root.wifiExpanded = false
-                            root.btExpanded = false
-                        }
-                    }
-                }
-            }
 
             // Close Button (✕)
             Rectangle {
@@ -303,15 +269,15 @@ Rectangle {
         RowLayout {
             id: morphingTilesRow
             Layout.fillWidth: true
-            spacing: (root.wifiExpanded || root.btExpanded || root.pwrExpanded) ? 0 : 8
+            spacing: (root.wifiExpanded || root.btExpanded) ? 0 : 8
             Behavior on spacing { NumberAnimation { duration: 240; easing.type: Easing.OutCubic } }
 
             // ── Wi-Fi Card with Full Interactive Expander ───────────────────
             Rectangle {
                 id: wifiTile
-                Layout.fillWidth: !root.btExpanded && !root.pwrExpanded
-                Layout.preferredWidth: (root.btExpanded || root.pwrExpanded) ? 0 : (root.wifiExpanded ? 312 : 152)
-                Layout.preferredHeight: root.wifiExpanded ? 240 : (root.pwrExpanded ? 0 : 70)
+                Layout.fillWidth: !root.btExpanded
+                Layout.preferredWidth: root.btExpanded ? 0 : (root.wifiExpanded ? 312 : 152)
+                Layout.preferredHeight: root.wifiExpanded ? 240 : 70
                 radius: Services.Theme.radiusMd
                 color: Services.Wifi.enabled ? Services.Theme.accent : Services.Theme.surfaceVariant
                 border.color: Services.Wifi.enabled ? Services.Theme.accent : Services.Theme.border
@@ -319,7 +285,7 @@ Rectangle {
                 clip: true
 
                 visible: opacity > 0.01
-                opacity: (root.btExpanded || root.pwrExpanded) ? 0 : 1
+                opacity: root.btExpanded ? 0 : 1
 
                 Behavior on Layout.preferredWidth { NumberAnimation { duration: 240; easing.type: Easing.OutCubic } }
                 Behavior on Layout.preferredHeight { NumberAnimation { duration: 240; easing.type: Easing.OutCubic } }
@@ -594,9 +560,9 @@ Rectangle {
             // ── Bluetooth Card with Full Interactive Expander ───────────────
             Rectangle {
                 id: btTile
-                Layout.fillWidth: !root.wifiExpanded && !root.pwrExpanded
-                Layout.preferredWidth: (root.wifiExpanded || root.pwrExpanded) ? 0 : (root.btExpanded ? 312 : 152)
-                Layout.preferredHeight: root.btExpanded ? 240 : (root.pwrExpanded ? 0 : 70)
+                Layout.fillWidth: !root.wifiExpanded
+                Layout.preferredWidth: root.wifiExpanded ? 0 : (root.btExpanded ? 312 : 152)
+                Layout.preferredHeight: root.btExpanded ? 240 : 70
                 radius: Services.Theme.radiusMd
                 color: Services.Bluetooth.enabled ? Services.Theme.accent : Services.Theme.surfaceVariant
                 border.color: Services.Bluetooth.enabled ? Services.Theme.accent : Services.Theme.border
@@ -604,7 +570,7 @@ Rectangle {
                 clip: true
 
                 visible: opacity > 0.01
-                opacity: (root.wifiExpanded || root.pwrExpanded) ? 0 : 1
+                opacity: root.wifiExpanded ? 0 : 1
 
                 Behavior on Layout.preferredWidth { NumberAnimation { duration: 240; easing.type: Easing.OutCubic } }
                 Behavior on Layout.preferredHeight { NumberAnimation { duration: 240; easing.type: Easing.OutCubic } }
@@ -861,144 +827,7 @@ Rectangle {
                 }
             }
 
-            // ── Power Card with Full Interactive Morphing Expander ──────────
-            Rectangle {
-                id: pwrTile
-                Layout.fillWidth: !root.wifiExpanded && !root.btExpanded
-                Layout.preferredWidth: (root.wifiExpanded || root.btExpanded) ? 0 : (root.pwrExpanded ? 312 : 0)
-                Layout.preferredHeight: root.pwrExpanded ? 180 : 0
-                radius: Services.Theme.radiusMd
-                color: Services.Theme.surfaceVariant
-                border.color: Services.Theme.borderHighlight
-                border.width: 1
-                clip: true
 
-                visible: opacity > 0.01
-                opacity: (root.wifiExpanded || root.btExpanded) ? 0 : (root.pwrExpanded ? 1 : 0)
-
-                Behavior on Layout.preferredWidth { NumberAnimation { duration: 240; easing.type: Easing.OutCubic } }
-                Behavior on Layout.preferredHeight { NumberAnimation { duration: 240; easing.type: Easing.OutCubic } }
-                Behavior on opacity { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
-
-                ColumnLayout {
-                    anchors.fill: parent
-                    anchors.margins: 10
-                    spacing: 6
-
-                    // Header
-                    RowLayout {
-                        Layout.fillWidth: true
-                        spacing: 6
-
-                        Text {
-                            text: "Power Options"
-                            font.pixelSize: 11
-                            font.bold: true
-                            color: Services.Theme.textPrimary
-                        }
-                        Item { Layout.fillWidth: true }
-                        Rectangle {
-                            width: 20; height: 20; radius: 10
-                            color: pwrTileCloseMouse.containsMouse ? Services.Theme.bgHover : "transparent"
-                            Text {
-                                anchors.centerIn: parent
-                                text: Services.Icons.close
-                                font.family: Services.Theme.fontSymbols
-                                font.pixelSize: 9
-                                color: Services.Theme.textSecondary
-                            }
-                            MouseArea {
-                                id: pwrTileCloseMouse
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: root.pwrExpanded = false
-                            }
-                        }
-                    }
-
-                    Rectangle {
-                        Layout.fillWidth: true
-                        height: 1
-                        color: Services.Theme.border
-                    }
-
-                    // Sleep
-                    Rectangle {
-                        Layout.fillWidth: true
-                        implicitHeight: 34
-                        radius: Services.Theme.radiusSm
-                        color: ccSleepMouse.containsMouse ? Services.Theme.bgHover : "transparent"
-                        RowLayout {
-                            anchors.fill: parent
-                            anchors.margins: 6
-                            spacing: 8
-                            Text { text: Services.Icons.pmSleep; font.family: Services.Theme.fontSymbols; font.pixelSize: 13; color: Services.Theme.accent }
-                            Text { text: "Sleep System"; font.pixelSize: 10; font.bold: true; color: Services.Theme.textPrimary; Layout.fillWidth: true }
-                        }
-                        MouseArea {
-                            id: ccSleepMouse
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: {
-                                root.close()
-                                ccSuspendProc.running = true
-                            }
-                        }
-                    }
-
-                    // Reboot
-                    Rectangle {
-                        Layout.fillWidth: true
-                        implicitHeight: 34
-                        radius: Services.Theme.radiusSm
-                        color: ccRebootMouse.containsMouse ? Qt.rgba(Services.Theme.warning.r, Services.Theme.warning.g, Services.Theme.warning.b, 0.15) : "transparent"
-                        RowLayout {
-                            anchors.fill: parent
-                            anchors.margins: 6
-                            spacing: 8
-                            Text { text: Services.Icons.pmReboot; font.family: Services.Theme.fontSymbols; font.pixelSize: 13; color: Services.Theme.warning }
-                            Text { text: "Reboot System"; font.pixelSize: 10; font.bold: true; color: Services.Theme.textPrimary; Layout.fillWidth: true }
-                        }
-                        MouseArea {
-                            id: ccRebootMouse
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: {
-                                root.close()
-                                ccRebootProc.running = true
-                            }
-                        }
-                    }
-
-                    // Power Off
-                    Rectangle {
-                        Layout.fillWidth: true
-                        implicitHeight: 34
-                        radius: Services.Theme.radiusSm
-                        color: ccPowerMouse.containsMouse ? Qt.rgba(Services.Theme.danger.r, Services.Theme.danger.g, Services.Theme.danger.b, 0.2) : "transparent"
-                        RowLayout {
-                            anchors.fill: parent
-                            anchors.margins: 6
-                            spacing: 8
-                            Text { text: Services.Icons.pmShutdown; font.family: Services.Theme.fontSymbols; font.pixelSize: 13; color: Services.Theme.danger }
-                            Text { text: "Power Off System"; font.pixelSize: 10; font.bold: true; color: Services.Theme.danger; Layout.fillWidth: true }
-                        }
-                        MouseArea {
-                            id: ccPowerMouse
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: {
-                                root.close()
-                                ccShutdownProc.running = true
-                            }
-                        }
-                    }
-                }
-            }
         }
 
         // ── Sliders Card: Volume & Brightness ───────────────────────────────

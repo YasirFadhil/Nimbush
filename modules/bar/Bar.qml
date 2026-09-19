@@ -14,6 +14,8 @@ Variants {
         required property var modelData
         screen: modelData
 
+        visible: !(Services.OverlayManager && Services.OverlayManager.isWizardActive)
+
         readonly property bool isBottom: Services.Config ? (Services.Config.barPosition === "bottom") : false
     readonly property string barStyle: Services.Config ? Services.Config.barStyle : "islands"
     readonly property bool isMinimal: barStyle === "minimal"
@@ -54,16 +56,21 @@ Variants {
         // Dynamic Island expanded region (only in islands mode)
         Region {
             readonly property bool isIslandActive: root.showDynamicIsland
-            x: isIslandActive ? ((root.width - (dynamicIsland.expanded ? Math.max(520, dynamicIsland.islandWidth) : Math.max(160, dynamicIsland.calculatedCollapsedWidth + 20))) / 2) : 0
-            y: isIslandActive ? (root.isBottom ? (root.height - (dynamicIsland.expanded ? Math.max(160, dynamicIsland.islandHeight) : root.barHeight)) : 0) : 0
-            width: isIslandActive ? (dynamicIsland.expanded ? Math.max(520, dynamicIsland.islandWidth) : Math.max(160, dynamicIsland.calculatedCollapsedWidth + 20)) : 0
-            height: isIslandActive ? (dynamicIsland.expanded ? Math.max(160, dynamicIsland.islandHeight) : root.barHeight) : 0
+            readonly property real currentIslandW: dynamicIsland ? Math.max(dynamicIsland.calculatedCollapsedWidth + 20, dynamicIsland.islandWidth) : 0
+            readonly property real currentIslandH: dynamicIsland ? Math.max(root.barHeight, dynamicIsland.islandHeight) : 0
+
+            x: isIslandActive ? ((root.width - currentIslandW) / 2) : 0
+            y: isIslandActive ? (root.isBottom ? (root.height - currentIslandH) : 0) : 0
+            width: isIslandActive ? currentIslandW : 0
+            height: isIslandActive ? currentIslandH : 0
         }
     }
 
     Item {
         id: barContainer
         anchors.fill: parent
+        opacity: (Services.OverlayManager && Services.OverlayManager.isWizardActive) ? 0.0 : 1.0
+        Behavior on opacity { NumberAnimation { duration: 320; easing.type: Easing.OutCubic } }
 
         // ── 1. Floating Glass Bar Container ───────────────────────────────────
         Rectangle {
@@ -164,9 +171,14 @@ Variants {
                     id: statusTray
                     Layout.alignment: Qt.AlignVCenter
                     barWidth: root.width
-                    islandRightEdge: root.showDynamicIsland ? (((root.width + (dynamicIsland.expanded ? dynamicIsland.calculatedExpandedWidth : dynamicIsland.calculatedCollapsedWidth)) / 2) + dynamicIsland.satelliteExtraWidth) : 0
-                    islandCollapsedRightEdge: root.showDynamicIsland ? ((root.width + dynamicIsland.calculatedCollapsedWidth) / 2) : 0
-                    isIslandExpanded: root.showDynamicIsland && (dynamicIsland.expanded || dynamicIsland.satelliteExtraWidth > 0)
+                    rightMargin: root.isFloating ? 18 : (root.isUnified ? 16 : 12)
+
+                    // Lebar yang diklaim oleh elemen tengah — island, atau jam tengah pada mode non-island.
+                    centerReservedWidth: root.showDynamicIsland
+                        ? dynamicIsland.reservedWidth
+                        : (centerClockContainer.visible ? centerClockContainer.width : 0)
+
+                    islandDemand: root.showDynamicIsland ? dynamicIsland.demand : "idle"
                 }
             }
         }
@@ -177,9 +189,11 @@ Variants {
             visible: !root.showDynamicIsland && (Services.Config ? Services.Config.showClockTray : true)
             anchors.centerIn: barRow
             height: root.barHeight
+            width: centerClock.implicitWidth
             z: 10
 
             Components.ClockCenter {
+                id: centerClock
                 anchors.centerIn: parent
             }
         }

@@ -1,6 +1,7 @@
 import Quickshell
 import Quickshell.Widgets
 import Quickshell.Wayland
+import Quickshell.Io
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -23,7 +24,25 @@ PanelWindow {
     readonly property bool hasQuery: searchField.text.trim().length > 0
     readonly property bool isExpanded: hasQuery
 
+    property var contextMenuApp: null
+    property real contextMenuX: 0
+    property real contextMenuY: 0
+    readonly property bool isContextMenuOpen: contextMenuApp !== null
+
+    function openContextMenu(app, x, y) {
+        contextMenuApp = app
+        const menuWidth = 220
+        const menuHeight = 180
+        contextMenuX = Math.max(10, Math.min(x, panel.width - menuWidth - 10))
+        contextMenuY = Math.max(10, Math.min(y, panel.height - menuHeight - 10))
+    }
+
+    function closeContextMenu() {
+        contextMenuApp = null
+    }
+
     function show() {
+        closeContextMenu()
         Services.OverlayManager.closeAllExcept(launcherWindow)
         hideTimer.stop()
         visible = true
@@ -39,6 +58,7 @@ PanelWindow {
 
     function hide() {
         if (!isOpen) return
+        closeContextMenu()
         isOpen = false
         hideTimer.restart()
     }
@@ -74,9 +94,6 @@ PanelWindow {
         height: launcherWindow.isExpanded ? 460 : 58
         clip: true
 
-        Behavior on width {
-            NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
-        }
         Behavior on height {
             NumberAnimation { duration: 200; easing.type: Easing.OutCubic }
         }
@@ -99,167 +116,444 @@ PanelWindow {
             ColorAnimation { duration: 200; easing.type: Easing.OutCubic }
         }
 
-        MouseArea { anchors.fill: parent }
+        MouseArea { 
+            anchors.fill: parent 
+            onClicked: {
+                if (launcherWindow.isContextMenuOpen) {
+                    launcherWindow.closeContextMenu()
+                }
+            }
+        }
 
-        ColumnLayout {
-            id: listCol
+        // ── Floating App Context Menu ────────────────────────────────────────
+        MouseArea {
             anchors.fill: parent
-            spacing: 0
+            visible: launcherWindow.isContextMenuOpen
+            z: 98
+            onClicked: launcherWindow.closeContextMenu()
+        }
 
-            // ── Search Bar ────────────────────────────────────────────
-            RowLayout {
-                Layout.fillWidth: true
-                Layout.preferredHeight: 58
-                Layout.leftMargin: 16; Layout.rightMargin: 16
-                spacing: 10
+        Rectangle {
+            id: contextMenuBox
+            visible: launcherWindow.isContextMenuOpen
+            z: 99
+            x: launcherWindow.contextMenuX
+            y: launcherWindow.contextMenuY
+            width: 220
+            height: menuCol.implicitHeight + 16
+            radius: 12
+            color: Services.Theme.bgElevated
+            border.color: Services.Theme.borderHighlight
+            border.width: 1
 
-                Text {
-                    text: Services.Icons.search
-                    font.family: Services.Theme.fontSymbols
-                    font.pixelSize: Services.Theme.fontSize2xl
-                    color: searchField.activeFocus ? Services.Theme.accent : Services.Theme.textDisabled
-                    Behavior on color { ColorAnimation { duration: 200; easing.type: Easing.OutCubic } }
-                }
+            // Specular top highlight
+            Rectangle {
+                anchors.top: parent.top
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.topMargin: 1
+                anchors.leftMargin: 6
+                anchors.rightMargin: 6
+                height: 1
+                color: Qt.rgba(1, 1, 1, 0.15)
+            }
 
-                TextField {
-                    id: searchField
+            ColumnLayout {
+                id: menuCol
+                anchors.top: parent.top
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.margins: 8
+                spacing: 4
+
+                // Header with App Title & Desktop ID
+                ColumnLayout {
                     Layout.fillWidth: true
-                    background: null
-                    color: Services.Theme.textPrimary
-                    placeholderText: "Search applications..."
-                    placeholderTextColor: Services.Theme.textDisabled
-                    font.pixelSize: Services.Theme.fontSize3xl
-                    leftPadding: 0
-                    rightPadding: 0
-
-                    onTextChanged: {
-                        Services.Applications.query = text
-                        resultList.currentIndex = 0
-                        if (resultList.count > 0) {
-                            resultList.positionViewAtIndex(0, ListView.Beginning)
-                        }
-                    }
-
-                    Keys.onPressed: (event) => {
-                        // Global Settings Shortcut: Ctrl+, or Ctrl+S or Alt+S
-                        if ((event.modifiers & Qt.ControlModifier && (event.key === Qt.Key_Comma || event.key === Qt.Key_S)) ||
-                            (event.modifiers & Qt.AltModifier && event.key === Qt.Key_S)) {
-                            launcherWindow.hide()
-                            Services.OverlayManager.openSettings()
-                            event.accepted = true
-                            return
-                        }
-
-                        if (event.key === Qt.Key_Down) {
-                            resultList.currentIndex = Math.min(resultList.currentIndex + 1, resultList.count - 1)
-                            resultList.positionViewAtIndex(resultList.currentIndex, ListView.Contain)
-                            event.accepted = true
-                        } else if (event.key === Qt.Key_Up) {
-                            resultList.currentIndex = Math.max(resultList.currentIndex - 1, 0)
-                            resultList.positionViewAtIndex(resultList.currentIndex, ListView.Contain)
-                            event.accepted = true
-                        } else if (event.key === Qt.Key_PageDown) {
-                            resultList.currentIndex = Math.min(resultList.currentIndex + 5, resultList.count - 1)
-                            resultList.positionViewAtIndex(resultList.currentIndex, ListView.Contain)
-                            event.accepted = true
-                        } else if (event.key === Qt.Key_PageUp) {
-                            resultList.currentIndex = Math.max(resultList.currentIndex - 5, 0)
-                            resultList.positionViewAtIndex(resultList.currentIndex, ListView.Contain)
-                            event.accepted = true
-                        } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
-                            const apps = resultList.model
-                            if (apps && apps.length > resultList.currentIndex) {
-                                const app = apps[resultList.currentIndex]
-                                if (app) {
-                                    launcherWindow.hide()
-                                    if (typeof app.execute === "function") {
-                                        app.execute()
-                                    }
-                                }
-                            }
-                            event.accepted = true
-                        } else if (event.key === Qt.Key_Escape) {
-                            launcherWindow.hide()
-                            event.accepted = true
-                        }
-                    }
-                }
-
-                // Clear button
-                Text {
-                    text: "✕"
-                    font.pixelSize: Services.Theme.fontSizeLg
-                    color: clearMouse.containsMouse ? Services.Theme.textPrimary : Services.Theme.textDisabled
-                    visible: searchField.text.length > 0
-                    Layout.alignment: Qt.AlignVCenter
-
-                    MouseArea {
-                        id: clearMouse
-                        anchors.fill: parent
-                        anchors.margins: -4
-                        hoverEnabled: true
-                        onClicked: {
-                            searchField.text = ""
-                            searchField.forceActiveFocus()
-                        }
-                    }
-                }
-
-                // Dedicated Quick Settings Button
-                Rectangle {
-                    width: 26; height: 26; radius: 6
-                    color: settingsBtnMouse.containsMouse ? Services.Theme.surfaceVariant : "transparent"
-                    Layout.alignment: Qt.AlignVCenter
-                    Behavior on color { ColorAnimation { duration: 150; easing.type: Easing.OutCubic } }
+                    Layout.margins: 4
+                    spacing: 2
 
                     Text {
-                        anchors.centerIn: parent
-                        text: Services.Icons.settings
-                        font.family: Services.Theme.fontSymbols
+                        text: launcherWindow.contextMenuApp ? (launcherWindow.contextMenuApp.name || "") : ""
                         font.pixelSize: Services.Theme.fontSizeMd
-                        color: settingsBtnMouse.containsMouse ? Services.Theme.accent : Services.Theme.textDisabled
-                        Behavior on color { ColorAnimation { duration: 150; easing.type: Easing.OutCubic } }
+                        font.weight: Font.DemiBold
+                        color: Services.Theme.textPrimary
+                        elide: Text.ElideRight
+                        Layout.fillWidth: true
+                    }
+
+                    Text {
+                        text: launcherWindow.contextMenuApp ? (launcherWindow.contextMenuApp.id || "Desktop Application") : ""
+                        font.family: Services.Theme.fontMono
+                        font.pixelSize: 10
+                        color: Services.Theme.textDisabled
+                        elide: Text.ElideRight
+                        Layout.fillWidth: true
+                    }
+                }
+
+                Rectangle {
+                    Layout.fillWidth: true
+                    height: 1
+                    color: Services.Theme.border
+                    opacity: 0.6
+                }
+
+                // 1. Launch Action
+                Rectangle {
+                    Layout.fillWidth: true
+                    height: 30
+                    radius: 6
+                    color: launchMouse.containsMouse ? Services.Theme.bgHover : "transparent"
+
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.leftMargin: 8; anchors.rightMargin: 8
+                        spacing: 8
+
+                        Text {
+                            text: Services.Icons.play || "▶"
+                            font.family: Services.Theme.fontSymbols
+                            font.pixelSize: 12
+                            color: Services.Theme.accent
+                        }
+                        Text {
+                            text: "Launch"
+                            font.pixelSize: Services.Theme.fontSizeSm
+                            color: Services.Theme.textPrimary
+                            Layout.fillWidth: true
+                        }
                     }
 
                     MouseArea {
-                        id: settingsBtnMouse
+                        id: launchMouse
                         anchors.fill: parent
                         hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
                         onClicked: {
+                            const app = launcherWindow.contextMenuApp
+                            launcherWindow.closeContextMenu()
                             launcherWindow.hide()
-                            Services.OverlayManager.openSettings()
+                            if (app && typeof app.execute === "function") {
+                                app.execute()
+                            }
+                        }
+                    }
+                }
+
+                // 2. Pin / Unpin Action
+                Rectangle {
+                    Layout.fillWidth: true
+                    height: 30
+                    radius: 6
+                    readonly property bool pinned: (launcherWindow.contextMenuApp && Services.DockService) ? Services.DockService.isPinned(launcherWindow.contextMenuApp.id) : false
+                    color: pinMouse.containsMouse ? Services.Theme.bgHover : "transparent"
+
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.leftMargin: 8; anchors.rightMargin: 8
+                        spacing: 8
+
+                        Text {
+                            text: Services.Icons.pin || "󰤩"
+                            font.family: Services.Theme.fontSymbols
+                            font.pixelSize: 12
+                            color: parent.parent.pinned ? Services.Theme.danger : Services.Theme.accent
+                        }
+                        Text {
+                            text: parent.parent.pinned ? "Unpin from Dock" : "Pin to Dock"
+                            font.pixelSize: Services.Theme.fontSizeSm
+                            color: parent.parent.pinned ? Services.Theme.danger : Services.Theme.textPrimary
+                            Layout.fillWidth: true
+                        }
+                    }
+
+                    MouseArea {
+                        id: pinMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            const app = launcherWindow.contextMenuApp
+                            if (app && app.id && Services.DockService) {
+                                Services.DockService.togglePin(app.id)
+                            }
+                            launcherWindow.closeContextMenu()
+                        }
+                    }
+                }
+
+                // 3. Desktop Entry Actions (e.g. New Window, Private Window)
+                Repeater {
+                    model: (launcherWindow.contextMenuApp && launcherWindow.contextMenuApp.actions) ? launcherWindow.contextMenuApp.actions : []
+                    delegate: Rectangle {
+                        required property var modelData
+                        Layout.fillWidth: true
+                        height: 30
+                        radius: 6
+                        color: actMouse.containsMouse ? Services.Theme.bgHover : "transparent"
+
+                        RowLayout {
+                            anchors.fill: parent
+                            anchors.leftMargin: 8; anchors.rightMargin: 8
+                            spacing: 8
+
+                            Text {
+                                text: "✦"
+                                font.pixelSize: 10
+                                color: Services.Theme.textSecondary
+                            }
+                            Text {
+                                text: modelData.name || "Action"
+                                font.pixelSize: Services.Theme.fontSizeSm
+                                color: Services.Theme.textPrimary
+                                elide: Text.ElideRight
+                                Layout.fillWidth: true
+                            }
+                        }
+
+                        MouseArea {
+                            id: actMouse
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: {
+                                launcherWindow.closeContextMenu()
+                                launcherWindow.hide()
+                                if (typeof modelData.execute === "function") {
+                                    modelData.execute()
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // 4. Copy Desktop ID
+                Rectangle {
+                    Layout.fillWidth: true
+                    height: 28
+                    radius: 6
+                    color: copyMouse.containsMouse ? Services.Theme.bgHover : "transparent"
+
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.leftMargin: 8; anchors.rightMargin: 8
+                        spacing: 8
+
+                        Text {
+                            text: Services.Icons.disk || "📋"
+                            font.family: Services.Theme.fontSymbols
+                            font.pixelSize: 11
+                            color: Services.Theme.textSecondary
+                        }
+                        Text {
+                            text: "Copy App ID"
+                            font.pixelSize: Services.Theme.fontSizeXs
+                            color: Services.Theme.textSecondary
+                            Layout.fillWidth: true
+                        }
+                    }
+
+                    Process {
+                        id: copyProc
+                        command: []
+                    }
+
+                    MouseArea {
+                        id: copyMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            const app = launcherWindow.contextMenuApp
+                            if (app && app.id) {
+                                copyProc.command = ["sh", "-c", "printf '%s' \"$1\" | wl-copy", "sh", app.id]
+                                copyProc.running = true
+                            }
+                            launcherWindow.closeContextMenu()
                         }
                     }
                 }
             }
+        }
 
-            // Hairline divider
-            Rectangle {
+        // ── Search Bar ────────────────────────────────────────────
+        RowLayout {
+            id: searchBar
+            anchors.top: parent.top
+            anchors.left: parent.left
+            anchors.right: parent.right
+            height: 58
+            anchors.leftMargin: 16
+            anchors.rightMargin: 16
+            spacing: 10
+            z: 10
+
+            Text {
+                text: Services.Icons.search
+                font.family: Services.Theme.fontSymbols
+                font.pixelSize: Services.Theme.fontSize2xl
+                color: searchField.activeFocus ? Services.Theme.accent : Services.Theme.textDisabled
+                Behavior on color { ColorAnimation { duration: 200; easing.type: Easing.OutCubic } }
+            }
+
+            TextField {
+                id: searchField
                 Layout.fillWidth: true
-                height: 1
-                color: Services.Theme.border
-                opacity: launcherWindow.isExpanded ? 0.6 : 0
-                Behavior on opacity {
-                    NumberAnimation { duration: 150; easing.type: Easing.OutCubic }
+                background: null
+                color: Services.Theme.textPrimary
+                placeholderText: "Search applications..."
+                placeholderTextColor: Services.Theme.textDisabled
+                font.pixelSize: Services.Theme.fontSize3xl
+                leftPadding: 0
+                rightPadding: 0
+
+                onTextChanged: {
+                    Services.Applications.query = text
+                    resultList.currentIndex = 0
+                    if (resultList.count > 0) {
+                        resultList.positionViewAtIndex(0, ListView.Beginning)
+                    }
+                }
+
+                Keys.onPressed: (event) => {
+                    // Global Settings Shortcut: Ctrl+, or Ctrl+S or Alt+S
+                    if ((event.modifiers & Qt.ControlModifier && (event.key === Qt.Key_Comma || event.key === Qt.Key_S)) ||
+                        (event.modifiers & Qt.AltModifier && event.key === Qt.Key_S)) {
+                        launcherWindow.hide()
+                        Services.OverlayManager.openSettings()
+                        event.accepted = true
+                        return
+                    }
+
+                    if (event.key === Qt.Key_Down) {
+                        resultList.currentIndex = Math.min(resultList.currentIndex + 1, resultList.count - 1)
+                        resultList.positionViewAtIndex(resultList.currentIndex, ListView.Contain)
+                        event.accepted = true
+                    } else if (event.key === Qt.Key_Up) {
+                        resultList.currentIndex = Math.max(resultList.currentIndex - 1, 0)
+                        resultList.positionViewAtIndex(resultList.currentIndex, ListView.Contain)
+                        event.accepted = true
+                    } else if (event.key === Qt.Key_PageDown) {
+                        resultList.currentIndex = Math.min(resultList.currentIndex + 5, resultList.count - 1)
+                        resultList.positionViewAtIndex(resultList.currentIndex, ListView.Contain)
+                        event.accepted = true
+                    } else if (event.key === Qt.Key_PageUp) {
+                        resultList.currentIndex = Math.max(resultList.currentIndex - 5, 0)
+                        resultList.positionViewAtIndex(resultList.currentIndex, ListView.Contain)
+                        event.accepted = true
+                    } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+                        const apps = resultList.model
+                        if (apps && apps.length > resultList.currentIndex) {
+                            const app = apps[resultList.currentIndex]
+                            if (app) {
+                                launcherWindow.hide()
+                                if (typeof app.execute === "function") {
+                                    app.execute()
+                                }
+                            }
+                        }
+                        event.accepted = true
+                    } else if (event.key === Qt.Key_Escape) {
+                        if (launcherWindow.isContextMenuOpen) {
+                            launcherWindow.closeContextMenu()
+                            event.accepted = true
+                            return
+                        }
+                        launcherWindow.hide()
+                        event.accepted = true
+                    }
                 }
             }
 
-            // ═════════════════════════════════════════════════════════════════
-            // ── APPLICATIONS LIST VIEW ───────────────────────────────────────
-            // ═════════════════════════════════════════════════════════════════
+            // Clear button
+            Text {
+                text: "✕"
+                font.pixelSize: Services.Theme.fontSizeLg
+                color: clearMouse.containsMouse ? Services.Theme.textPrimary : Services.Theme.textDisabled
+                visible: searchField.text.length > 0
+                Layout.alignment: Qt.AlignVCenter
+
+                MouseArea {
+                    id: clearMouse
+                    anchors.fill: parent
+                    anchors.margins: -4
+                    hoverEnabled: true
+                    onClicked: {
+                        searchField.text = ""
+                        searchField.forceActiveFocus()
+                    }
+                }
+            }
+
+            // Dedicated Quick Settings Button
+            Rectangle {
+                width: 26; height: 26; radius: 6
+                color: settingsBtnMouse.containsMouse ? Services.Theme.surfaceVariant : "transparent"
+                Layout.alignment: Qt.AlignVCenter
+                Behavior on color { ColorAnimation { duration: 150; easing.type: Easing.OutCubic } }
+
+                Text {
+                    anchors.centerIn: parent
+                    text: Services.Icons.settings
+                    font.family: Services.Theme.fontSymbols
+                    font.pixelSize: Services.Theme.fontSizeMd
+                    color: settingsBtnMouse.containsMouse ? Services.Theme.accent : Services.Theme.textDisabled
+                    Behavior on color { ColorAnimation { duration: 150; easing.type: Easing.OutCubic } }
+                }
+
+                MouseArea {
+                    id: settingsBtnMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: {
+                        launcherWindow.hide()
+                        Services.OverlayManager.openSettings()
+                    }
+                }
+            }
+        }
+
+        // Hairline divider
+        Rectangle {
+            id: hairlineDivider
+            anchors.top: searchBar.bottom
+            anchors.left: parent.left
+            anchors.right: parent.right
+            height: 1
+            color: Services.Theme.border
+            opacity: launcherWindow.isExpanded ? 0.6 : 0
+            Behavior on opacity {
+                NumberAnimation { duration: 150; easing.type: Easing.OutCubic }
+            }
+            z: 10
+        }
+
+        // ═════════════════════════════════════════════════════════════════
+        // ── APPLICATIONS LIST VIEW CONTAINER (Fixed Geometry for Smooth GPU Clip)
+        // ═════════════════════════════════════════════════════════════════
+        Item {
+            id: resultsContainer
+            anchors.top: hairlineDivider.bottom
+            anchors.left: parent.left
+            anchors.right: parent.right
+            height: 367
+            visible: launcherWindow.isExpanded || panel.height > 60
+            opacity: launcherWindow.isExpanded ? 1 : 0
+            Behavior on opacity {
+                NumberAnimation { duration: 150; easing.type: Easing.OutCubic }
+            }
+
             ListView {
                 id: resultList
-                Layout.fillWidth: true
-                Layout.fillHeight: true
-                visible: launcherWindow.isExpanded
+                anchors.fill: parent
                 clip: true
                 spacing: 3
                 model: Services.Applications.filteredApps
                 currentIndex: 0
                 keyNavigationEnabled: false
                 reuseItems: true
-                cacheBuffer: 600
+                cacheBuffer: 96
                 topMargin: 6; bottomMargin: 6
                 leftMargin: 8; rightMargin: 8
                 boundsBehavior: Flickable.StopAtBounds
@@ -301,7 +595,7 @@ PanelWindow {
 
                                 Text {
                                     anchors.centerIn: parent
-                                    text: (appItem.modelData.name || "?").charAt(0).toUpperCase()
+                                    text: (appItem.modelData && appItem.modelData.name ? appItem.modelData.name : "?").charAt(0).toUpperCase()
                                     color: appItem.index === resultList.currentIndex ? Services.Theme.accent : Services.Theme.textDisabled
                                     font.pixelSize: Services.Theme.fontSizeXl
                                     font.bold: true
@@ -312,18 +606,10 @@ PanelWindow {
                                 id: ico
                                 anchors.fill: parent
                                 source: {
-                                    const rawIcon = appItem.modelData ? (typeof appItem.modelData.icon === "string" ? appItem.modelData.icon : (appItem.modelData.icon?.name || "")) : ""
-                                    if (!rawIcon) return ""
-                                    if (Services.SystemTheme) {
-                                        const res = Services.SystemTheme.getIcon(rawIcon)
-                                        if (res && res.length > 0) return res
-                                    }
-                                    if (rawIcon.startsWith("file://") || rawIcon.startsWith("http://") || rawIcon.startsWith("https://")) return rawIcon
-                                    if (rawIcon.startsWith("/")) return "file://" + rawIcon
-                                    let s = rawIcon.startsWith("image://icon/") ? rawIcon.substring(13) : rawIcon
-                                    if (s.startsWith("image://")) return s
-                                    const qp = Quickshell.iconPath(s, true)
-                                    return (qp && qp.startsWith("/")) ? ("file://" + qp) : (qp || "")
+                                    if (!appItem.modelData) return ""
+                                    if (appItem.modelData.resolvedIcon) return appItem.modelData.resolvedIcon
+                                    const rawIcon = typeof appItem.modelData.icon === "string" ? appItem.modelData.icon : (appItem.modelData.icon?.name || "")
+                                    return Services.SystemTheme ? Services.SystemTheme.getIcon(rawIcon) : ""
                                 }
                                 fillMode: Image.PreserveAspectFit
                                 asynchronous: true
@@ -342,7 +628,7 @@ PanelWindow {
                             spacing: 1
 
                             Text {
-                                text: appItem.modelData.name || ""
+                                text: (appItem.modelData && appItem.modelData.name) ? appItem.modelData.name : ""
                                 color: appItem.index === resultList.currentIndex ? Services.Theme.accent : Services.Theme.textPrimary
                                 font.pixelSize: Services.Theme.fontSizeXl
                                 font.weight: appItem.index === resultList.currentIndex ? Font.Medium : Font.Normal
@@ -352,8 +638,8 @@ PanelWindow {
                             }
 
                             Text {
-                                property string subText: appItem.modelData.description || appItem.modelData.comment || ""
-                                text: (subText.length > 0 && subText !== appItem.modelData.name) ? subText : "Application"
+                                property string subText: appItem.modelData ? (appItem.modelData.description || appItem.modelData.comment || "") : ""
+                                text: (subText.length > 0 && (!appItem.modelData || subText !== appItem.modelData.name)) ? subText : "Application"
                                 color: Services.Theme.textSecondary
                                 font.pixelSize: Services.Theme.fontSizeMd
                                 elide: Text.ElideRight
@@ -366,16 +652,23 @@ PanelWindow {
                         id: hoverArea
                         anchors.fill: parent
                         hoverEnabled: true
+                        acceptedButtons: Qt.LeftButton | Qt.RightButton
                         cursorShape: Qt.PointingHandCursor
-                        onPositionChanged: {
+                        onEntered: {
                             if (resultList.currentIndex !== appItem.index) {
                                 resultList.currentIndex = appItem.index
                             }
                         }
-                        onClicked: {
-                            launcherWindow.hide()
-                            if (typeof appItem.modelData.execute === "function") {
-                                appItem.modelData.execute()
+                        onClicked: (mouse) => {
+                            if (mouse.button === Qt.RightButton) {
+                                const pt = mapToItem(panel, mouse.x, mouse.y)
+                                launcherWindow.openContextMenu(appItem.modelData, pt.x, pt.y)
+                            } else {
+                                launcherWindow.closeContextMenu()
+                                launcherWindow.hide()
+                                if (appItem.modelData && typeof appItem.modelData.execute === "function") {
+                                    appItem.modelData.execute()
+                                }
                             }
                         }
                     }
@@ -407,95 +700,103 @@ PanelWindow {
                     }
                 }
             }
+        }
 
-            // Bottom Action Strip
-            Rectangle {
-                Layout.fillWidth: true
-                Layout.preferredHeight: 34
-                color: Services.Theme.bgDeep
-                radius: 12
-                border.width: 0
-                visible: launcherWindow.isExpanded
+        // ── Bottom Action Strip ──────────────────────────────────────
+        Rectangle {
+            id: bottomStrip
+            anchors.bottom: parent.bottom
+            anchors.left: parent.left
+            anchors.right: parent.right
+            height: 34
+            color: Services.Theme.bgDeep
+            radius: 12
+            border.width: 0
+            visible: panel.height > 90
+            opacity: launcherWindow.isExpanded ? Math.max(0, Math.min(1, (panel.height - 90) / 60)) : 0
+            Behavior on opacity {
+                NumberAnimation { duration: 150; easing.type: Easing.OutCubic }
+            }
+            z: 10
 
+            RowLayout {
+                anchors.fill: parent
+                anchors.leftMargin: 14; anchors.rightMargin: 14
+                spacing: 12
+
+                // App count info
+                Text {
+                    text: {
+                        const count = Services.Applications.filteredApps ? Services.Applications.filteredApps.length : 0
+                        return count + " application" + (count === 1 ? "" : "s")
+                    }
+                    color: Services.Theme.textDisabled
+                    font.pixelSize: Services.Theme.fontSizeSm
+                }
+
+                Item { Layout.fillWidth: true }
+
+                // Navigation Hints
                 RowLayout {
-                    anchors.fill: parent
-                    anchors.leftMargin: 14; anchors.rightMargin: 14
-                    spacing: 12
+                    spacing: 10
 
-                    // App count info
-                    Text {
-                        text: {
-                            const count = Services.Applications.filteredApps ? Services.Applications.filteredApps.length : 0
-                            return count + " application" + (count === 1 ? "" : "s")
+                    RowLayout {
+                        spacing: 4
+                        Text {
+                            text: "↑↓"
+                            color: Services.Theme.textSecondary
+                            font.pixelSize: Services.Theme.fontSizeXs
+                            font.family: Services.Theme.fontMono
                         }
-                        color: Services.Theme.textDisabled
-                        font.pixelSize: Services.Theme.fontSizeSm
+                        Text {
+                            text: "Navigate"
+                            color: Services.Theme.textDisabled
+                            font.pixelSize: Services.Theme.fontSizeXs
+                        }
                     }
 
-                    Item { Layout.fillWidth: true }
-
-                    // Navigation Hints
                     RowLayout {
-                        spacing: 10
-
-                        RowLayout {
-                            spacing: 4
-                            Text {
-                                text: "↑↓"
-                                color: Services.Theme.textSecondary
-                                font.pixelSize: Services.Theme.fontSizeXs
-                                font.family: Services.Theme.fontMono
-                            }
-                            Text {
-                                text: "Navigate"
-                                color: Services.Theme.textDisabled
-                                font.pixelSize: Services.Theme.fontSizeXs
-                            }
+                        spacing: 4
+                        Text {
+                            text: "↵"
+                            color: Services.Theme.accent
+                            font.pixelSize: Services.Theme.fontSizeSm
+                            font.bold: true
                         }
-
-                        RowLayout {
-                            spacing: 4
-                            Text {
-                                text: "↵"
-                                color: Services.Theme.accent
-                                font.pixelSize: Services.Theme.fontSizeSm
-                                font.bold: true
-                            }
-                            Text {
-                                text: "Launch"
-                                color: Services.Theme.textDisabled
-                                font.pixelSize: Services.Theme.fontSizeXs
-                            }
+                        Text {
+                            text: "Launch"
+                            color: Services.Theme.textDisabled
+                            font.pixelSize: Services.Theme.fontSizeXs
                         }
+                    }
 
-                        RowLayout {
-                            spacing: 4
-                            Text {
-                                text: "Ctrl+,"
-                                color: Services.Theme.textSecondary
-                                font.pixelSize: Services.Theme.fontSizeXs
-                                font.family: Services.Theme.fontMono
-                            }
-                            Text {
-                                text: "Settings"
-                                color: Services.Theme.textDisabled
-                                font.pixelSize: Services.Theme.fontSizeXs
-                            }
+                    RowLayout {
+                        spacing: 4
+                        Text {
+                            text: "Ctrl+,"
+                            color: Services.Theme.textSecondary
+                            font.pixelSize: Services.Theme.fontSizeXs
+                            font.family: Services.Theme.fontMono
                         }
+                        Text {
+                            text: "Settings"
+                            color: Services.Theme.textDisabled
+                            font.pixelSize: Services.Theme.fontSizeXs
+                        }
+                    }
 
-                        RowLayout {
-                            spacing: 4
-                            Text {
-                                text: "Esc"
-                                color: Services.Theme.textSecondary
-                                font.pixelSize: Services.Theme.fontSizeXs
-                                font.family: Services.Theme.fontMono
-                            }
-                            Text {
-                                text: "Close"
-                                color: Services.Theme.textDisabled
-                                font.pixelSize: Services.Theme.fontSizeXs
-                            }
+                    RowLayout {
+                        spacing: 4
+                        Text {
+                            text: "Esc"
+                            color: Services.Theme.textSecondary
+                            font.pixelSize: Services.Theme.fontSizeXs
+                            font.family: Services.Theme.fontMono
+                        }
+                        Text {
+                            text: "Close"
+                            color: Services.Theme.textDisabled
+                            font.pixelSize: Services.Theme.fontSizeXs
                         }
                     }
                 }
