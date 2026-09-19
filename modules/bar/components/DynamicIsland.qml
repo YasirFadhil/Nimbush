@@ -15,6 +15,7 @@ Item {
     // ----- Public API & State -----
     property bool pinned: false
     property bool autoExpanded: false
+    property bool mediaCollapsedReady: false
     property int activeNotifIndex: 0
 
     // Inline Reply Type Zone State
@@ -199,6 +200,7 @@ Item {
         onTriggered: {
             root.mediaIconTransformed = true
             root.mediaStopping = false
+            root.mediaCollapsedReady = false
         }
     }
 
@@ -626,6 +628,7 @@ Item {
     property string lastTrackText: ""
     onMediaPlayingChanged: {
         if (mediaPlaying) {
+            root.mediaCollapsedReady = false
             mediaStopPhase1Timer.stop()
             mediaStopPhase2Timer.stop()
             root.mediaStopping = false
@@ -634,12 +637,17 @@ Item {
             if (currentMediaText !== "") {
                 lastTrackText = currentMediaText
             }
+            if (root.hudReady && root.notifCount === 0 && !root.pinned) {
+                root.pulse()
+            }
         } else {
             if (root.hudReady && !root.notifActive) {
                 root.mediaStopping = true
                 root.mediaTextCollapsed = false
                 root.mediaIconTransformed = false
                 mediaStopPhase1Timer.restart()
+            } else {
+                root.mediaCollapsedReady = false
             }
         }
     }
@@ -696,11 +704,11 @@ Item {
     }
 
     // Island Dimensions
-    readonly property bool showCollapsedText: !lockBlocked && (notifActive || mediaPlaying)
+    readonly property bool showCollapsedText: !lockBlocked && (notifActive || (mediaPlaying && mediaCollapsedReady))
     readonly property int calculatedCollapsedWidth: {
         if (showCollapsedText || (mediaStopping && !mediaTextCollapsed)) {
             const extraPadding = (mediaPlaying || mediaStopping) ? 72 : 52
-            return Math.min(220, Math.max(140, collapsedText.implicitWidth + extraPadding))
+            return Math.min(260, Math.max(140, collapsedText.implicitWidth + extraPadding))
         }
         return 140
     }
@@ -760,6 +768,10 @@ Item {
 
     function pulse() {
         if (pinned || notifActive) return
+        if (autoExpanded) {
+            autoCollapseTimer.restart()
+            return
+        }
         autoExpanded = true
         autoCollapseTimer.restart()
     }
@@ -780,6 +792,7 @@ Item {
     function collapse() {
         pinned = false
         autoExpanded = false
+        if (root.mediaPlaying) root.mediaCollapsedReady = true
         replyMode = false
         wallpaperMode = false
         dropSendMode = false
@@ -858,7 +871,10 @@ Item {
     Timer {
         id: autoCollapseTimer
         interval: root.autoExpandDuration
-        onTriggered: root.autoExpanded = false
+        onTriggered: {
+            root.autoExpanded = false
+            if (root.mediaPlaying) root.mediaCollapsedReady = true
+        }
     }
 
     Timer {
@@ -947,14 +963,16 @@ Item {
         // Seamless, Continuous Fluid Morphing (Zero delay, zero hitching, pure iOS ease - synchronized with Lockscreen)
         Behavior on width {
             NumberAnimation {
-                duration: root.expanded ? 360 : 400
-                easing.type: root.expanded ? Easing.OutBack : Easing.OutCubic
+                duration: root.expanded ? 360 : 380
+                easing.type: Easing.OutBack
+                easing.overshoot: root.expanded ? 1.35 : 1.45
             }
         }
         Behavior on height {
             NumberAnimation {
-                duration: root.expanded ? 360 : 360
-                easing.type: root.expanded ? Easing.OutBack : Easing.OutCubic
+                duration: 340
+                easing.type: Easing.OutBack
+                easing.overshoot: 0.65
             }
         }
         Behavior on radius {
@@ -1051,19 +1069,25 @@ Item {
             implicitHeight: 16
             z: 3
 
-            readonly property bool activeState: !root.expanded
+            readonly property bool activeState: !root.expanded && !root.autoExpanded && (
+                !root.mediaPlaying || root.mediaCollapsedReady || root.mediaStopping
+            )
             visible: activeState || opacity > 0.01
             opacity: activeState ? 1 : 0
             scale: activeState ? 1.0 : 0.4
             transformOrigin: Item.Center
 
-            Behavior on opacity { NumberAnimation { duration: 260; easing.type: Easing.OutQuad } }
-            Behavior on scale   { NumberAnimation { duration: 360; easing.type: Easing.OutBack } }
+            Behavior on opacity { NumberAnimation { duration: statusIconContainer.activeState ? 220 : 160; easing.type: Easing.OutQuad } }
+            Behavior on scale   { NumberAnimation { duration: statusIconContainer.activeState ? 320 : 160; easing.type: Easing.OutCubic } }
 
             states: [
                 State {
                     name: "ICON_LEFT"
-                    when: !Services.OverlayManager.isLocked && (root.showCollapsedText || root.mediaStopping)
+                    when: !Services.OverlayManager.isLocked && !root.expanded && !root.autoExpanded && (
+                        (root.mediaPlaying && root.mediaCollapsedReady) ||
+                        root.mediaStopping ||
+                        root.notifActive
+                    )
                     AnchorChanges {
                         target: statusIconContainer
                         anchors.horizontalCenter: undefined
@@ -1091,7 +1115,12 @@ Item {
                 },
                 State {
                     name: "IDLE_CENTER"
-                    when: !Services.OverlayManager.isLocked && !root.showCollapsedText && !root.mediaStopping && !root.cameraActive
+                    when: !Services.OverlayManager.isLocked && (
+                        root.expanded ||
+                        root.autoExpanded ||
+                        (!root.mediaPlaying && !root.mediaStopping && !root.notifActive && !root.cameraActive) ||
+                        (root.mediaPlaying && !root.mediaCollapsedReady)
+                    )
                     AnchorChanges {
                         target: statusIconContainer
                         anchors.horizontalCenter: island.horizontalCenter
@@ -1101,7 +1130,7 @@ Item {
                 },
                 State {
                     name: "CAMERA_RIGHT"
-                    when: !Services.OverlayManager.isLocked && (!root.showCollapsedText && !root.mediaStopping && root.cameraActive)
+                    when: !Services.OverlayManager.isLocked && !root.expanded && !root.autoExpanded && (!root.showCollapsedText && !root.mediaStopping && root.cameraActive)
                     AnchorChanges {
                         target: statusIconContainer
                         anchors.horizontalCenter: undefined
@@ -1134,6 +1163,8 @@ Item {
                 text: {
                     if (Services.OverlayManager.isLocked) return "󰌾"
                     if (root.notifActive) return "󰂚"
+                    if (root.expanded || root.autoExpanded) return "●"
+                    if (root.mediaPlaying && !root.mediaCollapsedReady) return "●"
                     if (root.mediaPlaying || root.mediaStopping) return "󰎈"
                     return "●"
                 }
@@ -1142,7 +1173,10 @@ Item {
                 color: {
                     if (Services.OverlayManager.isLocked) return Services.Theme.accent
                     if (root.notifActive) return Services.Theme.accent
-                    if (root.mediaPlaying || root.mediaStopping || root.cameraActive) return Services.Theme.success
+                    if (root.expanded || root.autoExpanded) return Services.Theme.textDisabled
+                    if (root.mediaPlaying && !root.mediaCollapsedReady) return Services.Theme.textDisabled
+                    if (root.mediaPlaying || root.mediaStopping) return Services.Theme.success
+                    if (root.cameraActive) return Services.Theme.success
                     return Services.Theme.textDisabled
                 }
                 scale: textScale
@@ -1150,7 +1184,12 @@ Item {
                 property real textScale: 1.0
 
                 onTextChanged: {
-                    iconScaleAnim.restart()
+                    if (text === "●") {
+                        statusIconTxt.rotation = 0
+                    }
+                    if (statusIconContainer.activeState && !root.expanded && !root.autoExpanded) {
+                        iconScaleAnim.restart()
+                    }
                 }
 
                 SequentialAnimation {
@@ -1161,15 +1200,13 @@ Item {
 
                 // Green Blinking when camera active and no music text
                 SequentialAnimation on opacity {
-                    running: root.cameraActive && !root.showCollapsedText && !root.expanded
+                    running: root.cameraActive && !root.showCollapsedText && !root.expanded && !root.autoExpanded
                     loops: Animation.Infinite
                     NumberAnimation { from: 1.0; to: 0.25; duration: 700; easing.type: Easing.InOutSine }
                     NumberAnimation { from: 0.25; to: 1.0; duration: 700; easing.type: Easing.InOutSine }
                 }
 
                 Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
-
-                rotation: (!Services.OverlayManager.isLocked && root.mediaPlaying && !root.expanded) ? rotation : 0
 
                 Behavior on rotation {
                     RotationAnimation {
@@ -1183,7 +1220,7 @@ Item {
                     from: 0; to: 360
                     duration: 4000
                     loops: Animation.Infinite
-                    running: !Services.OverlayManager.isLocked && root.mediaPlaying && !root.expanded
+                    running: !Services.OverlayManager.isLocked && root.mediaPlaying && !root.expanded && !root.autoExpanded && root.mediaCollapsedReady && statusIconContainer.state === "ICON_LEFT"
                 }
             }
         }
@@ -1203,7 +1240,7 @@ Item {
             barColor: Services.Theme.success
             isPlaying: root.mediaPlaying
             active: visible
-            readonly property bool activeState: !Services.OverlayManager.isLocked && root.mediaPlaying && !root.expanded && !root.notifActive
+            readonly property bool activeState: !Services.OverlayManager.isLocked && root.mediaPlaying && !root.expanded && !root.autoExpanded && root.mediaCollapsedReady && !root.notifActive
             visible: activeState || opacity > 0.01
             opacity: activeState ? 1.0 : 0.0
             scale: activeState ? 1.0 : 0.3
@@ -1225,7 +1262,7 @@ Item {
             z: 3
 
             readonly property bool showCollapsedText: !Services.OverlayManager.isLocked && (root.notifActive || root.mediaPlaying)
-            readonly property bool activeState: !Services.OverlayManager.isLocked && !root.expanded && showCollapsedText
+            readonly property bool activeState: !Services.OverlayManager.isLocked && !root.expanded && !root.autoExpanded && root.mediaCollapsedReady && showCollapsedText
 
             clip: true
             transformOrigin: Item.Left
@@ -1233,21 +1270,20 @@ Item {
             scale: activeState ? 1.0 : 0.95
             visible: activeState || opacity > 0.01
 
-            Behavior on opacity { NumberAnimation { duration: 180; easing.type: Easing.OutQuad } }
+            Behavior on opacity { NumberAnimation { duration: 140; easing.type: Easing.OutQuad } }
             Behavior on scale   { NumberAnimation { duration: 180; easing.type: Easing.OutQuad } }
 
             transform: Translate {
-                x: collapsedTextContainer.activeState ? 0 : 32
-                y: collapsedTextContainer.activeState ? 0 : 14
-                Behavior on x { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
-                Behavior on y { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
+                x: collapsedTextContainer.activeState ? 0 : 20
+                Behavior on x { NumberAnimation { duration: 160; easing.type: Easing.OutQuad } }
             }
 
             readonly property string targetText: Services.OverlayManager.isLocked ? "Locked" : (root.notifActive ? ("Notif (" + root.notifCount + ")") : (root.mediaPlaying ? root.currentMediaText : root.lastTrackText))
 
             onTargetTextChanged: {
                 root.restartGlobalMarquee()
-                if (!activeState || opacity <= 0.05) {
+                if (!activeState || opacity <= 0.5 || root.expanded || root.autoExpanded) {
+                    trackSwitchAnim.stop()
                     collapsedText.text = targetText
                     collapsedText.y = 0
                     collapsedText.opacity = 1.0
@@ -1258,20 +1294,14 @@ Item {
 
             SequentialAnimation {
                 id: trackSwitchAnim
-                ParallelAnimation {
-                    NumberAnimation { target: collapsedText; property: "opacity"; to: 0.0; duration: 110; easing.type: Easing.InQuad }
-                    NumberAnimation { target: collapsedText; property: "y"; to: -8; duration: 110; easing.type: Easing.InQuad }
-                }
+                NumberAnimation { target: collapsedText; property: "opacity"; to: 0.0; duration: 80; easing.type: Easing.InQuad }
                 ScriptAction {
                     script: {
                         collapsedText.text = collapsedTextContainer.targetText
-                        collapsedText.y = 8
+                        collapsedText.y = 0
                     }
                 }
-                ParallelAnimation {
-                    NumberAnimation { target: collapsedText; property: "opacity"; to: 1.0; duration: 160; easing.type: Easing.OutCubic }
-                    NumberAnimation { target: collapsedText; property: "y"; to: 0; duration: 160; easing.type: Easing.OutCubic }
-                }
+                NumberAnimation { target: collapsedText; property: "opacity"; to: 1.0; duration: 140; easing.type: Easing.OutQuad }
             }
 
             Text {
@@ -1280,12 +1310,12 @@ Item {
                 font.pixelSize: 11
                 font.bold: true
                 color: Services.Theme.textPrimary
-                width: collapsedTextContainer.width
-                horizontalAlignment: (collapsedText.implicitWidth > collapsedTextContainer.width) ? Text.AlignLeft : Text.AlignHCenter
+                width: Math.max(implicitWidth, collapsedTextContainer.width)
+                horizontalAlignment: (implicitWidth > collapsedTextContainer.width) ? Text.AlignLeft : Text.AlignHCenter
                 verticalAlignment: Text.AlignVCenter
-                readonly property real maxScroll: Math.max(0, implicitWidth - collapsedTextContainer.width + 4)
+                readonly property real maxScroll: Math.max(0, implicitWidth - collapsedTextContainer.width + 8)
                 x: (maxScroll > 0 && !trackSwitchAnim.running) ? -maxScroll * root.globalMediaMarqueeRatio : 0
-                elide: (maxScroll > 0 || trackSwitchAnim.running) ? Text.ElideNone : Text.ElideRight
+                elide: Text.ElideNone
             }
         }
 
@@ -1303,7 +1333,7 @@ Item {
             z: 1
 
             Behavior on opacity { NumberAnimation { duration: 260; easing.type: Easing.OutQuad } }
-            Behavior on scale   { NumberAnimation { duration: 360; easing.type: Easing.OutBack } }
+            Behavior on scale   { NumberAnimation { duration: 360; easing.type: Easing.OutBack; easing.overshoot: 1.35 } }
 
             // Header: Icon, AppName, Queue Indicator, Controls & Close
             RowLayout {
@@ -1838,13 +1868,13 @@ Item {
             readonly property bool activeState: !Services.OverlayManager.isLocked && root.expanded && !root.notifActive && !root.sysHudActive && root.hasMedia && !root.wallpaperMode && !root.dropSendMode && !root.isDropSending
             visible: activeState || opacity > 0.01
             opacity: activeState ? 1 : 0
-            scale: activeState ? 1.0 : 0.92
+            scale: activeState ? 1.0 : (root.isMediaPeek ? 0.96 : 0.78)
             transformOrigin: Item.Center
             enabled: activeState
             z: 1
 
-            Behavior on opacity { NumberAnimation { duration: 220; easing.type: Easing.OutQuad } }
-            Behavior on scale   { NumberAnimation { duration: 240; easing.type: Easing.OutCubic } }
+            Behavior on opacity { NumberAnimation { duration: root.expanded ? 140 : 160; easing.type: Easing.OutQuad } }
+            Behavior on scale   { NumberAnimation { duration: 340; easing.type: Easing.OutBack; easing.overshoot: root.isMediaPeek ? 0.4 : 1.2 } }
 
             // Row 1: Track Art + Info + (Right Status Icon / App Badge)
             RowLayout {
@@ -1858,8 +1888,12 @@ Item {
                     implicitWidth: root.isMediaPeek ? 34 : 46
                     implicitHeight: root.isMediaPeek ? 34 : 46
                     Layout.alignment: Qt.AlignVCenter
+                    scale: mediaView.activeState ? 1.0 : 0.6
+                    transformOrigin: Item.Center
+
                     Behavior on implicitWidth  { NumberAnimation { duration: 280; easing.type: Easing.OutCubic } }
                     Behavior on implicitHeight { NumberAnimation { duration: 280; easing.type: Easing.OutCubic } }
+                    Behavior on scale          { NumberAnimation { duration: 320; easing.type: Easing.OutBack; easing.overshoot: 1.15 } }
 
                     // 1. Layer Konten Gambar + MSAA Buffer
                     Item {
@@ -1899,7 +1933,7 @@ Item {
                                 mipmap: true
                                 antialiasing: true
                                 sourceSize: Qt.size(102, 102)
-                                opacity: status === Image.Ready ? 1 : 0
+                                opacity: (status === Image.Ready && source !== "") ? 1 : 0
                                 Behavior on opacity { NumberAnimation { duration: 200; easing.type: Easing.OutQuad } }
                             }
 
@@ -1919,7 +1953,8 @@ Item {
                             font.family: Services.Theme.fontSymbols
                             font.pixelSize: root.isMediaPeek ? 15 : 22
                             color: Services.Theme.accent
-                            visible: mediaArtImg.status !== Image.Ready
+                            opacity: (mediaArtImg.source !== "" && mediaArtImg.status !== Image.Error) ? 0.0 : 1.0
+                            Behavior on opacity { NumberAnimation { duration: 200; easing.type: Easing.OutQuad } }
                             Behavior on font.pixelSize { NumberAnimation { duration: 220 } }
                         }
                     }
@@ -1963,17 +1998,27 @@ Item {
                     id: mediaInfoCol
                     Layout.fillWidth: true
                     Layout.alignment: Qt.AlignVCenter
-                    spacing: root.isMediaPeek ? 1 : 2
+                    spacing: root.expanded ? (root.isMediaPeek ? 1 : 2) : 0
                     Behavior on spacing { NumberAnimation { duration: 220 } }
 
                     readonly property string fullTitle: root.activePlayer ? (root.activePlayer.trackTitle || "Playing") : "Playing"
                     readonly property string fullArtist: root.activePlayer ? (root.activePlayer.trackArtist || root.activePlayer.identity || "Now Playing") : "Now Playing"
 
+                    onFullArtistChanged: {
+                        if (!mediaTextSwitchAnim.running) {
+                            mediaArtistText.text = fullArtist
+                        }
+                    }
+
                     onFullTitleChanged: {
                         root.restartGlobalMarquee()
-                        if (mediaView.activeState && mediaView.opacity > 0.1) {
+                        const titleChanged = (mediaTitleText.text !== fullTitle)
+                        const isRealTitle = (fullTitle !== "" && fullTitle !== "Playing")
+                        const isSettled = (mediaView.activeState && mediaView.opacity > 0.95 && !root.autoExpanded)
+                        if (titleChanged && isRealTitle && isSettled && !titleMorphAnim.running && !artistMorphAnim.running) {
                             mediaTextSwitchAnim.restart()
                         } else {
+                            mediaTextSwitchAnim.stop()
                             mediaTitleText.text = fullTitle
                             mediaArtistText.text = fullArtist
                             mediaTitleText.y = 0
@@ -1986,24 +2031,20 @@ Item {
                     SequentialAnimation {
                         id: mediaTextSwitchAnim
                         ParallelAnimation {
-                            NumberAnimation { target: mediaTitleText; property: "opacity"; to: 0.0; duration: 110; easing.type: Easing.InQuad }
-                            NumberAnimation { target: mediaTitleText; property: "y"; to: -6; duration: 110; easing.type: Easing.InQuad }
-                            NumberAnimation { target: mediaArtistText; property: "opacity"; to: 0.0; duration: 110; easing.type: Easing.InQuad }
-                            NumberAnimation { target: mediaArtistText; property: "y"; to: -6; duration: 110; easing.type: Easing.InQuad }
+                            NumberAnimation { target: mediaTitleText; property: "opacity"; to: 0.0; duration: 90; easing.type: Easing.InQuad }
+                            NumberAnimation { target: mediaArtistText; property: "opacity"; to: 0.0; duration: 90; easing.type: Easing.InQuad }
                         }
                         ScriptAction {
                             script: {
                                 mediaTitleText.text = mediaInfoCol.fullTitle
                                 mediaArtistText.text = mediaInfoCol.fullArtist
-                                mediaTitleText.y = 6
-                                mediaArtistText.y = 6
+                                mediaTitleText.y = 0
+                                mediaArtistText.y = 0
                             }
                         }
                         ParallelAnimation {
-                            NumberAnimation { target: mediaTitleText; property: "opacity"; to: 1.0; duration: 160; easing.type: Easing.OutCubic }
-                            NumberAnimation { target: mediaTitleText; property: "y"; to: 0; duration: 160; easing.type: Easing.OutCubic }
-                            NumberAnimation { target: mediaArtistText; property: "opacity"; to: 1.0; duration: 160; easing.type: Easing.OutCubic }
-                            NumberAnimation { target: mediaArtistText; property: "y"; to: 0; duration: 160; easing.type: Easing.OutCubic }
+                            NumberAnimation { target: mediaTitleText; property: "opacity"; to: 1.0; duration: 160; easing.type: Easing.OutQuad }
+                            NumberAnimation { target: mediaArtistText; property: "opacity"; to: 1.0; duration: 160; easing.type: Easing.OutQuad }
                         }
                     }
 
@@ -2048,7 +2089,7 @@ Item {
                         }
                     }
 
-                    // Running Title Text (Seamless physical glide across states)
+                    // Running Title Text (Seamless physical morph across states)
                     Item {
                         id: mediaTitleContainer
                         Layout.fillWidth: true
@@ -2056,7 +2097,7 @@ Item {
                         clip: true
 
                         transform: Translate {
-                            id: titleGlide
+                            id: titleMorphTranslate
                             x: 0
                             y: 0
                         }
@@ -2071,21 +2112,20 @@ Item {
                             readonly property real maxScroll: Math.max(0, implicitWidth - parent.width + 8)
                             x: (maxScroll > 0 && !mediaTextSwitchAnim.running) ? -maxScroll * root.globalMediaMarqueeRatio : 0
                             elide: (maxScroll > 0 || mediaTextSwitchAnim.running) ? Text.ElideNone : Text.ElideRight
-                            Behavior on font.pixelSize { NumberAnimation { duration: 240; easing.type: Easing.OutCubic } }
+                            Behavior on font.pixelSize { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
                         }
                     }
 
-                    // Running Artist Text (Seamless physical glide across states)
+                    // Running Artist Text (Seamless physical morph across states)
                     Item {
                         id: mediaArtistContainer
                         Layout.fillWidth: true
                         implicitHeight: mediaArtistText.implicitHeight
                         clip: true
                         visible: mediaInfoCol.fullArtist.length > 0
-                        opacity: 1.0
 
                         transform: Translate {
-                            id: artistGlide
+                            id: artistMorphTranslate
                             x: 0
                             y: 0
                         }
@@ -2099,83 +2139,96 @@ Item {
                             readonly property real maxScroll: Math.max(0, implicitWidth - parent.width + 8)
                             x: (maxScroll > 0 && !mediaTextSwitchAnim.running) ? -maxScroll * root.globalMediaMarqueeRatio : 0
                             elide: (maxScroll > 0 || mediaTextSwitchAnim.running) ? Text.ElideNone : Text.ElideRight
-                            Behavior on font.pixelSize { NumberAnimation { duration: 240; easing.type: Easing.OutCubic } }
+                            Behavior on font.pixelSize { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
                         }
                     }
 
-                    function triggerGlide(titleStartX, titleStartY, artistStartX, artistStartY, dur, fadeArtistIn) {
-                        titleGlideAnim.stop()
-                        artistGlideAnim.stop()
+                    function triggerMorph(tStartX, tStartY, aStartX, aStartY, isEntrance) {
+                        titleMorphAnim.stop()
+                        artistMorphAnim.stop()
+                        mediaTextSwitchAnim.stop()
 
-                        titleGlideXAnim.from = titleStartX
-                        titleGlideXAnim.duration = dur
-                        titleGlideYAnim.from = titleStartY
-                        titleGlideYAnim.duration = dur
+                        // Immediate resting sync
+                        mediaTitleText.text = mediaInfoCol.fullTitle
+                        mediaArtistText.text = mediaInfoCol.fullArtist
+                        mediaTitleText.y = 0
+                        mediaArtistText.y = 0
+                        mediaTitleText.opacity = 1.0
+                        mediaArtistText.opacity = 1.0
+                        mediaTitleContainer.opacity = 1.0
+                        mediaArtistContainer.opacity = 1.0
 
-                        artistGlideXAnim.from = artistStartX
-                        artistGlideXAnim.duration = dur + 20
-                        artistGlideYAnim.from = artistStartY
-                        artistGlideYAnim.duration = dur + 20
+                        if (isEntrance) {
+                            // Fresh entrance from normal idle: no artificial sliding or opacity tampering
+                            titleMorphTranslate.x = 0
+                            titleMorphTranslate.y = 0
+                            artistMorphTranslate.x = 0
+                            artistMorphTranslate.y = 0
+                            return
+                        }
 
-                        artistGlideOpacityAnim.from = fadeArtistIn ? 0.0 : 1.0
-                        artistGlideOpacityAnim.duration = fadeArtistIn ? (dur - 60) : 10
+                        // Morphing from already visible collapsed pill: physical glide across states
+                        titleMorphX.from = tStartX
+                        titleMorphY.from = tStartY
+                        titleMorphTranslate.x = tStartX
+                        titleMorphTranslate.y = tStartY
 
-                        titleGlide.x = titleStartX
-                        titleGlide.y = titleStartY
-                        artistGlide.x = artistStartX
-                        artistGlide.y = artistStartY
-                        if (fadeArtistIn) mediaArtistContainer.opacity = 0.0
+                        artistMorphX.from = aStartX
+                        artistMorphY.from = aStartY
+                        artistMorphTranslate.x = aStartX
+                        artistMorphTranslate.y = aStartY
 
-                        titleGlideAnim.restart()
-                        artistGlideAnim.restart()
+                        artistMorphOpacity.from = 0.0
+                        mediaArtistContainer.opacity = 0.0
+
+                        titleMorphAnim.restart()
+                        artistMorphAnim.restart()
                     }
 
                     ParallelAnimation {
-                        id: titleGlideAnim
+                        id: titleMorphAnim
                         NumberAnimation {
-                            id: titleGlideXAnim
-                            target: titleGlide
+                            id: titleMorphX
+                            target: titleMorphTranslate
                             property: "x"
                             to: 0
-                            duration: 340
+                            duration: 320
                             easing.type: Easing.OutBack
                             easing.overshoot: 1.15
                         }
                         NumberAnimation {
-                            id: titleGlideYAnim
-                            target: titleGlide
+                            id: titleMorphY
+                            target: titleMorphTranslate
                             property: "y"
                             to: 0
-                            duration: 340
-                            easing.type: Easing.OutBack
-                            easing.overshoot: 1.15
+                            duration: 320
+                            easing.type: Easing.OutCubic
                         }
                     }
 
                     SequentialAnimation {
-                        id: artistGlideAnim
-                        PauseAnimation { duration: 35 }
+                        id: artistMorphAnim
+                        PauseAnimation { duration: 25 }
                         ParallelAnimation {
                             NumberAnimation {
-                                id: artistGlideXAnim
-                                target: artistGlide
+                                id: artistMorphX
+                                target: artistMorphTranslate
                                 property: "x"
                                 to: 0
-                                duration: 360
+                                duration: 320
                                 easing.type: Easing.OutBack
                                 easing.overshoot: 1.15
                             }
                             NumberAnimation {
-                                id: artistGlideYAnim
-                                target: artistGlide
+                                id: artistMorphY
+                                target: artistMorphTranslate
                                 property: "y"
                                 to: 0
-                                duration: 360
-                                easing.type: Easing.OutBack
-                                easing.overshoot: 1.15
+                                duration: 320
+                                easing.type: Easing.OutCubic
                             }
                             NumberAnimation {
-                                id: artistGlideOpacityAnim
+                                id: artistMorphOpacity
                                 target: mediaArtistContainer
                                 property: "opacity"
                                 to: 1.0
@@ -2189,19 +2242,19 @@ Item {
                         target: root
                         function onExpandedChanged() {
                             if (root.expanded && root.hasMedia) {
+                                const wasShowingCollapsed = (!root.autoExpanded && root.mediaPlaying && collapsedTextContainer.opacity > 0.7)
                                 if (root.isMediaPeek) {
-                                    mediaInfoCol.triggerGlide(-20, -6, -16, -4, 300, false)
+                                    if (wasShowingCollapsed) {
+                                        mediaInfoCol.triggerMorph(-20, 0, -14, 0, false)
+                                    } else {
+                                        mediaInfoCol.triggerMorph(0, 0, 0, 0, true)
+                                    }
                                 } else {
-                                    mediaInfoCol.triggerGlide(-32, -18, -24, -14, 340, true)
-                                }
-                            }
-                        }
-                        function onIsMediaPeekChanged() {
-                            if (root.expanded && root.hasMedia) {
-                                if (!root.isMediaPeek) {
-                                    mediaInfoCol.triggerGlide(-14, -17, -14, -17, 340, false)
-                                } else {
-                                    mediaInfoCol.triggerGlide(14, 17, 14, 17, 300, false)
+                                    if (wasShowingCollapsed) {
+                                        mediaInfoCol.triggerMorph(-30, 0, -20, 0, false)
+                                    } else {
+                                        mediaInfoCol.triggerMorph(0, 0, 0, 0, true)
+                                    }
                                 }
                             }
                         }
@@ -2215,7 +2268,10 @@ Item {
                     Layout.alignment: Qt.AlignVCenter
                     visible: root.isMediaPeek || opacity > 0.01
                     opacity: root.isMediaPeek ? 1.0 : 0.0
+                    scale: root.isMediaPeek ? 1.0 : 0.4
+                    transformOrigin: Item.Center
                     Behavior on opacity { NumberAnimation { duration: 200; easing.type: Easing.OutQuad } }
+                    Behavior on scale   { NumberAnimation { duration: 280; easing.type: Easing.OutBack; easing.overshoot: 1.15 } }
 
                     Text {
                         anchors.centerIn: parent
