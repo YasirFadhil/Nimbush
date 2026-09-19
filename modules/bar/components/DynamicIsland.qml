@@ -2039,11 +2039,30 @@ Item {
                             maskSpreadAtMin: 0.5
                         }
 
-                        // Inner spinning disc (Artwork spins smoothly in peek mode)
+                        // Inner spinning disc (Artwork spins smoothly in peek mode, resets to 0deg in full controls)
                         Item {
                             id: mediaArtSpinContainer
                             anchors.fill: parent
                             transformOrigin: Item.Center
+                            rotation: 0
+
+                            readonly property bool shouldSpin: root.mediaPlaying && root.isMediaPeek && (mediaArtImg.status === Image.Ready)
+
+                            onShouldSpinChanged: {
+                                if (shouldSpin) {
+                                    resetAnim.stop()
+                                    spinAnim.start()
+                                } else {
+                                    spinAnim.stop()
+                                    resetAnim.start()
+                                }
+                            }
+
+                            Component.onCompleted: {
+                                if (shouldSpin) {
+                                    spinAnim.start()
+                                }
+                            }
 
                             // Base background fallback
                             Rectangle {
@@ -2068,11 +2087,29 @@ Item {
                             }
 
                             // Smooth subtle vinyl rotation while in peek
-                            RotationAnimation on rotation {
-                                from: 0; to: 360
+                            RotationAnimation {
+                                id: spinAnim
+                                target: mediaArtSpinContainer
+                                property: "rotation"
+                                from: 0
+                                to: 360
+                                direction: RotationAnimation.Clockwise
                                 duration: 12000
                                 loops: Animation.Infinite
-                                running: root.mediaPlaying && root.isMediaPeek && (mediaArtImg.status === Image.Ready)
+                            }
+
+                            // Smooth shortest-path reset back to 0deg when leaving peek or stopping
+                            RotationAnimation {
+                                id: resetAnim
+                                target: mediaArtSpinContainer
+                                property: "rotation"
+                                to: 0
+                                direction: RotationAnimation.Shortest
+                                duration: 280
+                                easing.type: Easing.OutCubic
+                                onFinished: {
+                                    mediaArtSpinContainer.rotation = 0
+                                }
                             }
                         }
 
