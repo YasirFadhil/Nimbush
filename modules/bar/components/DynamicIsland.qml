@@ -178,14 +178,15 @@ Item {
     property var btConnectedDevices: ({})
     property bool btInitialized: false
 
-    // Media Stop Animation Choreography
+    // Media Stop & Motion Animation Choreography
+    property bool isNextTrack: true
     property bool mediaStopping: false
     property bool mediaTextCollapsed: false
     property bool mediaIconTransformed: false
 
     Timer {
         id: mediaStopPhase1Timer
-        interval: 220
+        interval: 200
         repeat: false
         onTriggered: {
             root.mediaTextCollapsed = true
@@ -195,7 +196,7 @@ Item {
 
     Timer {
         id: mediaStopPhase2Timer
-        interval: 400
+        interval: 380
         repeat: false
         onTriggered: {
             root.mediaIconTransformed = true
@@ -641,6 +642,7 @@ Item {
                 root.pulse()
             }
         } else {
+            globalMediaMarqueeAnim.stop()
             if (root.hudReady && !root.notifActive) {
                 root.mediaStopping = true
                 root.mediaTextCollapsed = false
@@ -708,7 +710,7 @@ Item {
     readonly property int calculatedCollapsedWidth: {
         if (showCollapsedText || (mediaStopping && !mediaTextCollapsed)) {
             const extraPadding = (mediaPlaying || mediaStopping) ? 72 : 52
-            return Math.min(260, Math.max(140, collapsedText.implicitWidth + extraPadding))
+            return Math.min(260, Math.max(140, collapsedTextContainer.currentSlotImplicitWidth + extraPadding))
         }
         return 140
     }
@@ -921,6 +923,9 @@ Item {
         }
         function onTrackTitleChanged() {
             root.restartGlobalMarquee()
+            if (collapsedTextContainer) {
+                collapsedTextContainer.updateTrackPush(collapsedTextContainer.targetText, root.isNextTrack)
+            }
             if (root.hudReady && root.activePlayer && root.activePlayer.isPlaying && root.notifCount === 0 && !root.pinned) {
                 root.pulse()
             }
@@ -1262,7 +1267,7 @@ Item {
             z: 3
 
             readonly property bool showCollapsedText: !Services.OverlayManager.isLocked && (root.notifActive || root.mediaPlaying)
-            readonly property bool activeState: !Services.OverlayManager.isLocked && !root.expanded && !root.autoExpanded && root.mediaCollapsedReady && showCollapsedText
+            readonly property bool activeState: !Services.OverlayManager.isLocked && !root.expanded && !root.autoExpanded && root.mediaCollapsedReady && showCollapsedText && !root.mediaStopping
 
             clip: true
             transformOrigin: Item.Left
@@ -1270,42 +1275,143 @@ Item {
             scale: activeState ? 1.0 : 0.95
             visible: activeState || opacity > 0.01
 
-            Behavior on opacity { NumberAnimation { duration: 140; easing.type: Easing.OutQuad } }
+            Behavior on opacity { NumberAnimation { duration: root.mediaStopping ? 180 : 140; easing.type: root.mediaStopping ? Easing.InQuad : Easing.OutQuad } }
             Behavior on scale   { NumberAnimation { duration: 180; easing.type: Easing.OutQuad } }
 
             transform: Translate {
-                x: collapsedTextContainer.activeState ? 0 : 20
-                Behavior on x { NumberAnimation { duration: 160; easing.type: Easing.OutQuad } }
+                x: collapsedTextContainer.activeState ? 0 : (root.mediaStopping ? -20 : 20)
+                Behavior on x { NumberAnimation { duration: root.mediaStopping ? 180 : 160; easing.type: root.mediaStopping ? Easing.InQuad : Easing.OutQuad } }
             }
 
             readonly property string targetText: Services.OverlayManager.isLocked ? "Locked" : (root.notifActive ? ("Notif (" + root.notifCount + ")") : (root.mediaPlaying ? root.currentMediaText : root.lastTrackText))
 
-            onTargetTextChanged: {
-                root.restartGlobalMarquee()
-                if (!activeState || opacity <= 0.5 || root.expanded || root.autoExpanded) {
-                    trackSwitchAnim.stop()
-                    collapsedText.text = targetText
-                    collapsedText.y = 0
-                    collapsedText.opacity = 1.0
-                    return
-                }
-                trackSwitchAnim.restart()
+            property string displayedText: ""
+            property bool useSlotA: true
+            readonly property real currentSlotImplicitWidth: useSlotA ? slotA.implicitWidth : slotB.implicitWidth
+            readonly property alias collapsedText: slotA
+
+            Component.onCompleted: {
+                displayedText = targetText
+                slotA.text = targetText
+                slotA.y = 0
+                slotA.opacity = 1.0
+                slotB.opacity = 0.0
+                useSlotA = true
             }
 
-            SequentialAnimation {
-                id: trackSwitchAnim
-                NumberAnimation { target: collapsedText; property: "opacity"; to: 0.0; duration: 80; easing.type: Easing.InQuad }
-                ScriptAction {
-                    script: {
-                        collapsedText.text = collapsedTextContainer.targetText
-                        collapsedText.y = 0
+            function updateTrackPush(newTitle, isNext) {
+                if (!newTitle || newTitle === displayedText) return
+
+                if (!activeState || opacity <= 0.5 || root.expanded || root.autoExpanded) {
+                    slotPushAnimA.stop()
+                    slotPushAnimB.stop()
+                    displayedText = newTitle
+                    if (useSlotA) {
+                        slotA.text = newTitle
+                        slotA.y = 0
+                        slotA.opacity = 1.0
+                        slotB.opacity = 0.0
+                    } else {
+                        slotB.text = newTitle
+                        slotB.y = 0
+                        slotB.opacity = 1.0
+                        slotA.opacity = 0.0
                     }
+                    return
                 }
-                NumberAnimation { target: collapsedText; property: "opacity"; to: 1.0; duration: 140; easing.type: Easing.OutQuad }
+
+                displayedText = newTitle
+                const offset = isNext ? 18 : -18
+
+                if (useSlotA) {
+                    slotB.text = newTitle
+                    slotB.y = offset
+                    slotB.opacity = 0.0
+                    slotPushAnimB.restart()
+                    useSlotA = false
+                } else {
+                    slotA.text = newTitle
+                    slotA.y = offset
+                    slotA.opacity = 0.0
+                    slotPushAnimA.restart()
+                    useSlotA = true
+                }
+            }
+
+            onTargetTextChanged: {
+                root.restartGlobalMarquee()
+                updateTrackPush(targetText, root.isNextTrack)
+                root.isNextTrack = true
+            }
+
+            ParallelAnimation {
+                id: slotPushAnimB
+                NumberAnimation {
+                    target: slotA
+                    property: "y"
+                    to: root.isNextTrack ? -18 : 18
+                    duration: 220
+                    easing.type: Easing.InQuad
+                }
+                NumberAnimation {
+                    target: slotA
+                    property: "opacity"
+                    to: 0.0
+                    duration: 200
+                    easing.type: Easing.InQuad
+                }
+                NumberAnimation {
+                    target: slotB
+                    property: "y"
+                    to: 0
+                    duration: 320
+                    easing.type: Easing.OutBack
+                    easing.overshoot: 1.15
+                }
+                NumberAnimation {
+                    target: slotB
+                    property: "opacity"
+                    to: 1.0
+                    duration: 280
+                    easing.type: Easing.OutQuad
+                }
+            }
+
+            ParallelAnimation {
+                id: slotPushAnimA
+                NumberAnimation {
+                    target: slotB
+                    property: "y"
+                    to: root.isNextTrack ? -18 : 18
+                    duration: 220
+                    easing.type: Easing.InQuad
+                }
+                NumberAnimation {
+                    target: slotB
+                    property: "opacity"
+                    to: 0.0
+                    duration: 200
+                    easing.type: Easing.InQuad
+                }
+                NumberAnimation {
+                    target: slotA
+                    property: "y"
+                    to: 0
+                    duration: 320
+                    easing.type: Easing.OutBack
+                    easing.overshoot: 1.15
+                }
+                NumberAnimation {
+                    target: slotA
+                    property: "opacity"
+                    to: 1.0
+                    duration: 280
+                    easing.type: Easing.OutQuad
+                }
             }
 
             Text {
-                id: collapsedText
+                id: slotA
                 text: collapsedTextContainer.targetText
                 font.pixelSize: 11
                 font.bold: true
@@ -1313,8 +1419,26 @@ Item {
                 width: Math.max(implicitWidth, collapsedTextContainer.width)
                 horizontalAlignment: (implicitWidth > collapsedTextContainer.width) ? Text.AlignLeft : Text.AlignHCenter
                 verticalAlignment: Text.AlignVCenter
+                opacity: 1.0
+                y: 0
                 readonly property real maxScroll: Math.max(0, implicitWidth - collapsedTextContainer.width + 8)
-                x: (maxScroll > 0 && !trackSwitchAnim.running) ? -maxScroll * root.globalMediaMarqueeRatio : 0
+                x: (maxScroll > 0 && collapsedTextContainer.useSlotA && !slotPushAnimA.running && !slotPushAnimB.running) ? -maxScroll * root.globalMediaMarqueeRatio : 0
+                elide: Text.ElideNone
+            }
+
+            Text {
+                id: slotB
+                text: ""
+                font.pixelSize: 11
+                font.bold: true
+                color: Services.Theme.textPrimary
+                width: Math.max(implicitWidth, collapsedTextContainer.width)
+                horizontalAlignment: (implicitWidth > collapsedTextContainer.width) ? Text.AlignLeft : Text.AlignHCenter
+                verticalAlignment: Text.AlignVCenter
+                opacity: 0.0
+                y: 18
+                readonly property real maxScroll: Math.max(0, implicitWidth - collapsedTextContainer.width + 8)
+                x: (maxScroll > 0 && !collapsedTextContainer.useSlotA && !slotPushAnimA.running && !slotPushAnimB.running) ? -maxScroll * root.globalMediaMarqueeRatio : 0
                 elide: Text.ElideNone
             }
         }
@@ -1895,6 +2019,12 @@ Item {
                     Behavior on implicitHeight { NumberAnimation { duration: 280; easing.type: Easing.OutCubic } }
                     Behavior on scale          { NumberAnimation { duration: 320; easing.type: Easing.OutBack; easing.overshoot: 1.15 } }
 
+                    transform: Translate {
+                        id: artSlideTranslate
+                        x: mediaView.activeState ? 0 : -8
+                        Behavior on x { NumberAnimation { duration: 280; easing.type: Easing.OutCubic } }
+                    }
+
                     // 1. Layer Konten Gambar + MSAA Buffer
                     Item {
                         id: mediaArtContent
@@ -2112,7 +2242,10 @@ Item {
                             readonly property real maxScroll: Math.max(0, implicitWidth - parent.width + 8)
                             x: (maxScroll > 0 && !mediaTextSwitchAnim.running) ? -maxScroll * root.globalMediaMarqueeRatio : 0
                             elide: (maxScroll > 0 || mediaTextSwitchAnim.running) ? Text.ElideNone : Text.ElideRight
-                            Behavior on font.pixelSize { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
+                            Behavior on font.pixelSize {
+                                enabled: !titleMorphAnim.running
+                                NumberAnimation { duration: 220; easing.type: Easing.OutCubic }
+                            }
                         }
                     }
 
@@ -2140,6 +2273,19 @@ Item {
                             x: (maxScroll > 0 && !mediaTextSwitchAnim.running) ? -maxScroll * root.globalMediaMarqueeRatio : 0
                             elide: (maxScroll > 0 || mediaTextSwitchAnim.running) ? Text.ElideNone : Text.ElideRight
                             Behavior on font.pixelSize { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
+                        }
+                    }
+
+                    function calculateTitleFlightOrigin() {
+                        try {
+                            const pt = collapsedTextContainer.mapToItem(mediaTitleContainer, 0, 0)
+                            if (!isNaN(pt.x) && !isNaN(pt.y) && pt.x < 0) {
+                                return { x: pt.x, y: pt.y }
+                            }
+                        } catch (e) {}
+                        return {
+                            x: root.isMediaPeek ? -20 : -34,
+                            y: root.isMediaPeek ? -4 : -19
                         }
                     }
 
@@ -2192,15 +2338,24 @@ Item {
                             target: titleMorphTranslate
                             property: "x"
                             to: 0
-                            duration: 320
+                            duration: 360
                             easing.type: Easing.OutBack
-                            easing.overshoot: 1.15
+                            easing.overshoot: 1.12
                         }
                         NumberAnimation {
                             id: titleMorphY
                             target: titleMorphTranslate
                             property: "y"
                             to: 0
+                            duration: 340
+                            easing.type: Easing.OutCubic
+                        }
+                        NumberAnimation {
+                            id: titleMorphFont
+                            target: mediaTitleText
+                            property: "font.pixelSize"
+                            from: 11
+                            to: root.isMediaPeek ? 12 : 13
                             duration: 320
                             easing.type: Easing.OutCubic
                         }
@@ -2208,16 +2363,16 @@ Item {
 
                     SequentialAnimation {
                         id: artistMorphAnim
-                        PauseAnimation { duration: 25 }
+                        PauseAnimation { duration: 30 }
                         ParallelAnimation {
                             NumberAnimation {
                                 id: artistMorphX
                                 target: artistMorphTranslate
                                 property: "x"
                                 to: 0
-                                duration: 320
+                                duration: 340
                                 easing.type: Easing.OutBack
-                                easing.overshoot: 1.15
+                                easing.overshoot: 1.12
                             }
                             NumberAnimation {
                                 id: artistMorphY
@@ -2243,18 +2398,11 @@ Item {
                         function onExpandedChanged() {
                             if (root.expanded && root.hasMedia) {
                                 const wasShowingCollapsed = (!root.autoExpanded && root.mediaPlaying && collapsedTextContainer.opacity > 0.7)
-                                if (root.isMediaPeek) {
-                                    if (wasShowingCollapsed) {
-                                        mediaInfoCol.triggerMorph(-20, 0, -14, 0, false)
-                                    } else {
-                                        mediaInfoCol.triggerMorph(0, 0, 0, 0, true)
-                                    }
+                                if (wasShowingCollapsed) {
+                                    const origin = mediaInfoCol.calculateTitleFlightOrigin()
+                                    mediaInfoCol.triggerMorph(origin.x, origin.y, origin.x + 6, origin.y + 10, false)
                                 } else {
-                                    if (wasShowingCollapsed) {
-                                        mediaInfoCol.triggerMorph(-30, 0, -20, 0, false)
-                                    } else {
-                                        mediaInfoCol.triggerMorph(0, 0, 0, 0, true)
-                                    }
+                                    mediaInfoCol.triggerMorph(0, 0, 0, 0, true)
                                 }
                             }
                         }
@@ -2299,6 +2447,17 @@ Item {
                 clip: true
                 Behavior on implicitHeight { NumberAnimation { duration: 260; easing.type: Easing.OutCubic } }
                 Behavior on opacity        { NumberAnimation { duration: 220; easing.type: Easing.OutQuad } }
+
+                transform: Translate {
+                    id: progressRowTranslate
+                    y: (root.expanded && !root.isMediaPeek) ? 0 : 8
+                    Behavior on y {
+                        SequentialAnimation {
+                            PauseAnimation { duration: 50 }
+                            NumberAnimation { duration: 240; easing.type: Easing.OutCubic }
+                        }
+                    }
+                }
 
                 Text {
                     id: posLabel
@@ -2355,6 +2514,17 @@ Item {
                 clip: true
                 Behavior on opacity { NumberAnimation { duration: 220; easing.type: Easing.OutQuad } }
 
+                transform: Translate {
+                    id: controlsRowTranslate
+                    y: (root.expanded && !root.isMediaPeek) ? 0 : 8
+                    Behavior on y {
+                        SequentialAnimation {
+                            PauseAnimation { duration: 75 }
+                            NumberAnimation { duration: 260; easing.type: Easing.OutCubic }
+                        }
+                    }
+                }
+
                 // Shuffle
                 Item {
                     implicitWidth: 30; implicitHeight: 30
@@ -2403,7 +2573,7 @@ Item {
                         id: prvArea; anchors.fill: parent; hoverEnabled: true
                         cursorShape: (root.activePlayer?.canGoPrevious ?? false) ? Qt.PointingHandCursor : Qt.ArrowCursor
                         enabled: root.activePlayer?.canGoPrevious ?? false
-                        onClicked: (mouse) => { root.activePlayer.previous(); mouse.accepted = true }
+                        onClicked: (mouse) => { root.isNextTrack = false; root.activePlayer.previous(); mouse.accepted = true }
                     }
                 }
 
@@ -2513,7 +2683,7 @@ Item {
                         id: nxtArea; anchors.fill: parent; hoverEnabled: true
                         cursorShape: (root.activePlayer?.canGoNext ?? false) ? Qt.PointingHandCursor : Qt.ArrowCursor
                         enabled: root.activePlayer?.canGoNext ?? false
-                        onClicked: (mouse) => { root.activePlayer.next(); mouse.accepted = true }
+                        onClicked: (mouse) => { root.isNextTrack = true; root.activePlayer.next(); mouse.accepted = true }
                     }
                 }
 
