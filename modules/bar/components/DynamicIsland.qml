@@ -15,7 +15,7 @@ Item {
     // ----- Public API & State -----
     property bool pinned: false
     property bool autoExpanded: false
-    property bool mediaCollapsedReady: false
+    property bool mediaCollapsedReady: true
     property int activeNotifIndex: 0
 
     // Inline Reply Type Zone State
@@ -163,12 +163,201 @@ Item {
 
     // Camera Active State & Monitoring
     property bool cameraActive: false
-    readonly property bool isMediaSatellite: !Services.OverlayManager.isLocked && mediaPlaying && (notifActive || sysHudActive || wallpaperMode || dropSendMode || isDropSending)
-    readonly property bool isCameraSatellite: cameraActive && (mediaPlaying || mediaStopping || showCollapsedText || expanded)
-    readonly property int satelliteExtraWidth: (isMediaSatellite ? 40 : 0) + (isCameraSatellite ? 40 : 0) + ((capsLockActive && !expanded) ? 40 : 0)
 
     // CapsLock Active State & Monitoring
     property bool capsLockActive: false
+
+    // ── Smart Chronological 3-Dynamic System (Utama: Tengah, Sebelum: Kanan, Sebelumnya Lagi: Kiri) ──
+    property double mediaActiveTime: 0
+    property double sysHudActiveTime: 0
+    property double cameraActiveTime: 0
+    property double capsLockActiveTime: 0
+    property string manualCenterId: ""
+
+    // All candidates gathered and sorted strictly newest to oldest
+    readonly property var allSortedCandidates: {
+        const list = []
+
+        // Modal overrides
+        if (root.dropSendMode || root.isDropSending) {
+            return [{ id: "dropsend", type: "dropsend", time: 9999999999999 }]
+        }
+        if (root.wallpaperMode) {
+            return [{ id: "wallpaper", type: "wallpaper", time: 9999999999999 }]
+        }
+
+        // 1. SysHUD (volume, brightness, mute, etc.)
+        if (root.sysHudActive) {
+            list.push({
+                id: "syshud",
+                type: "syshud",
+                icon: root.sysHudIcon,
+                title: root.sysHudTitle,
+                color: root.sysHudColor,
+                time: root.sysHudActiveTime || Date.now()
+            })
+        }
+
+        // 2. Notifications (each notification in popupList is an independent candidate)
+        if (root.notifActive && root.popupList) {
+            for (let i = 0; i < root.popupList.count; i++) {
+                const n = root.popupList.get(i)
+                if (n) {
+                    const t = (n.time || Date.now()) - (i * 10)
+                    list.push({
+                        id: "notif_" + (n.notifId !== undefined ? n.notifId : i),
+                        type: "notif",
+                        index: i,
+                        notif: n,
+                        time: t
+                    })
+                }
+            }
+        }
+
+        // 3. Media playback
+        if (root.mediaPlaying || (root.mediaStopping && !root.mediaIconTransformed)) {
+            if (!Services.OverlayManager.isLocked) {
+                list.push({
+                    id: "media",
+                    type: "media",
+                    time: root.mediaActiveTime || 1
+                })
+            }
+        }
+
+        // 4. Camera active
+        if (root.cameraActive) {
+            list.push({
+                id: "camera",
+                type: "camera",
+                time: root.cameraActiveTime || 0
+            })
+        }
+
+        // 5. CapsLock active
+        if (root.capsLockActive && !root.expanded) {
+            list.push({
+                id: "capslock",
+                type: "capslock",
+                time: root.capsLockActiveTime || 0
+            })
+        }
+
+        // Sort candidates strictly newest to oldest (highest time first)
+        list.sort((a, b) => (b.time || 0) - (a.time || 0))
+        return list
+    }
+
+    // Allocate into 3 slots with optional manual swap support
+    readonly property var slotDistribution: {
+        const candidates = root.allSortedCandidates
+        if (!candidates || candidates.length === 0) {
+            return { center: { type: "idle" }, right: null, left: null }
+        }
+
+        let centerIdx = 0
+        if (root.manualCenterId !== "") {
+            const foundIdx = candidates.findIndex(c => c.id === root.manualCenterId)
+            if (foundIdx !== -1) {
+                centerIdx = foundIdx
+            }
+        }
+
+        const centerItem = candidates[centerIdx]
+        const remaining = []
+        for (let i = 0; i < candidates.length; i++) {
+            if (i !== centerIdx) remaining.push(candidates[i])
+        }
+
+        // "sebelum baru ke kanan"
+        const rightItem = remaining.length > 0 ? remaining[0] : null
+        // "dan sebelumnya lagi ke kiri gitu"
+        const leftItem = remaining.length > 1 ? remaining[1] : null
+
+        return { center: centerItem, right: rightItem, left: leftItem }
+    }
+
+    readonly property var slotCenterItem: slotDistribution.center
+    readonly property var slotRightItem: slotDistribution.right
+    readonly property var slotLeftItem: slotDistribution.left
+
+    readonly property string slot0Activity: slotCenterItem ? slotCenterItem.type : "idle"
+    readonly property string slotRightType: slotRightItem ? slotRightItem.type : ""
+    readonly property string slotLeftType: slotLeftItem ? slotLeftItem.type : ""
+
+    readonly property bool isMediaSatellite: (slotRightType === "media" || slotLeftType === "media")
+    readonly property bool isCameraSatellite: (slotRightType === "camera" || slotLeftType === "camera")
+    readonly property bool isCapsLockSatellite: (slotRightType === "capslock" || slotLeftType === "capslock")
+
+    readonly property int leftExtraWidth: (slotLeftType !== "") ? 40 : 0
+    readonly property int rightExtraWidth: (slotRightType !== "") ? 40 : 0
+    readonly property int satelliteExtraWidth: Math.max(leftExtraWidth, rightExtraWidth) * 2
+
+    function resolveNotifIcon(n) {
+        if (!n) return ""
+        let src = n.appIcon || n.image || ""
+        const appName = (n.appName || "").toLowerCase()
+        const summary = (n.summary || "").toLowerCase()
+        if (!src || src === "kdeconnect" || src.includes("kdeconnect")) {
+            if (appName.includes("whatsapp") || summary.includes("whatsapp")) src = "whatsapp"
+            else if (appName.includes("telegram") || summary.includes("telegram")) src = "telegram"
+            else if (appName.includes("discord") || summary.includes("discord")) src = "discord"
+            else if (appName.includes("signal") || summary.includes("signal")) src = "signal"
+            else if (appName.includes("slack") || summary.includes("slack")) src = "slack"
+            else if (appName.includes("instagram") || summary.includes("instagram")) src = "instagram"
+            else if (appName.includes("tiktok") || summary.includes("tiktok")) src = "tiktok"
+            else if (appName.includes("messages") || appName.includes("sms")) src = "message"
+        }
+        if (!src) src = n.image || ""
+        if (!src) return ""
+        if (src.startsWith("file://") || src.startsWith("http://") || src.startsWith("https://"))
+            return src
+        if (src.startsWith("/"))
+            return "file://" + src
+        if (Services.SystemTheme) {
+            const res = Services.SystemTheme.getIcon(src)
+            if (res && res.length > 0) return res
+        }
+        const qp = Quickshell.iconPath(src, true)
+        return (qp && qp.startsWith("/")) ? ("file://" + qp) : (qp || "")
+    }
+
+    function handleSatelliteClick(item) {
+        if (!item) return
+        if (item.type === "notif") {
+            root.manualCenterId = item.id
+            notifTimer.restart()
+        } else if (item.type === "media") {
+            root.manualCenterId = "media"
+        } else if (item.type === "camera") {
+            root.showSysHud("󰄀", "Camera Active", "Webcam in use", Services.Theme.success)
+        } else if (item.type === "capslock") {
+            root.showSysHud("󰘶", "Caps Lock", root.capsLockActive ? "Active" : "Disabled", Services.Theme.alertYellow)
+        } else if (item.type === "transfer") {
+            root.dropSendMode = true
+        } else if (item.type === "syshud") {
+            root.manualCenterId = "syshud"
+        }
+    }
+
+    function selectNotifIndex(idx) {
+        if (idx >= 0 && idx < root.notifCount && root.popupList) {
+            const n = root.popupList.get(idx)
+            if (n) {
+                root.manualCenterId = "notif_" + (n.notifId !== undefined ? n.notifId : idx)
+                notifTimer.restart()
+            }
+        }
+    }
+
+    function swapNotifications() {
+        if (slotRightItem) {
+            root.handleSatelliteClick(slotRightItem)
+        } else if (slotLeftItem) {
+            root.handleSatelliteClick(slotLeftItem)
+        }
+    }
 
     // NetworkManager / Wi-Fi State Monitoring
     property bool wifiLastConnected: false
@@ -294,12 +483,14 @@ Item {
     }
 
     onCameraActiveChanged: {
+        if (cameraActive) cameraActiveTime = Date.now()
         if (cameraActive && hudReady && root.notifCount === 0 && !Services.OverlayManager.isLocked) {
             root.showSysHud("󰄀", "Camera Active", "Webcam in use", Services.Theme.success)
         }
     }
 
     onCapsLockActiveChanged: {
+        if (capsLockActive) capsLockActiveTime = Date.now()
         if (!hudReady) return
         const icon = "󰘶"
         const title = capsLockActive ? "Caps Lock On" : "Caps Lock Off"
@@ -308,11 +499,12 @@ Item {
     }
 
     function showSysHud(icon, title, detail, iconColor, customDuration) {
-        if (root.notifActive || root.wallpaperMode) return
+        if (root.wallpaperMode) return
         sysHudIcon = icon
         sysHudTitle = title
         sysHudDetail = detail || ""
         sysHudColor = iconColor || Services.Theme.accent
+        sysHudActiveTime = Date.now()
         sysHudActive = true
         sysHudTimer.interval = customDuration || 2200
         sysHudTimer.restart()
@@ -576,23 +768,34 @@ Item {
     readonly property bool mediaPlaying: activePlayer !== null && activePlayer.isPlaying
     readonly property bool hasMedia: activePlayer !== null && (activePlayer.trackTitle !== "" || mediaPlaying)
 
-    readonly property bool hasExpandContent: notifActive || sysHudActive || hasMedia || wallpaperMode || dropSendMode || isDropSending
-    readonly property bool expanded: !lockBlocked && hasExpandContent && (pinned || autoExpanded || notifActive || sysHudActive || wallpaperMode || dropSendMode || isDropSending)
-    readonly property bool isMediaPeek: !lockBlocked && autoExpanded && !pinned && !notifActive && !sysHudActive && !wallpaperMode && !dropSendMode && !isDropSending && hasMedia
+    readonly property bool hasExpandContent: (slot0Activity !== "idle") || wallpaperMode || dropSendMode || isDropSending
+    readonly property bool expanded: !lockBlocked && hasExpandContent && (pinned || autoExpanded || (slot0Activity === "notif") || (slot0Activity === "syshud") || wallpaperMode || dropSendMode || isDropSending)
+    readonly property bool isMediaPeek: !lockBlocked && autoExpanded && !pinned && (slot0Activity === "media") && !wallpaperMode && !dropSendMode && !isDropSending && hasMedia
 
     property int autoExpandDuration: 2500
     property int notifDuration: 5000
 
-    // Safe retrieval of current notification entry
+    // Safe retrieval of current notification entry from the center slot
     readonly property var currentNotif: {
-        if (!popupList || notifCount === 0) return null
-        const idx = Math.max(0, Math.min(activeNotifIndex, notifCount - 1))
-        return popupList.get(idx)
+        if (slotCenterItem && slotCenterItem.type === "notif" && slotCenterItem.notif) {
+            return slotCenterItem.notif
+        }
+        return null
     }
 
     onCurrentNotifChanged: {
         replyMode = false
         activeReplyActionId = ""
+        if (currentNotif && popupList) {
+            for (let i = 0; i < popupList.count; i++) {
+                if (popupList.get(i).notifId === currentNotif.notifId) {
+                    activeNotifIndex = i
+                    break
+                }
+            }
+        } else {
+            activeNotifIndex = 0
+        }
     }
 
     onReplyModeChanged: {
@@ -629,6 +832,7 @@ Item {
     property string lastTrackText: ""
     onMediaPlayingChanged: {
         if (mediaPlaying) {
+            mediaActiveTime = Date.now()
             root.mediaCollapsedReady = false
             mediaStopPhase1Timer.stop()
             mediaStopPhase2Timer.stop()
@@ -655,6 +859,7 @@ Item {
     }
     onCurrentMediaTextChanged: {
         if (mediaPlaying && currentMediaText !== "") {
+            mediaActiveTime = Date.now()
             lastTrackText = currentMediaText
             root.restartGlobalMarquee()
         }
@@ -706,7 +911,7 @@ Item {
     }
 
     // Island Dimensions
-    readonly property bool showCollapsedText: !lockBlocked && (notifActive || (mediaPlaying && mediaCollapsedReady))
+    readonly property bool showCollapsedText: !lockBlocked && ((slot0Activity === "notif") || (mediaPlaying && mediaCollapsedReady))
     readonly property int calculatedCollapsedWidth: {
         if (showCollapsedText || (mediaStopping && !mediaTextCollapsed)) {
             const extraPadding = (mediaPlaying || mediaStopping) ? 72 : 52
@@ -718,18 +923,18 @@ Item {
     property int collapsedHeight: 32
 
     readonly property int calculatedExpandedWidth: {
-        if (notifActive) return replyMode ? 390 : 360
+        if (slot0Activity === "notif") return replyMode ? 390 : 360
         if (dropSendMode) return 500
         if (isDropSending) return 400
         if (wallpaperMode) return 480
-        if (sysHudActive) return 280
+        if (slot0Activity === "syshud") return 280
         if (isMediaPeek) return 280
         if (hasMedia) return 360
         return 260
     }
 
     readonly property int calculatedExpandedHeight: {
-        if (notifActive) {
+        if (slot0Activity === "notif") {
             if (replyMode) return 146
             let h = 72
             if (hasNotifBody) h += 24
@@ -739,7 +944,7 @@ Item {
         if (dropSendMode) return 148
         if (isDropSending) return 64
         if (wallpaperMode) return 120
-        if (sysHudActive) return 54
+        if (slot0Activity === "syshud") return 54
         if (isMediaPeek) return 54
         if (hasMedia) return 138
         return 52
@@ -885,10 +1090,7 @@ Item {
         repeat: false
         onTriggered: {
             if (root.replyMode) return
-            if (root.notifCount > 1 && root.activeNotifIndex < root.notifCount - 1) {
-                root.activeNotifIndex++
-                notifTimer.restart()
-            }
+            // Slot stability: no auto-incrementing
         }
     }
 
@@ -898,6 +1100,7 @@ Item {
             root.wallpaperMode = false
             root.sysHudActive = false
             sysHudTimer.stop()
+            root.manualCenterId = ""
             root.activeNotifIndex = 0
             root.replyMode = false
             notifTimer.restart()
@@ -1448,7 +1651,7 @@ Item {
             anchors.fill: parent
             anchors.margins: 10
             spacing: 4
-            readonly property bool activeState: !Services.OverlayManager.isLocked && root.expanded && root.notifActive && !root.dropSendMode && !root.isDropSending
+            readonly property bool activeState: !Services.OverlayManager.isLocked && root.expanded && (root.slot0Activity === "notif") && !root.dropSendMode && !root.isDropSending
             visible: activeState || opacity > 0.01
             opacity: activeState ? 1 : 0
             scale: activeState ? 1.0 : 0.7
@@ -1820,7 +2023,7 @@ Item {
             anchors.fill: parent
             anchors.margins: 10
             spacing: 10
-            readonly property bool activeState: (root.sysHudTitle.includes("Caps Lock") || root.sysHudTitle.includes("Welcome") || !Services.OverlayManager.isLocked) && root.expanded && !root.notifActive && !root.wallpaperMode && root.sysHudActive && !root.dropSendMode && !root.isDropSending
+            readonly property bool activeState: (root.sysHudTitle.includes("Caps Lock") || root.sysHudTitle.includes("Welcome") || !Services.OverlayManager.isLocked) && root.expanded && (root.slot0Activity === "syshud") && !root.wallpaperMode && !root.dropSendMode && !root.isDropSending
             visible: activeState || opacity > 0.01
             opacity: activeState ? 1 : 0
             scale: activeState ? 1.0 : 0.7
@@ -1989,7 +2192,7 @@ Item {
             spacing: root.isMediaPeek ? 0 : 6
             Behavior on spacing { NumberAnimation { duration: 260; easing.type: Easing.OutCubic } }
 
-            readonly property bool activeState: !Services.OverlayManager.isLocked && root.expanded && !root.notifActive && !root.sysHudActive && root.hasMedia && !root.wallpaperMode && !root.dropSendMode && !root.isDropSending
+            readonly property bool activeState: !Services.OverlayManager.isLocked && root.expanded && (root.slot0Activity === "media") && !root.wallpaperMode && !root.dropSendMode && !root.isDropSending
             visible: activeState || opacity > 0.01
             opacity: activeState ? 1 : 0
             scale: activeState ? 1.0 : (root.isMediaPeek ? 0.96 : 0.78)
@@ -2039,11 +2242,30 @@ Item {
                             maskSpreadAtMin: 0.5
                         }
 
-                        // Inner spinning disc (Artwork spins smoothly in peek mode)
+                        // Inner spinning disc (Artwork spins smoothly in peek mode, resets to 0deg in full controls)
                         Item {
                             id: mediaArtSpinContainer
                             anchors.fill: parent
                             transformOrigin: Item.Center
+                            rotation: 0
+
+                            readonly property bool shouldSpin: root.mediaPlaying && root.isMediaPeek && (mediaArtImg.status === Image.Ready)
+
+                            onShouldSpinChanged: {
+                                if (shouldSpin) {
+                                    resetAnim.stop()
+                                    spinAnim.start()
+                                } else {
+                                    spinAnim.stop()
+                                    resetAnim.start()
+                                }
+                            }
+
+                            Component.onCompleted: {
+                                if (shouldSpin) {
+                                    spinAnim.start()
+                                }
+                            }
 
                             // Base background fallback
                             Rectangle {
@@ -2068,11 +2290,29 @@ Item {
                             }
 
                             // Smooth subtle vinyl rotation while in peek
-                            RotationAnimation on rotation {
-                                from: 0; to: 360
+                            RotationAnimation {
+                                id: spinAnim
+                                target: mediaArtSpinContainer
+                                property: "rotation"
+                                from: 0
+                                to: 360
+                                direction: RotationAnimation.Clockwise
                                 duration: 12000
                                 loops: Animation.Infinite
-                                running: root.mediaPlaying && root.isMediaPeek && (mediaArtImg.status === Image.Ready)
+                            }
+
+                            // Smooth shortest-path reset back to 0deg when leaving peek or stopping
+                            RotationAnimation {
+                                id: resetAnim
+                                target: mediaArtSpinContainer
+                                property: "rotation"
+                                to: 0
+                                direction: RotationAnimation.Shortest
+                                duration: 280
+                                easing.type: Easing.OutCubic
+                                onFinished: {
+                                    mediaArtSpinContainer.rotation = 0
+                                }
                             }
                         }
 
@@ -3683,10 +3923,12 @@ Item {
 
     }
 
-    // ==================== Media Player Satellite Dot (Right of Island when Notif/HUD Active) ====================
+    // ==================== Right Dynamic Satellite Dot ("Sebelum baru ke kanan") ====================
     Rectangle {
-        id: mediaSatelliteDot
-        readonly property bool isSatellite: root.isMediaSatellite
+        id: rightSatDot
+        readonly property var item: root.slotRightItem
+        readonly property string activity: root.slotRightType
+        readonly property bool isSatellite: activity !== ""
         anchors.left: island.right
         anchors.leftMargin: isSatellite ? 8 : -32
         anchors.top: island.top
@@ -3708,7 +3950,7 @@ Item {
         Behavior on anchors.leftMargin { NumberAnimation { duration: 550; easing.type: Easing.OutBack } }
 
         transform: Scale {
-            id: mediaSatTransform
+            id: rightTransform
             origin.x: 16
             origin.y: 16
             xScale: 1.0
@@ -3717,46 +3959,47 @@ Item {
 
         onIsSatelliteChanged: {
             if (isSatellite) {
-                mediaSatDetachAnim.restart()
+                rightDetachAnim.restart()
             } else {
-                mediaSatRetractAnim.restart()
+                rightRetractAnim.restart()
             }
         }
 
         SequentialAnimation {
-            id: mediaSatDetachAnim
+            id: rightDetachAnim
             ParallelAnimation {
-                NumberAnimation { target: mediaSatTransform; property: "xScale"; to: 1.34; duration: 150; easing.type: Easing.OutQuad }
-                NumberAnimation { target: mediaSatTransform; property: "yScale"; to: 0.74; duration: 150; easing.type: Easing.OutQuad }
+                NumberAnimation { target: rightTransform; property: "xScale"; to: 1.34; duration: 150; easing.type: Easing.OutQuad }
+                NumberAnimation { target: rightTransform; property: "yScale"; to: 0.74; duration: 150; easing.type: Easing.OutQuad }
             }
             ParallelAnimation {
-                NumberAnimation { target: mediaSatTransform; property: "xScale"; to: 0.88; duration: 180; easing.type: Easing.OutQuad }
-                NumberAnimation { target: mediaSatTransform; property: "yScale"; to: 1.14; duration: 180; easing.type: Easing.OutQuad }
+                NumberAnimation { target: rightTransform; property: "xScale"; to: 0.88; duration: 180; easing.type: Easing.OutQuad }
+                NumberAnimation { target: rightTransform; property: "yScale"; to: 1.14; duration: 180; easing.type: Easing.OutQuad }
             }
             ParallelAnimation {
-                NumberAnimation { target: mediaSatTransform; property: "xScale"; to: 1.0; duration: 160; easing.type: Easing.OutCubic }
-                NumberAnimation { target: mediaSatTransform; property: "yScale"; to: 1.0; duration: 160; easing.type: Easing.OutCubic }
+                NumberAnimation { target: rightTransform; property: "xScale"; to: 1.0; duration: 160; easing.type: Easing.OutCubic }
+                NumberAnimation { target: rightTransform; property: "yScale"; to: 1.0; duration: 160; easing.type: Easing.OutCubic }
             }
         }
 
         SequentialAnimation {
-            id: mediaSatRetractAnim
+            id: rightRetractAnim
             ParallelAnimation {
-                NumberAnimation { target: mediaSatTransform; property: "xScale"; to: 1.25; duration: 180; easing.type: Easing.InQuad }
-                NumberAnimation { target: mediaSatTransform; property: "yScale"; to: 0.80; duration: 180; easing.type: Easing.InQuad }
+                NumberAnimation { target: rightTransform; property: "xScale"; to: 1.25; duration: 180; easing.type: Easing.InQuad }
+                NumberAnimation { target: rightTransform; property: "yScale"; to: 0.80; duration: 180; easing.type: Easing.InQuad }
             }
             ParallelAnimation {
-                NumberAnimation { target: mediaSatTransform; property: "xScale"; to: 1.0; duration: 100; easing.type: Easing.OutQuad }
-                NumberAnimation { target: mediaSatTransform; property: "yScale"; to: 1.0; duration: 100; easing.type: Easing.OutQuad }
+                NumberAnimation { target: rightTransform; property: "xScale"; to: 1.0; duration: 100; easing.type: Easing.OutQuad }
+                NumberAnimation { target: rightTransform; property: "yScale"; to: 1.0; duration: 100; easing.type: Easing.OutQuad }
             }
         }
 
-        // Mini Audio Wave Visualizer inside Media Satellite Dot
+        // ── Content: Media Waveform ──
         Row {
             anchors.centerIn: parent
             spacing: 2.5
-            opacity: mediaSatelliteDot.isSatellite ? 1.0 : 0.0
-            scale: mediaSatelliteDot.isSatellite ? 1.0 : 0.3
+            visible: rightSatDot.activity === "media"
+            opacity: rightSatDot.activity === "media" ? 1.0 : 0.0
+            scale: rightSatDot.activity === "media" ? 1.0 : 0.3
             Behavior on opacity { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
             Behavior on scale   { NumberAnimation { duration: 320; easing.type: Easing.OutBack } }
 
@@ -3771,7 +4014,7 @@ Item {
                     anchors.verticalCenter: parent.verticalCenter
 
                     SequentialAnimation on height {
-                        running: mediaSatelliteDot.isSatellite
+                        running: rightSatDot.activity === "media"
                         loops: Animation.Infinite
                         NumberAnimation {
                             to: index === 0 ? 14 : (index === 1 ? 6 : 12)
@@ -3788,96 +4031,63 @@ Item {
             }
         }
 
-        MouseArea {
-            anchors.fill: parent
-            hoverEnabled: true
-            cursorShape: Qt.PointingHandCursor
-            onClicked: {
-                if (Services.Media) Services.Media.playPause()
+        // ── Content: Notification (App Icon + Badge) ──
+        Item {
+            anchors.centerIn: parent
+            width: 18
+            height: 18
+            visible: rightSatDot.activity === "notif"
+            opacity: rightSatDot.activity === "notif" ? 1.0 : 0.0
+            scale: rightSatDot.activity === "notif" ? 1.0 : 0.3
+            Behavior on opacity { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
+            Behavior on scale   { NumberAnimation { duration: 320; easing.type: Easing.OutBack } }
+
+            Image {
+                id: rightNotifImg
+                anchors.centerIn: parent
+                width: 16
+                height: 16
+                source: (rightSatDot.item && rightSatDot.item.notif) ? root.resolveNotifIcon(rightSatDot.item.notif) : ""
+                visible: status === Image.Ready && source.toString().length > 0
+                fillMode: Image.PreserveAspectFit
+                asynchronous: true
+                cache: true
+                sourceSize: Qt.size(32, 32)
             }
-        }
-    }
 
-    // ==================== Camera Satellite Dot (Right of Island / Media) ====================
-    Rectangle {
-        id: cameraSatelliteDot
-        readonly property bool isSatellite: root.isCameraSatellite
-        anchors.left: (mediaSatelliteDot.isSatellite && mediaSatelliteDot.visible) ? mediaSatelliteDot.right : island.right
-        anchors.leftMargin: isSatellite ? 8 : -32
-        anchors.top: island.top
-        anchors.topMargin: Math.max(0, (root.collapsedHeight - implicitHeight) / 2)
-        implicitWidth: 32
-        implicitHeight: 32
-        radius: 16
-        color: Services.Theme.bgPure
-        border.color: Services.Theme.borderSubtle
-        border.width: 1
-        z: 1
-        visible: root.cameraActive || opacity > 0 || scale > 0
+            Text {
+                anchors.centerIn: parent
+                text: "󰂚"
+                font.family: Services.Theme.fontSymbols
+                font.pixelSize: 13
+                color: Services.Theme.accent
+                visible: !rightNotifImg.visible
+            }
 
-        opacity: isSatellite ? 1 : 0
-        scale: isSatellite ? 1 : 0
-
-        Behavior on opacity { NumberAnimation { duration: 350; easing.type: Easing.OutCubic } }
-        Behavior on scale   { NumberAnimation { duration: 500; easing.type: Easing.OutBack } }
-        Behavior on anchors.leftMargin { NumberAnimation { duration: 550; easing.type: Easing.OutBack } }
-
-        transform: Scale {
-            id: camSatTransform
-            origin.x: 16
-            origin.y: 16
-            xScale: 1.0
-            yScale: 1.0
-        }
-
-        onIsSatelliteChanged: {
-            if (isSatellite) {
-                camSatDetachAnim.restart()
-            } else {
-                camSatRetractAnim.restart()
+            Rectangle {
+                width: 6
+                height: 6
+                radius: 3
+                color: Services.Theme.danger
+                anchors.top: parent.top
+                anchors.topMargin: -1
+                anchors.right: parent.right
+                anchors.rightMargin: -1
             }
         }
 
-        SequentialAnimation {
-            id: camSatDetachAnim
-            ParallelAnimation {
-                NumberAnimation { target: camSatTransform; property: "xScale"; to: 1.34; duration: 150; easing.type: Easing.OutQuad }
-                NumberAnimation { target: camSatTransform; property: "yScale"; to: 0.74; duration: 150; easing.type: Easing.OutQuad }
-            }
-            ParallelAnimation {
-                NumberAnimation { target: camSatTransform; property: "xScale"; to: 0.88; duration: 180; easing.type: Easing.OutQuad }
-                NumberAnimation { target: camSatTransform; property: "yScale"; to: 1.14; duration: 180; easing.type: Easing.OutQuad }
-            }
-            ParallelAnimation {
-                NumberAnimation { target: camSatTransform; property: "xScale"; to: 1.0; duration: 160; easing.type: Easing.OutCubic }
-                NumberAnimation { target: camSatTransform; property: "yScale"; to: 1.0; duration: 160; easing.type: Easing.OutCubic }
-            }
-        }
-
-        SequentialAnimation {
-            id: camSatRetractAnim
-            ParallelAnimation {
-                NumberAnimation { target: camSatTransform; property: "xScale"; to: 1.25; duration: 180; easing.type: Easing.InQuad }
-                NumberAnimation { target: camSatTransform; property: "yScale"; to: 0.80; duration: 180; easing.type: Easing.InQuad }
-            }
-            ParallelAnimation {
-                NumberAnimation { target: camSatTransform; property: "xScale"; to: 1.0; duration: 100; easing.type: Easing.OutQuad }
-                NumberAnimation { target: camSatTransform; property: "yScale"; to: 1.0; duration: 100; easing.type: Easing.OutQuad }
-            }
-        }
-
-        // Camera Icon with blinking green privacy effect
+        // ── Content: Camera Privacy Indicator ──
         Item {
             anchors.centerIn: parent
             width: 16
             height: 16
-            opacity: cameraSatelliteDot.isSatellite ? 1.0 : 0.0
-            scale: cameraSatelliteDot.isSatellite ? 1.0 : 0.3
+            visible: rightSatDot.activity === "camera"
+            opacity: rightSatDot.activity === "camera" ? 1.0 : 0.0
+            scale: rightSatDot.activity === "camera" ? 1.0 : 0.3
             Behavior on opacity { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
             Behavior on scale   { NumberAnimation { duration: 320; easing.type: Easing.OutBack } }
 
             Text {
-                id: camSatIcon
                 anchors.centerIn: parent
                 text: "󰄀"
                 font.family: Services.Theme.fontSymbols
@@ -3886,20 +4096,86 @@ Item {
             }
 
             SequentialAnimation on opacity {
-                running: cameraSatelliteDot.isSatellite
+                running: rightSatDot.activity === "camera"
                 loops: Animation.Infinite
                 NumberAnimation { from: 1.0; to: 0.25; duration: 650; easing.type: Easing.InOutSine }
                 NumberAnimation { from: 0.25; to: 1.0; duration: 650; easing.type: Easing.InOutSine }
             }
         }
+
+        // ── Content: CapsLock Indicator ──
+        Text {
+            anchors.centerIn: parent
+            text: "󰘶"
+            font.family: Services.Theme.fontSymbols
+            font.pixelSize: 13
+            color: Services.Theme.alertYellow
+            visible: rightSatDot.activity === "capslock"
+            opacity: rightSatDot.activity === "capslock" ? 1.0 : 0.0
+            scale: rightSatDot.activity === "capslock" ? 1.0 : 0.3
+            Behavior on opacity { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
+            Behavior on scale   { NumberAnimation { duration: 320; easing.type: Easing.OutBack } }
+        }
+
+        // ── Content: System HUD ──
+        Text {
+            anchors.centerIn: parent
+            text: (rightSatDot.item && rightSatDot.item.icon) ? rightSatDot.item.icon : (root.sysHudIcon || "󰋩")
+            font.family: Services.Theme.fontSymbols
+            font.pixelSize: 13
+            color: (rightSatDot.item && rightSatDot.item.color) ? rightSatDot.item.color : root.sysHudColor
+            visible: rightSatDot.activity === "syshud"
+            opacity: rightSatDot.activity === "syshud" ? 1.0 : 0.0
+            scale: rightSatDot.activity === "syshud" ? 1.0 : 0.3
+            Behavior on opacity { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
+            Behavior on scale   { NumberAnimation { duration: 320; easing.type: Easing.OutBack } }
+        }
+
+        // ── Content: Transfer Progress ──
+        Text {
+            anchors.centerIn: parent
+            text: "󰒍"
+            font.family: Services.Theme.fontSymbols
+            font.pixelSize: 13
+            color: Services.Theme.accent
+            visible: rightSatDot.activity === "transfer"
+            opacity: rightSatDot.activity === "transfer" ? 1.0 : 0.0
+            scale: rightSatDot.activity === "transfer" ? 1.0 : 0.3
+            Behavior on opacity { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
+            Behavior on scale   { NumberAnimation { duration: 320; easing.type: Easing.OutBack } }
+
+            SequentialAnimation on scale {
+                running: rightSatDot.activity === "transfer"
+                loops: Animation.Infinite
+                NumberAnimation { to: 1.15; duration: 600; easing.type: Easing.InOutSine }
+                NumberAnimation { to: 0.95; duration: 600; easing.type: Easing.InOutSine }
+            }
+        }
+
+        // ── Smart Interactive Click Handler ──
+        MouseArea {
+            anchors.fill: parent
+            hoverEnabled: true
+            acceptedButtons: Qt.LeftButton | Qt.RightButton
+            cursorShape: Qt.PointingHandCursor
+            onClicked: mouse => {
+                if (mouse.button === Qt.RightButton && rightSatDot.activity === "media") {
+                    if (root.activePlayer) root.activePlayer.togglePlaying()
+                } else if (rightSatDot.item) {
+                    root.handleSatelliteClick(rightSatDot.item)
+                }
+            }
+        }
     }
 
-    // ==================== CapsLock Satellite Dot (Right of Island / Camera / Media) ====================
+    // ==================== Left Dynamic Satellite Dot ("Sebelumnya lagi ke kiri gitu") ====================
     Rectangle {
-        id: capsLockDot
-        readonly property bool isSatellite: root.capsLockActive && !root.expanded
-        anchors.left: (cameraSatelliteDot.isSatellite && cameraSatelliteDot.visible) ? cameraSatelliteDot.right : ((mediaSatelliteDot.isSatellite && mediaSatelliteDot.visible) ? mediaSatelliteDot.right : island.right)
-        anchors.leftMargin: isSatellite ? 8 : -32
+        id: leftSatDot
+        readonly property var item: root.slotLeftItem
+        readonly property string activity: root.slotLeftType
+        readonly property bool isSatellite: activity !== ""
+        anchors.right: island.left
+        anchors.rightMargin: isSatellite ? 8 : -32
         anchors.top: island.top
         anchors.topMargin: Math.max(0, (root.collapsedHeight - implicitHeight) / 2)
         implicitWidth: 32
@@ -3909,17 +4185,17 @@ Item {
         border.color: Services.Theme.borderSubtle
         border.width: 1
         z: 1
-        visible: root.capsLockActive || opacity > 0 || scale > 0
+        visible: isSatellite || opacity > 0 || scale > 0
 
         opacity: isSatellite ? 1 : 0
         scale: isSatellite ? 1 : 0
 
         Behavior on opacity { NumberAnimation { duration: 350; easing.type: Easing.OutCubic } }
         Behavior on scale   { NumberAnimation { duration: 500; easing.type: Easing.OutBack } }
-        Behavior on anchors.leftMargin { NumberAnimation { duration: 550; easing.type: Easing.OutBack } }
+        Behavior on anchors.rightMargin { NumberAnimation { duration: 550; easing.type: Easing.OutBack } }
 
         transform: Scale {
-            id: capsSatTransform
+            id: leftTransform
             origin.x: 16
             origin.y: 16
             xScale: 1.0
@@ -3928,53 +4204,221 @@ Item {
 
         onIsSatelliteChanged: {
             if (isSatellite) {
-                capsSatDetachAnim.restart()
+                leftDetachAnim.restart()
             } else {
-                capsSatRetractAnim.restart()
+                leftRetractAnim.restart()
             }
         }
 
         SequentialAnimation {
-            id: capsSatDetachAnim
+            id: leftDetachAnim
             ParallelAnimation {
-                NumberAnimation { target: capsSatTransform; property: "xScale"; to: 1.34; duration: 150; easing.type: Easing.OutQuad }
-                NumberAnimation { target: capsSatTransform; property: "yScale"; to: 0.74; duration: 150; easing.type: Easing.OutQuad }
+                NumberAnimation { target: leftTransform; property: "xScale"; to: 1.34; duration: 150; easing.type: Easing.OutQuad }
+                NumberAnimation { target: leftTransform; property: "yScale"; to: 0.74; duration: 150; easing.type: Easing.OutQuad }
             }
             ParallelAnimation {
-                NumberAnimation { target: capsSatTransform; property: "xScale"; to: 0.88; duration: 180; easing.type: Easing.OutQuad }
-                NumberAnimation { target: capsSatTransform; property: "yScale"; to: 1.14; duration: 180; easing.type: Easing.OutQuad }
+                NumberAnimation { target: leftTransform; property: "xScale"; to: 0.88; duration: 180; easing.type: Easing.OutQuad }
+                NumberAnimation { target: leftTransform; property: "yScale"; to: 1.14; duration: 180; easing.type: Easing.OutQuad }
             }
             ParallelAnimation {
-                NumberAnimation { target: capsSatTransform; property: "xScale"; to: 1.0; duration: 160; easing.type: Easing.OutCubic }
-                NumberAnimation { target: capsSatTransform; property: "yScale"; to: 1.0; duration: 160; easing.type: Easing.OutCubic }
+                NumberAnimation { target: leftTransform; property: "xScale"; to: 1.0; duration: 160; easing.type: Easing.OutCubic }
+                NumberAnimation { target: leftTransform; property: "yScale"; to: 1.0; duration: 160; easing.type: Easing.OutCubic }
             }
         }
 
         SequentialAnimation {
-            id: capsSatRetractAnim
+            id: leftRetractAnim
             ParallelAnimation {
-                NumberAnimation { target: capsSatTransform; property: "xScale"; to: 1.25; duration: 180; easing.type: Easing.InQuad }
-                NumberAnimation { target: capsSatTransform; property: "yScale"; to: 0.80; duration: 180; easing.type: Easing.InQuad }
+                NumberAnimation { target: leftTransform; property: "xScale"; to: 1.25; duration: 180; easing.type: Easing.InQuad }
+                NumberAnimation { target: leftTransform; property: "yScale"; to: 0.80; duration: 180; easing.type: Easing.InQuad }
             }
             ParallelAnimation {
-                NumberAnimation { target: capsSatTransform; property: "xScale"; to: 1.0; duration: 100; easing.type: Easing.OutQuad }
-                NumberAnimation { target: capsSatTransform; property: "yScale"; to: 1.0; duration: 100; easing.type: Easing.OutQuad }
+                NumberAnimation { target: leftTransform; property: "xScale"; to: 1.0; duration: 100; easing.type: Easing.OutQuad }
+                NumberAnimation { target: leftTransform; property: "yScale"; to: 1.0; duration: 100; easing.type: Easing.OutQuad }
             }
         }
 
-        // CapsLock Icon with delayed floating bloom
+        // ── Content: Media Waveform ──
+        Row {
+            anchors.centerIn: parent
+            spacing: 2.5
+            visible: leftSatDot.activity === "media"
+            opacity: leftSatDot.activity === "media" ? 1.0 : 0.0
+            scale: leftSatDot.activity === "media" ? 1.0 : 0.3
+            Behavior on opacity { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
+            Behavior on scale   { NumberAnimation { duration: 320; easing.type: Easing.OutBack } }
+
+            Repeater {
+                model: 3
+                Rectangle {
+                    required property int index
+                    width: 2.5
+                    height: 10
+                    radius: 1.25
+                    color: Services.Theme.success
+                    anchors.verticalCenter: parent.verticalCenter
+
+                    SequentialAnimation on height {
+                        running: leftSatDot.activity === "media"
+                        loops: Animation.Infinite
+                        NumberAnimation {
+                            to: index === 0 ? 14 : (index === 1 ? 6 : 12)
+                            duration: index === 0 ? 280 : (index === 1 ? 400 : 340)
+                            easing.type: Easing.InOutSine
+                        }
+                        NumberAnimation {
+                            to: index === 0 ? 4 : (index === 1 ? 14 : 4)
+                            duration: index === 0 ? 320 : (index === 1 ? 300 : 380)
+                            easing.type: Easing.InOutSine
+                        }
+                    }
+                }
+            }
+        }
+
+        // ── Content: Notification (App Icon + Badge) ──
+        Item {
+            anchors.centerIn: parent
+            width: 18
+            height: 18
+            visible: leftSatDot.activity === "notif"
+            opacity: leftSatDot.activity === "notif" ? 1.0 : 0.0
+            scale: leftSatDot.activity === "notif" ? 1.0 : 0.3
+            Behavior on opacity { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
+            Behavior on scale   { NumberAnimation { duration: 320; easing.type: Easing.OutBack } }
+
+            Image {
+                id: leftNotifImg
+                anchors.centerIn: parent
+                width: 16
+                height: 16
+                source: (leftSatDot.item && leftSatDot.item.notif) ? root.resolveNotifIcon(leftSatDot.item.notif) : ""
+                visible: status === Image.Ready && source.toString().length > 0
+                fillMode: Image.PreserveAspectFit
+                asynchronous: true
+                cache: true
+                sourceSize: Qt.size(32, 32)
+            }
+
+            Text {
+                anchors.centerIn: parent
+                text: "󰂚"
+                font.family: Services.Theme.fontSymbols
+                font.pixelSize: 13
+                color: Services.Theme.accent
+                visible: !leftNotifImg.visible
+            }
+
+            Rectangle {
+                width: 6
+                height: 6
+                radius: 3
+                color: Services.Theme.danger
+                anchors.top: parent.top
+                anchors.topMargin: -1
+                anchors.right: parent.right
+                anchors.rightMargin: -1
+            }
+        }
+
+        // ── Content: Camera Privacy Indicator ──
+        Item {
+            anchors.centerIn: parent
+            width: 16
+            height: 16
+            visible: leftSatDot.activity === "camera"
+            opacity: leftSatDot.activity === "camera" ? 1.0 : 0.0
+            scale: leftSatDot.activity === "camera" ? 1.0 : 0.3
+            Behavior on opacity { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
+            Behavior on scale   { NumberAnimation { duration: 320; easing.type: Easing.OutBack } }
+
+            Text {
+                anchors.centerIn: parent
+                text: "󰄀"
+                font.family: Services.Theme.fontSymbols
+                font.pixelSize: 13
+                color: Services.Theme.success
+            }
+
+            SequentialAnimation on opacity {
+                running: leftSatDot.activity === "camera"
+                loops: Animation.Infinite
+                NumberAnimation { from: 1.0; to: 0.25; duration: 650; easing.type: Easing.InOutSine }
+                NumberAnimation { from: 0.25; to: 1.0; duration: 650; easing.type: Easing.InOutSine }
+            }
+        }
+
+        // ── Content: CapsLock Indicator ──
         Text {
             anchors.centerIn: parent
             text: "󰘶"
             font.family: Services.Theme.fontSymbols
             font.pixelSize: 13
             color: Services.Theme.alertYellow
-            opacity: capsLockDot.isSatellite ? 1.0 : 0.0
-            scale: capsLockDot.isSatellite ? 1.0 : 0.3
+            visible: leftSatDot.activity === "capslock"
+            opacity: leftSatDot.activity === "capslock" ? 1.0 : 0.0
+            scale: leftSatDot.activity === "capslock" ? 1.0 : 0.3
             Behavior on opacity { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
             Behavior on scale   { NumberAnimation { duration: 320; easing.type: Easing.OutBack } }
         }
+
+        // ── Content: System HUD ──
+        Text {
+            anchors.centerIn: parent
+            text: (leftSatDot.item && leftSatDot.item.icon) ? leftSatDot.item.icon : (root.sysHudIcon || "󰋩")
+            font.family: Services.Theme.fontSymbols
+            font.pixelSize: 13
+            color: (leftSatDot.item && leftSatDot.item.color) ? leftSatDot.item.color : root.sysHudColor
+            visible: leftSatDot.activity === "syshud"
+            opacity: leftSatDot.activity === "syshud" ? 1.0 : 0.0
+            scale: leftSatDot.activity === "syshud" ? 1.0 : 0.3
+            Behavior on opacity { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
+            Behavior on scale   { NumberAnimation { duration: 320; easing.type: Easing.OutBack } }
+        }
+
+        // ── Content: Transfer Progress ──
+        Text {
+            anchors.centerIn: parent
+            text: "󰒍"
+            font.family: Services.Theme.fontSymbols
+            font.pixelSize: 13
+            color: Services.Theme.accent
+            visible: leftSatDot.activity === "transfer"
+            opacity: leftSatDot.activity === "transfer" ? 1.0 : 0.0
+            scale: leftSatDot.activity === "transfer" ? 1.0 : 0.3
+            Behavior on opacity { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
+            Behavior on scale   { NumberAnimation { duration: 320; easing.type: Easing.OutBack } }
+
+            SequentialAnimation on scale {
+                running: leftSatDot.activity === "transfer"
+                loops: Animation.Infinite
+                NumberAnimation { to: 1.15; duration: 600; easing.type: Easing.InOutSine }
+                NumberAnimation { to: 0.95; duration: 600; easing.type: Easing.InOutSine }
+            }
+        }
+
+        // ── Smart Interactive Click Handler ──
+        MouseArea {
+            anchors.fill: parent
+            hoverEnabled: true
+            acceptedButtons: Qt.LeftButton | Qt.RightButton
+            cursorShape: Qt.PointingHandCursor
+            onClicked: mouse => {
+                if (mouse.button === Qt.RightButton && leftSatDot.activity === "media") {
+                    if (root.activePlayer) root.activePlayer.togglePlaying()
+                } else if (leftSatDot.item) {
+                    root.handleSatelliteClick(leftSatDot.item)
+                }
+            }
+        }
     }
+
+    // ── Backward Compatibility Aliases ──
+    readonly property alias mediaSatelliteDot: rightSatDot
+    readonly property alias cameraSatelliteDot: rightSatDot
+    readonly property alias capsLockDot: leftSatDot
+    readonly property alias satDot1: rightSatDot
+    readonly property alias satDot2: leftSatDot
 
 }
 

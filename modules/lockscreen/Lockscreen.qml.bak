@@ -43,8 +43,6 @@ Scope {
     property int faceIdRetryCount: 0
     readonly property int maxFaceIdRetries: 1
     property bool faceIdCancelledByUser: false
-    property bool faceIconActive: false
-    property bool faceTextActive: false
 
     readonly property bool isFaceActive: Boolean(
         Services.FaceId &&
@@ -140,10 +138,10 @@ Scope {
 
     Timer {
         id: deviceLockedPeekDurationTimer
-        interval: 1300
+        interval: 1800
         repeat: false
         onTriggered: {
-            console.log("[Lockscreen] Device Locked peek duration elapsed -> contracting peek, settling into lock capsule")
+            console.log("[Lockscreen] Device Locked peek duration elapsed -> contracting peek, waiting delay before Face ID")
             root.deviceLockedPeekActive = false
             root.hasPeekedLocked = true
             if (Services.FaceId && Services.FaceId.isEnabled && Services.FaceId.isEnrolled && !root.isFaceVerified && !Services.FaceId.isScanning) {
@@ -154,7 +152,7 @@ Scope {
 
     Timer {
         id: faceIdScanTimer
-        interval: 520
+        interval: 2500
         repeat: false
         onTriggered: {
             console.log("[Lockscreen] Face ID delay timer triggered. isLocked:", root.isLocked, "FaceId:", Services.FaceId, "isEnabled:", Services.FaceId?.isEnabled)
@@ -165,49 +163,12 @@ Scope {
     }
 
     Timer {
-        id: textOpenDelayTimer
-        interval: 190
-        repeat: false
-        onTriggered: root.faceTextActive = true
-    }
-
-    Timer {
-        id: iconCloseDelayTimer
-        interval: 160
-        repeat: false
-        onTriggered: root.faceIconActive = false
-    }
-
-    onIsFaceActiveChanged: {
-        if (root.isFaceActive) {
-            iconCloseDelayTimer.stop()
-            root.faceIconActive = true
-            textOpenDelayTimer.restart()
-        } else {
-            textOpenDelayTimer.stop()
-            root.faceTextActive = false
-            iconCloseDelayTimer.restart()
-        }
-    }
-
-    Timer {
         id: faceIdContractTimer
-        interval: 850
+        interval: 1000
         repeat: false
         onTriggered: {
             console.log("[Lockscreen] Face ID contract timer triggered -> contracting island")
             root.isFaceContracted = true
-        }
-    }
-
-    Timer {
-        id: faceIdAutoUnlockContractTimer
-        interval: 650
-        repeat: false
-        onTriggered: {
-            console.log("[Lockscreen] Auto-unlock: contracting face canvas before unlocking desktop")
-            root.isFaceContracted = true
-            faceIdUnlockDelayTimer.restart()
         }
     }
 
@@ -242,10 +203,10 @@ Scope {
 
     Timer {
         id: faceIdUnlockDelayTimer
-        interval: 600
+        interval: 850
         repeat: false
         onTriggered: {
-            console.log("[Lockscreen] Face ID auto-unlock triggered (canvas closed)")
+            console.log("[Lockscreen] Face ID auto-unlock triggered")
             root.unlockSuccess()
         }
     }
@@ -286,7 +247,6 @@ Scope {
         faceIdScanTimer.stop()
         faceIdRetryTimer.stop()
         faceIdContractTimer.stop()
-        faceIdAutoUnlockContractTimer.stop()
         faceIdTimeoutShrinkTimer.stop()
         faceIdUnlockDelayTimer.stop()
         root.isFaceContracted = false
@@ -308,7 +268,7 @@ Scope {
             root.faceIdRetryCount = 0
 
             if (Services.FaceId.autoUnlock) {
-                faceIdAutoUnlockContractTimer.restart()
+                faceIdUnlockDelayTimer.restart()
             } else {
                 faceIdContractTimer.restart()
             }
@@ -332,7 +292,6 @@ Scope {
         if (isLocked) return
         if (Services.FaceId) Services.FaceId.resetStatus()
         faceIdUnlockDelayTimer.stop()
-        faceIdAutoUnlockContractTimer.stop()
         faceIdContractTimer.stop()
         faceIdTimeoutShrinkTimer.stop()
         faceIdRetryTimer.stop()
@@ -346,10 +305,6 @@ Scope {
         root.isFaceTimeoutContracted = false
         root.isFaceVerified = false
         root.hasPeekedLocked = false
-        textOpenDelayTimer.stop()
-        iconCloseDelayTimer.stop()
-        root.faceIconActive = false
-        root.faceTextActive = false
         isLocked = true
         passwordInput = ""
         pendingPassword = ""
@@ -455,12 +410,15 @@ Scope {
         lockscreenCcOpen = false
         lockscreenPwrOpen = false
         faceIdUnlockDelayTimer.stop()
-        faceIdAutoUnlockContractTimer.stop()
         faceIdContractTimer.stop()
         faceIdTimeoutShrinkTimer.stop()
         faceIdRetryTimer.stop()
         root.faceIdRetryCount = 0
         root.faceIdCancelledByUser = false
+        root.isFaceContracted = false
+        root.isFaceTimeoutContracted = false
+        root.isFaceVerified = false
+        root.hasPeekedLocked = false
         if (Services.FaceId) Services.FaceId.stopScan()
         unlockTimer.start()
     }
@@ -533,7 +491,6 @@ Scope {
             if (!sessionLock.locked) {
                 if (Services.FaceId) Services.FaceId.stopScan()
                 faceIdUnlockDelayTimer.stop()
-                faceIdAutoUnlockContractTimer.stop()
                 faceIdContractTimer.stop()
                 faceIdTimeoutShrinkTimer.stop()
                 faceIdRetryTimer.stop()
@@ -547,10 +504,6 @@ Scope {
                 root.isFaceTimeoutContracted = false
                 root.isFaceVerified = false
                 root.hasPeekedLocked = false
-                textOpenDelayTimer.stop()
-                iconCloseDelayTimer.stop()
-                root.faceIconActive = false
-                root.faceTextActive = false
                 root.passwordInput = ""
                 root.pendingPassword = ""
                 root.isAuthenticating = false
@@ -561,14 +514,9 @@ Scope {
             } else {
                 if (Services.FaceId) Services.FaceId.resetStatus()
                 faceIdUnlockDelayTimer.stop()
-                faceIdAutoUnlockContractTimer.stop()
                 faceIdContractTimer.stop()
                 faceIdTimeoutShrinkTimer.stop()
                 faceIdRetryTimer.stop()
-                textOpenDelayTimer.stop()
-                iconCloseDelayTimer.stop()
-                root.faceIconActive = false
-                root.faceTextActive = false
                 root.faceIdRetryCount = 0
                 root.faceIdCancelledByUser = false
                 root.isFaceContracted = false
@@ -753,30 +701,28 @@ Scope {
                             Services.FaceId.status === "success"
                         )
 
-                        readonly property bool isIslandExpanded: (root.faceIconActive || root.isFaceActive)
-
                         border.color: {
-                            if (lockIsland.isIslandExpanded && Services.FaceId && Services.FaceId.status === "detected") return "#38bdf8"
+                            if (root.isFaceActive && Services.FaceId && Services.FaceId.status === "detected") return "#38bdf8"
                             if (root.isDeviceLockedPeek) return Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.35)
                             return Services.Theme.borderSubtle
                         }
-                        border.width: ((lockIsland.isIslandExpanded && Services.FaceId && Services.FaceId.status === "detected") || root.isDeviceLockedPeek) ? 1.5 : 1
+                        border.width: ((root.isFaceActive && Services.FaceId && Services.FaceId.status === "detected") || root.isDeviceLockedPeek) ? 1.5 : 1
 
-                        width: lockIsland.isIslandExpanded ? 160 : (root.isDeviceLockedPeek ? 218 : 140)
-                        height: lockIsland.isIslandExpanded ? 96 : (root.isDeviceLockedPeek ? 44 : 32)
-                        radius: lockIsland.isIslandExpanded ? 24 : (height / 2)
+                        width: root.isFaceActive ? 160 : (root.isDeviceLockedPeek ? 218 : 140)
+                        height: root.isFaceActive ? 96 : (root.isDeviceLockedPeek ? 44 : 32)
+                        radius: root.isFaceActive ? 24 : (height / 2)
 
-                        Behavior on width  { NumberAnimation { duration: 340; easing.type: Easing.OutBack; easing.overshoot: 1.10 } }
-                        Behavior on height { NumberAnimation { duration: 340; easing.type: Easing.OutBack; easing.overshoot: 1.10 } }
+                        Behavior on width  { NumberAnimation { duration: 360; easing.type: Easing.OutBack } }
+                        Behavior on height { NumberAnimation { duration: 360; easing.type: Easing.OutBack } }
                         Behavior on radius {
-                            enabled: lockIsland.isIslandExpanded || (lockIsland.height > 50)
-                            NumberAnimation { duration: 300; easing.type: Easing.OutCubic }
+                            enabled: root.isFaceActive || (lockIsland.height > 50)
+                            NumberAnimation { duration: 320; easing.type: Easing.OutCubic }
                         }
                         Behavior on border.color { ColorAnimation { duration: 250 } }
 
                         MouseArea {
                             anchors.fill: parent
-                            z: 20
+                            z: 10
                             cursorShape: Qt.PointingHandCursor
                             onClicked: {
                                 if (root.isFaceVerified || (Services.FaceId && Services.FaceId.status === "success")) {
@@ -796,323 +742,414 @@ Scope {
                             }
                         }
 
-                        // ==================== SINGLE MASTER MORPHING ICON ====================
+                        // ==================== Mode 1: Collapsed Idle Desktop Dot or Verified Pill ====================
                         Item {
-                            id: masterMorphIcon
-                            z: 10
+                            id: statusIconContainer
+                            anchors.fill: parent
+                            z: 2
+                            visible: (!root.isFaceActive && !root.isDeviceLockedPeek) || opacity > 0.01
+                            opacity: (!root.isFaceActive && !root.isDeviceLockedPeek) ? 1 : 0
+                            scale: (!root.isFaceActive && !root.isDeviceLockedPeek) ? 1.0 : 0.4
+                            transformOrigin: Item.Center
 
-                            readonly property bool isFace: root.faceIconActive
-                            readonly property bool isPeek: root.isDeviceLockedPeek && !isFace
+                            Behavior on opacity { NumberAnimation { duration: 250; easing.type: Easing.OutQuad } }
+                            Behavior on scale   { NumberAnimation { duration: 350; easing.type: Easing.OutExpo } }
 
-                            // Exact coordinates:
-                            // Dot: Center x=60, y=6, w=20
-                            // Peek: Left x=10, y=8, w=28
-                            // Collapsed Lock: Left x=14, y=6, w=20 (Lock icon stays on the left)
-                            // Face ID: Center x=63, y=16, w=34 (Upper center)
-                            // Unlocked: Left x=14, y=6, w=20
-                            x: {
-                                if (masterMorphIcon.isFace) return 63
-                                if (masterMorphIcon.isPeek) return 10
-                                if (root.hasPeekedLocked || root.isFaceVerified) return 14
-                                return 60
-                            }
-                            y: {
-                                if (masterMorphIcon.isFace) return 16
-                                if (masterMorphIcon.isPeek) return 8
-                                return 6
-                            }
-                            width: {
-                                if (masterMorphIcon.isFace) return 34
-                                if (masterMorphIcon.isPeek) return 28
-                                return 20
-                            }
-                            height: width
-
-                            Behavior on x { NumberAnimation { duration: 340; easing.type: Easing.OutBack; easing.overshoot: 1.10 } }
-                            Behavior on y { NumberAnimation { duration: 340; easing.type: Easing.OutBack; easing.overshoot: 1.10 } }
-                            Behavior on width { NumberAnimation { duration: 340; easing.type: Easing.OutBack; easing.overshoot: 1.10 } }
-
-                            // Continuous morph progress (synchronized with capsule expansion)
-                            property real faceProgress: isFace ? 1.0 : 0.0
-                            Behavior on faceProgress {
-                                NumberAnimation {
-                                    duration: 340
-                                    easing.type: Easing.OutBack
-                                    easing.overshoot: 1.10
-                                }
-                            }
-
-                            property real peekProgress: isPeek ? 1.0 : 0.0
-                            Behavior on peekProgress {
-                                NumberAnimation {
-                                    duration: 320
-                                    easing.type: Easing.OutBack
-                                    easing.overshoot: 1.10
-                                }
-                            }
-
-                            // Parabolic in-flight factor: 0.0 at rest, 1.0 at peak velocity (mid-flight)
-                            readonly property real faceTransitFactor: 4.0 * faceProgress * (1.0 - faceProgress)
-                            readonly property real peekTransitFactor: 4.0 * peekProgress * (1.0 - peekProgress)
-                            readonly property real transitFactor: Math.max(faceTransitFactor, peekTransitFactor)
-
-                            // Subtle liquid squash & stretch aligned exactly with flight path
-                            transform: Scale {
-                                origin.x: masterMorphIcon.width / 2
-                                origin.y: masterMorphIcon.height / 2
-                                xScale: 1.0 + 0.14 * masterMorphIcon.transitFactor
-                                yScale: 1.0 - 0.08 * masterMorphIcon.transitFactor
-                            }
-
-                            // 1. Circular Badge Ring (Blooms during Peek)
-                            Rectangle {
-                                id: peekBadgeRing
-                                anchors.fill: parent
-                                radius: width / 2
-                                color: masterMorphIcon.isPeek 
-                                    ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.16) 
-                                    : "transparent"
-                                border.color: masterMorphIcon.isPeek 
-                                    ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.28) 
-                                    : "transparent"
-                                border.width: 1
-                                opacity: masterMorphIcon.isPeek ? 1.0 : 0.0
-                                scale: 0.60 + 0.40 * masterMorphIcon.peekProgress
-                                Behavior on color { ColorAnimation { duration: 220 } }
-                                Behavior on border.color { ColorAnimation { duration: 220 } }
-                                Behavior on opacity { NumberAnimation { duration: 220 } }
-                            }
-
-                            // 2. Glyph Layer (Dot ● -> Lock 󰌾 -> Unlock 󰌿)
                             Item {
-                                id: glyphLayer
-                                anchors.fill: parent
-                                // Smoothly dissolves in the first half of flight as the icon glides to center
-                                opacity: Math.max(0.0, 1.0 - masterMorphIcon.faceProgress * 2.2)
-                                scale: 1.0 + masterMorphIcon.faceProgress * 0.15
+                                id: statusIndicatorWrapper
+                                width: 20
+                                height: 20
+                                anchors.verticalCenter: parent.verticalCenter
+                                x: (root.hasPeekedLocked || root.isFaceVerified) ? 14 : (parent.width - width) / 2
+                                rotation: root.isFaceVerified ? 720 : (root.hasPeekedLocked ? 360 : 0)
+
+                                Behavior on x {
+                                    NumberAnimation { duration: 380; easing.type: Easing.OutCubic }
+                                }
+                                Behavior on rotation {
+                                    NumberAnimation { duration: 380; easing.type: Easing.OutBack; easing.overshoot: 1.25 }
+                                }
 
                                 Text {
-                                    id: morphTextGlyph
+                                    id: statusIndicatorIcon
                                     anchors.centerIn: parent
                                     text: {
                                         if (root.isFaceVerified) return "󰌿"
-                                        if (root.hasPeekedLocked || masterMorphIcon.isPeek) return "󰌾"
+                                        if (root.hasPeekedLocked) return "󰌾"
                                         return "●"
                                     }
                                     font.family: Services.Theme.fontSymbols
-                                    font.pixelSize: masterMorphIcon.isPeek ? 14 : ((text === "●") ? 13 : 14)
+                                    font.pixelSize: (root.isFaceVerified || root.hasPeekedLocked) ? 14 : 13
                                     color: {
                                         if (root.isFaceVerified) return "#30d158"
-                                        if (masterMorphIcon.isPeek) return Services.Theme.accent
                                         if (root.hasPeekedLocked) return Services.Theme.textPrimary
                                         return Services.Theme.textDisabled
                                     }
+                                    scale: iconScale
+                                    property real iconScale: 1.0
 
-                                    Behavior on color { ColorAnimation { duration: 200 } }
-                                    Behavior on font.pixelSize { NumberAnimation { duration: 200 } }
-                                }
-                            }
+                                    Behavior on color { ColorAnimation { duration: 220 } }
 
-                            // 3. Apple Face ID Vector Canvas Layer
-                            Item {
-                                id: faceCanvasLayer
-                                anchors.fill: parent
-                                // Emerges from within the liquid droplet as it crosses the halfway mark
-                                opacity: Math.min(1.0, Math.max(0.0, (masterMorphIcon.faceProgress - 0.20) / 0.60))
-                                scale: 0.65 + 0.35 * Math.min(1.0, masterMorphIcon.faceProgress / 0.95)
+                                    onTextChanged: {
+                                        iconMorphAnim.restart()
+                                    }
 
-                                // Authentic subtle breathing pulse only runs once arrived and actively scanning
-                                SequentialAnimation {
-                                    running: masterMorphIcon.isFace && (masterMorphIcon.faceProgress >= 0.95) && Services.FaceId && Services.FaceId.isScanning && (Services.FaceId.status !== "success")
-                                    loops: Animation.Infinite
-                                    NumberAnimation { target: appleFaceCanvas; property: "scale"; from: 1.0; to: 1.04; duration: 600; easing.type: Easing.InOutSine }
-                                    NumberAnimation { target: appleFaceCanvas; property: "scale"; from: 1.04; to: 1.0; duration: 600; easing.type: Easing.InOutSine }
-                                }
-
-                                Canvas {
-                                    id: appleFaceCanvas
-                                    anchors.fill: parent
-                                    renderTarget: Canvas.FramebufferObject
-
-                                    readonly property bool isSuccess: Boolean(Services.FaceId && Services.FaceId.status === "success")
-                                    readonly property bool isDetected: Boolean(Services.FaceId && Services.FaceId.status === "detected")
-                                    readonly property bool isTimeout: Boolean(Services.FaceId && Services.FaceId.status === "timeout")
-
-                                    property color strokeColor: isSuccess ? "#30d158" : (isDetected ? "#38bdf8" : (isTimeout ? "#ef4444" : Services.Theme.accent))
-                                    property real smileAmount: isSuccess ? 1.40 : 1.0
-
-                                    Behavior on strokeColor { ColorAnimation { duration: 250 } }
-                                    Behavior on smileAmount { NumberAnimation { duration: 300; easing.type: Easing.OutBack } }
-
-                                    onStrokeColorChanged: requestPaint()
-                                    onSmileAmountChanged: requestPaint()
-                                    onVisibleChanged: { if (visible) requestPaint() }
-                                    Component.onCompleted: requestPaint()
-
-                                    onPaint: {
-                                        var ctx = getContext("2d")
-                                        ctx.clearRect(0, 0, width, height)
-                                        ctx.strokeStyle = strokeColor
-                                        ctx.lineWidth = 1.9
-                                        ctx.lineCap = "round"
-                                        ctx.lineJoin = "round"
-
-                                        var w = width
-                                        var h = height
-                                        var r = 4.0
-
-                                        // Apple Face ID Brackets
-                                        ctx.beginPath(); ctx.moveTo(w * 0.10, h * 0.32); ctx.lineTo(w * 0.10, h * 0.18 + r); ctx.arcTo(w * 0.10, h * 0.10, w * 0.18 + r, h * 0.10, r); ctx.lineTo(w * 0.34, h * 0.10); ctx.stroke()
-                                        ctx.beginPath(); ctx.moveTo(w * 0.66, h * 0.10); ctx.lineTo(w * 0.82 - r, h * 0.10); ctx.arcTo(w * 0.90, h * 0.10, w * 0.90, h * 0.18 + r, r); ctx.lineTo(w * 0.90, h * 0.32); ctx.stroke()
-                                        ctx.beginPath(); ctx.moveTo(w * 0.10, h * 0.68); ctx.lineTo(w * 0.10, h * 0.82 - r); ctx.arcTo(w * 0.10, h * 0.90, w * 0.18 + r, h * 0.90, r); ctx.lineTo(w * 0.34, h * 0.90); ctx.stroke()
-                                        ctx.beginPath(); ctx.moveTo(w * 0.66, h * 0.90); ctx.lineTo(w * 0.82 - r, h * 0.90); ctx.arcTo(w * 0.90, h * 0.90, w * 0.90, h * 0.82 - r, r); ctx.lineTo(w * 0.90, h * 0.68); ctx.stroke()
-
-                                        // Apple Face ID Features
-                                        ctx.beginPath(); ctx.moveTo(w * 0.35, h * 0.36); ctx.lineTo(w * 0.35, h * 0.46); ctx.stroke()
-                                        ctx.beginPath(); ctx.moveTo(w * 0.65, h * 0.36); ctx.lineTo(w * 0.65, h * 0.46); ctx.stroke()
-                                        ctx.beginPath(); ctx.moveTo(w * 0.50, h * 0.42); ctx.lineTo(w * 0.50, h * 0.54); ctx.lineTo(w * 0.58, h * 0.54); ctx.stroke()
-                                        ctx.beginPath(); ctx.moveTo(w * 0.33, h * 0.69); ctx.quadraticCurveTo(w * 0.50, h * (0.69 + 0.11 * smileAmount), w * 0.67, h * 0.69); ctx.stroke()
+                                    SequentialAnimation {
+                                        id: iconMorphAnim
+                                        NumberAnimation { target: statusIndicatorIcon; property: "iconScale"; to: 0.4; duration: 90; easing.type: Easing.InBack }
+                                        NumberAnimation { target: statusIndicatorIcon; property: "iconScale"; to: 1.3; duration: 200; easing.type: Easing.OutBack }
+                                        NumberAnimation { target: statusIndicatorIcon; property: "iconScale"; to: 1.0; duration: 120; easing.type: Easing.InOutQuad }
                                     }
                                 }
                             }
                         }
 
-                        // ==================== OVERLAY LABELS CONTAINER ====================
+                        // ==================== Mode 2: Revamped "Device Locked" Dynamic Island Peek ====================
                         Item {
-                            id: contentLabelsOverlay
+                            id: deviceLockedPeekContainer
                             anchors.fill: parent
-                            z: 5
+                            visible: root.isDeviceLockedPeek || opacity > 0.01
+                            opacity: root.isDeviceLockedPeek ? 1 : 0
+                            scale: root.isDeviceLockedPeek ? 1.0 : 0.75
+                            transformOrigin: Item.Center
+                            z: 3
 
-                            // 1. Device Locked Peek Details (Horizontal Slide + Unfurl from behind badge)
-                            Item {
-                                id: peekTextGroup
-                                anchors.left: parent.left
-                                anchors.leftMargin: 34 + 14 * masterMorphIcon.peekProgress
-                                anchors.verticalCenter: parent.verticalCenter
-                                width: 150
-                                height: 30
-                                transformOrigin: Item.Left
-                                opacity: Math.min(1.0, Math.max(0.0, (masterMorphIcon.peekProgress - 0.15) / 0.70))
-                                scale: 0.85 + 0.15 * masterMorphIcon.peekProgress
+                            Behavior on opacity { NumberAnimation { duration: 260; easing.type: Easing.OutQuad } }
+                            Behavior on scale   { NumberAnimation { duration: 380; easing.type: Easing.OutBack } }
 
+                            RowLayout {
+                                anchors.fill: parent
+                                anchors.leftMargin: 10
+                                anchors.rightMargin: 14
+                                spacing: 10
+
+                                // Left: Sleek Circular Lock Icon Badge with subtle accent glow
+                                Rectangle {
+                                    id: lockBadge
+                                    Layout.preferredWidth: 28
+                                    Layout.preferredHeight: 28
+                                    Layout.alignment: Qt.AlignVCenter
+                                    radius: 14
+                                    color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.16)
+                                    border.color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.28)
+                                    border.width: 1
+
+                                    Text {
+                                        id: lockBadgeIcon
+                                        anchors.centerIn: parent
+                                        text: "󰌾"
+                                        font.family: Services.Theme.fontSymbols
+                                        font.pixelSize: 14
+                                        color: Services.Theme.accent
+
+                                        scale: root.isDeviceLockedPeek ? 1.0 : 0.6
+                                        Behavior on scale { NumberAnimation { duration: 400; easing.type: Easing.OutBack } }
+                                    }
+                                }
+
+                                // Center: Typography Hierarchy
                                 Column {
-                                    anchors.verticalCenter: parent.verticalCenter
+                                    Layout.fillWidth: true
+                                    Layout.alignment: Qt.AlignVCenter
                                     spacing: 1
 
                                     Text {
+                                        width: parent.width
                                         text: "Device Locked"
                                         color: Services.Theme.textPrimary
                                         font.family: Services.Theme.fontDisplay
                                         font.pixelSize: 12
                                         font.weight: Font.DemiBold
+                                        elide: Text.ElideRight
                                     }
+
                                     Text {
+                                        width: parent.width
                                         text: "Authentication required"
                                         color: Services.Theme.textSecondary
                                         font.family: Services.Theme.fontDisplay
                                         font.pixelSize: 10
+                                        elide: Text.ElideRight
                                         opacity: 0.85
                                     }
                                 }
                             }
+                        }
 
-                            // 2. Face ID Status Details (Emerge out of the face icon, collapse back into it)
-                            Item {
-                                id: faceTextGroup
-                                anchors.horizontalCenter: parent.horizontalCenter
-                                width: 140
-                                height: 34
-                                transformOrigin: Item.Top
+                        // ==================== Mode 3: Apple Face ID Dynamic Island ====================
+                        Item {
+                            id: faceIdExpandedContainer
+                            anchors.fill: parent
+                            visible: root.isFaceActive || opacity > 0.01
+                            opacity: root.isFaceActive ? 1 : 0
+                            scale: root.isFaceActive ? 1.0 : 0.5
+                            transformOrigin: Item.Center
+                            z: 4
 
-                                // Choreography: Text emerges from face icon (y=30 -> 55) and collapses back into it
-                                property real textProgress: root.faceTextActive ? 1.0 : 0.0
-                                Behavior on textProgress {
-                                    NumberAnimation {
-                                        duration: root.faceTextActive ? 220 : 150
-                                        easing.type: root.faceTextActive ? Easing.OutBack : Easing.InQuad
-                                        easing.overshoot: root.faceTextActive ? 1.15 : 1.0
+                            Behavior on opacity { NumberAnimation { duration: 280; easing.type: Easing.OutQuad } }
+                            Behavior on scale   { NumberAnimation { duration: 350; easing.type: Easing.OutBack } }
+
+                            function triggerVerifiedTransition() {
+                                scanningPulseAnim.stop()
+                                faceIconWrapper.pulseScale = 1.0
+                                verifiedPopAnim.restart()
+                                haloBurstAnim.restart()
+                                appleFaceCanvas.requestPaint()
+                            }
+
+                            Connections {
+                                target: Services.FaceId
+                                function onStatusChanged() {
+                                    if (Services.FaceId && Services.FaceId.status === "success") {
+                                        faceIdExpandedContainer.triggerVerifiedTransition()
+                                    } else if (Services.FaceId && Services.FaceId.isScanning) {
+                                        verifiedPopAnim.stop()
+                                        haloBurstAnim.stop()
+                                        faceIconWrapper.popScale = 1.0
+                                        if (!scanningPulseAnim.running) {
+                                            scanningPulseAnim.restart()
+                                        }
+                                    } else {
+                                        scanningPulseAnim.stop()
+                                        verifiedPopAnim.stop()
+                                        haloBurstAnim.stop()
+                                        faceIconWrapper.pulseScale = 1.0
+                                        faceIconWrapper.popScale = 1.0
+                                    }
+                                }
+                                function onAuthenticated(user, confidence) {
+                                    faceIdExpandedContainer.triggerVerifiedTransition()
+                                }
+                            }
+
+                            Column {
+                                anchors.centerIn: parent
+                                spacing: 6
+                                width: parent.width - 20
+
+                                // Authentic Apple Face ID Vector Glyph (34x34) with Spring Pop & Halo
+                                Item {
+                                    id: faceIconWrapper
+                                    anchors.horizontalCenter: parent.horizontalCenter
+                                    width: 34
+                                    height: 34
+                                    implicitWidth: 34
+                                    implicitHeight: 34
+                                    transformOrigin: Item.Center
+
+                                    property real pulseScale: 1.0
+                                    property real popScale: 1.0
+
+                                    scale: pulseScale * popScale
+
+                                    // Gentle breathing pulse during scanning
+                                    SequentialAnimation {
+                                        id: scanningPulseAnim
+                                        running: Services.FaceId && Services.FaceId.isScanning && (Services.FaceId.status !== "success")
+                                        loops: Animation.Infinite
+                                        NumberAnimation { target: faceIconWrapper; property: "pulseScale"; from: 1.0; to: 1.07; duration: 520; easing.type: Easing.InOutSine }
+                                        NumberAnimation { target: faceIconWrapper; property: "pulseScale"; from: 1.07; to: 1.0; duration: 520; easing.type: Easing.InOutSine }
+                                    }
+
+                                    // Spring bounce on verification
+                                    SequentialAnimation {
+                                        id: verifiedPopAnim
+                                        NumberAnimation { target: faceIconWrapper; property: "popScale"; to: 0.88; duration: 80; easing.type: Easing.InQuad }
+                                        NumberAnimation { target: faceIconWrapper; property: "popScale"; to: 1.20; duration: 200; easing.type: Easing.OutBack }
+                                        NumberAnimation { target: faceIconWrapper; property: "popScale"; to: 1.0; duration: 220; easing.type: Easing.InOutQuad }
+                                    }
+
+                                    // Emerald glowing halo flash behind icon on verification
+                                    Rectangle {
+                                        id: verifiedHalo
+                                        anchors.centerIn: parent
+                                        width: 34
+                                        height: 34
+                                        radius: 17
+                                        color: "#30d158"
+                                        opacity: 0.0
+                                        scale: 0.5
+                                        z: -1
+
+                                        ParallelAnimation {
+                                            id: haloBurstAnim
+                                            NumberAnimation { target: verifiedHalo; property: "scale"; from: 0.6; to: 1.6; duration: 420; easing.type: Easing.OutCubic }
+                                            SequentialAnimation {
+                                                NumberAnimation { target: verifiedHalo; property: "opacity"; from: 0.0; to: 0.40; duration: 100; easing.type: Easing.OutQuad }
+                                                NumberAnimation { target: verifiedHalo; property: "opacity"; from: 0.40; to: 0.0; duration: 320; easing.type: Easing.OutQuad }
+                                            }
+                                        }
+                                    }
+
+                                    Canvas {
+                                        id: appleFaceCanvas
+                                        anchors.fill: parent
+                                        renderTarget: Canvas.FramebufferObject
+
+                                        readonly property bool isSuccess: Boolean(Services.FaceId && Services.FaceId.status === "success")
+                                        readonly property bool isDetected: Boolean(Services.FaceId && Services.FaceId.status === "detected")
+                                        readonly property bool isTimeout: Boolean(Services.FaceId && Services.FaceId.status === "timeout")
+
+                                        property color strokeColor: isSuccess ? "#30d158" : (isDetected ? "#38bdf8" : (isTimeout ? "#ef4444" : Services.Theme.accent))
+                                        property real smileAmount: isSuccess ? 1.40 : 1.0
+                                        property real cornerRadius: 4.0
+
+                                        Behavior on strokeColor {
+                                            ColorAnimation { duration: 280; easing.type: Easing.OutQuad }
+                                        }
+                                        Behavior on smileAmount {
+                                            NumberAnimation { duration: 360; easing.type: Easing.OutBack }
+                                        }
+
+                                        onStrokeColorChanged: requestPaint()
+                                        onSmileAmountChanged: requestPaint()
+                                        onVisibleChanged: { if (visible) requestPaint() }
+                                        Component.onCompleted: requestPaint()
+
+                                        onPaint: {
+                                            var ctx = getContext("2d")
+                                            ctx.clearRect(0, 0, width, height)
+                                            ctx.strokeStyle = strokeColor
+                                            ctx.lineWidth = 1.9
+                                            ctx.lineCap = "round"
+                                            ctx.lineJoin = "round"
+
+                                            var w = width
+                                            var h = height
+                                            var r = cornerRadius
+
+                                            // Top-Left Bracket
+                                            ctx.beginPath()
+                                            ctx.moveTo(w * 0.10, h * 0.32)
+                                            ctx.lineTo(w * 0.10, h * 0.18 + r)
+                                            ctx.arcTo(w * 0.10, h * 0.10, w * 0.18 + r, h * 0.10, r)
+                                            ctx.lineTo(w * 0.34, h * 0.10)
+                                            ctx.stroke()
+
+                                            // Top-Right Bracket
+                                            ctx.beginPath()
+                                            ctx.moveTo(w * 0.66, h * 0.10)
+                                            ctx.lineTo(w * 0.82 - r, h * 0.10)
+                                            ctx.arcTo(w * 0.90, h * 0.10, w * 0.90, h * 0.18 + r, r)
+                                            ctx.lineTo(w * 0.90, h * 0.32)
+                                            ctx.stroke()
+
+                                            // Bottom-Left Bracket
+                                            ctx.beginPath()
+                                            ctx.moveTo(w * 0.10, h * 0.68)
+                                            ctx.lineTo(w * 0.10, h * 0.82 - r)
+                                            ctx.arcTo(w * 0.10, h * 0.90, w * 0.18 + r, h * 0.90, r)
+                                            ctx.lineTo(w * 0.34, h * 0.90)
+                                            ctx.stroke()
+
+                                            // Bottom-Right Bracket
+                                            ctx.beginPath()
+                                            ctx.moveTo(w * 0.66, h * 0.90)
+                                            ctx.lineTo(w * 0.82 - r, h * 0.90)
+                                            ctx.arcTo(w * 0.90, h * 0.90, w * 0.90, h * 0.82 - r, r)
+                                            ctx.lineTo(w * 0.90, h * 0.68)
+                                            ctx.stroke()
+
+                                            // Left Eye
+                                            ctx.beginPath()
+                                            ctx.moveTo(w * 0.35, h * 0.36)
+                                            ctx.lineTo(w * 0.35, h * 0.46)
+                                            ctx.stroke()
+
+                                            // Right Eye
+                                            ctx.beginPath()
+                                            ctx.moveTo(w * 0.65, h * 0.36)
+                                            ctx.lineTo(w * 0.65, h * 0.46)
+                                            ctx.stroke()
+
+                                            // Nose
+                                            ctx.beginPath()
+                                            ctx.moveTo(w * 0.50, h * 0.42)
+                                            ctx.lineTo(w * 0.50, h * 0.54)
+                                            ctx.lineTo(w * 0.58, h * 0.54)
+                                            ctx.stroke()
+
+                                            // Smile
+                                            ctx.beginPath()
+                                            ctx.moveTo(w * 0.33, h * 0.69)
+                                            ctx.quadraticCurveTo(w * 0.50, h * (0.69 + 0.11 * smileAmount), w * 0.67, h * 0.69)
+                                            ctx.stroke()
+                                        }
                                     }
                                 }
 
-                                y: 30 + 25 * textProgress
-                                opacity: Math.min(1.0, textProgress * 1.5)
-                                scale: 0.20 + 0.80 * textProgress
-                                visible: opacity > 0.01
-
-                                readonly property bool isSuccess: Boolean(Services.FaceId && Services.FaceId.status === "success")
-                                onIsSuccessChanged: {
-                                    if (isSuccess) titlePopAnim.restart()
-                                }
-
+                                // Status text stacked vertically beneath Face ID icon
                                 Column {
                                     anchors.horizontalCenter: parent.horizontalCenter
-                                    anchors.top: parent.top
                                     spacing: 2
 
                                     Text {
-                                        id: faceIdTitle
                                         anchors.horizontalCenter: parent.horizontalCenter
                                         text: "Face ID"
                                         font.family: Services.Theme.fontDisplay
                                         font.pixelSize: 11
                                         font.weight: Font.DemiBold
-                                        color: faceTextGroup.isSuccess ? "#30d158" : Services.Theme.textPrimary
-
-                                        Behavior on color { ColorAnimation { duration: 250 } }
-
-                                        property real titleScale: 1.0
-                                        scale: titleScale
-
-                                        SequentialAnimation {
-                                            id: titlePopAnim
-                                            NumberAnimation { target: faceIdTitle; property: "titleScale"; to: 1.14; duration: 130; easing.type: Easing.OutQuad }
-                                            NumberAnimation { target: faceIdTitle; property: "titleScale"; to: 1.0; duration: 160; easing.type: Easing.OutBack }
-                                        }
+                                        color: Services.Theme.textPrimary
                                     }
 
                                     Item {
-                                        id: statusSubTextWrapper
-                                        width: 130
-                                        height: 14
+                                        id: statusSubtitleBox
                                         anchors.horizontalCenter: parent.horizontalCenter
+                                        width: 130
+                                        height: 15
+                                        clip: true
 
-                                        readonly property string statusText: {
-                                            if (Services.FaceId && Services.FaceId.status === "success") return "Verified"
-                                            if (Services.FaceId && Services.FaceId.status === "detected") return "Verifying Face..."
-                                            if (Services.FaceId && Services.FaceId.status === "scanning") return "Looking for Face..."
-                                            if (Services.FaceId && Services.FaceId.status === "timeout") return "Try Again"
-                                            return "Starting..."
-                                        }
-
-                                        onStatusTextChanged: statusCrossAnim.restart()
+                                        readonly property bool isVerified: Boolean(Services.FaceId && Services.FaceId.status === "success")
 
                                         Text {
-                                            id: statusSubText
+                                            id: statusScanText
                                             anchors.horizontalCenter: parent.horizontalCenter
-                                            text: statusSubTextWrapper.statusText
+                                            y: statusSubtitleBox.isVerified ? -16 : 0
+                                            opacity: statusSubtitleBox.isVerified ? 0.0 : 1.0
+
+                                            text: {
+                                                if (Services.FaceId && Services.FaceId.status === "detected") return "Verifying Face..."
+                                                if (Services.FaceId && Services.FaceId.status === "scanning") return "Looking for Face..."
+                                                if (Services.FaceId && (Services.FaceId.status === "starting" || Services.FaceId.status === "camera_ready")) return "Starting..."
+                                                if (Services.FaceId && Services.FaceId.status === "timeout") return "Try Again"
+                                                return "Ready"
+                                            }
                                             font.family: Services.Theme.fontDisplay
                                             font.pixelSize: 10
-                                            color: (Services.FaceId && Services.FaceId.status === "success") ? "#30d158" : Services.Theme.textSecondary
+                                            font.weight: Font.Normal
+                                            horizontalAlignment: Text.AlignHCenter
+                                            color: {
+                                                if (Services.FaceId && Services.FaceId.status === "detected") return "#38bdf8"
+                                                if (Services.FaceId && Services.FaceId.status === "timeout") return Services.Theme.danger
+                                                return Services.Theme.textSecondary
+                                            }
 
-                                            property real textOffsetY: 0.0
-                                            property real textFade: 1.0
-
-                                            y: textOffsetY
-                                            opacity: textFade
-
-                                            Behavior on color { ColorAnimation { duration: 250 } }
+                                            Behavior on y {
+                                                NumberAnimation { duration: 280; easing.type: Easing.OutCubic }
+                                            }
+                                            Behavior on opacity {
+                                                NumberAnimation { duration: 240; easing.type: Easing.OutQuad }
+                                            }
                                         }
 
-                                        SequentialAnimation {
-                                            id: statusCrossAnim
-                                            ParallelAnimation {
-                                                NumberAnimation { target: statusSubText; property: "textFade"; to: 0.0; duration: 80; easing.type: Easing.InQuad }
-                                                NumberAnimation { target: statusSubText; property: "textOffsetY"; to: -4; duration: 80; easing.type: Easing.InQuad }
+                                        Text {
+                                            id: statusSuccessText
+                                            anchors.horizontalCenter: parent.horizontalCenter
+                                            y: statusSubtitleBox.isVerified ? 0 : 16
+                                            opacity: statusSubtitleBox.isVerified ? 1.0 : 0.0
+
+                                            text: "Verified"
+                                            font.family: Services.Theme.fontDisplay
+                                            font.pixelSize: 10
+                                            font.weight: Font.DemiBold
+                                            horizontalAlignment: Text.AlignHCenter
+                                            color: "#30d158"
+
+                                            Behavior on y {
+                                                NumberAnimation { duration: 320; easing.type: Easing.OutBack }
                                             }
-                                            PropertyAction { target: statusSubText; property: "textOffsetY"; value: 4 }
-                                            ParallelAnimation {
-                                                NumberAnimation { target: statusSubText; property: "textFade"; to: 1.0; duration: 130; easing.type: Easing.OutQuad }
-                                                NumberAnimation { target: statusSubText; property: "textOffsetY"; to: 0.0; duration: 130; easing.type: Easing.OutBack }
+                                            Behavior on opacity {
+                                                NumberAnimation { duration: 280; easing.type: Easing.OutQuad }
                                             }
                                         }
                                     }
