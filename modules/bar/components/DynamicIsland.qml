@@ -1165,8 +1165,49 @@ Item {
         radius: isCapsuleShape ? (height / 2) : Services.Theme.radiusLg
 
         color: Services.Theme.bgPure
-        border.color: root.isCritical ? Services.Theme.danger : (root.expanded ? Services.Theme.borderHighlight : Services.Theme.borderSubtle)
-        border.width: root.isCritical ? 1.5 : 1
+        border.color: {
+            if (Services.OverlayManager && (Services.OverlayManager.isUnlockingWithGenie || Services.OverlayManager.lockVerified)) return "#30d158"
+            if (root.isCritical) return Services.Theme.danger
+            if (root.expanded) return Services.Theme.borderHighlight
+            return Services.Theme.borderSubtle
+        }
+        border.width: (Services.OverlayManager && Services.OverlayManager.isUnlockingWithGenie) ? 2.5 : ((Services.OverlayManager && Services.OverlayManager.lockVerified) ? 2.0 : (root.isCritical ? 1.5 : 1))
+
+        property real entranceScale: 1.0
+
+        scale: ((Services.OverlayManager && Services.OverlayManager.isUnlockingWithGenie)
+            ? (1.0 + 0.14 * Math.sin(Services.OverlayManager.unlockSuctionProgress * Math.PI))
+            : 1.0) * entranceScale
+
+        Connections {
+            target: Services.OverlayManager
+            function onIsLockedChanged() {
+                if (!Services.OverlayManager.isLocked) {
+                    entranceAnim.restart()
+                }
+            }
+        }
+
+        SequentialAnimation {
+            id: entranceAnim
+            NumberAnimation {
+                target: island
+                property: "entranceScale"
+                from: 1.0
+                to: 1.06
+                duration: 140
+                easing.type: Easing.OutQuad
+            }
+            NumberAnimation {
+                target: island
+                property: "entranceScale"
+                from: 1.06
+                to: 1.0
+                duration: 320
+                easing.type: Easing.OutBack
+                easing.overshoot: 1.15
+            }
+        }
 
         // Seamless, Continuous Fluid Morphing (Zero delay, zero hitching, pure iOS ease - synchronized with Lockscreen)
         Behavior on width {
@@ -1180,7 +1221,7 @@ Item {
             NumberAnimation {
                 duration: 340
                 easing.type: Easing.OutBack
-                easing.overshoot: 0.65
+                easing.overshoot: root.expanded ? 1.35 : 1.45
             }
         }
         Behavior on radius {
@@ -1192,6 +1233,12 @@ Item {
         }
         Behavior on border.color {
             ColorAnimation {
+                duration: 250
+                easing.type: Easing.OutCubic
+            }
+        }
+        Behavior on border.width {
+            NumberAnimation {
                 duration: 250
                 easing.type: Easing.OutCubic
             }
@@ -1291,7 +1338,7 @@ Item {
             states: [
                 State {
                     name: "ICON_LEFT"
-                    when: !Services.OverlayManager.isLocked && !root.expanded && !root.autoExpanded && (
+                    when: !Services.OverlayManager.isLocked && !(Services.OverlayManager && (Services.OverlayManager.isUnlockingWithGenie || Services.OverlayManager.lockVerified)) && !root.expanded && !root.autoExpanded && (
                         (root.mediaPlaying && root.mediaCollapsedReady) ||
                         root.mediaStopping ||
                         root.notifActive
@@ -1309,7 +1356,7 @@ Item {
                 },
                 State {
                     name: "LOCKED_COLLAPSED"
-                    when: Services.OverlayManager.isLocked
+                    when: Services.OverlayManager.isLocked && !(Services.OverlayManager && (Services.OverlayManager.isUnlockingWithGenie || Services.OverlayManager.lockVerified))
                     AnchorChanges {
                         target: statusIconContainer
                         anchors.horizontalCenter: undefined
@@ -1323,12 +1370,12 @@ Item {
                 },
                 State {
                     name: "IDLE_CENTER"
-                    when: !Services.OverlayManager.isLocked && (
+                    when: (Services.OverlayManager && (Services.OverlayManager.isUnlockingWithGenie || Services.OverlayManager.lockVerified)) || (!Services.OverlayManager.isLocked && (
                         root.expanded ||
                         root.autoExpanded ||
                         (!root.mediaPlaying && !root.mediaStopping && !root.notifActive && !root.cameraActive) ||
                         (root.mediaPlaying && !root.mediaCollapsedReady)
-                    )
+                    ))
                     AnchorChanges {
                         target: statusIconContainer
                         anchors.horizontalCenter: island.horizontalCenter
@@ -1338,7 +1385,7 @@ Item {
                 },
                 State {
                     name: "CAMERA_RIGHT"
-                    when: !Services.OverlayManager.isLocked && !root.expanded && !root.autoExpanded && (!root.showCollapsedText && !root.mediaStopping && root.cameraActive)
+                    when: !Services.OverlayManager.isLocked && !(Services.OverlayManager && (Services.OverlayManager.isUnlockingWithGenie || Services.OverlayManager.lockVerified)) && !root.expanded && !root.autoExpanded && (!root.showCollapsedText && !root.mediaStopping && root.cameraActive)
                     AnchorChanges {
                         target: statusIconContainer
                         anchors.horizontalCenter: undefined
@@ -1369,6 +1416,7 @@ Item {
                 id: statusIconTxt
                 anchors.centerIn: parent
                 text: {
+                    if (Services.OverlayManager && (Services.OverlayManager.isUnlockingWithGenie || Services.OverlayManager.lockVerified)) return "󰌿"
                     if (Services.OverlayManager.isLocked) return "󰌾"
                     if (root.notifActive) return "󰂚"
                     if (root.expanded || root.autoExpanded) return "●"
@@ -1379,6 +1427,7 @@ Item {
                 font.family: Services.Theme.fontSymbols
                 font.pixelSize: (text === "●") ? 10 : 13
                 color: {
+                    if (Services.OverlayManager && (Services.OverlayManager.isUnlockingWithGenie || Services.OverlayManager.lockVerified)) return "#30d158"
                     if (Services.OverlayManager.isLocked) return Services.Theme.accent
                     if (root.notifActive) return Services.Theme.accent
                     if (root.expanded || root.autoExpanded) return Services.Theme.textDisabled
@@ -1387,12 +1436,14 @@ Item {
                     if (root.cameraActive) return Services.Theme.success
                     return Services.Theme.textDisabled
                 }
-                scale: textScale
+                scale: (Services.OverlayManager && Services.OverlayManager.isUnlockingWithGenie)
+                    ? (1.0 + 0.35 * Math.sin(Services.OverlayManager.unlockSuctionProgress * Math.PI))
+                    : textScale
 
                 property real textScale: 1.0
 
                 onTextChanged: {
-                    if (text === "●") {
+                    if (statusIconTxt.text === "●") {
                         statusIconTxt.rotation = 0
                     }
                     if (statusIconContainer.activeState && !root.expanded && !root.autoExpanded) {
@@ -1469,8 +1520,8 @@ Item {
             height: 16
             z: 3
 
-            readonly property bool showCollapsedText: !Services.OverlayManager.isLocked && (root.notifActive || root.mediaPlaying)
-            readonly property bool activeState: !Services.OverlayManager.isLocked && !root.expanded && !root.autoExpanded && root.mediaCollapsedReady && showCollapsedText && !root.mediaStopping
+            readonly property bool showCollapsedText: !Services.OverlayManager.isLocked && !(Services.OverlayManager && (Services.OverlayManager.isUnlockingWithGenie || Services.OverlayManager.lockVerified)) && (root.notifActive || root.mediaPlaying)
+            readonly property bool activeState: !Services.OverlayManager.isLocked && !(Services.OverlayManager && (Services.OverlayManager.isUnlockingWithGenie || Services.OverlayManager.lockVerified)) && !root.expanded && !root.autoExpanded && root.mediaCollapsedReady && showCollapsedText && !root.mediaStopping
 
             clip: true
             transformOrigin: Item.Left
@@ -1486,7 +1537,7 @@ Item {
                 Behavior on x { NumberAnimation { duration: root.mediaStopping ? 180 : 160; easing.type: root.mediaStopping ? Easing.InQuad : Easing.OutQuad } }
             }
 
-            readonly property string targetText: Services.OverlayManager.isLocked ? "Locked" : (root.notifActive ? ("Notif (" + root.notifCount + ")") : (root.mediaPlaying ? root.currentMediaText : root.lastTrackText))
+            readonly property string targetText: (Services.OverlayManager && (Services.OverlayManager.isUnlockingWithGenie || Services.OverlayManager.lockVerified)) ? "Unlocked" : (Services.OverlayManager.isLocked ? "Locked" : (root.notifActive ? ("Notif (" + root.notifCount + ")") : (root.mediaPlaying ? root.currentMediaText : root.lastTrackText)))
 
             property string displayedText: ""
             property bool useSlotA: true

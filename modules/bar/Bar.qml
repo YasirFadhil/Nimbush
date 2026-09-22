@@ -69,8 +69,12 @@ Variants {
     Item {
         id: barContainer
         anchors.fill: parent
-        opacity: (Services.OverlayManager && Services.OverlayManager.isWizardActive) ? 0.0 : 1.0
-        Behavior on opacity { NumberAnimation { duration: 320; easing.type: Easing.OutCubic } }
+        opacity: (Services.OverlayManager && Services.OverlayManager.isWizardActive) ? 0.0 : ((Services.OverlayManager && Services.OverlayManager.isLocked) ? 0.0 : 1.0)
+        transform: Translate {
+            y: (Services.OverlayManager && Services.OverlayManager.isLocked) ? (root.isBottom ? 36 : -36) : 0
+            Behavior on y { NumberAnimation { duration: 420; easing.type: Easing.OutCubic } }
+        }
+        Behavior on opacity { NumberAnimation { duration: 380; easing.type: Easing.OutCubic } }
 
         // ── 1. Floating Glass Bar Container ───────────────────────────────────
         Rectangle {
@@ -158,9 +162,9 @@ Variants {
                     opacity: Services.OverlayManager.isLocked ? 0.0 : 1.0
                     transform: Translate {
                         x: Services.OverlayManager.isLocked ? -35 : 0
-                        Behavior on x { NumberAnimation { duration: 350; easing.type: Services.OverlayManager.isLocked ? Easing.OutCubic : Easing.InCubic } }
+                        Behavior on x { NumberAnimation { duration: 350; easing.type: Services.OverlayManager.isLocked ? Easing.InCubic : Easing.OutCubic } }
                     }
-                    Behavior on opacity { NumberAnimation { duration: 350; easing.type: Services.OverlayManager.isLocked ? Easing.OutCubic : Easing.InCubic } }
+                    Behavior on opacity { NumberAnimation { duration: 350; easing.type: Services.OverlayManager.isLocked ? Easing.InCubic : Easing.OutCubic } }
                 }
 
                 Item {
@@ -197,14 +201,14 @@ Variants {
                 anchors.centerIn: parent
             }
         }
-          
-        // ── Dynamic Island (Exclusive to Islands Mode) ────────────────────────
-        Components.DynamicIsland {
-            id: dynamicIsland
-            anchors.fill: parent
-            z: dynamicIsland.expanded ? 999 : 5
-            visible: root.showDynamicIsland
-        }
+    }
+
+    // ── Dynamic Island (Exclusive to Islands Mode) ────────────────────────
+    Components.DynamicIsland {
+        id: dynamicIsland
+        anchors.fill: parent
+        z: dynamicIsland.expanded ? 999 : 5
+        visible: root.showDynamicIsland
     }
 }
 }

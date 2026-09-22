@@ -7,6 +7,10 @@ Singleton {
     id: root
     property var _windows: []
     property bool isLocked: false
+    // ── Lockscreen / Desktop Bridge State ──
+    property bool isUnlockingWithGenie: false
+    property real unlockSuctionProgress: 0.0
+    property bool lockVerified: false
     property bool wizardOpen: false
     readonly property bool isWizardActive: wizardOpen || (Services.Config ? !Services.Config.firstRunCompleted : false)
     property bool controlCenterVisible: false

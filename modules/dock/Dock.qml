@@ -230,8 +230,15 @@ Variants {
         // ── Main Dock Container (Liquid Glass Floating Pill) ─────────────────
         Rectangle {
             id: dockContainer
-            opacity: (Services.OverlayManager && Services.OverlayManager.isWizardActive) ? 0.0 : 1.0
-            Behavior on opacity { NumberAnimation { duration: 320; easing.type: Easing.OutCubic } }
+            opacity: (Services.OverlayManager && Services.OverlayManager.isWizardActive) ? 0.0 : ((Services.OverlayManager && Services.OverlayManager.isLocked) ? 0.0 : 1.0)
+            Behavior on opacity { NumberAnimation { duration: 400; easing.type: Easing.OutCubic } }
+
+            transform: Translate {
+                y: (Services.OverlayManager && Services.OverlayManager.isLocked) ? (root.isBottom ? 50 : -50) : 0
+                x: (Services.OverlayManager && Services.OverlayManager.isLocked) ? (root.isLeft ? -50 : (root.isRight ? 50 : 0)) : 0
+                Behavior on y { NumberAnimation { duration: 460; easing.type: Easing.OutBack; easing.overshoot: 1.15 } }
+                Behavior on x { NumberAnimation { duration: 460; easing.type: Easing.OutBack; easing.overshoot: 1.15 } }
+            }
 
             // Center positioning on screen
             x: {
