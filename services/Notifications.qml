@@ -150,6 +150,48 @@ Singleton {
                 changed = true
             }
         }
+
+        if (Array.isArray(kdeNotifs)) {
+            for (let k = 0; k < kdeNotifs.length; k++) {
+                const kn = kdeNotifs[k]
+                const knId = String(kn.id)
+                for (let h = 0; h < historyModel.count; h++) {
+                    const item = historyModel.get(h)
+                    if (item && item.isKdeConnect && item.kdeNotifId === knId) {
+                        const newSummary = kn.title || item.summary
+                        const newBody = kn.text || item.body
+                        if (item.summary !== newSummary || item.body !== newBody) {
+                            item.summary = newSummary
+                            item.body = newBody
+                            item.time = Date.now()
+                            changed = true
+
+                            let inPopup = false
+                            for (let p = 0; p < popupModel.count; p++) {
+                                if (popupModel.get(p).notifId === item.notifId) {
+                                    inPopup = true
+                                    popupModel.get(p).summary = newSummary
+                                    popupModel.get(p).body = newBody
+                                    popupModel.get(p).time = Date.now()
+                                    break
+                                }
+                            }
+                            if (!inPopup && !root.doNotDisturb) {
+                                popupModel.insert(0, item)
+                                while (popupModel.count > root.maxPopupCount) {
+                                    popupModel.remove(popupModel.count - 1)
+                                }
+                                root.newNotification(item)
+                                SoundFeedback.playNotification()
+                                dismissTimer.createObject(root, { notifId: item.notifId, interval: 5000 }).start()
+                            }
+                        }
+                        break
+                    }
+                }
+            }
+        }
+
         if (changed) root.saveHistory()
     }
 
@@ -230,10 +272,130 @@ Singleton {
                 }
             }
 
+            // Connect to dynamic updates (e.g. WhatsApp/KDE Connect follow-up messages replacing the notification)
+            const onUpdate = () => root.handleNotificationUpdate(notif)
+            notif.summaryChanged.connect(onUpdate)
+            notif.bodyChanged.connect(onUpdate)
+            notif.imageChanged.connect(onUpdate)
+            notif.urgencyChanged.connect(onUpdate)
+
             notif.closed.connect(() => {
                 root.removePopup(notif.id)
                 root.removeFromHistory(notif.id)
             })
+        }
+    }
+
+    function handleNotificationUpdate(notif) {
+        if (!notif) return
+        const isKdeConnect = root.isKdeConnectNotif(notif)
+        const isMessaging = root.isMessagingApp(notif)
+        const isBattery = root.isBatteryNotification(notif)
+        const actionsList = notif.actions.map(a => ({ identifier: a.identifier, text: a.text }))
+
+        if ((isMessaging || notif.hasInlineReply || isKdeConnect) && !actionsList.some(a => a.identifier === "inline-reply" || (a.identifier || "").toLowerCase().includes("reply") || (a.text || "").toLowerCase().includes("reply") || (a.text || "").toLowerCase().includes("balas"))) {
+            actionsList.push({ identifier: "inline-reply", text: "Reply" })
+        }
+
+        let existingEntry = null
+        for (let i = 0; i < historyModel.count; i++) {
+            const h = historyModel.get(i)
+            if (h && h.notifId === notif.id) {
+                h.summary = notif.summary || ""
+                h.body = notif.body || ""
+                h.image = notif.image || ""
+                h.time = Date.now()
+                h.actions = actionsList
+                existingEntry = h
+                root.saveHistory()
+                break
+            }
+        }
+
+        let inPopupIndex = -1
+        for (let i = 0; i < popupModel.count; i++) {
+            const p = popupModel.get(i)
+            if (p && p.notifId === notif.id) {
+                p.summary = notif.summary || ""
+                p.body = notif.body || ""
+                p.image = notif.image || ""
+                p.time = Date.now()
+                p.actions = actionsList
+                inPopupIndex = i
+                existingEntry = p
+                break
+            }
+        }
+
+        const entry = existingEntry ? {
+            notifId: existingEntry.notifId,
+            appName: existingEntry.appName || notif.appName || "Unknown",
+            appIcon: existingEntry.appIcon || notif.appIcon,
+            summary: notif.summary || "",
+            body: notif.body || "",
+            image: notif.image || "",
+            urgency: notif.urgency,
+            time: Date.now(),
+            actions: actionsList,
+            hasInlineReply: isMessaging || notif.hasInlineReply || isKdeConnect,
+            isMessaging: isMessaging,
+            isKdeConnect: isKdeConnect,
+            isBattery: isBattery,
+            kdeNotifId: existingEntry.kdeNotifId || "",
+            kdeReplyId: existingEntry.kdeReplyId || "",
+            inlineReplyPlaceholder: notif.inlineReplyPlaceholder || "",
+            desktopEntry: notif.desktopEntry || ""
+        } : {
+            notifId: notif.id,
+            appName: notif.appName || "Unknown",
+            appIcon: notif.appIcon,
+            summary: notif.summary || "",
+            body: notif.body || "",
+            image: notif.image || "",
+            urgency: notif.urgency,
+            time: Date.now(),
+            actions: actionsList,
+            hasInlineReply: isMessaging || notif.hasInlineReply || isKdeConnect,
+            isMessaging: isMessaging,
+            isKdeConnect: isKdeConnect,
+            isBattery: isBattery,
+            kdeNotifId: "",
+            kdeReplyId: "",
+            inlineReplyPlaceholder: notif.inlineReplyPlaceholder || "",
+            desktopEntry: notif.desktopEntry || ""
+        }
+
+        if (isKdeConnect) {
+            root.linkKdeNotification(entry)
+        }
+
+        if (inPopupIndex >= 0) {
+            popupModel.remove(inPopupIndex)
+        }
+
+        if (!root.doNotDisturb) {
+            popupModel.insert(0, entry)
+            while (popupModel.count > root.maxPopupCount) {
+                popupModel.remove(popupModel.count - 1)
+            }
+            root.newNotification(entry)
+
+            const isFullscreen = Services.Workspaces ? Services.Workspaces.isFullscreen : false
+            const allowSoundInFullscreen = (Services.Config && Services.Config.notificationShowInFullscreen) || isBattery
+            if (!isFullscreen || allowSoundInFullscreen) {
+                if (notif.urgency === NotificationUrgency.Critical)
+                    SoundFeedback.playError()
+                else if (notif.urgency === NotificationUrgency.Low)
+                    SoundFeedback.playInfo()
+                else
+                    SoundFeedback.playNotification()
+            }
+
+            const timeout = notif.expireTimeout > 0 ? notif.expireTimeout
+                : (notif.urgency === NotificationUrgency.Critical ? 7000 : (Services.Config ? (Services.Config.notificationTimeout * 1000) : 5000))
+            if (timeout > 0) {
+                dismissTimer.createObject(root, { notifId: notif.id, interval: timeout }).start()
+            }
         }
     }
 
