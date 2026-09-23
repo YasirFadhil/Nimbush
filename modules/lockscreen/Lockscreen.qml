@@ -494,7 +494,10 @@ Scope {
         isRevealed = false
         userRevealedInput = false
         updateTime()
-        sessionLockCommitTimer.interval = 290
+        const needsMediaStop = Boolean(Services.Mpris && Services.Mpris.activePlayer && Services.Mpris.activePlayer.isPlaying)
+        const needsNotifShrink = Boolean((Services.OverlayManager && Services.OverlayManager.desktopIslandIsWide) ||
+                                        (Services.Notifications && Services.Notifications.popupList && Services.Notifications.popupList.count > 0))
+        sessionLockCommitTimer.interval = needsMediaStop ? 700 : (needsNotifShrink ? 500 : 280)
         sessionLockCommitTimer.restart()
     }
 

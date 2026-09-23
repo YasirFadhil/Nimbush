@@ -12,6 +12,7 @@ Singleton {
     property real unlockSuctionProgress: 0.0
     property bool lockVerified: false
     property bool isLockAbsorbing: false
+    property bool desktopIslandIsWide: false
     property bool wizardOpen: false
     readonly property bool isWizardActive: wizardOpen || (Services.Config ? !Services.Config.firstRunCompleted : false)
     property bool controlCenterVisible: false

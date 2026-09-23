@@ -144,9 +144,19 @@ Item {
 
     // Lockscreen compatibility
     property bool allowOnLockscreen: true
-    readonly property bool lockBlocked: Services.OverlayManager.isLocked
-    property bool isUnlockSettleActive: false
-    readonly property bool isUnlockDisplaying: root.isUnlockSettleActive || (Services.OverlayManager && (Services.OverlayManager.isUnlockingWithGenie || Services.OverlayManager.lockVerified))
+    readonly property bool lockBlocked: Boolean(Services.OverlayManager && (Services.OverlayManager.isLocked || Services.OverlayManager.isLockAbsorbing))
+    property bool isUnlockHoldActive: false
+    property bool isUnlockGlideActive: false
+    readonly property bool isUnlockActive: isUnlockHoldActive || isUnlockGlideActive || (Services.OverlayManager && (Services.OverlayManager.isUnlockingWithGenie || Services.OverlayManager.lockVerified))
+    readonly property bool isUnlockDisplaying: isUnlockHoldActive || (Services.OverlayManager && (Services.OverlayManager.isUnlockingWithGenie || Services.OverlayManager.lockVerified))
+    readonly property bool isUnlockSettleActive: isUnlockActive
+
+    Binding {
+        target: Services.OverlayManager
+        property: "desktopIslandIsWide"
+        value: (island.width > 150) || root.expanded || root.mediaPlaying || root.notifActive
+        when: Services.OverlayManager !== null
+    }
 
     // Notification model shortcuts
     readonly property var popupList: Services.Notifications.popupList
@@ -183,6 +193,11 @@ Item {
     // All candidates gathered and sorted strictly newest to oldest
     readonly property var allSortedCandidates: {
         const list = []
+
+        // If unlock is active, IGNORE media, notifications, syshud - unlock takes absolute top priority
+        if (root.isUnlockActive) {
+            return list
+        }
 
         // Modal overrides
         if (root.dropSendMode || root.isDropSending) {
@@ -222,7 +237,7 @@ Item {
         }
 
         // 3. Media playback
-        if (root.mediaPlaying || (root.mediaStopping && !root.mediaIconTransformed)) {
+        if ((root.mediaPlaying && !root.mediaStopping) || (root.mediaStopping && !root.mediaIconTransformed)) {
             if (!Services.OverlayManager.isLocked) {
                 list.push({
                     id: "media",
@@ -425,6 +440,14 @@ Item {
         }
     }
 
+    function triggerMediaStop() {
+        globalMediaMarqueeAnim.stop()
+        root.mediaStopping = true
+        root.mediaTextCollapsed = false
+        root.mediaIconTransformed = false
+        mediaStopPhase1Timer.restart()
+    }
+
     Timer {
         id: cameraPollTimer
         interval: 4000
@@ -549,6 +572,9 @@ Item {
         repeat: false
         onTriggered: {
             root.hudReady = true
+            if (root.mediaPlaying && !root.autoExpanded) {
+                root.mediaCollapsedReady = true
+            }
             welcomeProc.running = true
         }
     }
@@ -570,6 +596,9 @@ Item {
         root.lastAudioSink = Services.Audio.sink
         if (Services.Audio.sink) {
             root.lastAudioMuted = Services.Audio.muted
+        }
+        if (root.mediaPlaying) {
+            root.mediaCollapsedReady = true
         }
     }
 
@@ -794,9 +823,9 @@ Item {
     readonly property bool mediaPlaying: activePlayer !== null && activePlayer.isPlaying
     readonly property bool hasMedia: activePlayer !== null && (activePlayer.trackTitle !== "" || mediaPlaying)
 
-    readonly property bool hasExpandContent: (slot0Activity !== "idle") || wallpaperMode || dropSendMode || isDropSending
-    readonly property bool expanded: !lockBlocked && hasExpandContent && (pinned || autoExpanded || (slot0Activity === "notif") || (slot0Activity === "syshud") || wallpaperMode || dropSendMode || isDropSending)
-    readonly property bool isMediaPeek: !lockBlocked && autoExpanded && !pinned && (slot0Activity === "media") && !wallpaperMode && !dropSendMode && !isDropSending && hasMedia
+    readonly property bool hasExpandContent: !root.isUnlockActive && ((slot0Activity !== "idle") || wallpaperMode || dropSendMode || isDropSending)
+    readonly property bool expanded: !lockBlocked && !root.isUnlockActive && hasExpandContent && (pinned || autoExpanded || (slot0Activity === "notif") || (slot0Activity === "syshud") || wallpaperMode || dropSendMode || isDropSending)
+    readonly property bool isMediaPeek: !lockBlocked && !root.isUnlockActive && autoExpanded && !pinned && (slot0Activity === "media") && !wallpaperMode && !dropSendMode && !isDropSending && hasMedia
 
     property int autoExpandDuration: 2500
     property int notifDuration: 5000
@@ -859,7 +888,12 @@ Item {
     onMediaPlayingChanged: {
         if (mediaPlaying) {
             mediaActiveTime = Date.now()
-            root.mediaCollapsedReady = false
+            if (root.hudReady && root.notifCount === 0 && !root.pinned && !root.isUnlockActive) {
+                root.mediaCollapsedReady = false
+                root.pulse()
+            } else {
+                root.mediaCollapsedReady = true
+            }
             mediaStopPhase1Timer.stop()
             mediaStopPhase2Timer.stop()
             root.mediaStopping = false
@@ -868,16 +902,9 @@ Item {
             if (currentMediaText !== "") {
                 lastTrackText = currentMediaText
             }
-            if (root.hudReady && root.notifCount === 0 && !root.pinned) {
-                root.pulse()
-            }
         } else {
-            globalMediaMarqueeAnim.stop()
             if (root.hudReady && !root.notifActive) {
-                root.mediaStopping = true
-                root.mediaTextCollapsed = false
-                root.mediaIconTransformed = false
-                mediaStopPhase1Timer.restart()
+                root.triggerMediaStop()
             } else {
                 root.mediaCollapsedReady = false
             }
@@ -906,14 +933,14 @@ Item {
         const maxLen = Math.max(tLen, aLen, (root.currentMediaText || "").length)
         const approxOverflow = Math.max(40, (maxLen * 7.5) - 130)
         globalMediaMarqueeDuration = Math.max(3000, Math.min(8500, approxOverflow * 35))
-        if (root.mediaPlaying && !Services.OverlayManager.isLocked) {
+        if (root.mediaPlaying && !root.lockBlocked) {
             globalMediaMarqueeAnim.start()
         }
     }
 
     SequentialAnimation {
         id: globalMediaMarqueeAnim
-        running: root.mediaPlaying && !Services.OverlayManager.isLocked
+        running: root.mediaPlaying && !root.lockBlocked
         loops: Animation.Infinite
 
         PauseAnimation { duration: 1800 }
@@ -937,8 +964,9 @@ Item {
     }
 
     // Island Dimensions
-    readonly property bool showCollapsedText: !lockBlocked && !root.isUnlockDisplaying && ((slot0Activity === "notif") || (mediaPlaying && mediaCollapsedReady))
+    readonly property bool showCollapsedText: !lockBlocked && !root.isUnlockActive && !root.mediaStopping && ((slot0Activity === "notif") || mediaPlaying)
     readonly property int calculatedCollapsedWidth: {
+        if (root.isUnlockActive) return 140
         if (showCollapsedText || (mediaStopping && !mediaTextCollapsed)) {
             const extraPadding = (mediaPlaying || mediaStopping) ? 72 : 52
             return Math.min(260, Math.max(140, collapsedTextContainer.currentSlotImplicitWidth + extraPadding))
@@ -1000,7 +1028,10 @@ Item {
     }
 
     function pulse() {
-        if (pinned || notifActive) return
+        if (pinned || notifActive || root.isUnlockActive || lockBlocked) {
+            root.mediaCollapsedReady = true
+            return
+        }
         if (autoExpanded) {
             autoCollapseTimer.restart()
             return
@@ -1137,7 +1168,7 @@ Item {
         target: Services.Mpris
         function onActivePlayerChanged() {
             root.restartGlobalMarquee()
-            if (root.hudReady && Services.Mpris.activePlayer && Services.Mpris.activePlayer.isPlaying && root.notifCount === 0 && !root.pinned) {
+            if (root.hudReady && !root.isUnlockActive && Services.Mpris.activePlayer && Services.Mpris.activePlayer.isPlaying && root.notifCount === 0 && !root.pinned) {
                 root.pulse()
             }
         }
@@ -1146,7 +1177,7 @@ Item {
     Connections {
         target: root.activePlayer
         function onIsPlayingChanged() {
-            if (root.hudReady && root.activePlayer && root.activePlayer.isPlaying && root.notifCount === 0 && !root.pinned) {
+            if (root.hudReady && !root.isUnlockActive && root.activePlayer && root.activePlayer.isPlaying && root.notifCount === 0 && !root.pinned) {
                 root.pulse()
             }
         }
@@ -1155,7 +1186,7 @@ Item {
             if (collapsedTextContainer) {
                 collapsedTextContainer.updateTrackPush(collapsedTextContainer.targetText, root.isNextTrack)
             }
-            if (root.hudReady && root.activePlayer && root.activePlayer.isPlaying && root.notifCount === 0 && !root.pinned) {
+            if (root.hudReady && !root.isUnlockActive && root.activePlayer && root.activePlayer.isPlaying && root.notifCount === 0 && !root.pinned) {
                 root.pulse()
             }
         }
@@ -1220,30 +1251,46 @@ Item {
             target: Services.OverlayManager
             function onLockVerifiedChanged() {
                 if (Services.OverlayManager.lockVerified && Services.OverlayManager.isLocked) {
-                    // Face verified / genie starting — pre-arm UNLOCKED_LEFT state so the bar
-                    // is already in the correct state when it fades into view from behind the
-                    // session lock surface. Do NOT start the settle countdown yet — wait until
-                    // isLocked actually becomes false.
-                    root.isUnlockSettleActive = true
-                    unlockSettleTimer.stop()
+                    root.isUnlockHoldActive = true
+                    root.isUnlockGlideActive = false
+                    unlockHoldTimer.stop()
+                    unlockGlideTimer.stop()
                 }
             }
             function onIsLockAbsorbingChanged() {
                 if (Services.OverlayManager && Services.OverlayManager.isLockAbsorbing) {
                     swallowPulseTimer.restart()
+                    root.autoExpanded = false
+                    root.pinned = false
+                    if (root.mediaPlaying) {
+                        root.triggerMediaStop()
+                    }
                 }
             }
             function onIsLockedChanged() {
                 if (!Services.OverlayManager.isLocked) {
-                    if (Services.OverlayManager.lockVerified || Services.OverlayManager.isUnlockingWithGenie || root.isUnlockSettleActive) {
-                        // Desktop is now live — start the 340ms countdown from NOW
-                        root.isUnlockSettleActive = true
-                        unlockSettleTimer.restart()
+                    root.autoExpanded = false
+                    root.pinned = false
+                    root.mediaStopping = false
+                    root.mediaTextCollapsed = false
+                    root.mediaIconTransformed = false
+                    if (root.mediaPlaying) {
+                        root.mediaCollapsedReady = true
+                    }
+                    mediaStopPhase1Timer.stop()
+                    mediaStopPhase2Timer.stop()
+                    if (Services.OverlayManager.lockVerified || Services.OverlayManager.isUnlockingWithGenie || root.isUnlockHoldActive) {
+                        root.isUnlockHoldActive = true
+                        root.isUnlockGlideActive = false
+                        unlockHoldTimer.restart()
+                        unlockGlideTimer.stop()
                     }
                     entranceAnim.restart()
                 } else {
-                    root.isUnlockSettleActive = false
-                    unlockSettleTimer.stop()
+                    root.isUnlockHoldActive = false
+                    root.isUnlockGlideActive = false
+                    unlockHoldTimer.stop()
+                    unlockGlideTimer.stop()
                 }
             }
         }
@@ -1277,16 +1324,28 @@ Item {
         }
 
         Timer {
-            id: unlockSettleTimer
+            id: unlockHoldTimer
             interval: 500
             repeat: false
             onTriggered: {
-                root.isUnlockSettleActive = false
-                // Binding in Lockscreen is deactivated after isLocked=false (scoped with `when: isLocked`)
-                // so we can cleanly zero these out here
+                root.isUnlockHoldActive = false
+                root.isUnlockGlideActive = true
+                unlockGlideTimer.restart()
                 if (Services.OverlayManager && !Services.OverlayManager.isLocked) {
                     Services.OverlayManager.lockVerified = false
                     Services.OverlayManager.isUnlockingWithGenie = false
+                }
+            }
+        }
+
+        Timer {
+            id: unlockGlideTimer
+            interval: 350
+            repeat: false
+            onTriggered: {
+                root.isUnlockGlideActive = false
+                if (root.mediaPlaying) {
+                    root.mediaCollapsedReady = true
                 }
             }
         }
@@ -1351,8 +1410,8 @@ Item {
             id: islandMouseArea
             anchors.fill: parent
             z: 0
-            enabled: root.hasExpandContent && !root.dropSendMode && !root.isDropSending
-            cursorShape: (root.hasExpandContent && !root.dropSendMode && !root.isDropSending) ? Qt.PointingHandCursor : Qt.ArrowCursor
+            enabled: !root.isUnlockActive && root.hasExpandContent && !root.dropSendMode && !root.isDropSending
+            cursorShape: (!root.isUnlockActive && root.hasExpandContent && !root.dropSendMode && !root.isDropSending) ? Qt.PointingHandCursor : Qt.ArrowCursor
             onClicked: root.togglePin()
         }
 
@@ -1427,9 +1486,7 @@ Item {
             implicitHeight: 16
             z: 3
 
-            readonly property bool activeState: root.isUnlockDisplaying || (!root.expanded && !root.autoExpanded && (
-                !root.mediaPlaying || root.mediaCollapsedReady || root.mediaStopping
-            ))
+            readonly property bool activeState: root.isUnlockActive || (!root.expanded && !root.autoExpanded)
             visible: activeState || opacity > 0.01
             opacity: activeState ? 1 : 0
             scale: activeState ? 1.0 : 0.4
@@ -1454,11 +1511,28 @@ Item {
                     }
                 },
                 State {
+                    name: "IDLE_CENTER"
+                    when: root.isUnlockGlideActive || (!root.isUnlockActive && (
+                        (root.lockBlocked && (!root.mediaStopping || root.mediaIconTransformed)) ||
+                        root.expanded ||
+                        root.autoExpanded ||
+                        (!root.mediaPlaying && !root.mediaStopping && !root.notifActive && !root.cameraActive) ||
+                        (root.mediaStopping && root.mediaIconTransformed) ||
+                        (root.mediaPlaying && root.mediaIconTransformed)
+                    ))
+                    AnchorChanges {
+                        target: statusIconContainer
+                        anchors.horizontalCenter: island.horizontalCenter
+                        anchors.left: undefined
+                        anchors.right: undefined
+                    }
+                },
+                State {
                     name: "ICON_LEFT"
-                    when: !Services.OverlayManager.isLocked && !root.isUnlockDisplaying && !root.expanded && !root.autoExpanded && (
-                        (root.mediaPlaying && root.mediaCollapsedReady) ||
-                        root.mediaStopping ||
-                        root.notifActive
+                    when: !root.isUnlockActive && !root.expanded && !root.autoExpanded && (
+                        (!root.lockBlocked && root.mediaPlaying && !root.mediaStopping) ||
+                        (root.mediaStopping && !root.mediaIconTransformed) ||
+                        (!root.lockBlocked && root.notifActive)
                     )
                     AnchorChanges {
                         target: statusIconContainer
@@ -1472,23 +1546,8 @@ Item {
                     }
                 },
                 State {
-                    name: "IDLE_CENTER"
-                    when: !root.isUnlockDisplaying && (
-                        root.expanded ||
-                        root.autoExpanded ||
-                        (!root.mediaPlaying && !root.mediaStopping && !root.notifActive && !root.cameraActive) ||
-                        (root.mediaPlaying && !root.mediaCollapsedReady)
-                    )
-                    AnchorChanges {
-                        target: statusIconContainer
-                        anchors.horizontalCenter: island.horizontalCenter
-                        anchors.left: undefined
-                        anchors.right: undefined
-                    }
-                },
-                State {
                     name: "CAMERA_RIGHT"
-                    when: !Services.OverlayManager.isLocked && !root.isUnlockDisplaying && !root.expanded && !root.autoExpanded && (!root.showCollapsedText && !root.mediaStopping && root.cameraActive)
+                    when: !root.lockBlocked && !root.isUnlockActive && !root.expanded && !root.autoExpanded && (!root.showCollapsedText && !root.mediaStopping && root.cameraActive)
                     AnchorChanges {
                         target: statusIconContainer
                         anchors.horizontalCenter: undefined
@@ -1534,20 +1593,20 @@ Item {
                 anchors.centerIn: parent
                 text: {
                     if (root.isUnlockDisplaying) return "󰌿"
+                    if (root.isUnlockActive) return "●"
                     if (root.notifActive) return "󰂚"
                     if (root.expanded || root.autoExpanded) return "●"
-                    if (root.mediaPlaying && !root.mediaCollapsedReady) return "●"
-                    if (root.mediaPlaying || root.mediaStopping) return "󰎈"
+                    if ((!root.lockBlocked && root.mediaPlaying && !root.mediaStopping) || (root.mediaStopping && !root.mediaIconTransformed)) return "󰎈"
                     return "●"
                 }
                 font.family: Services.Theme.fontSymbols
                 font.pixelSize: (text === "●") ? 10 : 13
                 color: {
                     if (root.isUnlockDisplaying) return "#30d158"
+                    if (root.isUnlockActive) return Services.Theme.textDisabled
                     if (root.notifActive) return Services.Theme.accent
                     if (root.expanded || root.autoExpanded) return Services.Theme.textDisabled
-                    if (root.mediaPlaying && !root.mediaCollapsedReady) return Services.Theme.textDisabled
-                    if (root.mediaPlaying || root.mediaStopping) return Services.Theme.success
+                    if ((!root.lockBlocked && root.mediaPlaying && !root.mediaStopping) || (root.mediaStopping && !root.mediaIconTransformed)) return Services.Theme.success
                     if (root.cameraActive) return Services.Theme.success
                     return Services.Theme.textDisabled
                 }
@@ -1594,7 +1653,7 @@ Item {
                     from: 0; to: 360
                     duration: 4000
                     loops: Animation.Infinite
-                    running: !Services.OverlayManager.isLocked && root.mediaPlaying && !root.expanded && !root.autoExpanded && root.mediaCollapsedReady && statusIconContainer.state === "ICON_LEFT"
+                    running: !root.lockBlocked && !root.isUnlockActive && root.mediaPlaying && !root.expanded && !root.autoExpanded && statusIconContainer.state === "ICON_LEFT"
                 }
             }
         }
@@ -1614,7 +1673,7 @@ Item {
             barColor: Services.Theme.success
             isPlaying: root.mediaPlaying
             active: visible
-            readonly property bool activeState: !Services.OverlayManager.isLocked && !root.isUnlockDisplaying && root.mediaPlaying && !root.expanded && !root.autoExpanded && root.mediaCollapsedReady && !root.notifActive
+            readonly property bool activeState: !root.lockBlocked && !root.isUnlockActive && !root.mediaStopping && root.mediaPlaying && !root.expanded && !root.autoExpanded && !root.notifActive
             visible: activeState || opacity > 0.01
             opacity: activeState ? 1.0 : 0.0
             scale: activeState ? 1.0 : 0.3
@@ -1635,8 +1694,8 @@ Item {
             height: 16
             z: 3
 
-            readonly property bool showCollapsedText: !Services.OverlayManager.isLocked && !root.isUnlockDisplaying && (root.notifActive || root.mediaPlaying)
-            readonly property bool activeState: !Services.OverlayManager.isLocked && !root.isUnlockDisplaying && !root.expanded && !root.autoExpanded && root.mediaCollapsedReady && showCollapsedText && !root.mediaStopping
+            readonly property bool showCollapsedText: !root.lockBlocked && !root.isUnlockActive && !root.mediaStopping && (root.notifActive || root.mediaPlaying)
+            readonly property bool activeState: !root.lockBlocked && !root.isUnlockActive && !root.expanded && !root.autoExpanded && showCollapsedText && !root.mediaStopping
 
             clip: true
             transformOrigin: Item.Left
@@ -4119,7 +4178,7 @@ Item {
         id: rightSatDot
         readonly property var item: root.slotRightItem
         readonly property string activity: root.slotRightType
-        readonly property bool isSatellite: activity !== ""
+        readonly property bool isSatellite: !root.isUnlockActive && (!root.mediaStopping || !root.mediaIconTransformed ? activity !== "" : false)
         anchors.left: island.right
         anchors.leftMargin: leftMarginValue
         anchors.top: island.top
@@ -4529,7 +4588,7 @@ Item {
         id: leftSatDot
         readonly property var item: root.slotLeftItem
         readonly property string activity: root.slotLeftType
-        readonly property bool isSatellite: activity !== ""
+        readonly property bool isSatellite: !root.isUnlockActive && (!root.mediaStopping || !root.mediaIconTransformed ? activity !== "" : false)
         anchors.right: island.left
         anchors.rightMargin: rightMarginValue
         anchors.top: island.top
