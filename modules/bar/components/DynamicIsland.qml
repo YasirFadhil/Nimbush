@@ -145,6 +145,8 @@ Item {
     // Lockscreen compatibility
     property bool allowOnLockscreen: true
     readonly property bool lockBlocked: Services.OverlayManager.isLocked
+    property bool isUnlockSettleActive: false
+    readonly property bool isUnlockDisplaying: root.isUnlockSettleActive || (Services.OverlayManager && (Services.OverlayManager.isUnlockingWithGenie || Services.OverlayManager.lockVerified))
 
     // Notification model shortcuts
     readonly property var popupList: Services.Notifications.popupList
@@ -911,7 +913,7 @@ Item {
     }
 
     // Island Dimensions
-    readonly property bool showCollapsedText: !lockBlocked && ((slot0Activity === "notif") || (mediaPlaying && mediaCollapsedReady))
+    readonly property bool showCollapsedText: !lockBlocked && !root.isUnlockDisplaying && ((slot0Activity === "notif") || (mediaPlaying && mediaCollapsedReady))
     readonly property int calculatedCollapsedWidth: {
         if (showCollapsedText || (mediaStopping && !mediaTextCollapsed)) {
             const extraPadding = (mediaPlaying || mediaStopping) ? 72 : 52
@@ -1166,12 +1168,12 @@ Item {
 
         color: Services.Theme.bgPure
         border.color: {
-            if (Services.OverlayManager && (Services.OverlayManager.isUnlockingWithGenie || Services.OverlayManager.lockVerified)) return "#30d158"
+            if (root.isUnlockDisplaying) return "#30d158"
             if (root.isCritical) return Services.Theme.danger
             if (root.expanded) return Services.Theme.borderHighlight
             return Services.Theme.borderSubtle
         }
-        border.width: (Services.OverlayManager && Services.OverlayManager.isUnlockingWithGenie) ? 2.5 : ((Services.OverlayManager && Services.OverlayManager.lockVerified) ? 2.0 : (root.isCritical ? 1.5 : 1))
+        border.width: root.isUnlockDisplaying ? 2.0 : (root.isCritical ? 1.5 : 1)
 
         property real entranceScale: 1.0
 
@@ -1181,9 +1183,75 @@ Item {
 
         Connections {
             target: Services.OverlayManager
+            function onLockVerifiedChanged() {
+                if (Services.OverlayManager.lockVerified && Services.OverlayManager.isLocked) {
+                    // Face verified / genie starting — pre-arm UNLOCKED_LEFT state so the bar
+                    // is already in the correct state when it fades into view from behind the
+                    // session lock surface. Do NOT start the settle countdown yet — wait until
+                    // isLocked actually becomes false.
+                    root.isUnlockSettleActive = true
+                    unlockSettleTimer.stop()
+                }
+            }
+            function onIsLockAbsorbingChanged() {
+                if (Services.OverlayManager && Services.OverlayManager.isLockAbsorbing) {
+                    swallowPulseTimer.restart()
+                }
+            }
             function onIsLockedChanged() {
                 if (!Services.OverlayManager.isLocked) {
+                    if (Services.OverlayManager.lockVerified || Services.OverlayManager.isUnlockingWithGenie || root.isUnlockSettleActive) {
+                        // Desktop is now live — start the 340ms countdown from NOW
+                        root.isUnlockSettleActive = true
+                        unlockSettleTimer.restart()
+                    }
                     entranceAnim.restart()
+                } else {
+                    root.isUnlockSettleActive = false
+                    unlockSettleTimer.stop()
+                }
+            }
+        }
+
+        Timer {
+            id: swallowPulseTimer
+            interval: 180
+            repeat: false
+            onTriggered: swallowPulseAnim.restart()
+        }
+
+        SequentialAnimation {
+            id: swallowPulseAnim
+            NumberAnimation {
+                target: island
+                property: "entranceScale"
+                from: 1.0
+                to: 1.05
+                duration: 90
+                easing.type: Easing.OutQuad
+            }
+            NumberAnimation {
+                target: island
+                property: "entranceScale"
+                from: 1.05
+                to: 1.0
+                duration: 160
+                easing.type: Easing.OutBack
+                easing.overshoot: 1.15
+            }
+        }
+
+        Timer {
+            id: unlockSettleTimer
+            interval: 500
+            repeat: false
+            onTriggered: {
+                root.isUnlockSettleActive = false
+                // Binding in Lockscreen is deactivated after isLocked=false (scoped with `when: isLocked`)
+                // so we can cleanly zero these out here
+                if (Services.OverlayManager && !Services.OverlayManager.isLocked) {
+                    Services.OverlayManager.lockVerified = false
+                    Services.OverlayManager.isUnlockingWithGenie = false
                 }
             }
         }
@@ -1324,9 +1392,9 @@ Item {
             implicitHeight: 16
             z: 3
 
-            readonly property bool activeState: !root.expanded && !root.autoExpanded && (
+            readonly property bool activeState: root.isUnlockDisplaying || (!root.expanded && !root.autoExpanded && (
                 !root.mediaPlaying || root.mediaCollapsedReady || root.mediaStopping
-            )
+            ))
             visible: activeState || opacity > 0.01
             opacity: activeState ? 1 : 0
             scale: activeState ? 1.0 : 0.4
@@ -1337,8 +1405,22 @@ Item {
 
             states: [
                 State {
+                    name: "UNLOCKED_LEFT"
+                    when: root.isUnlockDisplaying
+                    AnchorChanges {
+                        target: statusIconContainer
+                        anchors.horizontalCenter: undefined
+                        anchors.left: island.left
+                        anchors.right: undefined
+                    }
+                    PropertyChanges {
+                        target: statusIconContainer
+                        anchors.leftMargin: 12
+                    }
+                },
+                State {
                     name: "ICON_LEFT"
-                    when: !Services.OverlayManager.isLocked && !(Services.OverlayManager && (Services.OverlayManager.isUnlockingWithGenie || Services.OverlayManager.lockVerified)) && !root.expanded && !root.autoExpanded && (
+                    when: !Services.OverlayManager.isLocked && !root.isUnlockDisplaying && !root.expanded && !root.autoExpanded && (
                         (root.mediaPlaying && root.mediaCollapsedReady) ||
                         root.mediaStopping ||
                         root.notifActive
@@ -1355,27 +1437,13 @@ Item {
                     }
                 },
                 State {
-                    name: "LOCKED_COLLAPSED"
-                    when: Services.OverlayManager.isLocked && !(Services.OverlayManager && (Services.OverlayManager.isUnlockingWithGenie || Services.OverlayManager.lockVerified))
-                    AnchorChanges {
-                        target: statusIconContainer
-                        anchors.horizontalCenter: undefined
-                        anchors.left: island.left
-                        anchors.right: undefined
-                    }
-                    PropertyChanges {
-                        target: statusIconContainer
-                        anchors.leftMargin: 12
-                    }
-                },
-                State {
                     name: "IDLE_CENTER"
-                    when: (Services.OverlayManager && (Services.OverlayManager.isUnlockingWithGenie || Services.OverlayManager.lockVerified)) || (!Services.OverlayManager.isLocked && (
+                    when: !root.isUnlockDisplaying && (
                         root.expanded ||
                         root.autoExpanded ||
                         (!root.mediaPlaying && !root.mediaStopping && !root.notifActive && !root.cameraActive) ||
                         (root.mediaPlaying && !root.mediaCollapsedReady)
-                    ))
+                    )
                     AnchorChanges {
                         target: statusIconContainer
                         anchors.horizontalCenter: island.horizontalCenter
@@ -1385,7 +1453,7 @@ Item {
                 },
                 State {
                     name: "CAMERA_RIGHT"
-                    when: !Services.OverlayManager.isLocked && !(Services.OverlayManager && (Services.OverlayManager.isUnlockingWithGenie || Services.OverlayManager.lockVerified)) && !root.expanded && !root.autoExpanded && (!root.showCollapsedText && !root.mediaStopping && root.cameraActive)
+                    when: !Services.OverlayManager.isLocked && !root.isUnlockDisplaying && !root.expanded && !root.autoExpanded && (!root.showCollapsedText && !root.mediaStopping && root.cameraActive)
                     AnchorChanges {
                         target: statusIconContainer
                         anchors.horizontalCenter: undefined
@@ -1400,6 +1468,20 @@ Item {
             ]
 
             transitions: [
+                // UNLOCK path: icon glides smoothly left → center (user sees this)
+                Transition {
+                    from: "UNLOCKED_LEFT"; to: "IDLE_CENTER"
+                    enabled: !Services.OverlayManager.isLocked
+                    AnchorAnimation { duration: 340; easing.type: Easing.OutCubic }
+                    NumberAnimation { properties: "anchors.leftMargin"; duration: 340; easing.type: Easing.OutCubic }
+                },
+                // LOCK path: snap icon instantly so it doesn't fight the bar slide-up
+                Transition {
+                    from: "UNLOCKED_LEFT"; to: "IDLE_CENTER"
+                    enabled: Services.OverlayManager.isLocked
+                    AnchorAnimation { duration: 1 }
+                    NumberAnimation { properties: "anchors.leftMargin"; duration: 1 }
+                },
                 Transition {
                     from: "ICON_LEFT"; to: "IDLE_CENTER"
                     AnchorAnimation { duration: 320; easing.type: Easing.OutCubic }
@@ -1416,8 +1498,7 @@ Item {
                 id: statusIconTxt
                 anchors.centerIn: parent
                 text: {
-                    if (Services.OverlayManager && (Services.OverlayManager.isUnlockingWithGenie || Services.OverlayManager.lockVerified)) return "󰌿"
-                    if (Services.OverlayManager.isLocked) return "󰌾"
+                    if (root.isUnlockDisplaying) return "󰌿"
                     if (root.notifActive) return "󰂚"
                     if (root.expanded || root.autoExpanded) return "●"
                     if (root.mediaPlaying && !root.mediaCollapsedReady) return "●"
@@ -1427,8 +1508,7 @@ Item {
                 font.family: Services.Theme.fontSymbols
                 font.pixelSize: (text === "●") ? 10 : 13
                 color: {
-                    if (Services.OverlayManager && (Services.OverlayManager.isUnlockingWithGenie || Services.OverlayManager.lockVerified)) return "#30d158"
-                    if (Services.OverlayManager.isLocked) return Services.Theme.accent
+                    if (root.isUnlockDisplaying) return "#30d158"
                     if (root.notifActive) return Services.Theme.accent
                     if (root.expanded || root.autoExpanded) return Services.Theme.textDisabled
                     if (root.mediaPlaying && !root.mediaCollapsedReady) return Services.Theme.textDisabled
@@ -1499,7 +1579,7 @@ Item {
             barColor: Services.Theme.success
             isPlaying: root.mediaPlaying
             active: visible
-            readonly property bool activeState: !Services.OverlayManager.isLocked && root.mediaPlaying && !root.expanded && !root.autoExpanded && root.mediaCollapsedReady && !root.notifActive
+            readonly property bool activeState: !Services.OverlayManager.isLocked && !root.isUnlockDisplaying && root.mediaPlaying && !root.expanded && !root.autoExpanded && root.mediaCollapsedReady && !root.notifActive
             visible: activeState || opacity > 0.01
             opacity: activeState ? 1.0 : 0.0
             scale: activeState ? 1.0 : 0.3
@@ -1520,8 +1600,8 @@ Item {
             height: 16
             z: 3
 
-            readonly property bool showCollapsedText: !Services.OverlayManager.isLocked && !(Services.OverlayManager && (Services.OverlayManager.isUnlockingWithGenie || Services.OverlayManager.lockVerified)) && (root.notifActive || root.mediaPlaying)
-            readonly property bool activeState: !Services.OverlayManager.isLocked && !(Services.OverlayManager && (Services.OverlayManager.isUnlockingWithGenie || Services.OverlayManager.lockVerified)) && !root.expanded && !root.autoExpanded && root.mediaCollapsedReady && showCollapsedText && !root.mediaStopping
+            readonly property bool showCollapsedText: !Services.OverlayManager.isLocked && !root.isUnlockDisplaying && (root.notifActive || root.mediaPlaying)
+            readonly property bool activeState: !Services.OverlayManager.isLocked && !root.isUnlockDisplaying && !root.expanded && !root.autoExpanded && root.mediaCollapsedReady && showCollapsedText && !root.mediaStopping
 
             clip: true
             transformOrigin: Item.Left
@@ -1537,7 +1617,7 @@ Item {
                 Behavior on x { NumberAnimation { duration: root.mediaStopping ? 180 : 160; easing.type: root.mediaStopping ? Easing.InQuad : Easing.OutQuad } }
             }
 
-            readonly property string targetText: (Services.OverlayManager && (Services.OverlayManager.isUnlockingWithGenie || Services.OverlayManager.lockVerified)) ? "Unlocked" : (Services.OverlayManager.isLocked ? "Locked" : (root.notifActive ? ("Notif (" + root.notifCount + ")") : (root.mediaPlaying ? root.currentMediaText : root.lastTrackText)))
+            readonly property string targetText: (root.notifActive ? ("Notif (" + root.notifCount + ")") : (root.mediaPlaying ? root.currentMediaText : root.lastTrackText))
 
             property string displayedText: ""
             property bool useSlotA: true

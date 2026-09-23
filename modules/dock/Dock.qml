@@ -58,6 +58,7 @@ Variants {
         // Extra headroom for icon lift, shadow, and tooltips
         readonly property int windowHeadroom: 64
         readonly property int windowBreadth: dockBarHeight + windowHeadroom
+        readonly property real dockExitOffset: dockBarHeight + edgeMargin + 50
 
         property bool isHovered: false
 
@@ -231,13 +232,35 @@ Variants {
         Rectangle {
             id: dockContainer
             opacity: (Services.OverlayManager && Services.OverlayManager.isWizardActive) ? 0.0 : ((Services.OverlayManager && Services.OverlayManager.isLocked) ? 0.0 : 1.0)
-            Behavior on opacity { NumberAnimation { duration: 400; easing.type: Easing.OutCubic } }
+            Behavior on opacity {
+                NumberAnimation {
+                    duration: (Services.OverlayManager && Services.OverlayManager.isLocked) ? 260 : 380
+                    easing.type: Easing.OutCubic
+                }
+            }
 
             transform: Translate {
-                y: (Services.OverlayManager && Services.OverlayManager.isLocked) ? (root.isBottom ? 50 : -50) : 0
-                x: (Services.OverlayManager && Services.OverlayManager.isLocked) ? (root.isLeft ? -50 : (root.isRight ? 50 : 0)) : 0
-                Behavior on y { NumberAnimation { duration: 460; easing.type: Easing.OutBack; easing.overshoot: 1.15 } }
-                Behavior on x { NumberAnimation { duration: 460; easing.type: Easing.OutBack; easing.overshoot: 1.15 } }
+                y: (Services.OverlayManager && Services.OverlayManager.isLocked)
+                    ? (root.isBottom ? root.dockExitOffset : -root.dockExitOffset)
+                    : 0
+                x: (Services.OverlayManager && Services.OverlayManager.isLocked)
+                    ? (root.isLeft ? -root.dockExitOffset : (root.isRight ? root.dockExitOffset : 0))
+                    : 0
+
+                Behavior on y {
+                    NumberAnimation {
+                        duration: (Services.OverlayManager && Services.OverlayManager.isLocked) ? 320 : 480
+                        easing.type: (Services.OverlayManager && Services.OverlayManager.isLocked) ? Easing.InCubic : Easing.OutBack
+                        easing.overshoot: (Services.OverlayManager && Services.OverlayManager.isLocked) ? 0.0 : 1.15
+                    }
+                }
+                Behavior on x {
+                    NumberAnimation {
+                        duration: (Services.OverlayManager && Services.OverlayManager.isLocked) ? 320 : 480
+                        easing.type: (Services.OverlayManager && Services.OverlayManager.isLocked) ? Easing.InCubic : Easing.OutBack
+                        easing.overshoot: (Services.OverlayManager && Services.OverlayManager.isLocked) ? 0.0 : 1.15
+                    }
+                }
             }
 
             // Center positioning on screen
