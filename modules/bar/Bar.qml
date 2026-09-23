@@ -74,9 +74,8 @@ Variants {
         property: "barTransitionState"
         from: 1.0
         to: 0.0
-        duration: 280
-        easing.type: Easing.InBack
-        easing.overshoot: 1.10
+        duration: 240
+        easing.type: Easing.InCubic
     }
 
     NumberAnimation {
@@ -284,5 +283,25 @@ Variants {
         z: dynamicIsland.expanded ? 999 : 5
         visible: root.showDynamicIsland
     }
+
+    // ── Wallpaper Preloader (GPU Pixmap Cache for Zero-Lag Lockscreen Transition) ──
+    Image {
+        id: lockscreenWallpaperCachePreloader
+        visible: false
+        width: 1
+        height: 1
+        cache: true
+        asynchronous: true
+        source: {
+            if (Services.Config && Services.Config.lockscreenWallpaperMode === "custom" && Services.Config.lockscreenCustomWallpaper.length > 0) {
+                return "file://" + Services.Config.lockscreenCustomWallpaper
+            }
+            if (Services.Wallpaper && Services.Wallpaper.currentWallpaper && Services.Wallpaper.currentWallpaper.length > 0) {
+                return "file://" + Services.Wallpaper.currentWallpaper
+            }
+            return (Services.Wallpaper && Services.Wallpaper.darkWallbler) ? ("file://" + Services.Wallpaper.darkWallbler) : ""
+        }
+    }
 }
 }
+

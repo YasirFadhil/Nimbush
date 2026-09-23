@@ -440,6 +440,17 @@ Item {
         }
     }
 
+    function triggerLockAbsorption() {
+        globalMediaMarqueeAnim.stop()
+        mediaStopPhase1Timer.stop()
+        mediaStopPhase2Timer.stop()
+        root.mediaStopping = true
+        root.mediaTextCollapsed = true
+        root.mediaIconTransformed = true
+        root.autoExpanded = false
+        root.pinned = false
+    }
+
     function triggerMediaStop() {
         globalMediaMarqueeAnim.stop()
         root.mediaStopping = true
@@ -1260,11 +1271,7 @@ Item {
             function onIsLockAbsorbingChanged() {
                 if (Services.OverlayManager && Services.OverlayManager.isLockAbsorbing) {
                     swallowPulseTimer.restart()
-                    root.autoExpanded = false
-                    root.pinned = false
-                    if (root.mediaPlaying) {
-                        root.triggerMediaStop()
-                    }
+                    root.triggerLockAbsorption()
                 }
             }
             function onIsLockedChanged() {
@@ -1297,7 +1304,7 @@ Item {
 
         Timer {
             id: swallowPulseTimer
-            interval: 180
+            interval: 150
             repeat: false
             onTriggered: swallowPulseAnim.restart()
         }
@@ -1374,8 +1381,8 @@ Item {
         // Seamless, Continuous Fluid Morphing (Zero delay, zero hitching, pure iOS ease - synchronized with Lockscreen)
         Behavior on width {
             NumberAnimation {
-                duration: root.expanded ? 360 : 380
-                easing.type: Easing.OutBack
+                duration: root.lockBlocked ? 240 : (root.expanded ? 360 : 380)
+                easing.type: root.lockBlocked ? Easing.InOutCubic : Easing.OutBack
                 easing.overshoot: root.expanded ? 1.35 : 1.45
             }
         }
