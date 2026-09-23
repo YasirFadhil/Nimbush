@@ -159,6 +159,7 @@ Singleton {
     property string lockscreenCustomWallpaper: ""
     property bool lockscreenShowQuickPower: true
     property bool lockscreenShowStatusPill: true
+    property bool lockscreenGenieUnlock: true
     property bool faceIdEnabled: true
     property string faceIdCameraDevice: "/dev/video0"
     property real faceIdConfidence: 98.0
@@ -332,6 +333,7 @@ Singleton {
         if (data.lockscreenCustomWallpaper !== undefined) lockscreenCustomWallpaper = String(data.lockscreenCustomWallpaper)
         if (data.lockscreenShowQuickPower !== undefined) lockscreenShowQuickPower = Boolean(data.lockscreenShowQuickPower)
         if (data.lockscreenShowStatusPill !== undefined) lockscreenShowStatusPill = Boolean(data.lockscreenShowStatusPill)
+        if (data.lockscreenGenieUnlock !== undefined) lockscreenGenieUnlock = Boolean(data.lockscreenGenieUnlock)
         if (data.faceIdEnabled !== undefined) faceIdEnabled = Boolean(data.faceIdEnabled)
         if (data.faceIdCameraDevice !== undefined) faceIdCameraDevice = String(data.faceIdCameraDevice)
         if (data.faceIdConfidence !== undefined) faceIdConfidence = Number(data.faceIdConfidence)
@@ -457,6 +459,7 @@ Singleton {
             lockscreenCustomWallpaper: lockscreenCustomWallpaper,
             lockscreenShowQuickPower: lockscreenShowQuickPower,
             lockscreenShowStatusPill: lockscreenShowStatusPill,
+            lockscreenGenieUnlock: lockscreenGenieUnlock,
             faceIdEnabled: faceIdEnabled,
             faceIdCameraDevice: faceIdCameraDevice,
             faceIdConfidence: faceIdConfidence,

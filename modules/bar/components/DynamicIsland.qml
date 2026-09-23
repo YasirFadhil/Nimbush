@@ -144,7 +144,19 @@ Item {
 
     // Lockscreen compatibility
     property bool allowOnLockscreen: true
-    readonly property bool lockBlocked: Services.OverlayManager.isLocked
+    readonly property bool lockBlocked: Boolean(Services.OverlayManager && (Services.OverlayManager.isLocked || Services.OverlayManager.isLockAbsorbing))
+    property bool isUnlockHoldActive: false
+    property bool isUnlockGlideActive: false
+    readonly property bool isUnlockActive: isUnlockHoldActive || isUnlockGlideActive || (Services.OverlayManager && (Services.OverlayManager.isUnlockingWithGenie || Services.OverlayManager.lockVerified))
+    readonly property bool isUnlockDisplaying: isUnlockHoldActive || (Services.OverlayManager && (Services.OverlayManager.isUnlockingWithGenie || Services.OverlayManager.lockVerified))
+    readonly property bool isUnlockSettleActive: isUnlockActive
+
+    Binding {
+        target: Services.OverlayManager
+        property: "desktopIslandIsWide"
+        value: (island.width > 150) || root.expanded || root.mediaPlaying || root.notifActive
+        when: Services.OverlayManager !== null
+    }
 
     // Notification model shortcuts
     readonly property var popupList: Services.Notifications.popupList
@@ -174,9 +186,18 @@ Item {
     property double capsLockActiveTime: 0
     property string manualCenterId: ""
 
+    // Fluid Dynamic Island reactive impulses for water splitting animation
+    property real rightIslandBulge: 0.0
+    property real leftIslandBulge: 0.0
+
     // All candidates gathered and sorted strictly newest to oldest
     readonly property var allSortedCandidates: {
         const list = []
+
+        // If unlock is active, IGNORE media, notifications, syshud - unlock takes absolute top priority
+        if (root.isUnlockActive) {
+            return list
+        }
 
         // Modal overrides
         if (root.dropSendMode || root.isDropSending) {
@@ -216,7 +237,7 @@ Item {
         }
 
         // 3. Media playback
-        if (root.mediaPlaying || (root.mediaStopping && !root.mediaIconTransformed)) {
+        if ((root.mediaPlaying && !root.mediaStopping) || (root.mediaStopping && !root.mediaIconTransformed)) {
             if (!Services.OverlayManager.isLocked) {
                 list.push({
                     id: "media",
@@ -236,7 +257,7 @@ Item {
         }
 
         // 5. CapsLock active
-        if (root.capsLockActive && !root.expanded) {
+        if (root.capsLockActive) {
             list.push({
                 id: "capslock",
                 type: "capslock",
@@ -256,19 +277,44 @@ Item {
             return { center: { type: "idle" }, right: null, left: null }
         }
 
-        let centerIdx = 0
-        if (root.manualCenterId !== "") {
-            const foundIdx = candidates.findIndex(c => c.id === root.manualCenterId)
-            if (foundIdx !== -1) {
-                centerIdx = foundIdx
+        // Separate center-eligible activities from satellite-only indicators
+        // Primary center candidates: dropsend, wallpaper, syshud, notif, media
+        // Satellite-only indicators: capslock, camera
+        const centerEligible = []
+        const satelliteOnly = []
+        for (let i = 0; i < candidates.length; i++) {
+            const c = candidates[i]
+            if (c.type === "capslock" || c.type === "camera") {
+                satelliteOnly.push(c)
+            } else {
+                centerEligible.push(c)
             }
         }
 
-        const centerItem = candidates[centerIdx]
+        let centerItem = { type: "idle" }
         const remaining = []
-        for (let i = 0; i < candidates.length; i++) {
-            if (i !== centerIdx) remaining.push(candidates[i])
+
+        if (centerEligible.length > 0) {
+            let centerIdx = 0
+            if (root.manualCenterId !== "") {
+                const foundIdx = centerEligible.findIndex(c => c.id === root.manualCenterId)
+                if (foundIdx !== -1) {
+                    centerIdx = foundIdx
+                }
+            }
+            centerItem = centerEligible[centerIdx]
+            for (let i = 0; i < centerEligible.length; i++) {
+                if (i !== centerIdx) remaining.push(centerEligible[i])
+            }
         }
+
+        // Add satellite-only candidates to remaining queue
+        for (let j = 0; j < satelliteOnly.length; j++) {
+            remaining.push(satelliteOnly[j])
+        }
+
+        // Sort remaining candidates by time descending (newest first)
+        remaining.sort((a, b) => (b.time || 0) - (a.time || 0))
 
         // "sebelum baru ke kanan"
         const rightItem = remaining.length > 0 ? remaining[0] : null
@@ -333,7 +379,7 @@ Item {
         } else if (item.type === "camera") {
             root.showSysHud("󰄀", "Camera Active", "Webcam in use", Services.Theme.success)
         } else if (item.type === "capslock") {
-            root.showSysHud("󰘶", "Caps Lock", root.capsLockActive ? "Active" : "Disabled", Services.Theme.alertYellow)
+            // Persistent indicator - no HUD popup
         } else if (item.type === "transfer") {
             root.dropSendMode = true
         } else if (item.type === "syshud") {
@@ -392,6 +438,14 @@ Item {
             root.mediaStopping = false
             root.mediaCollapsedReady = false
         }
+    }
+
+    function triggerMediaStop() {
+        globalMediaMarqueeAnim.stop()
+        root.mediaStopping = true
+        root.mediaTextCollapsed = false
+        root.mediaIconTransformed = false
+        mediaStopPhase1Timer.restart()
     }
 
     Timer {
@@ -491,11 +545,6 @@ Item {
 
     onCapsLockActiveChanged: {
         if (capsLockActive) capsLockActiveTime = Date.now()
-        if (!hudReady) return
-        const icon = "󰘶"
-        const title = capsLockActive ? "Caps Lock On" : "Caps Lock Off"
-        const detail = capsLockActive ? "Uppercase enabled" : "Standard lowercase"
-        root.showSysHud(icon, title, detail, capsLockActive ? Services.Theme.alertYellow : Services.Theme.danger)
     }
 
     function showSysHud(icon, title, detail, iconColor, customDuration) {
@@ -523,6 +572,9 @@ Item {
         repeat: false
         onTriggered: {
             root.hudReady = true
+            if (root.mediaPlaying && !root.autoExpanded) {
+                root.mediaCollapsedReady = true
+            }
             welcomeProc.running = true
         }
     }
@@ -544,6 +596,9 @@ Item {
         root.lastAudioSink = Services.Audio.sink
         if (Services.Audio.sink) {
             root.lastAudioMuted = Services.Audio.muted
+        }
+        if (root.mediaPlaying) {
+            root.mediaCollapsedReady = true
         }
     }
 
@@ -768,9 +823,9 @@ Item {
     readonly property bool mediaPlaying: activePlayer !== null && activePlayer.isPlaying
     readonly property bool hasMedia: activePlayer !== null && (activePlayer.trackTitle !== "" || mediaPlaying)
 
-    readonly property bool hasExpandContent: (slot0Activity !== "idle") || wallpaperMode || dropSendMode || isDropSending
-    readonly property bool expanded: !lockBlocked && hasExpandContent && (pinned || autoExpanded || (slot0Activity === "notif") || (slot0Activity === "syshud") || wallpaperMode || dropSendMode || isDropSending)
-    readonly property bool isMediaPeek: !lockBlocked && autoExpanded && !pinned && (slot0Activity === "media") && !wallpaperMode && !dropSendMode && !isDropSending && hasMedia
+    readonly property bool hasExpandContent: !root.isUnlockActive && ((slot0Activity !== "idle") || wallpaperMode || dropSendMode || isDropSending)
+    readonly property bool expanded: !lockBlocked && !root.isUnlockActive && hasExpandContent && (pinned || autoExpanded || (slot0Activity === "notif") || (slot0Activity === "syshud") || wallpaperMode || dropSendMode || isDropSending)
+    readonly property bool isMediaPeek: !lockBlocked && !root.isUnlockActive && autoExpanded && !pinned && (slot0Activity === "media") && !wallpaperMode && !dropSendMode && !isDropSending && hasMedia
 
     property int autoExpandDuration: 2500
     property int notifDuration: 5000
@@ -833,7 +888,12 @@ Item {
     onMediaPlayingChanged: {
         if (mediaPlaying) {
             mediaActiveTime = Date.now()
-            root.mediaCollapsedReady = false
+            if (root.hudReady && root.notifCount === 0 && !root.pinned && !root.isUnlockActive) {
+                root.mediaCollapsedReady = false
+                root.pulse()
+            } else {
+                root.mediaCollapsedReady = true
+            }
             mediaStopPhase1Timer.stop()
             mediaStopPhase2Timer.stop()
             root.mediaStopping = false
@@ -842,16 +902,9 @@ Item {
             if (currentMediaText !== "") {
                 lastTrackText = currentMediaText
             }
-            if (root.hudReady && root.notifCount === 0 && !root.pinned) {
-                root.pulse()
-            }
         } else {
-            globalMediaMarqueeAnim.stop()
             if (root.hudReady && !root.notifActive) {
-                root.mediaStopping = true
-                root.mediaTextCollapsed = false
-                root.mediaIconTransformed = false
-                mediaStopPhase1Timer.restart()
+                root.triggerMediaStop()
             } else {
                 root.mediaCollapsedReady = false
             }
@@ -880,14 +933,14 @@ Item {
         const maxLen = Math.max(tLen, aLen, (root.currentMediaText || "").length)
         const approxOverflow = Math.max(40, (maxLen * 7.5) - 130)
         globalMediaMarqueeDuration = Math.max(3000, Math.min(8500, approxOverflow * 35))
-        if (root.mediaPlaying && !Services.OverlayManager.isLocked) {
+        if (root.mediaPlaying && !root.lockBlocked) {
             globalMediaMarqueeAnim.start()
         }
     }
 
     SequentialAnimation {
         id: globalMediaMarqueeAnim
-        running: root.mediaPlaying && !Services.OverlayManager.isLocked
+        running: root.mediaPlaying && !root.lockBlocked
         loops: Animation.Infinite
 
         PauseAnimation { duration: 1800 }
@@ -911,8 +964,9 @@ Item {
     }
 
     // Island Dimensions
-    readonly property bool showCollapsedText: !lockBlocked && ((slot0Activity === "notif") || (mediaPlaying && mediaCollapsedReady))
+    readonly property bool showCollapsedText: !lockBlocked && !root.isUnlockActive && !root.mediaStopping && ((slot0Activity === "notif") || mediaPlaying)
     readonly property int calculatedCollapsedWidth: {
+        if (root.isUnlockActive) return 140
         if (showCollapsedText || (mediaStopping && !mediaTextCollapsed)) {
             const extraPadding = (mediaPlaying || mediaStopping) ? 72 : 52
             return Math.min(260, Math.max(140, collapsedTextContainer.currentSlotImplicitWidth + extraPadding))
@@ -974,7 +1028,10 @@ Item {
     }
 
     function pulse() {
-        if (pinned || notifActive) return
+        if (pinned || notifActive || root.isUnlockActive || lockBlocked) {
+            root.mediaCollapsedReady = true
+            return
+        }
         if (autoExpanded) {
             autoCollapseTimer.restart()
             return
@@ -1111,7 +1168,7 @@ Item {
         target: Services.Mpris
         function onActivePlayerChanged() {
             root.restartGlobalMarquee()
-            if (root.hudReady && Services.Mpris.activePlayer && Services.Mpris.activePlayer.isPlaying && root.notifCount === 0 && !root.pinned) {
+            if (root.hudReady && !root.isUnlockActive && Services.Mpris.activePlayer && Services.Mpris.activePlayer.isPlaying && root.notifCount === 0 && !root.pinned) {
                 root.pulse()
             }
         }
@@ -1120,7 +1177,7 @@ Item {
     Connections {
         target: root.activePlayer
         function onIsPlayingChanged() {
-            if (root.hudReady && root.activePlayer && root.activePlayer.isPlaying && root.notifCount === 0 && !root.pinned) {
+            if (root.hudReady && !root.isUnlockActive && root.activePlayer && root.activePlayer.isPlaying && root.notifCount === 0 && !root.pinned) {
                 root.pulse()
             }
         }
@@ -1129,7 +1186,7 @@ Item {
             if (collapsedTextContainer) {
                 collapsedTextContainer.updateTrackPush(collapsedTextContainer.targetText, root.isNextTrack)
             }
-            if (root.hudReady && root.activePlayer && root.activePlayer.isPlaying && root.notifCount === 0 && !root.pinned) {
+            if (root.hudReady && !root.isUnlockActive && root.activePlayer && root.activePlayer.isPlaying && root.notifCount === 0 && !root.pinned) {
                 root.pulse()
             }
         }
@@ -1165,8 +1222,154 @@ Item {
         radius: isCapsuleShape ? (height / 2) : Services.Theme.radiusLg
 
         color: Services.Theme.bgPure
-        border.color: root.isCritical ? Services.Theme.danger : (root.expanded ? Services.Theme.borderHighlight : Services.Theme.borderSubtle)
-        border.width: root.isCritical ? 1.5 : 1
+        border.color: {
+            if (root.isUnlockDisplaying) return "#30d158"
+            if (root.isCritical) return Services.Theme.danger
+            if (root.expanded) return Services.Theme.borderHighlight
+            return Services.Theme.borderSubtle
+        }
+        border.width: root.isUnlockDisplaying ? 2.0 : (root.isCritical ? 1.5 : 1)
+
+        property real entranceScale: 1.0
+
+        scale: ((Services.OverlayManager && Services.OverlayManager.isUnlockingWithGenie)
+            ? (1.0 + 0.14 * Math.sin(Services.OverlayManager.unlockSuctionProgress * Math.PI))
+            : 1.0) * entranceScale
+
+        transform: [
+            Translate {
+                x: (root.rightIslandBulge - root.leftIslandBulge) * 0.5
+            },
+            Scale {
+                origin.x: island.width / 2
+                origin.y: island.height / 2
+                xScale: 1.0 + ((root.rightIslandBulge + root.leftIslandBulge) / Math.max(1, island.width))
+            }
+        ]
+
+        Connections {
+            target: Services.OverlayManager
+            function onLockVerifiedChanged() {
+                if (Services.OverlayManager.lockVerified && Services.OverlayManager.isLocked) {
+                    root.isUnlockHoldActive = true
+                    root.isUnlockGlideActive = false
+                    unlockHoldTimer.stop()
+                    unlockGlideTimer.stop()
+                }
+            }
+            function onIsLockAbsorbingChanged() {
+                if (Services.OverlayManager && Services.OverlayManager.isLockAbsorbing) {
+                    swallowPulseTimer.restart()
+                    root.autoExpanded = false
+                    root.pinned = false
+                    if (root.mediaPlaying) {
+                        root.triggerMediaStop()
+                    }
+                }
+            }
+            function onIsLockedChanged() {
+                if (!Services.OverlayManager.isLocked) {
+                    root.autoExpanded = false
+                    root.pinned = false
+                    root.mediaStopping = false
+                    root.mediaTextCollapsed = false
+                    root.mediaIconTransformed = false
+                    if (root.mediaPlaying) {
+                        root.mediaCollapsedReady = true
+                    }
+                    mediaStopPhase1Timer.stop()
+                    mediaStopPhase2Timer.stop()
+                    if (Services.OverlayManager.lockVerified || Services.OverlayManager.isUnlockingWithGenie || root.isUnlockHoldActive) {
+                        root.isUnlockHoldActive = true
+                        root.isUnlockGlideActive = false
+                        unlockHoldTimer.restart()
+                        unlockGlideTimer.stop()
+                    }
+                    entranceAnim.restart()
+                } else {
+                    root.isUnlockHoldActive = false
+                    root.isUnlockGlideActive = false
+                    unlockHoldTimer.stop()
+                    unlockGlideTimer.stop()
+                }
+            }
+        }
+
+        Timer {
+            id: swallowPulseTimer
+            interval: 180
+            repeat: false
+            onTriggered: swallowPulseAnim.restart()
+        }
+
+        SequentialAnimation {
+            id: swallowPulseAnim
+            NumberAnimation {
+                target: island
+                property: "entranceScale"
+                from: 1.0
+                to: 1.05
+                duration: 90
+                easing.type: Easing.OutQuad
+            }
+            NumberAnimation {
+                target: island
+                property: "entranceScale"
+                from: 1.05
+                to: 1.0
+                duration: 160
+                easing.type: Easing.OutBack
+                easing.overshoot: 1.15
+            }
+        }
+
+        Timer {
+            id: unlockHoldTimer
+            interval: 500
+            repeat: false
+            onTriggered: {
+                root.isUnlockHoldActive = false
+                root.isUnlockGlideActive = true
+                unlockGlideTimer.restart()
+                if (Services.OverlayManager && !Services.OverlayManager.isLocked) {
+                    Services.OverlayManager.lockVerified = false
+                    Services.OverlayManager.isUnlockingWithGenie = false
+                }
+            }
+        }
+
+        Timer {
+            id: unlockGlideTimer
+            interval: 350
+            repeat: false
+            onTriggered: {
+                root.isUnlockGlideActive = false
+                if (root.mediaPlaying) {
+                    root.mediaCollapsedReady = true
+                }
+            }
+        }
+
+        SequentialAnimation {
+            id: entranceAnim
+            NumberAnimation {
+                target: island
+                property: "entranceScale"
+                from: 1.0
+                to: 1.06
+                duration: 140
+                easing.type: Easing.OutQuad
+            }
+            NumberAnimation {
+                target: island
+                property: "entranceScale"
+                from: 1.06
+                to: 1.0
+                duration: 320
+                easing.type: Easing.OutBack
+                easing.overshoot: 1.15
+            }
+        }
 
         // Seamless, Continuous Fluid Morphing (Zero delay, zero hitching, pure iOS ease - synchronized with Lockscreen)
         Behavior on width {
@@ -1180,7 +1383,7 @@ Item {
             NumberAnimation {
                 duration: 340
                 easing.type: Easing.OutBack
-                easing.overshoot: 0.65
+                easing.overshoot: root.expanded ? 1.35 : 1.45
             }
         }
         Behavior on radius {
@@ -1196,13 +1399,19 @@ Item {
                 easing.type: Easing.OutCubic
             }
         }
+        Behavior on border.width {
+            NumberAnimation {
+                duration: 250
+                easing.type: Easing.OutCubic
+            }
+        }
 
         MouseArea {
             id: islandMouseArea
             anchors.fill: parent
             z: 0
-            enabled: root.hasExpandContent && !root.dropSendMode && !root.isDropSending
-            cursorShape: (root.hasExpandContent && !root.dropSendMode && !root.isDropSending) ? Qt.PointingHandCursor : Qt.ArrowCursor
+            enabled: !root.isUnlockActive && root.hasExpandContent && !root.dropSendMode && !root.isDropSending
+            cursorShape: (!root.isUnlockActive && root.hasExpandContent && !root.dropSendMode && !root.isDropSending) ? Qt.PointingHandCursor : Qt.ArrowCursor
             onClicked: root.togglePin()
         }
 
@@ -1277,9 +1486,7 @@ Item {
             implicitHeight: 16
             z: 3
 
-            readonly property bool activeState: !root.expanded && !root.autoExpanded && (
-                !root.mediaPlaying || root.mediaCollapsedReady || root.mediaStopping
-            )
+            readonly property bool activeState: root.isUnlockActive || (!root.expanded && !root.autoExpanded)
             visible: activeState || opacity > 0.01
             opacity: activeState ? 1 : 0
             scale: activeState ? 1.0 : 0.4
@@ -1290,26 +1497,8 @@ Item {
 
             states: [
                 State {
-                    name: "ICON_LEFT"
-                    when: !Services.OverlayManager.isLocked && !root.expanded && !root.autoExpanded && (
-                        (root.mediaPlaying && root.mediaCollapsedReady) ||
-                        root.mediaStopping ||
-                        root.notifActive
-                    )
-                    AnchorChanges {
-                        target: statusIconContainer
-                        anchors.horizontalCenter: undefined
-                        anchors.left: island.left
-                        anchors.right: undefined
-                    }
-                    PropertyChanges {
-                        target: statusIconContainer
-                        anchors.leftMargin: 12
-                    }
-                },
-                State {
-                    name: "LOCKED_COLLAPSED"
-                    when: Services.OverlayManager.isLocked
+                    name: "UNLOCKED_LEFT"
+                    when: root.isUnlockDisplaying
                     AnchorChanges {
                         target: statusIconContainer
                         anchors.horizontalCenter: undefined
@@ -1323,12 +1512,14 @@ Item {
                 },
                 State {
                     name: "IDLE_CENTER"
-                    when: !Services.OverlayManager.isLocked && (
+                    when: root.isUnlockGlideActive || (!root.isUnlockActive && (
+                        (root.lockBlocked && (!root.mediaStopping || root.mediaIconTransformed)) ||
                         root.expanded ||
                         root.autoExpanded ||
                         (!root.mediaPlaying && !root.mediaStopping && !root.notifActive && !root.cameraActive) ||
-                        (root.mediaPlaying && !root.mediaCollapsedReady)
-                    )
+                        (root.mediaStopping && root.mediaIconTransformed) ||
+                        (root.mediaPlaying && root.mediaIconTransformed)
+                    ))
                     AnchorChanges {
                         target: statusIconContainer
                         anchors.horizontalCenter: island.horizontalCenter
@@ -1337,8 +1528,26 @@ Item {
                     }
                 },
                 State {
+                    name: "ICON_LEFT"
+                    when: !root.isUnlockActive && !root.expanded && !root.autoExpanded && (
+                        (!root.lockBlocked && root.mediaPlaying && !root.mediaStopping) ||
+                        (root.mediaStopping && !root.mediaIconTransformed) ||
+                        (!root.lockBlocked && root.notifActive)
+                    )
+                    AnchorChanges {
+                        target: statusIconContainer
+                        anchors.horizontalCenter: undefined
+                        anchors.left: island.left
+                        anchors.right: undefined
+                    }
+                    PropertyChanges {
+                        target: statusIconContainer
+                        anchors.leftMargin: 12
+                    }
+                },
+                State {
                     name: "CAMERA_RIGHT"
-                    when: !Services.OverlayManager.isLocked && !root.expanded && !root.autoExpanded && (!root.showCollapsedText && !root.mediaStopping && root.cameraActive)
+                    when: !root.lockBlocked && !root.isUnlockActive && !root.expanded && !root.autoExpanded && (!root.showCollapsedText && !root.mediaStopping && root.cameraActive)
                     AnchorChanges {
                         target: statusIconContainer
                         anchors.horizontalCenter: undefined
@@ -1353,6 +1562,20 @@ Item {
             ]
 
             transitions: [
+                // UNLOCK path: icon glides smoothly left → center (user sees this)
+                Transition {
+                    from: "UNLOCKED_LEFT"; to: "IDLE_CENTER"
+                    enabled: !Services.OverlayManager.isLocked
+                    AnchorAnimation { duration: 340; easing.type: Easing.OutCubic }
+                    NumberAnimation { properties: "anchors.leftMargin"; duration: 340; easing.type: Easing.OutCubic }
+                },
+                // LOCK path: snap icon instantly so it doesn't fight the bar slide-up
+                Transition {
+                    from: "UNLOCKED_LEFT"; to: "IDLE_CENTER"
+                    enabled: Services.OverlayManager.isLocked
+                    AnchorAnimation { duration: 1 }
+                    NumberAnimation { properties: "anchors.leftMargin"; duration: 1 }
+                },
                 Transition {
                     from: "ICON_LEFT"; to: "IDLE_CENTER"
                     AnchorAnimation { duration: 320; easing.type: Easing.OutCubic }
@@ -1369,30 +1592,32 @@ Item {
                 id: statusIconTxt
                 anchors.centerIn: parent
                 text: {
-                    if (Services.OverlayManager.isLocked) return "󰌾"
+                    if (root.isUnlockDisplaying) return "󰌿"
+                    if (root.isUnlockActive) return "●"
                     if (root.notifActive) return "󰂚"
                     if (root.expanded || root.autoExpanded) return "●"
-                    if (root.mediaPlaying && !root.mediaCollapsedReady) return "●"
-                    if (root.mediaPlaying || root.mediaStopping) return "󰎈"
+                    if ((!root.lockBlocked && root.mediaPlaying && !root.mediaStopping) || (root.mediaStopping && !root.mediaIconTransformed)) return "󰎈"
                     return "●"
                 }
                 font.family: Services.Theme.fontSymbols
                 font.pixelSize: (text === "●") ? 10 : 13
                 color: {
-                    if (Services.OverlayManager.isLocked) return Services.Theme.accent
+                    if (root.isUnlockDisplaying) return "#30d158"
+                    if (root.isUnlockActive) return Services.Theme.textDisabled
                     if (root.notifActive) return Services.Theme.accent
                     if (root.expanded || root.autoExpanded) return Services.Theme.textDisabled
-                    if (root.mediaPlaying && !root.mediaCollapsedReady) return Services.Theme.textDisabled
-                    if (root.mediaPlaying || root.mediaStopping) return Services.Theme.success
+                    if ((!root.lockBlocked && root.mediaPlaying && !root.mediaStopping) || (root.mediaStopping && !root.mediaIconTransformed)) return Services.Theme.success
                     if (root.cameraActive) return Services.Theme.success
                     return Services.Theme.textDisabled
                 }
-                scale: textScale
+                scale: (Services.OverlayManager && Services.OverlayManager.isUnlockingWithGenie)
+                    ? (1.0 + 0.35 * Math.sin(Services.OverlayManager.unlockSuctionProgress * Math.PI))
+                    : textScale
 
                 property real textScale: 1.0
 
                 onTextChanged: {
-                    if (text === "●") {
+                    if (statusIconTxt.text === "●") {
                         statusIconTxt.rotation = 0
                     }
                     if (statusIconContainer.activeState && !root.expanded && !root.autoExpanded) {
@@ -1428,7 +1653,7 @@ Item {
                     from: 0; to: 360
                     duration: 4000
                     loops: Animation.Infinite
-                    running: !Services.OverlayManager.isLocked && root.mediaPlaying && !root.expanded && !root.autoExpanded && root.mediaCollapsedReady && statusIconContainer.state === "ICON_LEFT"
+                    running: !root.lockBlocked && !root.isUnlockActive && root.mediaPlaying && !root.expanded && !root.autoExpanded && statusIconContainer.state === "ICON_LEFT"
                 }
             }
         }
@@ -1448,7 +1673,7 @@ Item {
             barColor: Services.Theme.success
             isPlaying: root.mediaPlaying
             active: visible
-            readonly property bool activeState: !Services.OverlayManager.isLocked && root.mediaPlaying && !root.expanded && !root.autoExpanded && root.mediaCollapsedReady && !root.notifActive
+            readonly property bool activeState: !root.lockBlocked && !root.isUnlockActive && !root.mediaStopping && root.mediaPlaying && !root.expanded && !root.autoExpanded && !root.notifActive
             visible: activeState || opacity > 0.01
             opacity: activeState ? 1.0 : 0.0
             scale: activeState ? 1.0 : 0.3
@@ -1469,8 +1694,8 @@ Item {
             height: 16
             z: 3
 
-            readonly property bool showCollapsedText: !Services.OverlayManager.isLocked && (root.notifActive || root.mediaPlaying)
-            readonly property bool activeState: !Services.OverlayManager.isLocked && !root.expanded && !root.autoExpanded && root.mediaCollapsedReady && showCollapsedText && !root.mediaStopping
+            readonly property bool showCollapsedText: !root.lockBlocked && !root.isUnlockActive && !root.mediaStopping && (root.notifActive || root.mediaPlaying)
+            readonly property bool activeState: !root.lockBlocked && !root.isUnlockActive && !root.expanded && !root.autoExpanded && showCollapsedText && !root.mediaStopping
 
             clip: true
             transformOrigin: Item.Left
@@ -1486,7 +1711,7 @@ Item {
                 Behavior on x { NumberAnimation { duration: root.mediaStopping ? 180 : 160; easing.type: root.mediaStopping ? Easing.InQuad : Easing.OutQuad } }
             }
 
-            readonly property string targetText: Services.OverlayManager.isLocked ? "Locked" : (root.notifActive ? ("Notif (" + root.notifCount + ")") : (root.mediaPlaying ? root.currentMediaText : root.lastTrackText))
+            readonly property string targetText: (root.notifActive ? ("Notif (" + root.notifCount + ")") : (root.mediaPlaying ? root.currentMediaText : root.lastTrackText))
 
             property string displayedText: ""
             property bool useSlotA: true
@@ -3923,14 +4148,39 @@ Item {
 
     }
 
+    // ==================== Liquid Bridges (Air Membelah Diri / Metaball Meniscus) ====================
+    LiquidSplitBridge {
+        id: rightLiquidBridge
+        anchors.top: island.top
+        anchors.topMargin: Math.max(0, (root.collapsedHeight - 32) / 2)
+        x: island.x + island.width - 6
+        width: Math.max(0, (rightSatDot.x + 6) - (island.x + island.width - 6))
+        gap: rightSatDot.leftMarginValue
+        isRight: true
+        snapped: rightSatDot.bridgeSnapped || root.expanded
+        z: 3
+    }
+
+    LiquidSplitBridge {
+        id: leftLiquidBridge
+        anchors.top: island.top
+        anchors.topMargin: Math.max(0, (root.collapsedHeight - 32) / 2)
+        x: leftSatDot.x + leftSatDot.width - 6
+        width: Math.max(0, (island.x + 6) - (leftSatDot.x + leftSatDot.width - 6))
+        gap: leftSatDot.rightMarginValue
+        isRight: false
+        snapped: leftSatDot.bridgeSnapped || root.expanded
+        z: 3
+    }
+
     // ==================== Right Dynamic Satellite Dot ("Sebelum baru ke kanan") ====================
     Rectangle {
         id: rightSatDot
         readonly property var item: root.slotRightItem
         readonly property string activity: root.slotRightType
-        readonly property bool isSatellite: activity !== ""
+        readonly property bool isSatellite: !root.isUnlockActive && (!root.mediaStopping || !root.mediaIconTransformed ? activity !== "" : false)
         anchors.left: island.right
-        anchors.leftMargin: isSatellite ? 8 : -32
+        anchors.leftMargin: leftMarginValue
         anchors.top: island.top
         anchors.topMargin: Math.max(0, (root.collapsedHeight - implicitHeight) / 2)
         implicitWidth: 32
@@ -3940,14 +4190,15 @@ Item {
         border.color: Services.Theme.borderSubtle
         border.width: 1
         z: 1
-        visible: isSatellite || opacity > 0 || scale > 0
 
-        opacity: isSatellite ? 1 : 0
-        scale: isSatellite ? 1 : 0
+        property real leftMarginValue: isSatellite ? 8 : -32
+        property bool bridgeSnapped: !isSatellite
+        property real contentOpacity: isSatellite ? 1.0 : 0.0
+        property real contentScale: isSatellite ? 1.0 : 0.5
 
-        Behavior on opacity { NumberAnimation { duration: 350; easing.type: Easing.OutCubic } }
-        Behavior on scale   { NumberAnimation { duration: 500; easing.type: Easing.OutBack } }
-        Behavior on anchors.leftMargin { NumberAnimation { duration: 550; easing.type: Easing.OutBack } }
+        opacity: isSatellite ? 1.0 : 0.0
+        scale: isSatellite ? 1.0 : 0.0
+        visible: isSatellite || opacity > 0 || scale > 0 || rightRetractAnim.running || rightDetachAnim.running
 
         transform: Scale {
             id: rightTransform
@@ -3959,196 +4210,359 @@ Item {
 
         onIsSatelliteChanged: {
             if (isSatellite) {
+                rightRetractAnim.stop()
                 rightDetachAnim.restart()
             } else {
+                rightDetachAnim.stop()
                 rightRetractAnim.restart()
             }
         }
 
         SequentialAnimation {
             id: rightDetachAnim
-            ParallelAnimation {
-                NumberAnimation { target: rightTransform; property: "xScale"; to: 1.34; duration: 150; easing.type: Easing.OutQuad }
-                NumberAnimation { target: rightTransform; property: "yScale"; to: 0.74; duration: 150; easing.type: Easing.OutQuad }
-            }
-            ParallelAnimation {
-                NumberAnimation { target: rightTransform; property: "xScale"; to: 0.88; duration: 180; easing.type: Easing.OutQuad }
-                NumberAnimation { target: rightTransform; property: "yScale"; to: 1.14; duration: 180; easing.type: Easing.OutQuad }
-            }
-            ParallelAnimation {
-                NumberAnimation { target: rightTransform; property: "xScale"; to: 1.0; duration: 160; easing.type: Easing.OutCubic }
-                NumberAnimation { target: rightTransform; property: "yScale"; to: 1.0; duration: 160; easing.type: Easing.OutCubic }
-            }
-        }
 
-        SequentialAnimation {
-            id: rightRetractAnim
-            ParallelAnimation {
-                NumberAnimation { target: rightTransform; property: "xScale"; to: 1.25; duration: 180; easing.type: Easing.InQuad }
-                NumberAnimation { target: rightTransform; property: "yScale"; to: 0.80; duration: 180; easing.type: Easing.InQuad }
+            ScriptAction {
+                script: {
+                    rightSatDot.visible = true
+                    rightSatDot.opacity = 1.0
+                    rightSatDot.scale = 1.0
+                    rightSatDot.leftMarginValue = -32
+                    rightSatDot.bridgeSnapped = false
+                    rightSatDot.contentOpacity = 0.0
+                    rightSatDot.contentScale = 0.5
+                    rightTransform.xScale = 1.0
+                    rightTransform.yScale = 1.0
+                }
             }
+
+            // Phase 1: Extrusion & Viscous Stretching (0ms -> 200ms)
             ParallelAnimation {
-                NumberAnimation { target: rightTransform; property: "xScale"; to: 1.0; duration: 100; easing.type: Easing.OutQuad }
-                NumberAnimation { target: rightTransform; property: "yScale"; to: 1.0; duration: 100; easing.type: Easing.OutQuad }
+                NumberAnimation {
+                    target: rightSatDot
+                    property: "leftMarginValue"
+                    from: -32
+                    to: 7.5
+                    duration: 200
+                    easing.type: Easing.InQuad
+                }
+                NumberAnimation {
+                    target: rightTransform
+                    property: "xScale"
+                    from: 1.0
+                    to: 1.40
+                    duration: 200
+                    easing.type: Easing.OutQuad
+                }
+                NumberAnimation {
+                    target: rightTransform
+                    property: "yScale"
+                    from: 1.0
+                    to: 0.72
+                    duration: 200
+                    easing.type: Easing.OutQuad
+                }
+                NumberAnimation {
+                    target: root
+                    property: "rightIslandBulge"
+                    from: 0.0
+                    to: 3.0
+                    duration: 200
+                    easing.type: Easing.OutQuad
+                }
             }
-        }
 
-        // ── Content: Media Waveform ──
-        Row {
-            anchors.centerIn: parent
-            spacing: 2.5
-            visible: rightSatDot.activity === "media"
-            opacity: rightSatDot.activity === "media" ? 1.0 : 0.0
-            scale: rightSatDot.activity === "media" ? 1.0 : 0.3
-            Behavior on opacity { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
-            Behavior on scale   { NumberAnimation { duration: 320; easing.type: Easing.OutBack } }
+            // Snap Point: Surface tension reaches critical limit (~200ms)
+            ScriptAction {
+                script: {
+                    rightSatDot.bridgeSnapped = true
+                }
+            }
 
-            Repeater {
-                model: 3
-                Rectangle {
-                    required property int index
-                    width: 2.5
-                    height: 10
-                    radius: 1.25
-                    color: Services.Theme.success
-                    anchors.verticalCenter: parent.verticalCenter
+            // Phase 2: Damped Fluid Jelly Wobble & Content Blossom (200ms -> 560ms)
+            ParallelAnimation {
+                // Position settles to 8px
+                SequentialAnimation {
+                    NumberAnimation {
+                        target: rightSatDot
+                        property: "leftMarginValue"
+                        from: 7.5
+                        to: 9.2
+                        duration: 80
+                        easing.type: Easing.OutQuad
+                    }
+                    NumberAnimation {
+                        target: rightSatDot
+                        property: "leftMarginValue"
+                        from: 9.2
+                        to: 8.0
+                        duration: 160
+                        easing.type: Easing.InOutQuad
+                    }
+                }
 
-                    SequentialAnimation on height {
-                        running: rightSatDot.activity === "media"
-                        loops: Animation.Infinite
+                // Island recoil
+                SequentialAnimation {
+                    NumberAnimation {
+                        target: root
+                        property: "rightIslandBulge"
+                        from: 3.0
+                        to: -2.0
+                        duration: 80
+                        easing.type: Easing.OutQuad
+                    }
+                    NumberAnimation {
+                        target: root
+                        property: "rightIslandBulge"
+                        from: -2.0
+                        to: 0.0
+                        duration: 160
+                        easing.type: Easing.OutBack
+                    }
+                }
+
+                // Harmonic damped fluid oscillation
+                SequentialAnimation {
+                    // Recoil squash
+                    ParallelAnimation {
+                        NumberAnimation { target: rightTransform; property: "xScale"; to: 0.78; duration: 80; easing.type: Easing.OutQuad }
+                        NumberAnimation { target: rightTransform; property: "yScale"; to: 1.24; duration: 80; easing.type: Easing.OutQuad }
+                    }
+                    // Rebound
+                    ParallelAnimation {
+                        NumberAnimation { target: rightTransform; property: "xScale"; to: 1.14; duration: 85; easing.type: Easing.InOutQuad }
+                        NumberAnimation { target: rightTransform; property: "yScale"; to: 0.88; duration: 85; easing.type: Easing.InOutQuad }
+                    }
+                    // Counter oscillation
+                    ParallelAnimation {
+                        NumberAnimation { target: rightTransform; property: "xScale"; to: 0.95; duration: 75; easing.type: Easing.InOutSine }
+                        NumberAnimation { target: rightTransform; property: "yScale"; to: 1.04; duration: 75; easing.type: Easing.InOutSine }
+                    }
+                    // Settle to circle
+                    ParallelAnimation {
+                        NumberAnimation { target: rightTransform; property: "xScale"; to: 1.0; duration: 80; easing.type: Easing.OutCubic }
+                        NumberAnimation { target: rightTransform; property: "yScale"; to: 1.0; duration: 80; easing.type: Easing.OutCubic }
+                    }
+                }
+
+                // Content bloom
+                SequentialAnimation {
+                    PauseAnimation { duration: 30 }
+                    ParallelAnimation {
                         NumberAnimation {
-                            to: index === 0 ? 14 : (index === 1 ? 6 : 12)
-                            duration: index === 0 ? 280 : (index === 1 ? 400 : 340)
-                            easing.type: Easing.InOutSine
+                            target: rightSatDot
+                            property: "contentOpacity"
+                            from: 0.0
+                            to: 1.0
+                            duration: 220
+                            easing.type: Easing.OutCubic
                         }
                         NumberAnimation {
-                            to: index === 0 ? 4 : (index === 1 ? 14 : 4)
-                            duration: index === 0 ? 320 : (index === 1 ? 300 : 380)
-                            easing.type: Easing.InOutSine
+                            target: rightSatDot
+                            property: "contentScale"
+                            from: 0.5
+                            to: 1.0
+                            duration: 260
+                            easing.type: Easing.OutBack
+                            easing.overshoot: 1.15
                         }
                     }
                 }
             }
         }
 
-        // ── Content: Notification (App Icon + Badge) ──
-        Item {
-            anchors.centerIn: parent
-            width: 18
-            height: 18
-            visible: rightSatDot.activity === "notif"
-            opacity: rightSatDot.activity === "notif" ? 1.0 : 0.0
-            scale: rightSatDot.activity === "notif" ? 1.0 : 0.3
-            Behavior on opacity { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
-            Behavior on scale   { NumberAnimation { duration: 320; easing.type: Easing.OutBack } }
+        SequentialAnimation {
+            id: rightRetractAnim
 
-            Image {
-                id: rightNotifImg
+            // Content dissolves first
+            ParallelAnimation {
+                NumberAnimation { target: rightSatDot; property: "contentOpacity"; to: 0.0; duration: 80; easing.type: Easing.InQuad }
+                NumberAnimation { target: rightSatDot; property: "contentScale"; to: 0.6; duration: 80; easing.type: Easing.InQuad }
+            }
+
+            ScriptAction {
+                script: {
+                    rightSatDot.bridgeSnapped = false
+                }
+            }
+
+            // Droplet pulled into island
+            ParallelAnimation {
+                NumberAnimation {
+                    target: rightSatDot
+                    property: "leftMarginValue"
+                    to: -32
+                    duration: 240
+                    easing.type: Easing.InBack
+                    easing.overshoot: 1.1
+                }
+                NumberAnimation {
+                    target: rightTransform
+                    property: "xScale"
+                    to: 1.25
+                    duration: 140
+                    easing.type: Easing.OutQuad
+                }
+                NumberAnimation {
+                    target: rightTransform
+                    property: "yScale"
+                    to: 0.80
+                    duration: 140
+                    easing.type: Easing.OutQuad
+                }
+            }
+
+            // Fully absorbed
+            ScriptAction {
+                script: {
+                    rightSatDot.opacity = 0.0
+                    rightSatDot.scale = 0.0
+                    rightTransform.xScale = 1.0
+                    rightTransform.yScale = 1.0
+                    rightSatDot.bridgeSnapped = true
+                }
+            }
+        }
+
+        // ── Content Wrapper (Synchronized fluid blooming) ──
+        Item {
+            id: rightContentWrapper
+            anchors.fill: parent
+            opacity: rightSatDot.contentOpacity
+            scale: rightSatDot.contentScale
+
+            // ── Content: Media Waveform ──
+            Row {
+                anchors.centerIn: parent
+                spacing: 2.5
+                visible: rightSatDot.activity === "media"
+
+                Repeater {
+                    model: 3
+                    Rectangle {
+                        required property int index
+                        width: 2.5
+                        height: 10
+                        radius: 1.25
+                        color: Services.Theme.success
+                        anchors.verticalCenter: parent.verticalCenter
+
+                        SequentialAnimation on height {
+                            running: rightSatDot.activity === "media" && rightSatDot.visible
+                            loops: Animation.Infinite
+                            NumberAnimation {
+                                to: index === 0 ? 14 : (index === 1 ? 6 : 12)
+                                duration: index === 0 ? 280 : (index === 1 ? 400 : 340)
+                                easing.type: Easing.InOutSine
+                            }
+                            NumberAnimation {
+                                to: index === 0 ? 4 : (index === 1 ? 14 : 4)
+                                duration: index === 0 ? 320 : (index === 1 ? 300 : 380)
+                                easing.type: Easing.InOutSine
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ── Content: Notification (App Icon + Badge) ──
+            Item {
+                anchors.centerIn: parent
+                width: 18
+                height: 18
+                visible: rightSatDot.activity === "notif"
+
+                Image {
+                    id: rightNotifImg
+                    anchors.centerIn: parent
+                    width: 16
+                    height: 16
+                    source: (rightSatDot.item && rightSatDot.item.notif) ? root.resolveNotifIcon(rightSatDot.item.notif) : ""
+                    visible: status === Image.Ready && source.toString().length > 0
+                    fillMode: Image.PreserveAspectFit
+                    asynchronous: true
+                    cache: true
+                    sourceSize: Qt.size(32, 32)
+                }
+
+                Text {
+                    anchors.centerIn: parent
+                    text: "󰂚"
+                    font.family: Services.Theme.fontSymbols
+                    font.pixelSize: 13
+                    color: Services.Theme.accent
+                    visible: !rightNotifImg.visible
+                }
+
+                Rectangle {
+                    width: 6
+                    height: 6
+                    radius: 3
+                    color: Services.Theme.danger
+                    anchors.top: parent.top
+                    anchors.topMargin: -1
+                    anchors.right: parent.right
+                    anchors.rightMargin: -1
+                }
+            }
+
+            // ── Content: Camera Privacy Indicator ──
+            Item {
                 anchors.centerIn: parent
                 width: 16
                 height: 16
-                source: (rightSatDot.item && rightSatDot.item.notif) ? root.resolveNotifIcon(rightSatDot.item.notif) : ""
-                visible: status === Image.Ready && source.toString().length > 0
-                fillMode: Image.PreserveAspectFit
-                asynchronous: true
-                cache: true
-                sourceSize: Qt.size(32, 32)
+                visible: rightSatDot.activity === "camera"
+
+                Text {
+                    anchors.centerIn: parent
+                    text: "󰄀"
+                    font.family: Services.Theme.fontSymbols
+                    font.pixelSize: 13
+                    color: Services.Theme.success
+                }
+
+                SequentialAnimation on opacity {
+                    running: rightSatDot.activity === "camera" && rightSatDot.visible
+                    loops: Animation.Infinite
+                    NumberAnimation { from: 1.0; to: 0.25; duration: 650; easing.type: Easing.InOutSine }
+                    NumberAnimation { from: 0.25; to: 1.0; duration: 650; easing.type: Easing.InOutSine }
+                }
             }
 
+            // ── Content: CapsLock Indicator ──
             Text {
                 anchors.centerIn: parent
-                text: "󰂚"
+                text: "󰘶"
+                font.family: Services.Theme.fontSymbols
+                font.pixelSize: 13
+                color: Services.Theme.alertYellow
+                visible: rightSatDot.activity === "capslock"
+            }
+
+            // ── Content: System HUD ──
+            Text {
+                anchors.centerIn: parent
+                text: (rightSatDot.item && rightSatDot.item.icon) ? rightSatDot.item.icon : (root.sysHudIcon || "󰋩")
+                font.family: Services.Theme.fontSymbols
+                font.pixelSize: 13
+                color: (rightSatDot.item && rightSatDot.item.color) ? rightSatDot.item.color : root.sysHudColor
+                visible: rightSatDot.activity === "syshud"
+            }
+
+            // ── Content: Transfer Progress ──
+            Text {
+                anchors.centerIn: parent
+                text: "󰒍"
                 font.family: Services.Theme.fontSymbols
                 font.pixelSize: 13
                 color: Services.Theme.accent
-                visible: !rightNotifImg.visible
-            }
+                visible: rightSatDot.activity === "transfer"
 
-            Rectangle {
-                width: 6
-                height: 6
-                radius: 3
-                color: Services.Theme.danger
-                anchors.top: parent.top
-                anchors.topMargin: -1
-                anchors.right: parent.right
-                anchors.rightMargin: -1
-            }
-        }
-
-        // ── Content: Camera Privacy Indicator ──
-        Item {
-            anchors.centerIn: parent
-            width: 16
-            height: 16
-            visible: rightSatDot.activity === "camera"
-            opacity: rightSatDot.activity === "camera" ? 1.0 : 0.0
-            scale: rightSatDot.activity === "camera" ? 1.0 : 0.3
-            Behavior on opacity { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
-            Behavior on scale   { NumberAnimation { duration: 320; easing.type: Easing.OutBack } }
-
-            Text {
-                anchors.centerIn: parent
-                text: "󰄀"
-                font.family: Services.Theme.fontSymbols
-                font.pixelSize: 13
-                color: Services.Theme.success
-            }
-
-            SequentialAnimation on opacity {
-                running: rightSatDot.activity === "camera"
-                loops: Animation.Infinite
-                NumberAnimation { from: 1.0; to: 0.25; duration: 650; easing.type: Easing.InOutSine }
-                NumberAnimation { from: 0.25; to: 1.0; duration: 650; easing.type: Easing.InOutSine }
-            }
-        }
-
-        // ── Content: CapsLock Indicator ──
-        Text {
-            anchors.centerIn: parent
-            text: "󰘶"
-            font.family: Services.Theme.fontSymbols
-            font.pixelSize: 13
-            color: Services.Theme.alertYellow
-            visible: rightSatDot.activity === "capslock"
-            opacity: rightSatDot.activity === "capslock" ? 1.0 : 0.0
-            scale: rightSatDot.activity === "capslock" ? 1.0 : 0.3
-            Behavior on opacity { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
-            Behavior on scale   { NumberAnimation { duration: 320; easing.type: Easing.OutBack } }
-        }
-
-        // ── Content: System HUD ──
-        Text {
-            anchors.centerIn: parent
-            text: (rightSatDot.item && rightSatDot.item.icon) ? rightSatDot.item.icon : (root.sysHudIcon || "󰋩")
-            font.family: Services.Theme.fontSymbols
-            font.pixelSize: 13
-            color: (rightSatDot.item && rightSatDot.item.color) ? rightSatDot.item.color : root.sysHudColor
-            visible: rightSatDot.activity === "syshud"
-            opacity: rightSatDot.activity === "syshud" ? 1.0 : 0.0
-            scale: rightSatDot.activity === "syshud" ? 1.0 : 0.3
-            Behavior on opacity { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
-            Behavior on scale   { NumberAnimation { duration: 320; easing.type: Easing.OutBack } }
-        }
-
-        // ── Content: Transfer Progress ──
-        Text {
-            anchors.centerIn: parent
-            text: "󰒍"
-            font.family: Services.Theme.fontSymbols
-            font.pixelSize: 13
-            color: Services.Theme.accent
-            visible: rightSatDot.activity === "transfer"
-            opacity: rightSatDot.activity === "transfer" ? 1.0 : 0.0
-            scale: rightSatDot.activity === "transfer" ? 1.0 : 0.3
-            Behavior on opacity { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
-            Behavior on scale   { NumberAnimation { duration: 320; easing.type: Easing.OutBack } }
-
-            SequentialAnimation on scale {
-                running: rightSatDot.activity === "transfer"
-                loops: Animation.Infinite
-                NumberAnimation { to: 1.15; duration: 600; easing.type: Easing.InOutSine }
-                NumberAnimation { to: 0.95; duration: 600; easing.type: Easing.InOutSine }
+                SequentialAnimation on scale {
+                    running: rightSatDot.activity === "transfer" && rightSatDot.visible
+                    loops: Animation.Infinite
+                    NumberAnimation { to: 1.15; duration: 600; easing.type: Easing.InOutSine }
+                    NumberAnimation { to: 0.95; duration: 600; easing.type: Easing.InOutSine }
+                }
             }
         }
 
@@ -4158,6 +4572,7 @@ Item {
             hoverEnabled: true
             acceptedButtons: Qt.LeftButton | Qt.RightButton
             cursorShape: Qt.PointingHandCursor
+            z: 10
             onClicked: mouse => {
                 if (mouse.button === Qt.RightButton && rightSatDot.activity === "media") {
                     if (root.activePlayer) root.activePlayer.togglePlaying()
@@ -4173,9 +4588,9 @@ Item {
         id: leftSatDot
         readonly property var item: root.slotLeftItem
         readonly property string activity: root.slotLeftType
-        readonly property bool isSatellite: activity !== ""
+        readonly property bool isSatellite: !root.isUnlockActive && (!root.mediaStopping || !root.mediaIconTransformed ? activity !== "" : false)
         anchors.right: island.left
-        anchors.rightMargin: isSatellite ? 8 : -32
+        anchors.rightMargin: rightMarginValue
         anchors.top: island.top
         anchors.topMargin: Math.max(0, (root.collapsedHeight - implicitHeight) / 2)
         implicitWidth: 32
@@ -4185,14 +4600,15 @@ Item {
         border.color: Services.Theme.borderSubtle
         border.width: 1
         z: 1
-        visible: isSatellite || opacity > 0 || scale > 0
 
-        opacity: isSatellite ? 1 : 0
-        scale: isSatellite ? 1 : 0
+        property real rightMarginValue: isSatellite ? 8 : -32
+        property bool bridgeSnapped: !isSatellite
+        property real contentOpacity: isSatellite ? 1.0 : 0.0
+        property real contentScale: isSatellite ? 1.0 : 0.5
 
-        Behavior on opacity { NumberAnimation { duration: 350; easing.type: Easing.OutCubic } }
-        Behavior on scale   { NumberAnimation { duration: 500; easing.type: Easing.OutBack } }
-        Behavior on anchors.rightMargin { NumberAnimation { duration: 550; easing.type: Easing.OutBack } }
+        opacity: isSatellite ? 1.0 : 0.0
+        scale: isSatellite ? 1.0 : 0.0
+        visible: isSatellite || opacity > 0 || scale > 0 || leftRetractAnim.running || leftDetachAnim.running
 
         transform: Scale {
             id: leftTransform
@@ -4204,196 +4620,359 @@ Item {
 
         onIsSatelliteChanged: {
             if (isSatellite) {
+                leftRetractAnim.stop()
                 leftDetachAnim.restart()
             } else {
+                leftDetachAnim.stop()
                 leftRetractAnim.restart()
             }
         }
 
         SequentialAnimation {
             id: leftDetachAnim
-            ParallelAnimation {
-                NumberAnimation { target: leftTransform; property: "xScale"; to: 1.34; duration: 150; easing.type: Easing.OutQuad }
-                NumberAnimation { target: leftTransform; property: "yScale"; to: 0.74; duration: 150; easing.type: Easing.OutQuad }
-            }
-            ParallelAnimation {
-                NumberAnimation { target: leftTransform; property: "xScale"; to: 0.88; duration: 180; easing.type: Easing.OutQuad }
-                NumberAnimation { target: leftTransform; property: "yScale"; to: 1.14; duration: 180; easing.type: Easing.OutQuad }
-            }
-            ParallelAnimation {
-                NumberAnimation { target: leftTransform; property: "xScale"; to: 1.0; duration: 160; easing.type: Easing.OutCubic }
-                NumberAnimation { target: leftTransform; property: "yScale"; to: 1.0; duration: 160; easing.type: Easing.OutCubic }
-            }
-        }
 
-        SequentialAnimation {
-            id: leftRetractAnim
-            ParallelAnimation {
-                NumberAnimation { target: leftTransform; property: "xScale"; to: 1.25; duration: 180; easing.type: Easing.InQuad }
-                NumberAnimation { target: leftTransform; property: "yScale"; to: 0.80; duration: 180; easing.type: Easing.InQuad }
+            ScriptAction {
+                script: {
+                    leftSatDot.visible = true
+                    leftSatDot.opacity = 1.0
+                    leftSatDot.scale = 1.0
+                    leftSatDot.rightMarginValue = -32
+                    leftSatDot.bridgeSnapped = false
+                    leftSatDot.contentOpacity = 0.0
+                    leftSatDot.contentScale = 0.5
+                    leftTransform.xScale = 1.0
+                    leftTransform.yScale = 1.0
+                }
             }
+
+            // Phase 1: Extrusion & Viscous Stretching (0ms -> 200ms)
             ParallelAnimation {
-                NumberAnimation { target: leftTransform; property: "xScale"; to: 1.0; duration: 100; easing.type: Easing.OutQuad }
-                NumberAnimation { target: leftTransform; property: "yScale"; to: 1.0; duration: 100; easing.type: Easing.OutQuad }
+                NumberAnimation {
+                    target: leftSatDot
+                    property: "rightMarginValue"
+                    from: -32
+                    to: 7.5
+                    duration: 200
+                    easing.type: Easing.InQuad
+                }
+                NumberAnimation {
+                    target: leftTransform
+                    property: "xScale"
+                    from: 1.0
+                    to: 1.40
+                    duration: 200
+                    easing.type: Easing.OutQuad
+                }
+                NumberAnimation {
+                    target: leftTransform
+                    property: "yScale"
+                    from: 1.0
+                    to: 0.72
+                    duration: 200
+                    easing.type: Easing.OutQuad
+                }
+                NumberAnimation {
+                    target: root
+                    property: "leftIslandBulge"
+                    from: 0.0
+                    to: 3.0
+                    duration: 200
+                    easing.type: Easing.OutQuad
+                }
             }
-        }
 
-        // ── Content: Media Waveform ──
-        Row {
-            anchors.centerIn: parent
-            spacing: 2.5
-            visible: leftSatDot.activity === "media"
-            opacity: leftSatDot.activity === "media" ? 1.0 : 0.0
-            scale: leftSatDot.activity === "media" ? 1.0 : 0.3
-            Behavior on opacity { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
-            Behavior on scale   { NumberAnimation { duration: 320; easing.type: Easing.OutBack } }
+            // Snap Point: Surface tension reaches critical limit (~200ms)
+            ScriptAction {
+                script: {
+                    leftSatDot.bridgeSnapped = true
+                }
+            }
 
-            Repeater {
-                model: 3
-                Rectangle {
-                    required property int index
-                    width: 2.5
-                    height: 10
-                    radius: 1.25
-                    color: Services.Theme.success
-                    anchors.verticalCenter: parent.verticalCenter
+            // Phase 2: Damped Fluid Jelly Wobble & Content Blossom (200ms -> 560ms)
+            ParallelAnimation {
+                // Position settles to 8px
+                SequentialAnimation {
+                    NumberAnimation {
+                        target: leftSatDot
+                        property: "rightMarginValue"
+                        from: 7.5
+                        to: 9.2
+                        duration: 80
+                        easing.type: Easing.OutQuad
+                    }
+                    NumberAnimation {
+                        target: leftSatDot
+                        property: "rightMarginValue"
+                        from: 9.2
+                        to: 8.0
+                        duration: 160
+                        easing.type: Easing.InOutQuad
+                    }
+                }
 
-                    SequentialAnimation on height {
-                        running: leftSatDot.activity === "media"
-                        loops: Animation.Infinite
+                // Island recoil
+                SequentialAnimation {
+                    NumberAnimation {
+                        target: root
+                        property: "leftIslandBulge"
+                        from: 3.0
+                        to: -2.0
+                        duration: 80
+                        easing.type: Easing.OutQuad
+                    }
+                    NumberAnimation {
+                        target: root
+                        property: "leftIslandBulge"
+                        from: -2.0
+                        to: 0.0
+                        duration: 160
+                        easing.type: Easing.OutBack
+                    }
+                }
+
+                // Harmonic damped fluid oscillation
+                SequentialAnimation {
+                    // Recoil squash
+                    ParallelAnimation {
+                        NumberAnimation { target: leftTransform; property: "xScale"; to: 0.78; duration: 80; easing.type: Easing.OutQuad }
+                        NumberAnimation { target: leftTransform; property: "yScale"; to: 1.24; duration: 80; easing.type: Easing.OutQuad }
+                    }
+                    // Rebound
+                    ParallelAnimation {
+                        NumberAnimation { target: leftTransform; property: "xScale"; to: 1.14; duration: 85; easing.type: Easing.InOutQuad }
+                        NumberAnimation { target: leftTransform; property: "yScale"; to: 0.88; duration: 85; easing.type: Easing.InOutQuad }
+                    }
+                    // Counter oscillation
+                    ParallelAnimation {
+                        NumberAnimation { target: leftTransform; property: "xScale"; to: 0.95; duration: 75; easing.type: Easing.InOutSine }
+                        NumberAnimation { target: leftTransform; property: "yScale"; to: 1.04; duration: 75; easing.type: Easing.InOutSine }
+                    }
+                    // Settle to circle
+                    ParallelAnimation {
+                        NumberAnimation { target: leftTransform; property: "xScale"; to: 1.0; duration: 80; easing.type: Easing.OutCubic }
+                        NumberAnimation { target: leftTransform; property: "yScale"; to: 1.0; duration: 80; easing.type: Easing.OutCubic }
+                    }
+                }
+
+                // Content bloom
+                SequentialAnimation {
+                    PauseAnimation { duration: 30 }
+                    ParallelAnimation {
                         NumberAnimation {
-                            to: index === 0 ? 14 : (index === 1 ? 6 : 12)
-                            duration: index === 0 ? 280 : (index === 1 ? 400 : 340)
-                            easing.type: Easing.InOutSine
+                            target: leftSatDot
+                            property: "contentOpacity"
+                            from: 0.0
+                            to: 1.0
+                            duration: 220
+                            easing.type: Easing.OutCubic
                         }
                         NumberAnimation {
-                            to: index === 0 ? 4 : (index === 1 ? 14 : 4)
-                            duration: index === 0 ? 320 : (index === 1 ? 300 : 380)
-                            easing.type: Easing.InOutSine
+                            target: leftSatDot
+                            property: "contentScale"
+                            from: 0.5
+                            to: 1.0
+                            duration: 260
+                            easing.type: Easing.OutBack
+                            easing.overshoot: 1.15
                         }
                     }
                 }
             }
         }
 
-        // ── Content: Notification (App Icon + Badge) ──
-        Item {
-            anchors.centerIn: parent
-            width: 18
-            height: 18
-            visible: leftSatDot.activity === "notif"
-            opacity: leftSatDot.activity === "notif" ? 1.0 : 0.0
-            scale: leftSatDot.activity === "notif" ? 1.0 : 0.3
-            Behavior on opacity { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
-            Behavior on scale   { NumberAnimation { duration: 320; easing.type: Easing.OutBack } }
+        SequentialAnimation {
+            id: leftRetractAnim
 
-            Image {
-                id: leftNotifImg
+            // Content dissolves first
+            ParallelAnimation {
+                NumberAnimation { target: leftSatDot; property: "contentOpacity"; to: 0.0; duration: 80; easing.type: Easing.InQuad }
+                NumberAnimation { target: leftSatDot; property: "contentScale"; to: 0.6; duration: 80; easing.type: Easing.InQuad }
+            }
+
+            ScriptAction {
+                script: {
+                    leftSatDot.bridgeSnapped = false
+                }
+            }
+
+            // Droplet pulled into island
+            ParallelAnimation {
+                NumberAnimation {
+                    target: leftSatDot
+                    property: "rightMarginValue"
+                    to: -32
+                    duration: 240
+                    easing.type: Easing.InBack
+                    easing.overshoot: 1.1
+                }
+                NumberAnimation {
+                    target: leftTransform
+                    property: "xScale"
+                    to: 1.25
+                    duration: 140
+                    easing.type: Easing.OutQuad
+                }
+                NumberAnimation {
+                    target: leftTransform
+                    property: "yScale"
+                    to: 0.80
+                    duration: 140
+                    easing.type: Easing.OutQuad
+                }
+            }
+
+            // Fully absorbed
+            ScriptAction {
+                script: {
+                    leftSatDot.opacity = 0.0
+                    leftSatDot.scale = 0.0
+                    leftTransform.xScale = 1.0
+                    leftTransform.yScale = 1.0
+                    leftSatDot.bridgeSnapped = true
+                }
+            }
+        }
+
+        // ── Content Wrapper (Synchronized fluid blooming) ──
+        Item {
+            id: leftContentWrapper
+            anchors.fill: parent
+            opacity: leftSatDot.contentOpacity
+            scale: leftSatDot.contentScale
+
+            // ── Content: Media Waveform ──
+            Row {
+                anchors.centerIn: parent
+                spacing: 2.5
+                visible: leftSatDot.activity === "media"
+
+                Repeater {
+                    model: 3
+                    Rectangle {
+                        required property int index
+                        width: 2.5
+                        height: 10
+                        radius: 1.25
+                        color: Services.Theme.success
+                        anchors.verticalCenter: parent.verticalCenter
+
+                        SequentialAnimation on height {
+                            running: leftSatDot.activity === "media" && leftSatDot.visible
+                            loops: Animation.Infinite
+                            NumberAnimation {
+                                to: index === 0 ? 14 : (index === 1 ? 6 : 12)
+                                duration: index === 0 ? 280 : (index === 1 ? 400 : 340)
+                                easing.type: Easing.InOutSine
+                            }
+                            NumberAnimation {
+                                to: index === 0 ? 4 : (index === 1 ? 14 : 4)
+                                duration: index === 0 ? 320 : (index === 1 ? 300 : 380)
+                                easing.type: Easing.InOutSine
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ── Content: Notification (App Icon + Badge) ──
+            Item {
+                anchors.centerIn: parent
+                width: 18
+                height: 18
+                visible: leftSatDot.activity === "notif"
+
+                Image {
+                    id: leftNotifImg
+                    anchors.centerIn: parent
+                    width: 16
+                    height: 16
+                    source: (leftSatDot.item && leftSatDot.item.notif) ? root.resolveNotifIcon(leftSatDot.item.notif) : ""
+                    visible: status === Image.Ready && source.toString().length > 0
+                    fillMode: Image.PreserveAspectFit
+                    asynchronous: true
+                    cache: true
+                    sourceSize: Qt.size(32, 32)
+                }
+
+                Text {
+                    anchors.centerIn: parent
+                    text: "󰂚"
+                    font.family: Services.Theme.fontSymbols
+                    font.pixelSize: 13
+                    color: Services.Theme.accent
+                    visible: !leftNotifImg.visible
+                }
+
+                Rectangle {
+                    width: 6
+                    height: 6
+                    radius: 3
+                    color: Services.Theme.danger
+                    anchors.top: parent.top
+                    anchors.topMargin: -1
+                    anchors.right: parent.right
+                    anchors.rightMargin: -1
+                }
+            }
+
+            // ── Content: Camera Privacy Indicator ──
+            Item {
                 anchors.centerIn: parent
                 width: 16
                 height: 16
-                source: (leftSatDot.item && leftSatDot.item.notif) ? root.resolveNotifIcon(leftSatDot.item.notif) : ""
-                visible: status === Image.Ready && source.toString().length > 0
-                fillMode: Image.PreserveAspectFit
-                asynchronous: true
-                cache: true
-                sourceSize: Qt.size(32, 32)
+                visible: leftSatDot.activity === "camera"
+
+                Text {
+                    anchors.centerIn: parent
+                    text: "󰄀"
+                    font.family: Services.Theme.fontSymbols
+                    font.pixelSize: 13
+                    color: Services.Theme.success
+                }
+
+                SequentialAnimation on opacity {
+                    running: leftSatDot.activity === "camera" && leftSatDot.visible
+                    loops: Animation.Infinite
+                    NumberAnimation { from: 1.0; to: 0.25; duration: 650; easing.type: Easing.InOutSine }
+                    NumberAnimation { from: 0.25; to: 1.0; duration: 650; easing.type: Easing.InOutSine }
+                }
             }
 
+            // ── Content: CapsLock Indicator ──
             Text {
                 anchors.centerIn: parent
-                text: "󰂚"
+                text: "󰘶"
+                font.family: Services.Theme.fontSymbols
+                font.pixelSize: 13
+                color: Services.Theme.alertYellow
+                visible: leftSatDot.activity === "capslock"
+            }
+
+            // ── Content: System HUD ──
+            Text {
+                anchors.centerIn: parent
+                text: (leftSatDot.item && leftSatDot.item.icon) ? leftSatDot.item.icon : (root.sysHudIcon || "󰋩")
+                font.family: Services.Theme.fontSymbols
+                font.pixelSize: 13
+                color: (leftSatDot.item && leftSatDot.item.color) ? leftSatDot.item.color : root.sysHudColor
+                visible: leftSatDot.activity === "syshud"
+            }
+
+            // ── Content: Transfer Progress ──
+            Text {
+                anchors.centerIn: parent
+                text: "󰒍"
                 font.family: Services.Theme.fontSymbols
                 font.pixelSize: 13
                 color: Services.Theme.accent
-                visible: !leftNotifImg.visible
-            }
+                visible: leftSatDot.activity === "transfer"
 
-            Rectangle {
-                width: 6
-                height: 6
-                radius: 3
-                color: Services.Theme.danger
-                anchors.top: parent.top
-                anchors.topMargin: -1
-                anchors.right: parent.right
-                anchors.rightMargin: -1
-            }
-        }
-
-        // ── Content: Camera Privacy Indicator ──
-        Item {
-            anchors.centerIn: parent
-            width: 16
-            height: 16
-            visible: leftSatDot.activity === "camera"
-            opacity: leftSatDot.activity === "camera" ? 1.0 : 0.0
-            scale: leftSatDot.activity === "camera" ? 1.0 : 0.3
-            Behavior on opacity { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
-            Behavior on scale   { NumberAnimation { duration: 320; easing.type: Easing.OutBack } }
-
-            Text {
-                anchors.centerIn: parent
-                text: "󰄀"
-                font.family: Services.Theme.fontSymbols
-                font.pixelSize: 13
-                color: Services.Theme.success
-            }
-
-            SequentialAnimation on opacity {
-                running: leftSatDot.activity === "camera"
-                loops: Animation.Infinite
-                NumberAnimation { from: 1.0; to: 0.25; duration: 650; easing.type: Easing.InOutSine }
-                NumberAnimation { from: 0.25; to: 1.0; duration: 650; easing.type: Easing.InOutSine }
-            }
-        }
-
-        // ── Content: CapsLock Indicator ──
-        Text {
-            anchors.centerIn: parent
-            text: "󰘶"
-            font.family: Services.Theme.fontSymbols
-            font.pixelSize: 13
-            color: Services.Theme.alertYellow
-            visible: leftSatDot.activity === "capslock"
-            opacity: leftSatDot.activity === "capslock" ? 1.0 : 0.0
-            scale: leftSatDot.activity === "capslock" ? 1.0 : 0.3
-            Behavior on opacity { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
-            Behavior on scale   { NumberAnimation { duration: 320; easing.type: Easing.OutBack } }
-        }
-
-        // ── Content: System HUD ──
-        Text {
-            anchors.centerIn: parent
-            text: (leftSatDot.item && leftSatDot.item.icon) ? leftSatDot.item.icon : (root.sysHudIcon || "󰋩")
-            font.family: Services.Theme.fontSymbols
-            font.pixelSize: 13
-            color: (leftSatDot.item && leftSatDot.item.color) ? leftSatDot.item.color : root.sysHudColor
-            visible: leftSatDot.activity === "syshud"
-            opacity: leftSatDot.activity === "syshud" ? 1.0 : 0.0
-            scale: leftSatDot.activity === "syshud" ? 1.0 : 0.3
-            Behavior on opacity { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
-            Behavior on scale   { NumberAnimation { duration: 320; easing.type: Easing.OutBack } }
-        }
-
-        // ── Content: Transfer Progress ──
-        Text {
-            anchors.centerIn: parent
-            text: "󰒍"
-            font.family: Services.Theme.fontSymbols
-            font.pixelSize: 13
-            color: Services.Theme.accent
-            visible: leftSatDot.activity === "transfer"
-            opacity: leftSatDot.activity === "transfer" ? 1.0 : 0.0
-            scale: leftSatDot.activity === "transfer" ? 1.0 : 0.3
-            Behavior on opacity { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
-            Behavior on scale   { NumberAnimation { duration: 320; easing.type: Easing.OutBack } }
-
-            SequentialAnimation on scale {
-                running: leftSatDot.activity === "transfer"
-                loops: Animation.Infinite
-                NumberAnimation { to: 1.15; duration: 600; easing.type: Easing.InOutSine }
-                NumberAnimation { to: 0.95; duration: 600; easing.type: Easing.InOutSine }
+                SequentialAnimation on scale {
+                    running: leftSatDot.activity === "transfer" && leftSatDot.visible
+                    loops: Animation.Infinite
+                    NumberAnimation { to: 1.15; duration: 600; easing.type: Easing.InOutSine }
+                    NumberAnimation { to: 0.95; duration: 600; easing.type: Easing.InOutSine }
+                }
             }
         }
 
@@ -4403,6 +4982,7 @@ Item {
             hoverEnabled: true
             acceptedButtons: Qt.LeftButton | Qt.RightButton
             cursorShape: Qt.PointingHandCursor
+            z: 10
             onClicked: mouse => {
                 if (mouse.button === Qt.RightButton && leftSatDot.activity === "media") {
                     if (root.activePlayer) root.activePlayer.togglePlaying()
@@ -4412,6 +4992,7 @@ Item {
             }
         }
     }
+
 
     // ── Backward Compatibility Aliases ──
     readonly property alias mediaSatelliteDot: rightSatDot

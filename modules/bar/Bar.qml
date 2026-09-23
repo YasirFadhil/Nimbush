@@ -66,11 +66,51 @@ Variants {
         }
     }
 
+    property real barTransitionState: (Services.OverlayManager && Services.OverlayManager.isLocked) ? 0.0 : 1.0
+
+    NumberAnimation {
+        id: barAbsorbAnim
+        target: root
+        property: "barTransitionState"
+        from: 1.0
+        to: 0.0
+        duration: 280
+        easing.type: Easing.InBack
+        easing.overshoot: 1.10
+    }
+
+    NumberAnimation {
+        id: barEjectAnim
+        target: root
+        property: "barTransitionState"
+        from: 0.0
+        to: 1.0
+        duration: 360
+        easing.type: Easing.OutBack
+        easing.overshoot: 1.20
+    }
+
+    Connections {
+        target: Services.OverlayManager
+        function onIsLockAbsorbingChanged() {
+            if (Services.OverlayManager && Services.OverlayManager.isLockAbsorbing) {
+                barAbsorbAnim.restart()
+            }
+        }
+        function onIsLockedChanged() {
+            if (!Services.OverlayManager) return
+            if (!Services.OverlayManager.isLocked) {
+                barEjectAnim.restart()
+            } else if (!Services.OverlayManager.isLockAbsorbing) {
+                root.barTransitionState = 0.0
+            }
+        }
+    }
+
     Item {
         id: barContainer
         anchors.fill: parent
         opacity: (Services.OverlayManager && Services.OverlayManager.isWizardActive) ? 0.0 : 1.0
-        Behavior on opacity { NumberAnimation { duration: 320; easing.type: Easing.OutCubic } }
 
         // ── 1. Floating Glass Bar Container ───────────────────────────────────
         Rectangle {
@@ -86,6 +126,7 @@ Variants {
             color: Services.Theme.bgElevated
             border.color: Services.Theme.border
             border.width: 1
+            opacity: root.barTransitionState
 
             // Subtle top/inner glow
             Rectangle {
@@ -106,6 +147,7 @@ Variants {
             y: root.barYOffset
             height: root.barHeight
             color: Services.Theme.bgElevated
+            opacity: root.barTransitionState
 
             Rectangle {
                 anchors.left: parent.left
@@ -126,6 +168,7 @@ Variants {
             y: root.barYOffset
             height: root.barHeight
             color: Qt.rgba(Services.Theme.bgElevated.r, Services.Theme.bgElevated.g, Services.Theme.bgElevated.b, 0.65)
+            opacity: root.barTransitionState
 
             Rectangle {
                 anchors.left: parent.left
@@ -153,14 +196,25 @@ Variants {
                 spacing: root.isMinimal ? 8 : 12
 
                 Components.WorkspaceIndicator {
+                    id: workspaceIndicator
                     Layout.alignment: Qt.AlignVCenter
                     visible: Services.Config ? Services.Config.showWorkspaces : true
-                    opacity: Services.OverlayManager.isLocked ? 0.0 : 1.0
-                    transform: Translate {
-                        x: Services.OverlayManager.isLocked ? -35 : 0
-                        Behavior on x { NumberAnimation { duration: 350; easing.type: Services.OverlayManager.isLocked ? Easing.OutCubic : Easing.InCubic } }
-                    }
-                    Behavior on opacity { NumberAnimation { duration: 350; easing.type: Services.OverlayManager.isLocked ? Easing.OutCubic : Easing.InCubic } }
+
+                    readonly property real wsCenterX: workspaceIndicator.x + ((workspaceIndicator.implicitWidth > 0 ? workspaceIndicator.implicitWidth : workspaceIndicator.width) / 2)
+                    readonly property real targetDx: (root.width / 2) - wsCenterX
+
+                    transform: [
+                        Translate {
+                            x: workspaceIndicator.targetDx * (1.0 - root.barTransitionState)
+                        },
+                        Scale {
+                            origin.x: (workspaceIndicator.implicitWidth > 0 ? workspaceIndicator.implicitWidth : workspaceIndicator.width) / 2
+                            origin.y: workspaceIndicator.height / 2
+                            xScale: 0.15 + 0.85 * root.barTransitionState
+                            yScale: 0.15 + 0.85 * root.barTransitionState
+                        }
+                    ]
+                    opacity: Math.min(1.0, Math.max(0.0, root.barTransitionState * 1.35))
                 }
 
                 Item {
@@ -179,6 +233,22 @@ Variants {
                         : (centerClockContainer.visible ? centerClockContainer.width : 0)
 
                     islandDemand: root.showDynamicIsland ? dynamicIsland.demand : "idle"
+
+                    readonly property real trayCenterX: statusTray.x + ((statusTray.implicitWidth > 0 ? statusTray.implicitWidth : statusTray.width) / 2)
+                    readonly property real targetDx: (root.width / 2) - trayCenterX
+
+                    transform: [
+                        Translate {
+                            x: statusTray.targetDx * (1.0 - root.barTransitionState)
+                        },
+                        Scale {
+                            origin.x: (statusTray.implicitWidth > 0 ? statusTray.implicitWidth : statusTray.width) / 2
+                            origin.y: statusTray.height / 2
+                            xScale: 0.15 + 0.85 * root.barTransitionState
+                            yScale: 0.15 + 0.85 * root.barTransitionState
+                        }
+                    ]
+                    opacity: Math.min(1.0, Math.max(0.0, root.barTransitionState * 1.35))
                 }
             }
         }
@@ -192,19 +262,27 @@ Variants {
             width: centerClock.implicitWidth
             z: 10
 
+            transform: Scale {
+                origin.x: centerClockContainer.width / 2
+                origin.y: centerClockContainer.height / 2
+                xScale: 0.15 + 0.85 * root.barTransitionState
+                yScale: 0.15 + 0.85 * root.barTransitionState
+            }
+            opacity: Math.min(1.0, Math.max(0.0, root.barTransitionState * 1.35))
+
             Components.ClockCenter {
                 id: centerClock
                 anchors.centerIn: parent
             }
         }
-          
-        // ── Dynamic Island (Exclusive to Islands Mode) ────────────────────────
-        Components.DynamicIsland {
-            id: dynamicIsland
-            anchors.fill: parent
-            z: dynamicIsland.expanded ? 999 : 5
-            visible: root.showDynamicIsland
-        }
+    }
+
+    // ── Dynamic Island (Exclusive to Islands Mode) ────────────────────────
+    Components.DynamicIsland {
+        id: dynamicIsland
+        anchors.fill: parent
+        z: dynamicIsland.expanded ? 999 : 5
+        visible: root.showDynamicIsland
     }
 }
 }
