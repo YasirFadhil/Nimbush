@@ -290,6 +290,7 @@ Variants {
         visible: false
         width: 1
         height: 1
+        sourceSize: Qt.size(Math.ceil(((root.screen && root.screen.width) ? root.screen.width : 1366) * 1.15), Math.ceil(((root.screen && root.screen.height) ? root.screen.height : 768) * 1.15))
         cache: true
         asynchronous: true
         source: {

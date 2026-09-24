@@ -27,7 +27,7 @@ Scope {
     property string minStr: "00"
     property string dateStr: ""
     property string greetingStr: "Welcome"
-    property string username: "user"
+    property string username: (Services.OsInfo && Services.OsInfo.username.length > 0) ? Services.OsInfo.username : "yasirfadhil"
     property string hostname: "host"
     property bool capsLockOn: false
     property bool isRevealed: false
@@ -136,9 +136,14 @@ Scope {
                 Services.OverlayManager.isLocked = true
             }
             root.isLocked = true
-            root.isLockingWithGenie = true
             sessionLock.locked = true
             root.isRevealed = true
+            lockTopBarEjectAnim.restart()
+            lockGenieAnim.restart()
+            deviceLockedPeekStartTimer.restart()
+            if (typeof pwTextInput !== "undefined" && pwTextInput) {
+                pwTextInput.forceActiveFocus()
+            }
         }
     }
 
@@ -146,8 +151,11 @@ Scope {
         if (root.isRevealed) {
             root.deviceLockedPeekActive = false
             deviceLockedPeekStartTimer.restart()
-            if (!lockTopBarEjectAnim.running) lockTopBarEjectAnim.restart()
-            if (!lockGenieAnim.running) lockGenieAnim.restart()
+            lockTopBarEjectAnim.restart()
+            lockGenieAnim.restart()
+            if (typeof pwTextInput !== "undefined" && pwTextInput) {
+                pwTextInput.forceActiveFocus()
+            }
         } else {
             deviceLockedPeekStartTimer.stop()
             deviceLockedPeekDurationTimer.stop()
@@ -339,7 +347,7 @@ Scope {
 
     Timer {
         id: faceIdAutoUnlockContractTimer
-        interval: 650
+        interval: 500
         repeat: false
         onTriggered: {
             console.log("[Lockscreen] Auto-unlock: contracting face canvas before unlocking desktop")
@@ -379,7 +387,7 @@ Scope {
 
     Timer {
         id: faceIdUnlockDelayTimer
-        interval: 600
+        interval: 350
         repeat: false
         onTriggered: {
             console.log("[Lockscreen] Face ID auto-unlock triggered (canvas closed)")
@@ -581,7 +589,8 @@ Scope {
         isAuthenticating = true
         pendingPassword = pw
         if (Services.FaceId) Services.FaceId.stopScan()
-        pam.start(root.username)
+        pam.user = root.username
+        pam.start()
     }
 
     function triggerShake(msg) {
@@ -637,13 +646,12 @@ Scope {
     // System info process
     Process {
         id: userInfoProc
-        command: ["sh", "-c", "echo $USER && uname -n"]
+        command: ["whoami"]
         running: true
         stdout: SplitParser {
             onRead: data => {
-                const lines = data.trim().split("\n")
-                if (lines.length > 0 && lines[0]) root.username = lines[0]
-                if (lines.length > 1 && lines[1]) root.hostname = lines[1]
+                const u = data.trim()
+                if (u.length > 0) root.username = u
             }
         }
     }
@@ -655,6 +663,7 @@ Scope {
 
     PamContext {
         id: pam
+        user: root.username
         config: "login"
 
         onResponseRequiredChanged: {
@@ -713,7 +722,6 @@ Scope {
                 if (typeof pwTextInput !== "undefined" && pwTextInput) pwTextInput.text = ""
                 if (pam.active) pam.abort()
             } else {
-                sessionLockCommitTimer.stop()
                 if (Services.OverlayManager) {
                     Services.OverlayManager.isLockAbsorbing = false
                     Services.OverlayManager.isLocked = true
@@ -723,7 +731,6 @@ Scope {
                 lockTopBarAbsorbAnim.stop()
                 root.unlockSuctionProgress = 0.0
                 root.isUnlockingWithGenie = false
-                root.lockTopBarState = 0.0
                 faceIdUnlockDelayTimer.stop()
                 faceIdAutoUnlockContractTimer.stop()
                 faceIdContractTimer.stop()
@@ -741,9 +748,13 @@ Scope {
                 root.hasPeekedLocked = false
                 root.deviceLockedPeekActive = false
 
-                if (!root.isRevealed) {
-                    root.isLockingWithGenie = true
-                    root.isRevealed = true
+                if (!sessionLockCommitTimer.running) {
+                    if (!root.isRevealed) {
+                        root.isRevealed = true
+                        lockTopBarEjectAnim.restart()
+                        lockGenieAnim.restart()
+                        deviceLockedPeekStartTimer.restart()
+                    }
                 }
             }
         }
@@ -850,6 +861,10 @@ Scope {
                     Image {
                         id: bgImage
                         anchors.fill: parent
+                        sourceSize: Qt.size(
+                            Math.ceil(((parent.width > 0) ? parent.width : (root.screen ? root.screen.width : 1366)) * 1.15),
+                            Math.ceil(((parent.height > 0) ? parent.height : (root.screen ? root.screen.height : 768)) * 1.15)
+                        )
                         source: {
                             if (Services.Config && Services.Config.lockscreenWallpaperMode === "custom" && Services.Config.lockscreenCustomWallpaper.length > 0) {
                                 return "file://" + Services.Config.lockscreenCustomWallpaper
@@ -857,7 +872,7 @@ Scope {
                             return Services.Wallpaper.currentWallpaper.length > 0 ? ("file://" + Services.Wallpaper.currentWallpaper) : ("file://" + Services.Wallpaper.darkWallbler)
                         }
                         fillMode: Image.PreserveAspectCrop
-                        asynchronous: false
+                        asynchronous: true
                         smooth: true
                         cache: true
                         visible: true
@@ -868,13 +883,13 @@ Scope {
                         source: bgImage
                         blurEnabled: (Services.Config && Services.Config.lockscreenBlur) || false
                         blur: (Services.Config ? Services.Config.lockscreenBlurRadius : 0.40)
-                        blurMax: 64
+                        blurMax: 32
                         opacity: {
                             if (!root.isLocked || (!root.isRevealed && !root.isUnlockingWithGenie)) return 0.0
                             if (root.isUnlockingWithGenie) return (1.0 - root.unlockSuctionProgress)
                             return root.isRevealed ? 1.0 : 0.0
                         }
-                        visible: (Services.Config && Services.Config.lockscreenBlur && (Services.Config.lockscreenBlurRadius > 0)) || false
+                        visible: ((Services.Config && Services.Config.lockscreenBlur && (Services.Config.lockscreenBlurRadius > 0)) || false) && (opacity > 0.001)
                         Behavior on opacity {
                             enabled: !root.isUnlockingWithGenie
                             NumberAnimation { duration: 320; easing.type: Easing.OutCubic }
@@ -945,12 +960,11 @@ Scope {
                         }
 
                         border.color: {
-                            if (root.isFaceVerified || root.isUnlockingWithGenie) return "#30d158"
                             if (lockIsland.isIslandExpanded && Services.FaceId && Services.FaceId.status === "detected") return "#38bdf8"
                             if (root.isDeviceLockedPeek) return Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.35)
                             return Services.Theme.borderSubtle
                         }
-                        border.width: (root.isFaceVerified || root.isUnlockingWithGenie) ? 2.0 : (((lockIsland.isIslandExpanded && Services.FaceId && Services.FaceId.status === "detected") || root.isDeviceLockedPeek) ? 1.5 : 1)
+                        border.width: (((lockIsland.isIslandExpanded && Services.FaceId && Services.FaceId.status === "detected") || root.isDeviceLockedPeek) ? 1.5 : 1)
 
                         width: lockIsland.isIslandExpanded ? 160 : (root.isDeviceLockedPeek ? 218 : 140)
                         height: lockIsland.isIslandExpanded ? 96 : (root.isDeviceLockedPeek ? 44 : 32)
@@ -1004,8 +1018,7 @@ Scope {
                             x: {
                                 if (masterMorphIcon.isFace) return 63
                                 if (masterMorphIcon.isPeek) return 10
-                                if (root.hasPeekedLocked || root.isFaceVerified) return 14
-                                if (root.isUnlockingWithGenie) return 60
+                                if (root.hasPeekedLocked && !root.isFaceVerified) return 14
                                 return 60
                             }
                             y: {
@@ -1087,8 +1100,7 @@ Scope {
                                     id: morphTextGlyph
                                     anchors.centerIn: parent
                                     text: {
-                                        if (root.isFaceVerified || root.isUnlockingWithGenie) return "󰌿"
-                                        if (root.hasPeekedLocked || masterMorphIcon.isPeek) return "󰌾"
+                                        if (root.hasPeekedLocked && !root.isFaceVerified && !masterMorphIcon.isPeek) return "󰌾"
                                         return "●"
                                     }
                                     font.family: Services.Theme.fontSymbols
@@ -1098,9 +1110,8 @@ Scope {
                                         return 1.0
                                     }
                                     color: {
-                                        if (root.isFaceVerified || root.isUnlockingWithGenie) return "#30d158"
                                         if (masterMorphIcon.isPeek) return Services.Theme.accent
-                                        if (root.hasPeekedLocked) return Services.Theme.textPrimary
+                                        if (root.hasPeekedLocked && !root.isFaceVerified) return Services.Theme.textPrimary
                                         return Services.Theme.textDisabled
                                     }
 
@@ -2298,17 +2309,15 @@ Scope {
                                 height: 56
 
                                 // Outer Glow / Focus Ring
-                                Canvas {
+                                Rectangle {
                                     id: outerGlowRing
                                     anchors.centerIn: parent
                                     width: 54
                                     height: 54
-                                    visible: centerAuthCard.showAvatarRing
-                                    scale: pwTextInput.activeFocus ? 1.0 : 0.98
-
-                                    property real r: centerAuthCard.ringRadius
-                                    property real bw: pwTextInput.activeFocus ? 2 : 1.5
-                                    property color bc: {
+                                    color: "transparent"
+                                    radius: centerAuthCard.ringRadius
+                                    border.width: pwTextInput.activeFocus ? 2 : 1.5
+                                    border.color: {
                                         if (Services.FaceId && Services.FaceId.status === "success") return Services.Theme.success
                                         if (Services.FaceId && Services.FaceId.isScanning) return Services.Theme.accent
                                         return root.isError
@@ -2317,38 +2326,10 @@ Scope {
                                                 ? Services.Theme.accent
                                                 : Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.3))
                                     }
+                                    visible: centerAuthCard.showAvatarRing
+                                    scale: pwTextInput.activeFocus ? 1.0 : 0.98
 
-                                    onRChanged: requestPaint()
-                                    onBwChanged: requestPaint()
-                                    onBcChanged: requestPaint()
-                                    onWidthChanged: requestPaint()
-                                    onHeightChanged: requestPaint()
-
-                                    onPaint: {
-                                        var ctx = getContext("2d")
-                                        ctx.reset()
-                                        ctx.clearRect(0, 0, width, height)
-                                        if (width <= 0 || height <= 0 || bw <= 0) return
-                                        ctx.strokeStyle = bc
-                                        ctx.lineWidth = bw
-                                        var half = bw / 2
-                                        var rad = Math.max(0, Math.min(r - half, (width - bw) / 2, (height - bw) / 2))
-                                        if (rad <= 0) return
-                                        ctx.beginPath()
-                                        ctx.moveTo(half + rad, half)
-                                        ctx.lineTo(width - half - rad, half)
-                                        ctx.arcTo(width - half, half, width - half, half + rad, rad)
-                                        ctx.lineTo(width - half, height - half - rad)
-                                        ctx.arcTo(width - half, height - half, width - half - rad, height - half, rad)
-                                        ctx.lineTo(half + rad, height - half)
-                                        ctx.arcTo(half, height - half, half, height - half - rad, rad)
-                                        ctx.lineTo(half, half + rad)
-                                        ctx.arcTo(half, half, half + rad, half, rad)
-                                        ctx.closePath()
-                                        ctx.stroke()
-                                    }
-
-                                    Behavior on bc { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                                    Behavior on border.color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                                     Behavior on scale { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                                     SequentialAnimation on opacity {
@@ -3172,28 +3153,32 @@ Scope {
                     id: ccLockscreenOverlay
                     anchors.fill: parent
                     z: 9999
-                    visible: root.lockscreenCcOpen || ccCard.opacity > 0.01
+                    visible: root.lockscreenCcOpen
 
                     MouseArea {
                         anchors.fill: parent
                         onClicked: root.lockscreenCcOpen = false
                     }
 
-                    LockscreenControlCenter {
-                        id: ccCard
+                    Loader {
+                        id: ccLoader
+                        active: root.lockscreenCcOpen
                         anchors.top: parent.top
                         anchors.right: parent.right
                         anchors.topMargin: 42
                         anchors.rightMargin: 18
-                        opacity: root.lockscreenCcOpen ? 1.0 : 0.0
-                        scale: root.lockscreenCcOpen ? 1.0 : 0.96
-                        transform: Translate {
-                            y: root.lockscreenCcOpen ? 0 : -20
-                            Behavior on y { NumberAnimation { duration: 280; easing.type: Easing.OutCubic } }
+                        sourceComponent: LockscreenControlCenter {
+                            id: ccCard
+                            opacity: root.lockscreenCcOpen ? 1.0 : 0.0
+                            scale: root.lockscreenCcOpen ? 1.0 : 0.96
+                            transform: Translate {
+                                y: root.lockscreenCcOpen ? 0 : -20
+                                Behavior on y { NumberAnimation { duration: 280; easing.type: Easing.OutCubic } }
+                            }
+                            Behavior on opacity { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
+                            Behavior on scale { NumberAnimation { duration: 280; easing.type: Easing.OutBack } }
+                            onRequestClose: root.lockscreenCcOpen = false
                         }
-                        Behavior on opacity { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
-                        Behavior on scale { NumberAnimation { duration: 280; easing.type: Easing.OutBack } }
-                        onRequestClose: root.lockscreenCcOpen = false
                     }
                 }
             }

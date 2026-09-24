@@ -228,37 +228,41 @@ Variants {
             }
         }
 
+        readonly property bool isDockHiddenForLock: Boolean(
+            Services.OverlayManager && (Services.OverlayManager.isLocked || Services.OverlayManager.isLockAbsorbing)
+        )
+
         // ── Main Dock Container (Liquid Glass Floating Pill) ─────────────────
         Rectangle {
             id: dockContainer
-            opacity: (Services.OverlayManager && Services.OverlayManager.isWizardActive) ? 0.0 : ((Services.OverlayManager && Services.OverlayManager.isLocked) ? 0.0 : 1.0)
+            opacity: (Services.OverlayManager && Services.OverlayManager.isWizardActive) ? 0.0 : (root.isDockHiddenForLock ? 0.0 : 1.0)
             Behavior on opacity {
                 NumberAnimation {
-                    duration: (Services.OverlayManager && Services.OverlayManager.isLocked) ? 260 : 380
+                    duration: root.isDockHiddenForLock ? 220 : 380
                     easing.type: Easing.OutCubic
                 }
             }
 
             transform: Translate {
-                y: (Services.OverlayManager && Services.OverlayManager.isLocked)
+                y: root.isDockHiddenForLock
                     ? (root.isBottom ? root.dockExitOffset : -root.dockExitOffset)
                     : 0
-                x: (Services.OverlayManager && Services.OverlayManager.isLocked)
+                x: root.isDockHiddenForLock
                     ? (root.isLeft ? -root.dockExitOffset : (root.isRight ? root.dockExitOffset : 0))
                     : 0
 
                 Behavior on y {
                     NumberAnimation {
-                        duration: (Services.OverlayManager && Services.OverlayManager.isLocked) ? 320 : 480
-                        easing.type: (Services.OverlayManager && Services.OverlayManager.isLocked) ? Easing.InCubic : Easing.OutBack
-                        easing.overshoot: (Services.OverlayManager && Services.OverlayManager.isLocked) ? 0.0 : 1.15
+                        duration: root.isDockHiddenForLock ? 240 : 480
+                        easing.type: root.isDockHiddenForLock ? Easing.InCubic : Easing.OutBack
+                        easing.overshoot: root.isDockHiddenForLock ? 0.0 : 1.15
                     }
                 }
                 Behavior on x {
                     NumberAnimation {
-                        duration: (Services.OverlayManager && Services.OverlayManager.isLocked) ? 320 : 480
-                        easing.type: (Services.OverlayManager && Services.OverlayManager.isLocked) ? Easing.InCubic : Easing.OutBack
-                        easing.overshoot: (Services.OverlayManager && Services.OverlayManager.isLocked) ? 0.0 : 1.15
+                        duration: root.isDockHiddenForLock ? 240 : 480
+                        easing.type: root.isDockHiddenForLock ? Easing.InCubic : Easing.OutBack
+                        easing.overshoot: root.isDockHiddenForLock ? 0.0 : 1.15
                     }
                 }
             }
