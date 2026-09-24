@@ -68,6 +68,14 @@ Variants {
 
     property real barTransitionState: (Services.OverlayManager && Services.OverlayManager.isLocked) ? 0.0 : 1.0
 
+    // ── Expose bar visibility progress to lockscreen for phase-sync ───────────
+    Binding {
+        target: Services.OverlayManager
+        property: "barIslandProgress"
+        value: root.barTransitionState
+        when: Services.OverlayManager !== null
+    }
+
     NumberAnimation {
         id: barAbsorbAnim
         target: root
@@ -82,9 +90,9 @@ Variants {
         id: barEjectAnim
         target: root
         property: "barTransitionState"
-        from: 0.0
+        from: root.barTransitionState
         to: 1.0
-        duration: 360
+        duration: 380
         easing.type: Easing.OutBack
         easing.overshoot: 1.20
     }
@@ -93,15 +101,29 @@ Variants {
         target: Services.OverlayManager
         function onIsLockAbsorbingChanged() {
             if (Services.OverlayManager && Services.OverlayManager.isLockAbsorbing) {
+                barEjectAnim.stop()
                 barAbsorbAnim.restart()
             }
         }
         function onIsLockedChanged() {
             if (!Services.OverlayManager) return
             if (!Services.OverlayManager.isLocked) {
+                // Desktop layer unlocked — begin eject immediately so bar
+                // is already rising while lockscreen is still dissolving
+                barEjectAnim.from = root.barTransitionState
                 barEjectAnim.restart()
             } else if (!Services.OverlayManager.isLockAbsorbing) {
                 root.barTransitionState = 0.0
+            }
+        }
+        // ── Early eject: begin re-appearing at 55% suction so desktop bar
+        //    overlaps the tail of the lockscreen dissolve — no dead zone
+        function onUnlockSuctionProgressChanged() {
+            if (!Services.OverlayManager) return
+            const p = Services.OverlayManager.unlockSuctionProgress
+            if (p >= 0.55 && root.barTransitionState < 0.05 && !barEjectAnim.running) {
+                barEjectAnim.from = root.barTransitionState
+                barEjectAnim.restart()
             }
         }
     }

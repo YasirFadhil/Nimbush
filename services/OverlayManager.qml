@@ -13,6 +13,9 @@ Singleton {
     property bool lockVerified: false
     property bool isLockAbsorbing: false
     property bool desktopIslandIsWide: false
+    // ── Seamless Island / Bar Bridge (0.0 = fully locked/hidden, 1.0 = fully desktop) ──
+    // Bar writes this; lockscreen reads it to phase-sync its island & status pill
+    property real barIslandProgress: 0.0
     property bool wizardOpen: false
     readonly property bool isWizardActive: wizardOpen || (Services.Config ? !Services.Config.firstRunCompleted : false)
     property bool controlCenterVisible: false

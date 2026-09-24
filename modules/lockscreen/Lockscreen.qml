@@ -128,7 +128,7 @@ Scope {
 
     Timer {
         id: sessionLockCommitTimer
-        interval: 240
+        interval: 400 // pre-warm: 160ms buffer after bar absorb (240ms) before compositor switch
         repeat: false
         onTriggered: {
             if (Services.OverlayManager) {
@@ -518,7 +518,7 @@ Scope {
         isRevealed = false
         userRevealedInput = false
         updateTime()
-        sessionLockCommitTimer.interval = 240
+        sessionLockCommitTimer.interval = 400
         sessionLockCommitTimer.restart()
     }
 
@@ -842,20 +842,27 @@ Scope {
                     }
                 }
 
-                // Fullscreen Wallpaper Layer (Gets image from Services.Wallpaper or custom lockscreen image, with smooth Zoom and MultiEffect blur)
+                // Fullscreen Wallpaper Layer (Gets image from Services.Wallpaper or custom lockscreen image,
+                // with smooth Zoom and MultiEffect blur)
                 Item {
                     id: wpContainer
                     anchors.fill: parent
+                    // barP: used by blur/dim overlays for pre-commit GPU warm-up
+                    readonly property real barP: Services.OverlayManager ? Services.OverlayManager.barIslandProgress : 0.0
                     scale: {
                         if (Services.Config && !Services.Config.lockscreenWallpaperZoom) return 1.0
-                        if (!root.isLocked) return 1.0
+                        // Unlock: zoom out from 1.16 → 1.0 while lock dissolves (visible, same surface)
                         if (root.isUnlockingWithGenie) return 1.16 - 0.16 * root.unlockSuctionProgress
+                        // Lock: stay at 1.0 until isRevealed (commit), then Behavior animates 1.0 → 1.12.
+                        // This makes the zoom-in happen POST-commit where user can see it,
+                        // mirroring the zoom-out feel of unlock. barP-based zoom was pre-commit (invisible).
+                        if (!root.isLocked && !root.isLockingWithGenie) return 1.0
                         return root.isRevealed ? 1.12 : 1.0
                     }
                     transformOrigin: Item.Center
                     Behavior on scale {
                         enabled: !root.isUnlockingWithGenie
-                        NumberAnimation { duration: 350; easing.type: root.isRevealed ? Easing.OutCubic : Easing.InCubic }
+                        NumberAnimation { duration: 500; easing.type: Easing.OutCubic }
                     }
 
                     Image {
@@ -872,7 +879,7 @@ Scope {
                             return Services.Wallpaper.currentWallpaper.length > 0 ? ("file://" + Services.Wallpaper.currentWallpaper) : ("file://" + Services.Wallpaper.darkWallbler)
                         }
                         fillMode: Image.PreserveAspectCrop
-                        asynchronous: true
+                        asynchronous: false // force sync GPU upload — eliminates 1-frame texture blink at compositor switch
                         smooth: true
                         cache: true
                         visible: true
@@ -885,36 +892,32 @@ Scope {
                         blur: (Services.Config ? Services.Config.lockscreenBlurRadius : 0.40)
                         blurMax: 32
                         opacity: {
-                            if (!root.isLocked || (!root.isRevealed && !root.isUnlockingWithGenie)) return 0.0
+                            // barP: 1=desktop, 0=locked. Blur starts appearing while bar absorbs.
+                            const barP = wpContainer.barP
+                            if (!root.isLocked && !root.isLockingWithGenie && barP > 0.98) return 0.0
                             if (root.isUnlockingWithGenie) return (1.0 - root.unlockSuctionProgress)
-                            return root.isRevealed ? 1.0 : 0.0
+                            // Threshold 0.82: blur starts at 18% absorb, fully opaque at barP=0.
+                            // No Behavior — opacity tracks barP directly (already smooth via barAbsorbAnim).
+                            // Behavior would cause trailing, making opacity lag behind barP at compositor switch.
+                            return Math.min(1.0, Math.max(0.0, (0.82 - barP) / 0.82))
                         }
                         visible: ((Services.Config && Services.Config.lockscreenBlur && (Services.Config.lockscreenBlurRadius > 0)) || false) && (opacity > 0.001)
-                        Behavior on opacity {
-                            enabled: !root.isUnlockingWithGenie
-                            NumberAnimation { duration: 320; easing.type: Easing.OutCubic }
-                        }
                     }
 
-                    // Smooth Dark Dim / Vignette Overlay
+                    // Smooth Dark Dim / Vignette Overlay — phase-synced to barIslandProgress
                     Rectangle {
                         anchors.fill: parent
                         color: Services.Theme.bgDeep
                         opacity: {
-                            if (!root.isLocked) return 0.0
-                            if (!root.isRevealed && !root.isUnlockingWithGenie) return 0.0
+                            const barP = wpContainer.barP
+                            if (!root.isLocked && !root.isLockingWithGenie && barP > 0.98) return 0.0
                             var baseDim = Services.Config ? Services.Config.lockscreenDim : 0.45
                             if (root.isCompact) baseDim = Math.min(0.85, baseDim + 0.15)
                             else if (root.isMinimal) baseDim = Math.max(0.18, baseDim - 0.12)
                             if (root.isUnlockingWithGenie) return baseDim * (1.0 - root.unlockSuctionProgress)
-                            return root.isRevealed ? baseDim : 0.0
-                        }
-                        Behavior on opacity {
-                            enabled: !root.isUnlockingWithGenie
-                            NumberAnimation {
-                                duration: 380
-                                easing.type: root.isRevealed ? Easing.OutCubic : Easing.InCubic
-                            }
+                            // Threshold 0.90: dim starts at 10% absorb, fully opaque at barP=0.
+                            // No Behavior — continuous barP drive doesn't need double-animation.
+                            return baseDim * Math.min(1.0, Math.max(0.0, (0.90 - barP) / 0.90))
                         }
                     }
                 }
@@ -933,6 +936,9 @@ Scope {
                     scale: 1.0
 
                     // Center: Dynamic Island (Apple Face ID & Status Capsule)
+                    // Phase-synced with desktop bar island via barIslandProgress:
+                    //   locking   → lock island fades IN  as bar island fades OUT (barP 1→0)
+                    //   unlocking → lock island fades OUT as bar island fades IN  (barP 0→1)
                     Rectangle {
                         id: lockIsland
                         visible: root.isDefault
@@ -953,10 +959,25 @@ Scope {
 
                         readonly property bool isIslandExpanded: (root.faceIconActive || root.isFaceActive)
 
+                        // barP: 1.0 = desktop bar fully visible; 0.0 = locked/hidden
+                        readonly property real barP: Services.OverlayManager ? Services.OverlayManager.barIslandProgress : 0.0
+                        // lockIslandProgress: 0.0 = invisible (bar showing), 1.0 = fully locked
+                        readonly property real lockIslandProgress: 1.0 - barP
+
+                        // Scale: genie bounce only triggers mid-handoff (barP < 0.5) — single morphing feel
                         scale: {
                             if (root.isUnlockingWithGenie) return 1.0 + 0.14 * Math.sin(root.unlockSuctionProgress * Math.PI)
-                            if (root.isLockingWithGenie) return 1.0 + 0.10 * Math.sin(root.lockGenieProgress * Math.PI)
+                            if (root.isLockingWithGenie && barP < 0.5) return 1.0 + 0.10 * Math.sin(Math.min(1.0, lockIslandProgress * 2.0) * Math.PI)
                             return 1.0
+                        }
+
+                        // Cross-fade with bar island: lock island opacity = inverse of bar opacity.
+                        // No Behavior — barP is already a continuous animated value.
+                        // Behavior would cause opacity to trail barP → island not fully visible at compositor switch.
+                        opacity: {
+                            if (root.isUnlockingWithGenie) return Math.max(0.0, 1.0 - root.unlockSuctionProgress * 1.5)
+                            // Threshold 0.90: island starts appearing at 10% absorb, fully visible at barP=0
+                            return Math.min(1.0, Math.max(0.0, (0.90 - barP) / 0.90))
                         }
 
                         border.color: {
@@ -1329,6 +1350,7 @@ Scope {
                     }
 
                     // Mode A: Combined Status & Control Center Pill (Desktop-Styled)
+                    // Phase-synced: emerges as bar status tray absorbs, vanishes as it ejects
                     Rectangle {
                         id: combinedControlPill
                         anchors.right: parent.right
@@ -1345,19 +1367,28 @@ Scope {
                         visible: root.isDefault && (Services.Config ? Services.Config.lockscreenShowStatusPill : true)
 
                         readonly property real targetDx: (topBarHeader.width / 2) - (topBarHeader.width - 18 - (combinedControlPill.width / 2))
+                        // barP: 1=desktop bar visible, 0=locked
+                        readonly property real barP: Services.OverlayManager ? Services.OverlayManager.barIslandProgress : 0.0
+                        // pillProgress: max of both sources — tracks bar absorb AND settled lock state
+                        readonly property real pillProgress: Math.max(root.lockTopBarState, Math.min(1.0, Math.max(0.0, (0.90 - barP) / 0.90)))
 
                         transform: [
                             Translate {
-                                x: combinedControlPill.targetDx * (1.0 - root.lockTopBarState)
+                                x: combinedControlPill.targetDx * (1.0 - combinedControlPill.pillProgress)
                             },
                             Scale {
                                 origin.x: combinedControlPill.width / 2
                                 origin.y: combinedControlPill.height / 2
-                                xScale: 0.15 + 0.85 * root.lockTopBarState
-                                yScale: 0.15 + 0.85 * root.lockTopBarState
+                                xScale: 0.15 + 0.85 * combinedControlPill.pillProgress
+                                yScale: 0.15 + 0.85 * combinedControlPill.pillProgress
                             }
                         ]
-                        opacity: root.isRevealed ? Math.min(1.0, Math.max(0.0, root.lockTopBarState * 1.35)) : 0.0
+                        opacity: {
+                            // Only visible when lock layer is active (barP low or fully locked)
+                            if (!root.isLocked && !root.isLockingWithGenie && combinedControlPill.barP > 0.95) return 0.0
+                            if (root.isUnlockingWithGenie) return Math.max(0.0, 1.0 - root.unlockSuctionProgress * 1.8)
+                            return Math.min(1.0, Math.max(0.0, combinedControlPill.pillProgress * 1.35))
+                        }
 
                         Behavior on width { NumberAnimation { duration: 280; easing.type: Easing.OutBack; easing.overshoot: 1.05 } }
                         Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
@@ -1500,19 +1531,25 @@ Scope {
                         spacing: 12
 
                         readonly property real targetDx: (topBarHeader.width / 2) - (topBarHeader.width - 24 - ((minimalControlRow.implicitWidth > 0 ? minimalControlRow.implicitWidth : minimalControlRow.width) / 2))
+                        readonly property real barP: Services.OverlayManager ? Services.OverlayManager.barIslandProgress : 0.0
+                        readonly property real pillProgress: Math.max(root.lockTopBarState, Math.min(1.0, Math.max(0.0, (0.90 - barP) / 0.90)))
 
                         transform: [
                             Translate {
-                                x: minimalControlRow.targetDx * (1.0 - root.lockTopBarState)
+                                x: minimalControlRow.targetDx * (1.0 - minimalControlRow.pillProgress)
                             },
                             Scale {
                                 origin.x: (minimalControlRow.implicitWidth > 0 ? minimalControlRow.implicitWidth : minimalControlRow.width) / 2
                                 origin.y: minimalControlRow.height / 2
-                                xScale: 0.15 + 0.85 * root.lockTopBarState
-                                yScale: 0.15 + 0.85 * root.lockTopBarState
+                                xScale: 0.15 + 0.85 * minimalControlRow.pillProgress
+                                yScale: 0.15 + 0.85 * minimalControlRow.pillProgress
                             }
                         ]
-                        opacity: root.isRevealed ? Math.min(0.75, Math.max(0.0, root.lockTopBarState * 1.0)) : 0.0
+                        opacity: {
+                            if (!root.isLocked && !root.isLockingWithGenie && minimalControlRow.barP > 0.95) return 0.0
+                            if (root.isUnlockingWithGenie) return Math.max(0.0, 1.0 - root.unlockSuctionProgress * 1.8)
+                            return Math.min(0.75, Math.max(0.0, minimalControlRow.pillProgress))
+                        }
 
                         // Wi-Fi
                         Text {
@@ -1572,7 +1609,11 @@ Scope {
                         opacity: {
                             if (root.isUnlockingWithGenie) return Math.max(0.0, 1.0 - Math.pow(root.unlockSuctionProgress, 1.5))
                             if (root.isLockingWithGenie) return Math.min(1.0, root.lockGenieProgress * 1.5)
-                            return root.isRevealed ? 1.0 : 0.0
+                            // Phase-lead: begin fading in when barP < 0.35 (dim is already ~50%)
+                            // so content emerges smoothly from underneath the building dim/blur
+                            const barP = Services.OverlayManager ? Services.OverlayManager.barIslandProgress : 0.0
+                            if (!root.isRevealed && !root.isLocked && !root.isLockingWithGenie) return 0.0
+                            return Math.min(1.0, Math.max(0.0, (0.35 - barP) / 0.35))
                         }
 
                         transform: Scale {
