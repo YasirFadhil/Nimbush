@@ -15,7 +15,7 @@ Item {
     // ----- Public API & State -----
     property bool pinned: false
     property bool autoExpanded: false
-    property bool mediaCollapsedReady: true
+    property bool mediaCollapsedReady: false
     property int activeNotifIndex: 0
 
     // Inline Reply Type Zone State
@@ -193,11 +193,6 @@ Item {
     // All candidates gathered and sorted strictly newest to oldest
     readonly property var allSortedCandidates: {
         const list = []
-
-        // If unlock is active, IGNORE media, notifications, syshud - unlock takes absolute top priority
-        if (root.isUnlockActive) {
-            return list
-        }
 
         // Modal overrides
         if (root.dropSendMode || root.isDropSending) {
@@ -437,6 +432,17 @@ Item {
             root.mediaIconTransformed = true
             root.mediaStopping = false
             root.mediaCollapsedReady = false
+        }
+    }
+
+    Timer {
+        id: postUnlockMediaTimer
+        interval: 200
+        repeat: false
+        onTriggered: {
+            if (root.mediaPlaying && !root.autoExpanded && !root.expanded && !Services.OverlayManager.isLocked) {
+                root.mediaCollapsedReady = true
+            }
         }
     }
 
@@ -834,9 +840,9 @@ Item {
     readonly property bool mediaPlaying: activePlayer !== null && activePlayer.isPlaying
     readonly property bool hasMedia: activePlayer !== null && (activePlayer.trackTitle !== "" || mediaPlaying)
 
-    readonly property bool hasExpandContent: !root.isUnlockActive && ((slot0Activity !== "idle") || wallpaperMode || dropSendMode || isDropSending)
-    readonly property bool expanded: !lockBlocked && !root.isUnlockActive && hasExpandContent && (pinned || autoExpanded || (slot0Activity === "notif") || (slot0Activity === "syshud") || wallpaperMode || dropSendMode || isDropSending)
-    readonly property bool isMediaPeek: !lockBlocked && !root.isUnlockActive && autoExpanded && !pinned && (slot0Activity === "media") && !wallpaperMode && !dropSendMode && !isDropSending && hasMedia
+    readonly property bool hasExpandContent: ((slot0Activity !== "idle") || wallpaperMode || dropSendMode || isDropSending)
+    readonly property bool expanded: !lockBlocked && hasExpandContent && (pinned || autoExpanded || (slot0Activity === "notif") || (slot0Activity === "syshud") || wallpaperMode || dropSendMode || isDropSending)
+    readonly property bool isMediaPeek: !lockBlocked && autoExpanded && !pinned && (slot0Activity === "media") && !wallpaperMode && !dropSendMode && !isDropSending && hasMedia
 
     property int autoExpandDuration: 2500
     property int notifDuration: 5000
@@ -899,7 +905,7 @@ Item {
     onMediaPlayingChanged: {
         if (mediaPlaying) {
             mediaActiveTime = Date.now()
-            if (root.hudReady && root.notifCount === 0 && !root.pinned && !root.isUnlockActive) {
+            if (root.hudReady && root.notifCount === 0 && !root.pinned && !root.lockBlocked) {
                 root.mediaCollapsedReady = false
                 root.pulse()
             } else {
@@ -914,7 +920,7 @@ Item {
                 lastTrackText = currentMediaText
             }
         } else {
-            if (root.hudReady && !root.notifActive) {
+            if (root.hudReady && !root.notifActive && !root.lockBlocked) {
                 root.triggerMediaStop()
             } else {
                 root.mediaCollapsedReady = false
@@ -975,9 +981,8 @@ Item {
     }
 
     // Island Dimensions
-    readonly property bool showCollapsedText: !lockBlocked && !root.isUnlockActive && !root.mediaStopping && ((slot0Activity === "notif") || mediaPlaying)
+    readonly property bool showCollapsedText: !lockBlocked && !root.mediaStopping && ((slot0Activity === "notif") || (mediaPlaying && mediaCollapsedReady))
     readonly property int calculatedCollapsedWidth: {
-        if (root.isUnlockActive) return 140
         if (showCollapsedText || (mediaStopping && !mediaTextCollapsed)) {
             const extraPadding = (mediaPlaying || mediaStopping) ? 72 : 52
             return Math.min(260, Math.max(140, collapsedTextContainer.currentSlotImplicitWidth + extraPadding))
@@ -1039,7 +1044,7 @@ Item {
     }
 
     function pulse() {
-        if (pinned || notifActive || root.isUnlockActive || lockBlocked) {
+        if (pinned || notifActive || lockBlocked) {
             root.mediaCollapsedReady = true
             return
         }
@@ -1179,7 +1184,7 @@ Item {
         target: Services.Mpris
         function onActivePlayerChanged() {
             root.restartGlobalMarquee()
-            if (root.hudReady && !root.isUnlockActive && Services.Mpris.activePlayer && Services.Mpris.activePlayer.isPlaying && root.notifCount === 0 && !root.pinned) {
+            if (root.hudReady && Services.Mpris.activePlayer && Services.Mpris.activePlayer.isPlaying && root.notifCount === 0 && !root.pinned) {
                 root.pulse()
             }
         }
@@ -1188,7 +1193,7 @@ Item {
     Connections {
         target: root.activePlayer
         function onIsPlayingChanged() {
-            if (root.hudReady && !root.isUnlockActive && root.activePlayer && root.activePlayer.isPlaying && root.notifCount === 0 && !root.pinned) {
+            if (root.hudReady && root.activePlayer && root.activePlayer.isPlaying && root.notifCount === 0 && !root.pinned) {
                 root.pulse()
             }
         }
@@ -1197,7 +1202,7 @@ Item {
             if (collapsedTextContainer) {
                 collapsedTextContainer.updateTrackPush(collapsedTextContainer.targetText, root.isNextTrack)
             }
-            if (root.hudReady && !root.isUnlockActive && root.activePlayer && root.activePlayer.isPlaying && root.notifCount === 0 && !root.pinned) {
+            if (root.hudReady && root.activePlayer && root.activePlayer.isPlaying && root.notifCount === 0 && !root.pinned) {
                 root.pulse()
             }
         }
@@ -1242,9 +1247,7 @@ Item {
 
         property real entranceScale: 1.0
 
-        scale: ((Services.OverlayManager && Services.OverlayManager.isUnlockingWithGenie)
-            ? (1.0 + 0.14 * Math.sin(Services.OverlayManager.unlockSuctionProgress * Math.PI))
-            : 1.0) * entranceScale
+        scale: entranceScale
 
         transform: [
             Translate {
@@ -1261,20 +1264,23 @@ Item {
             target: Services.OverlayManager
             function onIsLockAbsorbingChanged() {
                 if (Services.OverlayManager && Services.OverlayManager.isLockAbsorbing) {
+                    postUnlockMediaTimer.stop()
                     swallowPulseTimer.restart()
                     root.triggerLockAbsorption()
                 }
             }
             function onIsLockedChanged() {
-                if (!Services.OverlayManager.isLocked) {
+                if (Services.OverlayManager.isLocked) {
+                    postUnlockMediaTimer.stop()
+                    root.mediaCollapsedReady = false
+                } else {
                     root.autoExpanded = false
                     root.pinned = false
                     root.mediaStopping = false
                     root.mediaTextCollapsed = false
                     root.mediaIconTransformed = false
-                    if (root.mediaPlaying) {
-                        root.mediaCollapsedReady = true
-                    }
+                    root.mediaCollapsedReady = false
+                    postUnlockMediaTimer.restart()
                     mediaStopPhase1Timer.stop()
                     mediaStopPhase2Timer.stop()
                     entranceAnim.restart()
@@ -1370,8 +1376,8 @@ Item {
             id: islandMouseArea
             anchors.fill: parent
             z: 0
-            enabled: !root.isUnlockActive && root.hasExpandContent && !root.dropSendMode && !root.isDropSending
-            cursorShape: (!root.isUnlockActive && root.hasExpandContent && !root.dropSendMode && !root.isDropSending) ? Qt.PointingHandCursor : Qt.ArrowCursor
+            enabled: root.hasExpandContent && !root.dropSendMode && !root.isDropSending
+            cursorShape: (root.hasExpandContent && !root.dropSendMode && !root.isDropSending) ? Qt.PointingHandCursor : Qt.ArrowCursor
             onClicked: root.togglePin()
         }
 
@@ -1446,7 +1452,9 @@ Item {
             implicitHeight: 16
             z: 3
 
-            readonly property bool activeState: root.isUnlockActive || (!root.expanded && !root.autoExpanded)
+            readonly property bool activeState: !root.expanded && !root.autoExpanded && (
+                !root.mediaPlaying || root.mediaCollapsedReady || root.mediaStopping
+            )
             visible: activeState || opacity > 0.01
             opacity: activeState ? 1 : 0
             scale: activeState ? 1.0 : 0.4
@@ -1455,38 +1463,68 @@ Item {
             Behavior on opacity { NumberAnimation { duration: statusIconContainer.activeState ? 220 : 160; easing.type: Easing.OutQuad } }
             Behavior on scale   { NumberAnimation { duration: statusIconContainer.activeState ? 320 : 160; easing.type: Easing.OutCubic } }
 
-            readonly property real leftOffset: -(island.width / 2) + 12 + (implicitWidth / 2)
-            readonly property real rightOffset: (island.width / 2) - 12 - (implicitWidth / 2)
-
-            readonly property string state: {
-                if (root.isUnlockDisplaying) return "UNLOCKED_LEFT"
-                if (root.isUnlockGlideActive) return "IDLE_CENTER"
-                if (!root.isUnlockActive && !root.expanded && !root.autoExpanded) {
-                    if ((!root.lockBlocked && root.mediaPlaying && !root.mediaStopping) ||
-                        (root.mediaStopping && !root.mediaIconTransformed) ||
-                        (!root.lockBlocked && root.notifActive)) {
-                        return "ICON_LEFT"
+            states: [
+                State {
+                    name: "ICON_LEFT"
+                    when: !root.lockBlocked && !root.expanded && !root.autoExpanded && (
+                        (root.mediaPlaying && root.mediaCollapsedReady) ||
+                        root.mediaStopping ||
+                        root.notifActive
+                    )
+                    AnchorChanges {
+                        target: statusIconContainer
+                        anchors.horizontalCenter: undefined
+                        anchors.left: island.left
+                        anchors.right: undefined
                     }
-                    if (!root.lockBlocked && !root.showCollapsedText && !root.mediaStopping && root.cameraActive) {
-                        return "CAMERA_RIGHT"
+                    PropertyChanges {
+                        target: statusIconContainer
+                        anchors.leftMargin: 12
+                    }
+                },
+                State {
+                    name: "IDLE_CENTER"
+                    when: root.lockBlocked || (
+                        root.expanded ||
+                        root.autoExpanded ||
+                        (!root.mediaPlaying && !root.mediaStopping && !root.notifActive && !root.cameraActive) ||
+                        (root.mediaPlaying && !root.mediaCollapsedReady)
+                    )
+                    AnchorChanges {
+                        target: statusIconContainer
+                        anchors.horizontalCenter: island.horizontalCenter
+                        anchors.left: undefined
+                        anchors.right: undefined
+                    }
+                },
+                State {
+                    name: "CAMERA_RIGHT"
+                    when: !root.lockBlocked && !root.expanded && !root.autoExpanded && (!root.showCollapsedText && !root.mediaStopping && root.cameraActive)
+                    AnchorChanges {
+                        target: statusIconContainer
+                        anchors.horizontalCenter: undefined
+                        anchors.left: undefined
+                        anchors.right: island.right
+                    }
+                    PropertyChanges {
+                        target: statusIconContainer
+                        anchors.rightMargin: 12
                     }
                 }
-                return "IDLE_CENTER"
-            }
+            ]
 
-            anchors.horizontalCenter: island.horizontalCenter
-            anchors.horizontalCenterOffset: {
-                if (state === "ICON_LEFT") return leftOffset
-                if (state === "CAMERA_RIGHT") return rightOffset
-                return 0
-            }
-
-            Behavior on anchors.horizontalCenterOffset {
-                NumberAnimation {
-                    duration: (root.lockBlocked || (Services.OverlayManager && Services.OverlayManager.isLockAbsorbing)) ? 240 : 320
-                    easing.type: (root.lockBlocked || (Services.OverlayManager && Services.OverlayManager.isLockAbsorbing)) ? Easing.InOutCubic : Easing.OutCubic
+            transitions: [
+                Transition {
+                    from: "ICON_LEFT"; to: "IDLE_CENTER"
+                    AnchorAnimation { duration: 320; easing.type: Easing.OutCubic }
+                    NumberAnimation { properties: "anchors.leftMargin"; duration: 320; easing.type: Easing.OutCubic }
+                },
+                Transition {
+                    AnchorAnimation { duration: 320; easing.type: Easing.OutCubic }
+                    NumberAnimation { properties: "anchors.rightMargin"; duration: 320; easing.type: Easing.OutCubic }
+                    NumberAnimation { properties: "anchors.leftMargin"; duration: 320; easing.type: Easing.OutCubic }
                 }
-            }
+            ]
 
             Text {
                 id: statusIconTxt
@@ -1494,7 +1532,8 @@ Item {
                 text: {
                     if (root.notifActive) return "󰂚"
                     if (root.expanded || root.autoExpanded) return "●"
-                    if ((!root.lockBlocked && root.mediaPlaying && !root.mediaStopping) || (root.mediaStopping && !root.mediaIconTransformed)) return "󰎈"
+                    if (root.mediaPlaying && !root.mediaCollapsedReady) return "●"
+                    if (root.mediaPlaying || root.mediaStopping) return "󰎈"
                     return "●"
                 }
                 font.family: Services.Theme.fontSymbols
@@ -1502,13 +1541,12 @@ Item {
                 color: {
                     if (root.notifActive) return Services.Theme.accent
                     if (root.expanded || root.autoExpanded) return Services.Theme.textDisabled
-                    if ((!root.lockBlocked && root.mediaPlaying && !root.mediaStopping) || (root.mediaStopping && !root.mediaIconTransformed)) return Services.Theme.success
+                    if (root.mediaPlaying && !root.mediaCollapsedReady) return Services.Theme.textDisabled
+                    if (root.mediaPlaying || root.mediaStopping) return Services.Theme.success
                     if (root.cameraActive) return Services.Theme.success
                     return Services.Theme.textDisabled
                 }
-                scale: (Services.OverlayManager && Services.OverlayManager.isUnlockingWithGenie)
-                    ? (1.0 + 0.35 * Math.sin(Services.OverlayManager.unlockSuctionProgress * Math.PI))
-                    : textScale
+                scale: textScale
 
                 property real textScale: 1.0
 
@@ -1549,7 +1587,7 @@ Item {
                     from: 0; to: 360
                     duration: 4000
                     loops: Animation.Infinite
-                    running: !root.lockBlocked && !root.isUnlockActive && root.mediaPlaying && !root.expanded && !root.autoExpanded && statusIconContainer.state === "ICON_LEFT"
+                    running: !root.lockBlocked && root.mediaPlaying && !root.expanded && !root.autoExpanded && root.mediaCollapsedReady && statusIconContainer.state === "ICON_LEFT"
                 }
             }
         }
@@ -1569,7 +1607,7 @@ Item {
             barColor: Services.Theme.success
             isPlaying: root.mediaPlaying
             active: visible
-            readonly property bool activeState: !root.lockBlocked && !root.isUnlockActive && !root.mediaStopping && root.mediaPlaying && !root.expanded && !root.autoExpanded && !root.notifActive
+            readonly property bool activeState: !root.lockBlocked && root.mediaPlaying && !root.expanded && !root.autoExpanded && root.mediaCollapsedReady && !root.notifActive
             visible: activeState || opacity > 0.01
             opacity: activeState ? 1.0 : 0.0
             scale: activeState ? 1.0 : 0.3
@@ -1582,16 +1620,16 @@ Item {
         // ==================== Dedicated Collapsed Track Title / Notif Text Zone ====================
         Item {
             id: collapsedTextContainer
-            anchors.left: island.left
-            anchors.leftMargin: 34
+            anchors.left: statusIconContainer.right
+            anchors.leftMargin: 6
             anchors.verticalCenter: island.verticalCenter
             // Lock width bounded to collapsed dimension to prevent stretching while expanding
             width: Math.max(40, (root.expanded ? root.calculatedCollapsedWidth : island.width) - 12 - 16 - 6 - (mediaVisualizer.visible ? 34 : (cameraIndicator.visible ? 24 : 12)))
             height: 16
             z: 3
 
-            readonly property bool showCollapsedText: !root.lockBlocked && !root.isUnlockActive && !root.mediaStopping && (root.notifActive || root.mediaPlaying)
-            readonly property bool activeState: !root.lockBlocked && !root.isUnlockActive && !root.expanded && !root.autoExpanded && showCollapsedText && !root.mediaStopping
+            readonly property bool showCollapsedText: !root.lockBlocked && (root.notifActive || root.mediaPlaying)
+            readonly property bool activeState: !root.lockBlocked && !root.expanded && !root.autoExpanded && root.mediaCollapsedReady && showCollapsedText && !root.mediaStopping
 
             clip: true
             transformOrigin: Item.Left
@@ -4074,7 +4112,7 @@ Item {
         id: rightSatDot
         readonly property var item: root.slotRightItem
         readonly property string activity: root.slotRightType
-        readonly property bool isSatellite: !root.lockBlocked && !root.isUnlockActive && (!root.mediaStopping || !root.mediaIconTransformed ? activity !== "" : false)
+        readonly property bool isSatellite: !root.lockBlocked && (!root.mediaStopping || !root.mediaIconTransformed ? activity !== "" : false)
         anchors.left: island.right
         anchors.leftMargin: leftMarginValue
         anchors.top: island.top
@@ -4484,7 +4522,7 @@ Item {
         id: leftSatDot
         readonly property var item: root.slotLeftItem
         readonly property string activity: root.slotLeftType
-        readonly property bool isSatellite: !root.lockBlocked && !root.isUnlockActive && (!root.mediaStopping || !root.mediaIconTransformed ? activity !== "" : false)
+        readonly property bool isSatellite: !root.lockBlocked && (!root.mediaStopping || !root.mediaIconTransformed ? activity !== "" : false)
         anchors.right: island.left
         anchors.rightMargin: rightMarginValue
         anchors.top: island.top

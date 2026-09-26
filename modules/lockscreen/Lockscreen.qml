@@ -73,10 +73,12 @@ Scope {
         Services.FaceId.isEnabled &&
         Services.FaceId.isEnrolled &&
         (
+            Services.FaceId.isScanning ||
             Services.FaceId.status === "starting" ||
             Services.FaceId.status === "camera_ready" ||
             Services.FaceId.status === "scanning" ||
             Services.FaceId.status === "detected" ||
+            Services.FaceId.status === "unrecognized" ||
             (Services.FaceId.status === "success" && !root.isFaceContracted) ||
             (Services.FaceId.status === "timeout" && !root.isFaceTimeoutContracted)
         ) &&
@@ -358,13 +360,13 @@ Scope {
 
     Timer {
         id: faceIdTimeoutShrinkTimer
-        interval: 1400
+        interval: 2200
         repeat: false
         onTriggered: {
             root.isFaceTimeoutContracted = true
             if (Services.FaceId) Services.FaceId.stopScan()
             if (!root.faceIdCancelledByUser && root.isLocked && !root.isFaceVerified && root.faceIdRetryCount < root.maxFaceIdRetries) {
-                console.log("[Lockscreen] Face ID failed, scheduling retry in 3s. Current retryCount:", root.faceIdRetryCount)
+                console.log("[Lockscreen] Face ID failed, scheduling retry in 1.8s. Current retryCount:", root.faceIdRetryCount)
                 faceIdRetryTimer.restart()
             } else {
                 console.log("[Lockscreen] Face ID cancelled or max retries reached. No more auto retries.")
@@ -374,7 +376,7 @@ Scope {
 
     Timer {
         id: faceIdRetryTimer
-        interval: 3000
+        interval: 1800
         repeat: false
         onTriggered: {
             if (!root.faceIdCancelledByUser && root.isLocked && !root.isFaceVerified && !root.isFaceActive && root.faceIdRetryCount < root.maxFaceIdRetries) {
@@ -468,7 +470,9 @@ Scope {
         function onScanFailed(reason) {
             console.log("[Lockscreen] Face ID scan failed:", reason)
             if (!root.faceIdCancelledByUser) {
-                faceIdTimeoutShrinkTimer.restart()
+                if (!faceIdTimeoutShrinkTimer.running) {
+                    faceIdTimeoutShrinkTimer.restart()
+                }
             }
         }
     }
@@ -989,13 +993,13 @@ Scope {
 
                         width: lockIsland.isIslandExpanded ? 160 : (root.isDeviceLockedPeek ? 218 : 140)
                         height: lockIsland.isIslandExpanded ? 96 : (root.isDeviceLockedPeek ? 44 : 32)
-                        radius: height / 2
+                        radius: lockIsland.isIslandExpanded ? 28 : (height / 2)
 
                         Behavior on width  { enabled: !root.isUnlockingWithGenie; NumberAnimation { duration: 340; easing.type: Easing.OutBack; easing.overshoot: 1.10 } }
                         Behavior on height { enabled: !root.isUnlockingWithGenie; NumberAnimation { duration: 340; easing.type: Easing.OutBack; easing.overshoot: 1.10 } }
                         Behavior on radius {
-                            enabled: lockIsland.isIslandExpanded || (lockIsland.height > 50)
-                            NumberAnimation { duration: 300; easing.type: Easing.OutCubic }
+                            enabled: !root.isUnlockingWithGenie
+                            NumberAnimation { duration: 340; easing.type: Easing.OutBack; easing.overshoot: 1.10 }
                         }
                         Behavior on border.color { ColorAnimation { duration: 250 } }
                         Behavior on border.width { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
@@ -1082,12 +1086,12 @@ Scope {
                             readonly property real peekTransitFactor: 4.0 * peekProgress * (1.0 - peekProgress)
                             readonly property real transitFactor: Math.max(faceTransitFactor, peekTransitFactor)
 
-                            // Subtle liquid squash & stretch aligned exactly with flight path
+                            // Keep shape completely undistorted during flight
                             transform: Scale {
                                 origin.x: masterMorphIcon.width / 2
                                 origin.y: masterMorphIcon.height / 2
-                                xScale: 1.0 + 0.14 * masterMorphIcon.transitFactor
-                                yScale: 1.0 - 0.08 * masterMorphIcon.transitFactor
+                                xScale: 1.0
+                                yScale: 1.0
                             }
 
                             // 1. Circular Badge Ring (Blooms during Peek)
@@ -1121,11 +1125,12 @@ Scope {
                                     id: morphTextGlyph
                                     anchors.centerIn: parent
                                     text: {
-                                        if (root.hasPeekedLocked && !root.isFaceVerified && !masterMorphIcon.isPeek) return "󰌾"
+                                        if (masterMorphIcon.isPeek) return "󰌾"
+                                        if (root.hasPeekedLocked && !root.isFaceVerified) return "󰌾"
                                         return "●"
                                     }
                                     font.family: Services.Theme.fontSymbols
-                                    font.pixelSize: masterMorphIcon.isPeek ? 14 : ((text === "●") ? 13 : 14)
+                                    font.pixelSize: masterMorphIcon.isPeek ? 16 : ((text === "●") ? 13 : 14)
                                     scale: {
                                         if (root.isUnlockingWithGenie) return 1.0 + 0.35 * Math.sin(root.unlockSuctionProgress * Math.PI)
                                         return 1.0
@@ -1141,25 +1146,19 @@ Scope {
                                 }
                             }
 
-                            // 3. Apple Face ID Vector Canvas Layer
+                            // 3. Apple Face ID Vector Canvas Layer (Single Clean Fixed Shape)
                             Item {
                                 id: faceCanvasLayer
                                 anchors.fill: parent
                                 // Emerges from within the liquid droplet as it crosses the halfway mark
                                 opacity: Math.min(1.0, Math.max(0.0, (masterMorphIcon.faceProgress - 0.20) / 0.60))
-                                scale: 0.65 + 0.35 * Math.min(1.0, masterMorphIcon.faceProgress / 0.95)
-
-                                // Authentic subtle breathing pulse only runs once arrived and actively scanning
-                                SequentialAnimation {
-                                    running: masterMorphIcon.isFace && (masterMorphIcon.faceProgress >= 0.95) && Services.FaceId && Services.FaceId.isScanning && (Services.FaceId.status !== "success")
-                                    loops: Animation.Infinite
-                                    NumberAnimation { target: appleFaceCanvas; property: "scale"; from: 1.0; to: 1.04; duration: 600; easing.type: Easing.InOutSine }
-                                    NumberAnimation { target: appleFaceCanvas; property: "scale"; from: 1.04; to: 1.0; duration: 600; easing.type: Easing.InOutSine }
-                                }
+                                scale: 1.0
 
                                 Canvas {
                                     id: appleFaceCanvas
-                                    anchors.fill: parent
+                                    width: 34
+                                    height: 34
+                                    anchors.centerIn: parent
                                     renderTarget: Canvas.FramebufferObject
 
                                     readonly property bool isSuccess: Boolean(Services.FaceId && Services.FaceId.status === "success")
@@ -1167,13 +1166,10 @@ Scope {
                                     readonly property bool isTimeout: Boolean(Services.FaceId && Services.FaceId.status === "timeout")
 
                                     property color strokeColor: isSuccess ? "#30d158" : (isDetected ? "#38bdf8" : (isTimeout ? "#ef4444" : Services.Theme.accent))
-                                    property real smileAmount: isSuccess ? 1.40 : 1.0
 
                                     Behavior on strokeColor { ColorAnimation { duration: 250 } }
-                                    Behavior on smileAmount { NumberAnimation { duration: 300; easing.type: Easing.OutBack } }
 
                                     onStrokeColorChanged: requestPaint()
-                                    onSmileAmountChanged: requestPaint()
                                     onVisibleChanged: { if (visible) requestPaint() }
                                     Component.onCompleted: requestPaint()
 
@@ -1195,11 +1191,11 @@ Scope {
                                         ctx.beginPath(); ctx.moveTo(w * 0.10, h * 0.68); ctx.lineTo(w * 0.10, h * 0.82 - r); ctx.arcTo(w * 0.10, h * 0.90, w * 0.18 + r, h * 0.90, r); ctx.lineTo(w * 0.34, h * 0.90); ctx.stroke()
                                         ctx.beginPath(); ctx.moveTo(w * 0.66, h * 0.90); ctx.lineTo(w * 0.82 - r, h * 0.90); ctx.arcTo(w * 0.90, h * 0.90, w * 0.90, h * 0.82 - r, r); ctx.lineTo(w * 0.90, h * 0.68); ctx.stroke()
 
-                                        // Apple Face ID Features
+                                        // Apple Face ID Features (Single Static Geometry)
                                         ctx.beginPath(); ctx.moveTo(w * 0.35, h * 0.36); ctx.lineTo(w * 0.35, h * 0.46); ctx.stroke()
                                         ctx.beginPath(); ctx.moveTo(w * 0.65, h * 0.36); ctx.lineTo(w * 0.65, h * 0.46); ctx.stroke()
                                         ctx.beginPath(); ctx.moveTo(w * 0.50, h * 0.42); ctx.lineTo(w * 0.50, h * 0.54); ctx.lineTo(w * 0.58, h * 0.54); ctx.stroke()
-                                        ctx.beginPath(); ctx.moveTo(w * 0.33, h * 0.69); ctx.quadraticCurveTo(w * 0.50, h * (0.69 + 0.11 * smileAmount), w * 0.67, h * 0.69); ctx.stroke()
+                                        ctx.beginPath(); ctx.moveTo(w * 0.33, h * 0.69); ctx.quadraticCurveTo(w * 0.50, h * 0.78, w * 0.67, h * 0.69); ctx.stroke()
                                     }
                                 }
                             }
@@ -1307,6 +1303,7 @@ Scope {
                                         readonly property string statusText: {
                                             if (Services.FaceId && Services.FaceId.status === "success") return "Verified"
                                             if (Services.FaceId && Services.FaceId.status === "detected") return "Verifying Face..."
+                                            if (Services.FaceId && Services.FaceId.status === "unrecognized") return "Looking for Face..."
                                             if (Services.FaceId && Services.FaceId.status === "scanning") return "Looking for Face..."
                                             if (Services.FaceId && Services.FaceId.status === "timeout") return "Try Again"
                                             return "Starting..."
