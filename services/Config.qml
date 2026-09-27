@@ -138,6 +138,7 @@ Singleton {
     property bool dndEnabled: false
     property string notificationPosition: "top_right" // "top_right" | "top_center" | "top_left" | "bottom_right"
     property bool notificationShowInFullscreen: false
+    property bool notificationSplitKdeApps: true
 
     // ── Application Dock ─────────────────────────────────────────────────────
     property bool dockEnabled: true
@@ -331,6 +332,7 @@ Singleton {
         if (data.dndEnabled !== undefined) dndEnabled = Boolean(data.dndEnabled)
         if (data.notificationPosition !== undefined) notificationPosition = data.notificationPosition
         if (data.notificationShowInFullscreen !== undefined) notificationShowInFullscreen = Boolean(data.notificationShowInFullscreen)
+        if (data.notificationSplitKdeApps !== undefined) notificationSplitKdeApps = Boolean(data.notificationSplitKdeApps)
 
         if (data.lockscreenClockStyle !== undefined) lockscreenClockStyle = data.lockscreenClockStyle
         if (data.lockscreenAuthStyle !== undefined) lockscreenAuthStyle = data.lockscreenAuthStyle
@@ -463,6 +465,7 @@ Singleton {
             dndEnabled: dndEnabled,
             notificationPosition: notificationPosition,
             notificationShowInFullscreen: notificationShowInFullscreen,
+            notificationSplitKdeApps: notificationSplitKdeApps,
 
             lockscreenClockStyle: lockscreenClockStyle,
             lockscreenAuthStyle: lockscreenAuthStyle,
@@ -584,6 +587,7 @@ Singleton {
         dndEnabled = false
         notificationPosition = "top_right"
         notificationShowInFullscreen = false
+        notificationSplitKdeApps = true
 
         lockscreenClockStyle = "hero"
         lockscreenLayout = "default"
@@ -801,6 +805,7 @@ Singleton {
     function setNotificationRetentionDays(days) { notificationRetentionDays = Math.max(1, Math.min(7, days)); saveConfig() }
     function setNotificationPosition(pos) { notificationPosition = pos; saveConfig() }
     function setNotificationShowInFullscreen(val) { notificationShowInFullscreen = Boolean(val); saveConfig() }
+    function setNotificationSplitKdeApps(val) { notificationSplitKdeApps = Boolean(val); saveConfig() }
     function setDndEnabled(val) { dndEnabled = val; saveConfig() }
 
     function setLockscreenClockStyle(style) { lockscreenClockStyle = style; saveConfig() }

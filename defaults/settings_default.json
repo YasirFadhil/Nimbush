@@ -39,6 +39,7 @@
   "dndEnabled": false,
   "notificationPosition": "top_right",
   "notificationShowInFullscreen": false,
+  "notificationSplitKdeApps": true,
   "lockscreenClockStyle": "hero",
   "lockscreenLayout": "default",
   "lockscreenShowAvatar": false,

@@ -433,6 +433,36 @@ PanelWindow {
                                         Layout.alignment: Qt.AlignVCenter
                                     }
 
+                                    // Origin Device Badge (for phone notifications)
+                                    Rectangle {
+                                        visible: groupCard.primaryItem && groupCard.primaryItem.isKdeConnect
+                                        implicitWidth: devPillRow.implicitWidth + 8
+                                        implicitHeight: 16
+                                        radius: 8
+                                        color: Qt.rgba(centerWin.t.accent.r, centerWin.t.accent.g, centerWin.t.accent.b, 0.12)
+                                        border.color: Qt.rgba(centerWin.t.accent.r, centerWin.t.accent.g, centerWin.t.accent.b, 0.25)
+                                        border.width: 1
+                                        Layout.alignment: Qt.AlignVCenter
+
+                                        RowLayout {
+                                            id: devPillRow
+                                            anchors.centerIn: parent
+                                            spacing: 3
+
+                                            Text {
+                                                text: "󰄡"
+                                                color: centerWin.t.accent
+                                                font.pixelSize: 9
+                                            }
+                                            Text {
+                                                text: (groupCard.primaryItem && groupCard.primaryItem.originDevice) ? groupCard.primaryItem.originDevice : "Phone"
+                                                color: centerWin.t.accent
+                                                font.pixelSize: 9
+                                                font.bold: true
+                                            }
+                                        }
+                                    }
+
                                     // System Warning Pill Tag (for Battery Warning)
                                     Rectangle {
                                         visible: groupCard.isBatteryGroup

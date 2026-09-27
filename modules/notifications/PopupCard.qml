@@ -37,6 +37,26 @@ Rectangle {
                 Layout.fillWidth: true
             }
 
+            // Origin Device Pill (for phone notifications)
+            Rectangle {
+                visible: root.notif && root.notif.isKdeConnect
+                implicitWidth: devCardTxt.implicitWidth + 8
+                implicitHeight: 15
+                radius: 4
+                color: Qt.rgba(1, 1, 1, 0.08)
+                border.color: Services.Theme.border
+                border.width: 1
+                Layout.alignment: Qt.AlignVCenter
+
+                RowLayout {
+                    id: devCardTxt
+                    anchors.centerIn: parent
+                    spacing: 3
+                    Text { text: "󰄡"; color: Services.Theme.accent; font.pixelSize: 8 }
+                    Text { text: (root.notif && root.notif.originDevice) ? root.notif.originDevice : "Phone"; color: Services.Theme.textDisabled; font.pixelSize: 8; font.bold: true }
+                }
+            }
+
             Rectangle {
                 width: 16; height: 16; radius: 8
                 color: closeMouse.containsMouse ? Services.Theme.danger : "transparent"

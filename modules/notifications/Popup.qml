@@ -365,6 +365,26 @@ PanelWindow {
                         Layout.fillWidth: true
                     }
 
+                    // Origin Device Pill (for phone notifications)
+                    Rectangle {
+                        visible: notifItem && notifItem.isKdeConnect
+                        implicitWidth: devPopTxt.implicitWidth + 8
+                        implicitHeight: 15
+                        radius: 4
+                        color: Qt.rgba(1, 1, 1, 0.08)
+                        border.color: Services.Theme.border
+                        border.width: 1
+                        Layout.alignment: Qt.AlignVCenter
+
+                        RowLayout {
+                            id: devPopTxt
+                            anchors.centerIn: parent
+                            spacing: 3
+                            Text { text: "󰄡"; color: Services.Theme.accent; font.pixelSize: 8 }
+                            Text { text: (notifItem && notifItem.originDevice) ? notifItem.originDevice : "Phone"; color: Services.Theme.textDisabled; font.pixelSize: 8; font.bold: true }
+                        }
+                    }
+
                     // Dismiss '×' Button
                     Rectangle {
                         width: 18
