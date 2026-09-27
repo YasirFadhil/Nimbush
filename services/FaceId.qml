@@ -21,12 +21,12 @@ Singleton {
     property var availableDevices: ["/dev/video0"]
 
     readonly property string pythonBin: {
-        var home = Quickshell.env("HOME") || "/home/yasirfadhil"
+        var home = Quickshell.env("HOME") || ("/home/" + (Quickshell.env("USER") || "user"))
         return home + "/.config/quickshell/scripts/.faceid-env/bin/python3"
     }
 
     readonly property string helperScript: {
-        var home = Quickshell.env("HOME") || "/home/yasirfadhil"
+        var home = Quickshell.env("HOME") || ("/home/" + (Quickshell.env("USER") || "user"))
         return home + "/.config/quickshell/scripts/faceid-helper.py"
     }
 
@@ -163,7 +163,7 @@ Singleton {
     // ── Verification Process ───────────────────────────────────────────────
     Process {
         id: verifyProc
-        command: [root.helperScript, "verify"]
+        command: [root.pythonBin, root.helperScript, "verify"]
 
         stdout: SplitParser {
             onRead: data => {

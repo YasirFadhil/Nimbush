@@ -27,7 +27,7 @@ Scope {
     property string minStr: "00"
     property string dateStr: ""
     property string greetingStr: "Welcome"
-    property string username: (Services.OsInfo && Services.OsInfo.username.length > 0) ? Services.OsInfo.username : "yasirfadhil"
+    property string username: (Services.OsInfo && Services.OsInfo.username.length > 0) ? Services.OsInfo.username : (Quickshell.env("USER") || "user")
     property string hostname: "host"
     property bool capsLockOn: false
     property bool isRevealed: false

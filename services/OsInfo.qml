@@ -126,18 +126,22 @@ Singleton {
     }
 
     Process {
-        id: avatarSyncProc
+        id: avatarProc
         command: ["python3", root.avatarHelperScript, "sync", (Services.Config && Services.Config.customAvatar) ? Services.Config.customAvatar : ""]
+        running: true
         stdout: SplitParser {
             onRead: data => {
                 try {
                     var obj = JSON.parse(data.trim())
-                    if (obj.fileUrl) {
-                        root.systemAvatarPath = obj.fileUrl
+                    if (obj.fileUrl !== undefined) {
+                        root.systemAvatarPath = obj.fileUrl || ""
                     } else if (obj.cleared) {
                         root.systemAvatarPath = ""
                     }
-                } catch (e) {}
+                } catch (e) {
+                    const p = data.trim()
+                    if (p.length > 0) root.systemAvatarPath = p
+                }
             }
         }
     }
@@ -146,9 +150,9 @@ Singleton {
         var clean = pathStr.startsWith("file://") ? pathStr.substring(7) : pathStr
         if (clean.length === 0) return
         if (Services.Config) Services.Config.setCustomAvatar(clean)
-        avatarSyncProc.command = ["python3", root.avatarHelperScript, "set", clean]
-        avatarSyncProc.running = false
-        avatarSyncProc.running = true
+        avatarProc.command = ["python3", root.avatarHelperScript, "set", clean]
+        avatarProc.running = false
+        avatarProc.running = true
     }
 
     function pickCustomAvatar() {
@@ -160,12 +164,13 @@ Singleton {
 
     function clearCustomAvatar() {
         if (Services.Config) Services.Config.clearCustomAvatar()
-        avatarSyncProc.command = ["python3", root.avatarHelperScript, "clear"]
-        avatarSyncProc.running = false
-        avatarSyncProc.running = true
+        avatarProc.command = ["python3", root.avatarHelperScript, "clear"]
+        avatarProc.running = false
+        avatarProc.running = true
     }
 
     function refreshAvatar() {
+        avatarProc.command = ["python3", root.avatarHelperScript, "sync", (Services.Config && Services.Config.customAvatar) ? Services.Config.customAvatar : ""]
         avatarProc.running = false
         avatarProc.running = true
     }
@@ -194,26 +199,7 @@ Singleton {
                     root.hostname = parts[2]
                     root.kernel = parts[3]
                     root.shellName = parts[4]
-                    avatarProc.running = true
-                }
-            }
-        }
-    }
-
-    Process {
-        id: avatarProc
-        command: ["python3", root.avatarHelperScript, "sync", (Services.Config && Services.Config.customAvatar) ? Services.Config.customAvatar : ""]
-        running: true
-        stdout: SplitParser {
-            onRead: data => {
-                try {
-                    var obj = JSON.parse(data.trim())
-                    if (obj.fileUrl && obj.fileUrl.length > 0) {
-                        root.systemAvatarPath = obj.fileUrl
-                    }
-                } catch (e) {
-                    const p = data.trim()
-                    if (p.length > 0) root.systemAvatarPath = p
+                    root.refreshAvatar()
                 }
             }
         }

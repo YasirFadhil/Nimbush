@@ -265,14 +265,6 @@ ShellRoot {
         function set(path: string): void { if (Services.Wallpaper) Services.Wallpaper.setWallpaper(path) }
     }
 
-    IpcHandler {
-        target: "wallpaperSelector"
-        function toggle(): void { if (!Services.OverlayManager.isLocked && !Services.OverlayManager.isWizardActive) Services.OverlayManager.wallpaperToggleRequested() }
-        function show():   void { if (!Services.OverlayManager.isLocked && !Services.OverlayManager.isWizardActive) Services.OverlayManager.wallpaperShowRequested() }
-        function hide():   void { if (!Services.OverlayManager.isLocked && !Services.OverlayManager.isWizardActive) Services.OverlayManager.wallpaperToggleRequested() }
-        function set(path: string): void { if (Services.Wallpaper) Services.Wallpaper.setWallpaper(path) }
-    }
-
     // ── Emoji Picker ─────────────────────────────────────────────────────────
     IpcHandler {
         target: "emoji"
@@ -353,6 +345,7 @@ ShellRoot {
     IpcHandler {
         target: "shell"
         function reload(): void {
+            reloadTriggerProc.running = false
             reloadTriggerProc.running = true
         }
     }
@@ -372,6 +365,16 @@ ShellRoot {
                 }
             }
         }
+        onExited: (code, status) => {
+            sleepRestartTimer.restart()
+        }
+    }
+
+    Timer {
+        id: sleepRestartTimer
+        interval: 2000
+        repeat: false
+        onTriggered: sleepWatcher.running = true
     }
 }
 

@@ -52,40 +52,66 @@ Singleton {
     property string barMonitorMode: "all"         // "all" | "primary" | "custom"
     property var barMonitorsList: []              // string[] of monitor names e.g. ["eDP-1", "DP-1"]
 
-    readonly property var barScreens: {
-        if (!Quickshell.screens || Quickshell.screens.length === 0) return []
-        const count = Quickshell.screens.length
+    property var barScreens: Quickshell.screens || []
+
+    function updateBarScreens() {
+        if (!Quickshell.screens || Quickshell.screens.length === 0) {
+            if (barScreens && barScreens.length > 0) barScreens = []
+            return
+        }
+        var next = Quickshell.screens
         if (barMonitorMode === "all") {
-            var all = []
-            for (var i = 0; i < count; i++) {
-                if (Quickshell.screens[i]) all.push(Quickshell.screens[i])
-            }
-            return all
+            next = Quickshell.screens
         } else if (barMonitorMode === "primary") {
             var prim = ""
             if (Services.Compositor && Services.Compositor.monitorsList && Services.Compositor.monitorsList.length > 0) {
                 var f = Services.Compositor.monitorsList.find(m => m.focused)
                 prim = f ? f.name : Services.Compositor.monitorsList[0].name
             }
-            for (var j = 0; j < count; j++) {
+            var target = null
+            for (var j = 0; j < Quickshell.screens.length; j++) {
                 if (Quickshell.screens[j] && Quickshell.screens[j].name === prim) {
-                    return [Quickshell.screens[j]]
+                    target = Quickshell.screens[j]
+                    break
                 }
             }
-            return Quickshell.screens[0] ? [Quickshell.screens[0]] : []
+            if (!target && Quickshell.screens[0]) target = Quickshell.screens[0]
+            next = target ? [target] : []
         } else if (barMonitorMode === "custom") {
             var list = barMonitorsList || []
             var res = []
-            for (var k = 0; k < count; k++) {
+            for (var k = 0; k < Quickshell.screens.length; k++) {
                 var sc = Quickshell.screens[k]
                 if (sc && list.indexOf(sc.name) !== -1) {
                     res.push(sc)
                 }
             }
-            if (res.length > 0) return res
-            return Quickshell.screens[0] ? [Quickshell.screens[0]] : []
+            next = res.length > 0 ? res : (Quickshell.screens[0] ? [Quickshell.screens[0]] : [])
         }
-        return Quickshell.screens
+
+        // Only update if screens array actually changed to avoid triggering Variants rebuild
+        if (!barScreens || barScreens.length !== next.length) {
+            barScreens = next
+            return
+        }
+        for (var i = 0; i < next.length; i++) {
+            if (barScreens[i] !== next[i]) {
+                barScreens = next
+                return
+            }
+        }
+    }
+
+    onBarMonitorModeChanged: updateBarScreens()
+    onBarMonitorsListChanged: updateBarScreens()
+
+    Connections {
+        target: Services.Compositor
+        function onMonitorsListChanged() {
+            if (root.barMonitorMode === "primary") {
+                root.updateBarScreens()
+            }
+        }
     }
 
     // ── Dashboard & Weather ──────────────────────────────────────────────────
@@ -233,6 +259,7 @@ Singleton {
         if (!root.isLoaded) {
             loadConfigProc.running = true
         }
+        root.updateBarScreens()
     }
 
     function applyData(data) {
@@ -660,7 +687,6 @@ Singleton {
         if (Services.SystemTheme) {
             Services.SystemTheme.setColorScheme(mode === "dark" ? "prefer-dark" : "prefer-light")
         }
-        root.configChanged()
         saveConfig()
     }
 

@@ -61,7 +61,6 @@ Singleton {
 
     Connections {
         target: Services.Config
-        function onConfigChanged() { root.handleThemeChange() }
         function onThemeModeChanged() { root.handleThemeChange() }
     }
 
@@ -132,7 +131,7 @@ Singleton {
         }
 
         saveConfig()
-        if (Services.Config) {
+        if (Services.Config && Services.Config.useMatugen) {
             Services.Config.generateMatugen(currentWallpaper)
         }
     }
@@ -302,8 +301,9 @@ Singleton {
             saveConfigProc.command = [
                 "sh", "-c",
                 "mkdir -p ~/.cache/quickshell && " +
-                "cat << 'EOF' > \"" + root.configPath + "\"\n" + jsonStr + "\nEOF\n" +
-                "(cat << 'EOF' > \"" + root.declConfigPath + "\"\n" + jsonStr + "\nEOF) 2>/dev/null || true"
+                "printf '%s' \"$1\" > \"" + root.configPath + "\" && " +
+                "(printf '%s' \"$1\" > \"" + root.declConfigPath + "\") 2>/dev/null || true",
+                "sh", jsonStr
             ]
             saveConfigProc.running = true
         }

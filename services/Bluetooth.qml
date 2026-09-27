@@ -15,9 +15,7 @@ Singleton {
     property bool scanning: false
     property string pairingMac: ""
 
-    readonly property string helperScript: Quickshell.env("HOME") 
-        ? (Quickshell.env("HOME") + "/.config/quickshell/scripts/bluetooth-helper.py") 
-        : "/home/yasirfadhil/.config/quickshell/scripts/bluetooth-helper.py"
+    readonly property string helperScript: (Quickshell.env("HOME") || ("/home/" + (Quickshell.env("USER") || "user"))) + "/.config/quickshell/scripts/bluetooth-helper.py"
 
     // Computed properties for connected devices & battery
     readonly property bool hasConnectedDevice: {

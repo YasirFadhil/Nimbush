@@ -89,27 +89,17 @@ Singleton {
 
     function toBase64(str) {
         if (!str) return ""
-        const bytes = []
-        for (let i = 0; i < str.length; i++) {
-            const code = str.charCodeAt(i)
-            if (code < 128) {
-                bytes.push(code)
-            } else if (code < 2048) {
-                bytes.push((code >> 6) | 192, (code & 63) | 128)
-            } else if ((code & 0xFC00) === 0xD800 && i + 1 < str.length && (str.charCodeAt(i + 1) & 0xFC00) === 0xDC00) {
-                const surrogate = ((code & 0x03FF) << 10) + (str.charCodeAt(++i) & 0x03FF) + 0x10000
-                bytes.push((surrogate >> 18) | 240, ((surrogate >> 12) & 63) | 128, ((surrogate >> 6) & 63) | 128, (surrogate & 63) | 128)
-            } else {
-                bytes.push((code >> 12) | 224, ((code >> 6) & 63) | 128, (code & 63) | 128)
-            }
+        try {
+            return Qt.btoa(unescape(encodeURIComponent(str)))
+        } catch (e) {
+            return Qt.btoa(str)
         }
-        return Qt.btoa(bytes)
     }
 
     function savePinned() {
         const jsonStr = JSON.stringify(pinnedPreviews)
         const b64 = toBase64(jsonStr)
-        savePinnedProc.command = ["sh", "-c", "mkdir -p ~/.cache/quickshell && echo '" + b64 + "' | base64 -d > ~/.cache/quickshell/clipboard_pinned.json"]
+        savePinnedProc.command = ["sh", "-c", "mkdir -p ~/.cache/quickshell && printf '%s' \"$1\" | base64 -d > ~/.cache/quickshell/clipboard_pinned.json", "sh", b64]
         savePinnedProc.running = true
     }
 
@@ -155,7 +145,8 @@ Singleton {
     }
 
     function select(entry) {
-        selectProc.command = ["sh", "-c", "cliphist decode '" + entry.id + "' | wl-copy"]
+        if (!entry || entry.id === undefined) return
+        selectProc.command = ["sh", "-c", "cliphist decode \"$1\" | wl-copy", "sh", String(entry.id)]
         selectProc.running = true
     }
 
@@ -176,7 +167,7 @@ Singleton {
         if (unpinned.length === 0) return
         const lines = unpinned.map(e => e.id + "\t" + e.preview).join("\n")
         const b64 = toBase64(lines)
-        clearAllProc.command = ["sh", "-c", "echo '" + b64 + "' | base64 -d | cliphist delete"]
+        clearAllProc.command = ["sh", "-c", "printf '%s' \"$1\" | base64 -d | cliphist delete", "sh", b64]
         clearAllProc.running = true
     }
 
@@ -192,7 +183,7 @@ Singleton {
         }
         const line = entry.id + "\t" + entry.preview
         const b64 = toBase64(line)
-        deleteProc.command = ["sh", "-c", "echo '" + b64 + "' | base64 -d | cliphist delete"]
+        deleteProc.command = ["sh", "-c", "printf '%s' \"$1\" | base64 -d | cliphist delete", "sh", b64]
         deleteProc.running = true
     }
 

@@ -241,7 +241,7 @@ PanelWindow {
                 text: osd.isMuted ? "MUTED" : (Math.round(osd.value * 100) + "%")
                 font.family: Services.Theme.fontMono
                 font.pixelSize: osd.isMuted ? Services.Theme.fontSizeSm : Services.Theme.fontSizeMd
-                font.weight: Font.SemiBold
+                font.weight: Font.DemiBold
                 color: osd.isMuted ? Services.Theme.danger : (osd.isOverAmp ? Services.Theme.warning : Services.Theme.textSecondary)
                 horizontalAlignment: Text.AlignRight
                 Layout.minimumWidth: 40

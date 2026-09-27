@@ -26,6 +26,23 @@ Singleton {
 
     readonly property string kdeHelperPath: (Quickshell.env("HOME") || "/home/" + (Quickshell.env("USER") || "user")) + "/.config/quickshell/scripts/kdeconnect-helper.py"
 
+    property var _activeTimers: ({})
+    property int _kdeRestartDelay: 3000
+    property int _kdeRestartCount: 0
+
+    function _startDismissTimer(id, interval) {
+        if (!id || interval <= 0) return
+        if (_activeTimers[id]) {
+            try { _activeTimers[id].destroy() } catch (e) {}
+            delete _activeTimers[id]
+        }
+        const t = dismissTimer.createObject(root, { notifId: id, interval: interval })
+        if (t) {
+            _activeTimers[id] = t
+            t.start()
+        }
+    }
+
     // ── Retention Pruner (1 to 7 days) ──────────────────────────────────────
     function pruneExpiredHistory() {
         const days = Math.max(1, Math.min(7, root.retentionDays || 7))
@@ -62,6 +79,8 @@ Singleton {
         running: true
         stdout: SplitParser {
             onRead: line => {
+                root._kdeRestartCount = 0
+                root._kdeRestartDelay = 3000
                 try {
                     const data = JSON.parse(line.trim())
                     if (data.event === "removed") {
@@ -82,13 +101,16 @@ Singleton {
             }
         }
         onExited: (code, status) => {
+            root._kdeRestartCount++
+            root._kdeRestartDelay = Math.min(60000, Math.floor(3000 * Math.pow(1.5, Math.min(root._kdeRestartCount, 8))))
+            kdeRestartTimer.interval = root._kdeRestartDelay
             kdeRestartTimer.restart()
         }
     }
 
     Timer {
         id: kdeRestartTimer
-        interval: 3000
+        interval: root._kdeRestartDelay
         repeat: false
         onTriggered: kdeWatcherProc.running = true
     }
@@ -151,42 +173,49 @@ Singleton {
             }
         }
 
-        if (Array.isArray(kdeNotifs)) {
+        if (Array.isArray(kdeNotifs) && kdeNotifs.length > 0) {
+            // Build fast lookup maps to replace nested O(N^3) loops with O(1) lookups
+            const popupMap = {}
+            for (let p = 0; p < popupModel.count; p++) {
+                const pItem = popupModel.get(p)
+                if (pItem && pItem.notifId) popupMap[pItem.notifId] = pItem
+            }
+
+            const kdeHistoryMap = {}
+            for (let h = 0; h < historyModel.count; h++) {
+                const hItem = historyModel.get(h)
+                if (hItem && hItem.isKdeConnect && hItem.kdeNotifId) {
+                    kdeHistoryMap[String(hItem.kdeNotifId)] = hItem
+                }
+            }
+
             for (let k = 0; k < kdeNotifs.length; k++) {
                 const kn = kdeNotifs[k]
                 const knId = String(kn.id)
-                for (let h = 0; h < historyModel.count; h++) {
-                    const item = historyModel.get(h)
-                    if (item && item.isKdeConnect && item.kdeNotifId === knId) {
-                        const newSummary = kn.title || item.summary
-                        const newBody = kn.text || item.body
-                        if (item.summary !== newSummary || item.body !== newBody) {
-                            item.summary = newSummary
-                            item.body = newBody
-                            item.time = Date.now()
-                            changed = true
+                const item = kdeHistoryMap[knId]
+                if (item) {
+                    const newSummary = kn.title || item.summary
+                    const newBody = kn.text || item.body
+                    if (item.summary !== newSummary || item.body !== newBody) {
+                        item.summary = newSummary
+                        item.body = newBody
+                        item.time = Date.now()
+                        changed = true
 
-                            let inPopup = false
-                            for (let p = 0; p < popupModel.count; p++) {
-                                if (popupModel.get(p).notifId === item.notifId) {
-                                    inPopup = true
-                                    popupModel.get(p).summary = newSummary
-                                    popupModel.get(p).body = newBody
-                                    popupModel.get(p).time = Date.now()
-                                    break
-                                }
+                        const pItem = popupMap[item.notifId]
+                        if (pItem) {
+                            pItem.summary = newSummary
+                            pItem.body = newBody
+                            pItem.time = Date.now()
+                        } else if (!root.doNotDisturb) {
+                            popupModel.insert(0, item)
+                            while (popupModel.count > root.maxPopupCount) {
+                                popupModel.remove(popupModel.count - 1)
                             }
-                            if (!inPopup && !root.doNotDisturb) {
-                                popupModel.insert(0, item)
-                                while (popupModel.count > root.maxPopupCount) {
-                                    popupModel.remove(popupModel.count - 1)
-                                }
-                                root.newNotification(item)
-                                SoundFeedback.playNotification()
-                                dismissTimer.createObject(root, { notifId: item.notifId, interval: 5000 }).start()
-                            }
+                            root.newNotification(item)
+                            SoundFeedback.playNotification()
+                            root._startDismissTimer(item.notifId, 5000)
                         }
-                        break
                     }
                 }
             }
@@ -268,7 +297,7 @@ Singleton {
                 const timeout = notif.expireTimeout > 0 ? notif.expireTimeout
                     : (notif.urgency === NotificationUrgency.Critical ? 7000 : (Services.Config ? (Services.Config.notificationTimeout * 1000) : 5000))
                 if (timeout > 0) {
-                    dismissTimer.createObject(root, { notifId: notif.id, interval: timeout }).start()
+                    root._startDismissTimer(notif.id, timeout)
                 }
             }
 
@@ -394,7 +423,7 @@ Singleton {
             const timeout = notif.expireTimeout > 0 ? notif.expireTimeout
                 : (notif.urgency === NotificationUrgency.Critical ? 7000 : (Services.Config ? (Services.Config.notificationTimeout * 1000) : 5000))
             if (timeout > 0) {
-                dismissTimer.createObject(root, { notifId: notif.id, interval: timeout }).start()
+                root._startDismissTimer(notif.id, timeout)
             }
         }
     }
@@ -460,6 +489,9 @@ Singleton {
                     start()
                     return
                 }
+                if (root._activeTimers[notifId] === this) {
+                    delete root._activeTimers[notifId]
+                }
                 root.removePopup(notifId)
                 destroy()
             }
@@ -479,6 +511,10 @@ Singleton {
     }
 
     function removePopup(id) {
+        if (_activeTimers[id]) {
+            try { _activeTimers[id].destroy() } catch (e) {}
+            delete _activeTimers[id]
+        }
         for (let i = 0; i < popupModel.count; i++) {
             if (popupModel.get(i).notifId === id) { popupModel.remove(i); break }
         }
@@ -607,9 +643,8 @@ Singleton {
             "--body", body,
             "--message", replyText
         ]
-        stdout: SplitParser { onRead: data => console.log("[kdeConnectReplyProc][out]", data) }
-        stderr: SplitParser { onRead: data => console.log("[kdeConnectReplyProc][err]", data) }
-        onExited: (code, status) => console.log("[kdeConnectReplyProc] exited with code", code)
+        stdout: SplitParser { onRead: data => {} }
+        stderr: SplitParser { onRead: data => {} }
     }
 
     Process {
@@ -623,8 +658,8 @@ Singleton {
             "--summary", summary,
             "--body", body
         ]
-        stdout: SplitParser { onRead: data => console.log("[kdeConnectDismissProc][out]", data) }
-        stderr: SplitParser { onRead: data => console.log("[kdeConnectDismissProc][err]", data) }
+        stdout: SplitParser { onRead: data => {} }
+        stderr: SplitParser { onRead: data => {} }
     }
 
     function invokeAction(notifId, actionId, text) {
@@ -781,7 +816,7 @@ Singleton {
             const timeout = entry.expireTimeout > 0 ? entry.expireTimeout
                 : (fullEntry.urgency === 2 ? 6000 : (Services.Config ? (Services.Config.notificationTimeout * 1000) : 5000))
             if (timeout > 0) {
-                dismissTimer.createObject(root, { notifId: id, interval: timeout }).start()
+                root._startDismissTimer(id, timeout)
             }
         }
         root.saveHistory()
