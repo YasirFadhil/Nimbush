@@ -17,6 +17,7 @@ Singleton {
     property alias historyList: historyModel
     property int maxHistoryCount: 50
     property int maxPopupCount: 10
+    property int historyRevision: 0
 
     readonly property int retentionDays: Services.Config ? Services.Config.notificationRetentionDays : 7
     onRetentionDaysChanged: pruneExpiredHistory()
@@ -194,9 +195,9 @@ Singleton {
                 const knId = String(kn.id)
                 const item = kdeHistoryMap[knId]
                 if (item) {
-                    const newSummary = root.decodeOctalString(kn.title || item.summary)
-                    const newBody = root.decodeOctalString(kn.text || item.body)
-                    const newApp = (kn.app && kn.app.length > 0) ? root.decodeOctalString(kn.app) : item.appName
+                    const newSummary = root.cleanNotificationText(kn.title || item.summary)
+                    const newBody = root.cleanNotificationText(kn.text || item.body)
+                    const newApp = (kn.app && kn.app.length > 0) ? root.cleanNotificationText(kn.app) : item.appName
                     const newIcon = (kn.app && kn.app.length > 0) ? root.resolveAppIcon(newApp, item.appIcon) : item.appIcon
 
                     const knReplyId = (kn.replyId && String(kn.replyId).trim().length > 0) ? String(kn.replyId).trim() : ""
@@ -217,14 +218,14 @@ Singleton {
                         if (knHasReply) {
                             newActs.push({ identifier: "inline-reply", text: "Reply" })
                         }
-                        item.actions = newActs
+                        root.updateActionsInItem(item, newActs)
                         changed = true
 
                         const pItem = popupMap[item.notifId]
                         if (pItem) {
                             pItem.kdeReplyId = knReplyId
                             pItem.hasInlineReply = knHasReply
-                            pItem.actions = newActs
+                            root.updateActionsInItem(pItem, newActs)
                         }
                     }
 
@@ -261,7 +262,10 @@ Singleton {
             }
         }
 
-        if (changed) root.saveHistory()
+        if (changed) {
+            root.saveHistory()
+            root.historyRevision++
+        }
     }
 
     // ── Desktop Notification Server ─────────────────────────────────────────
@@ -294,8 +298,8 @@ Singleton {
             const kdeInfo = isKdeConnect ? root.resolveKdeNotificationInfo(notif) : null
             const finalAppName = (kdeInfo && kdeInfo.appName) ? kdeInfo.appName : (notif.appName || "Unknown")
             const finalAppIcon = (kdeInfo && kdeInfo.appIcon) ? kdeInfo.appIcon : notif.appIcon
-            const finalSummary = root.decodeOctalString((kdeInfo && kdeInfo.summary !== undefined) ? kdeInfo.summary : (notif.summary || ""))
-            const finalBody = root.decodeOctalString((kdeInfo && kdeInfo.body !== undefined) ? kdeInfo.body : (notif.body || ""))
+            const finalSummary = root.cleanNotificationText((kdeInfo && kdeInfo.summary !== undefined) ? kdeInfo.summary : (notif.summary || ""))
+            const finalBody = root.cleanNotificationText((kdeInfo && kdeInfo.body !== undefined) ? kdeInfo.body : (notif.body || ""))
             const originDevice = (kdeInfo && kdeInfo.originDevice) ? kdeInfo.originDevice : ""
 
             const entry = {
@@ -324,6 +328,8 @@ Singleton {
             }
 
             historyModel.insert(0, entry)
+            root.historyRevision++
+            root.saveHistory()
             root.pruneExpiredHistory()
 
             if (!root.doNotDisturb) {
@@ -390,8 +396,8 @@ Singleton {
         const kdeInfo = isKdeConnect ? root.resolveKdeNotificationInfo(notif) : null
         const finalAppName = (kdeInfo && kdeInfo.appName) ? kdeInfo.appName : (notif.appName || "Unknown")
         const finalAppIcon = (kdeInfo && kdeInfo.appIcon) ? kdeInfo.appIcon : notif.appIcon
-        const finalSummary = root.decodeOctalString((kdeInfo && kdeInfo.summary !== undefined) ? kdeInfo.summary : (notif.summary || ""))
-        const finalBody = root.decodeOctalString((kdeInfo && kdeInfo.body !== undefined) ? kdeInfo.body : (notif.body || ""))
+        const finalSummary = root.cleanNotificationText((kdeInfo && kdeInfo.summary !== undefined) ? kdeInfo.summary : (notif.summary || ""))
+        const finalBody = root.cleanNotificationText((kdeInfo && kdeInfo.body !== undefined) ? kdeInfo.body : (notif.body || ""))
         const originDevice = (kdeInfo && kdeInfo.originDevice) ? kdeInfo.originDevice : ""
 
         if (existingEntry) {
@@ -402,9 +408,10 @@ Singleton {
             existingEntry.image = notif.image || ""
             if (originDevice) existingEntry.originDevice = originDevice
             existingEntry.time = Date.now()
-            existingEntry.actions = actionsList
+            root.updateActionsInItem(existingEntry, actionsList)
             existingEntry.hasInlineReply = canReply
             root.saveHistory()
+            root.historyRevision++
         }
 
         let inPopupIndex = -1
@@ -418,7 +425,7 @@ Singleton {
                 p.image = notif.image || ""
                 if (originDevice) p.originDevice = originDevice
                 p.time = Date.now()
-                p.actions = actionsList
+                root.updateActionsInItem(p, actionsList)
                 p.hasInlineReply = canReply
                 inPopupIndex = i
                 existingEntry = p
@@ -548,19 +555,20 @@ Singleton {
                                         if (hasReply) {
                                             newActs.push({ identifier: "inline-reply", text: "Reply" })
                                         }
-                                        hItem.actions = newActs
+                                        root.updateActionsInItem(hItem, newActs)
 
                                         if (k.app && (hItem.appName === "KDE Connect" || !hItem.appName)) {
                                             hItem.appName = k.app
                                             hItem.appIcon = root.resolveAppIcon(k.app, hItem.appIcon)
                                         }
                                         if (k.title && k.title.length > 0 && hItem.summary === k.app) {
-                                            hItem.summary = root.decodeOctalString(k.title)
+                                            hItem.summary = root.cleanNotificationText(k.title)
                                         }
                                         if (k.text && k.text.length > 0 && hItem.body.startsWith(k.title + ": ")) {
-                                            hItem.body = root.decodeOctalString(k.text)
+                                            hItem.body = root.cleanNotificationText(k.text)
                                         }
                                         root.saveHistory()
+                                        root.historyRevision++
                                         break
                                     }
                                 }
@@ -584,17 +592,17 @@ Singleton {
                                         if (hasReply) {
                                             newActs.push({ identifier: "inline-reply", text: "Reply" })
                                         }
-                                        pItem.actions = newActs
+                                        root.updateActionsInItem(pItem, newActs)
 
                                         if (k.app && (pItem.appName === "KDE Connect" || !pItem.appName)) {
                                             pItem.appName = k.app
                                             pItem.appIcon = root.resolveAppIcon(k.app, pItem.appIcon)
                                         }
                                         if (k.title && k.title.length > 0 && pItem.summary === k.app) {
-                                            pItem.summary = root.decodeOctalString(k.title)
+                                            pItem.summary = root.cleanNotificationText(k.title)
                                         }
                                         if (k.text && k.text.length > 0 && pItem.body.startsWith(k.title + ": ")) {
-                                            pItem.body = root.decodeOctalString(k.text)
+                                            pItem.body = root.cleanNotificationText(k.text)
                                         }
                                         break
                                     }
@@ -664,6 +672,7 @@ Singleton {
             if (historyModel.get(i).notifId === id) {
                 historyModel.remove(i)
                 root.saveHistory()
+                root.historyRevision++
                 break
             }
         }
@@ -764,6 +773,41 @@ Singleton {
             .replace(/\\'/g, "'")
             .replace(/\\"/g, '"')
             .replace(/\\\\/g, "\\")
+    }
+
+    function cleanNotificationText(str) {
+        if (!str || typeof str !== "string") return str || ""
+        let s = root.decodeOctalString(str)
+        if (s.includes("<") || s.includes("&") || s.includes("\\")) {
+            s = s.replace(/&lt;/g, "<")
+                 .replace(/&gt;/g, ">")
+                 .replace(/<(?:br|hr)\s*\/?>/gi, "\n")
+                 .replace(/<\/?(?:p|div)[^>]*>/gi, "\n")
+                 .replace(/<[^>]+>/g, "")
+                 .replace(/&quot;/g, '"')
+                 .replace(/&amp;/g, '&')
+                 .replace(/&#39;/g, "'")
+                 .replace(/&apos;/g, "'")
+                 .replace(/&nbsp;/g, " ")
+                 .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(parseInt(n, 10)))
+                 .replace(/&#x([0-9a-f]+);/gi, (_, n) => String.fromCharCode(parseInt(n, 16)))
+                 .replace(/\r\n/g, "\n")
+                 .replace(/\r/g, "\n")
+                 .replace(/\n{3,}/g, "\n\n")
+        }
+        return s.trim()
+    }
+
+    function updateActionsInItem(item, newActs) {
+        if (!item || !newActs) return
+        if (item.actions && typeof item.actions.clear === "function") {
+            item.actions.clear()
+            for (let i = 0; i < newActs.length; i++) {
+                item.actions.append({ identifier: String(newActs[i].identifier || ""), text: String(newActs[i].text || "") })
+            }
+        } else {
+            item.actions = newActs
+        }
     }
 
     function resolveAppIcon(appName, fallbackIcon) {
@@ -1073,6 +1117,7 @@ Singleton {
         }
         historyModel.clear()
         root.saveHistory()
+        root.historyRevision++
     }
 
     property int nextSystemNotifId: 900000
@@ -1114,6 +1159,7 @@ Singleton {
             }
         }
         root.saveHistory()
+        root.historyRevision++
         return id
     }
 
@@ -1123,6 +1169,7 @@ Singleton {
         id: loadHistoryProc
         command: ["sh", "-c", "mkdir -p ~/.cache/quickshell && if [ -f \"" + historyCachePath + "\" ]; then cat \"" + historyCachePath + "\"; else echo '[]'; fi"]
         stdout: SplitParser {
+            splitMarker: ""
             onRead: data => {
                 try {
                     const parsed = JSON.parse(data.trim())
@@ -1133,8 +1180,8 @@ Singleton {
                             if (entry.image && entry.image.startsWith("image://qsimage/")) {
                                 entry.image = ""
                             }
-                            entry.summary = root.decodeOctalString(entry.summary || "")
-                            entry.body = root.decodeOctalString(entry.body || "")
+                            entry.summary = root.cleanNotificationText(entry.summary || "")
+                            entry.body = root.cleanNotificationText(entry.body || "")
 
                             if (entry.isKdeConnect) {
                                 const hasKdeReply = Boolean(entry.kdeReplyId && String(entry.kdeReplyId).trim().length > 0)
@@ -1155,14 +1202,15 @@ Singleton {
                                 if (resolved) {
                                     entry.appName = resolved.appName
                                     entry.appIcon = resolved.appIcon
-                                    entry.summary = resolved.summary
-                                    entry.body = resolved.body
+                                    entry.summary = root.cleanNotificationText(resolved.summary)
+                                    entry.body = root.cleanNotificationText(resolved.body)
                                     if (resolved.originDevice && !entry.originDevice) entry.originDevice = resolved.originDevice
                                 }
                             }
                             historyModel.append(entry)
                         }
                         root.pruneExpiredHistory()
+                        root.historyRevision++
                     }
                 } catch (e) {
                     console.log("[Notifications] failed to parse history cache:", e)

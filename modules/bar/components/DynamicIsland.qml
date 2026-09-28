@@ -408,6 +408,12 @@ Item {
     property var btConnectedDevices: ({})
     property bool btInitialized: false
 
+    // Initial baseline state guards to prevent false HUD triggers on reload/startup
+    property bool lastChargingState: false
+    property bool lastSaverEnabled: false
+    property string lastWallpaperPath: ""
+    property bool lastDnd: false
+
     // Media Stop & Motion Animation Choreography
     property bool isNextTrack: true
     property bool mediaStopping: false
@@ -478,7 +484,7 @@ Item {
 
     Process {
         id: cameraProc
-        command: ["sh", "-c", "ls /dev/video* >/dev/null 2>&1 || { echo 0; exit 0; }; pids=$(fuser /dev/video* 2>/dev/null); [ -z \"$pids\" ] && { echo 0; exit 0; }; active=0; for p in $pids; do cmd=$(ps -p \"$p\" -o args= 2>/dev/null); case \"$cmd\" in *faceid-helper*) ;; *) active=1; break ;; esac; done; echo $active"]
+        command: ["sh", "-c", "ls /dev/video* >/dev/null 2>&1 || { echo 0; exit 0; }; pids=$(fuser /dev/video* 2>/dev/null); [ -z \"$pids\" ] && { echo 0; exit 0; }; active=0; for p in $pids; do cmd=$(ps -p \"$p\" -o args= 2>/dev/null); case \"$cmd\" in *faceid-helper*|*wireplumber*|*pipewire*|*systemd-udevd*|*udevd*) ;; *) active=1; break ;; esac; done; echo $active"]
         stdout: SplitParser {
             onRead: data => {
                 const isActive = data.trim() === "1"
@@ -555,9 +561,6 @@ Item {
 
     onCameraActiveChanged: {
         if (cameraActive) cameraActiveTime = Date.now()
-        if (cameraActive && hudReady && root.notifCount === 0 && !Services.OverlayManager.isLocked) {
-            root.showSysHud("󰄀", "Camera Active", "Webcam in use", Services.Theme.success)
-        }
     }
 
     onCapsLockActiveChanged: {
@@ -584,7 +587,7 @@ Item {
 
     Timer {
         id: hudInitTimer
-        interval: 800
+        interval: 2200
         running: true
         repeat: false
         onTriggered: {
@@ -598,11 +601,12 @@ Item {
 
     Process {
         id: welcomeProc
-        command: ["sh", "-c", "whoami || echo $USER"]
+        command: ["sh", "-c", "marker=\"/tmp/qs-welcomed-${USER}\"; if [ ! -f \"$marker\" ]; then touch \"$marker\"; whoami || echo $USER; fi"]
         stdout: SplitParser {
             onRead: data => {
                 const rawUser = data.trim()
-                const user = rawUser ? rawUser.charAt(0).toUpperCase() + rawUser.slice(1) : "User"
+                if (rawUser.length === 0) return
+                const user = rawUser.charAt(0).toUpperCase() + rawUser.slice(1)
                 const icon = Services.OsInfo.logoGlyph || "󰀉"
                 root.showSysHud(icon, "Welcome back!", "Logged in as " + user, Services.Theme.accent, 3500)
             }
@@ -614,6 +618,22 @@ Item {
         if (Services.Audio.sink) {
             root.lastAudioMuted = Services.Audio.muted
         }
+        if (Services.Power) {
+            root.lastChargingState = Services.Power.charging
+        }
+        if (Services.PowerProfile) {
+            root.lastSaverEnabled = Services.PowerProfile.saverEnabled
+        }
+        if (Services.Wallpaper) {
+            root.lastWallpaperPath = Services.Wallpaper.currentWallpaper || ""
+        }
+        if (Services.Notifications) {
+            root.lastDnd = Services.Notifications.doNotDisturb
+        }
+        if (Services.Wifi) {
+            root.wifiLastConnected = Services.Wifi.connected
+            root.wifiLastSsid = Services.Wifi.ssid
+        }
         if (root.mediaPlaying) {
             root.mediaCollapsedReady = true
         }
@@ -623,7 +643,7 @@ Item {
     Connections {
         target: Services.Audio
         function onMutedChanged() {
-            if (!root.hudReady || !Services.Audio.sink) return
+            if (!Services.Audio.sink) return
 
             const currentSink = Services.Audio.sink
             // If sink changed (e.g. bluetooth disconnect/connect), update sink ref and ignore fake mute notification
@@ -634,6 +654,10 @@ Item {
             }
 
             const isMuted = Services.Audio.muted
+            if (!root.hudReady) {
+                root.lastAudioMuted = isMuted
+                return
+            }
             if (root.lastAudioMuted === isMuted) return
             root.lastAudioMuted = isMuted
 
@@ -657,8 +681,13 @@ Item {
     Connections {
         target: Services.Notifications
         function onDoNotDisturbChanged() {
-            if (!root.hudReady) return
             const dnd = Services.Notifications.doNotDisturb
+            if (!root.hudReady) {
+                root.lastDnd = dnd
+                return
+            }
+            if (dnd === root.lastDnd) return
+            root.lastDnd = dnd
             const icon = dnd ? "󰂛" : "󰂚"
             const title = dnd ? "Do Not Disturb" : "Notifications On"
             const detail = dnd ? "On" : "Off"
@@ -669,8 +698,14 @@ Item {
     Connections {
         target: Services.Power
         function onChargingChanged() {
-            if (!root.hudReady) return
             const isCharging = Services.Power.charging
+            if (!root.hudReady || !Services.Power.ready) {
+                root.lastChargingState = isCharging
+                return
+            }
+            if (isCharging === root.lastChargingState) return
+            root.lastChargingState = isCharging
+
             const rawPct = Services.Power.percentage || 0
             const pct = Math.round(rawPct > 1 ? rawPct : rawPct * 100)
             const icon = Services.Icons.powerIcon(isCharging, pct)
@@ -693,8 +728,14 @@ Item {
     Connections {
         target: Services.PowerProfile
         function onSaverEnabledChanged() {
-            if (!root.hudReady) return
             const isSaver = Services.PowerProfile.saverEnabled
+            if (!root.hudReady) {
+                root.lastSaverEnabled = isSaver
+                return
+            }
+            if (isSaver === root.lastSaverEnabled) return
+            root.lastSaverEnabled = isSaver
+
             const icon = Services.Icons.tree
             const title = isSaver ? "Power Saver On" : "Power Saver Off"
             const detail = isSaver ? "Battery saver active" : "Standard performance"
@@ -726,8 +767,12 @@ Item {
         }
 
         function onSsidChanged() {
+            if (!root.hudReady) {
+                if (Services.Wifi.ssid) root.wifiLastSsid = Services.Wifi.ssid
+                return
+            }
             if (Services.Wifi.ssid && Services.Wifi.ssid !== "") {
-                if (root.hudReady && Services.Wifi.connected && root.wifiLastConnected && root.wifiLastSsid !== "" && root.wifiLastSsid !== Services.Wifi.ssid) {
+                if (Services.Wifi.connected && root.wifiLastConnected && root.wifiLastSsid !== "" && root.wifiLastSsid !== Services.Wifi.ssid) {
                     root.showSysHud("󰤨", "Wi-Fi Switched", Services.Wifi.ssid, Services.Theme.accent)
                 }
                 root.wifiLastSsid = Services.Wifi.ssid
@@ -762,7 +807,7 @@ Item {
                 }
             }
 
-            if (!root.hudReady || !root.btInitialized) {
+            if (!root.hudReady) {
                 root.btConnectedDevices = newMap
                 root.btInitialized = true
                 return
@@ -828,8 +873,14 @@ Item {
     Connections {
         target: Services.Wallpaper
         function onCurrentWallpaperChanged() {
-            if (!root.hudReady || !Services.Wallpaper || !Services.Wallpaper.currentWallpaper) return
+            if (!Services.Wallpaper || !Services.Wallpaper.currentWallpaper) return
             const path = Services.Wallpaper.currentWallpaper
+            if (!root.hudReady) {
+                root.lastWallpaperPath = path
+                return
+            }
+            if (path === root.lastWallpaperPath) return
+            root.lastWallpaperPath = path
             const name = path.substring(path.lastIndexOf("/") + 1)
             root.showSysHud(Services.Icons.image || "󰋩", "Wallpaper Applied", name, Services.Theme.accent, 2600)
         }

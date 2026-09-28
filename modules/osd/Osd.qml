@@ -27,7 +27,7 @@ PanelWindow {
     property bool osdReady: false
     Timer {
         id: osdInitTimer
-        interval: 400
+        interval: 1800
         running: true
         repeat: false
         onTriggered: osd.osdReady = true

@@ -16,6 +16,7 @@ import subprocess
 import argparse
 import select
 import re
+import html
 
 def decode_busctl_string(raw_val):
     if not raw_val:
@@ -43,7 +44,15 @@ def decode_busctl_string(raw_val):
                .replace("\\'", "'")
                .replace('\\"', '"')
                .replace('\\\\', '\\'))
-    return decoded
+
+    if '<' in decoded or '&' in decoded:
+        decoded = re.sub(r'<(?:br|hr)\s*/?>', '\n', decoded, flags=re.I)
+        decoded = re.sub(r'</?(?:p|div)[^>]*>', '\n', decoded, flags=re.I)
+        decoded = re.sub(r'<[^>]+>', '', decoded)
+        decoded = html.unescape(decoded)
+        decoded = re.sub(r'\n{3,}', '\n\n', decoded)
+
+    return decoded.strip()
 
 def get_kde_device_notification_paths():
     try:
