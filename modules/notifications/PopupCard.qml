@@ -120,7 +120,7 @@ Rectangle {
                 model: actionsRow.actList
                 delegate: Rectangle {
                     id: actBtn
-                    property var modelData: null
+                    required property var modelData
                     readonly property string actIdentifier: (modelData && modelData.identifier !== undefined)
                         ? String(modelData.identifier)
                         : (typeof identifier !== "undefined" ? String(identifier) : "")
@@ -128,6 +128,7 @@ Rectangle {
                         ? String(modelData.text)
                         : (typeof text !== "undefined" ? String(text) : "")
 
+                    visible: actText.trim().length > 0
                     radius: Services.Theme.radiusSm
                     color: actMouse.containsMouse ? Services.Theme.accent : Services.Theme.surface
                     border.color: Services.Theme.border

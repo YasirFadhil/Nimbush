@@ -487,7 +487,7 @@ PanelWindow {
                         model: popActionsRow.actList
                         delegate: Rectangle {
                             id: actBtn
-                            property var modelData: null
+                            required property var modelData
                             readonly property string actIdentifier: (modelData && modelData.identifier !== undefined)
                                 ? String(modelData.identifier)
                                 : (typeof identifier !== "undefined" ? String(identifier) : "")
@@ -495,6 +495,7 @@ PanelWindow {
                                 ? String(modelData.text)
                                 : (typeof text !== "undefined" ? String(text) : "")
 
+                            visible: actText.trim().length > 0
                             radius: 6
                             color: actHover.containsMouse ? Services.Theme.bgHover : Services.Theme.surfaceVariant
                             border.color: Services.Theme.border

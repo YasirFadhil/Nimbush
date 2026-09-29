@@ -110,10 +110,14 @@ PanelWindow {
             for (let j = 0; j < cnt; j++) {
                 const a = rawItem.actions.get ? rawItem.actions.get(j) : rawItem.actions[j]
                 if (a) {
-                    actions.push({
-                        identifier: String(a.identifier || ""),
-                        text: String(a.text || "")
-                    })
+                    const id = String(a.identifier !== undefined ? a.identifier : "")
+                    const txt = String(a.text !== undefined ? a.text : "").trim()
+                    if (txt.length > 0 || id === "inline-reply") {
+                        actions.push({
+                            identifier: id,
+                            text: txt.length > 0 ? txt : "Reply"
+                        })
+                    }
                 }
             }
         }
@@ -749,7 +753,7 @@ PanelWindow {
                                     model: pActionsRow.actList
                                     delegate: Rectangle {
                                         id: pActBtn
-                                        property var modelData: null
+                                        required property var modelData
                                         readonly property string actIdentifier: (modelData && modelData.identifier !== undefined)
                                             ? String(modelData.identifier)
                                             : (typeof identifier !== "undefined" ? String(identifier) : "")
@@ -757,6 +761,7 @@ PanelWindow {
                                             ? String(modelData.text)
                                             : (typeof text !== "undefined" ? String(text) : "")
 
+                                        visible: actText.trim().length > 0
                                         radius: 6
                                         color: pActHover.containsMouse ? centerWin.t.bgHover : centerWin.t.surface
                                         border.color: centerWin.t.border
@@ -1146,7 +1151,7 @@ PanelWindow {
                                                 model: oActionsRow.actList
                                                 delegate: Rectangle {
                                                     id: oActBtn
-                                                    property var modelData: null
+                                                    required property var modelData
                                                     readonly property string actIdentifier: (modelData && modelData.identifier !== undefined)
                                                         ? String(modelData.identifier)
                                                         : (typeof identifier !== "undefined" ? String(identifier) : "")
@@ -1154,6 +1159,7 @@ PanelWindow {
                                                         ? String(modelData.text)
                                                         : (typeof text !== "undefined" ? String(text) : "")
 
+                                                    visible: actText.trim().length > 0
                                                     radius: 6
                                                     color: oActHover.containsMouse ? centerWin.t.bgHover : centerWin.t.surface
                                                     border.color: centerWin.t.border
