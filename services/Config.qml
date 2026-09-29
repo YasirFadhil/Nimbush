@@ -193,6 +193,8 @@ Singleton {
     property bool faceIdAutoUnlock: true
     property bool batteryShowWarnings: true
     property int batteryLowThreshold: 20
+    property bool batteryChargeLimitEnabled: false
+    property int batteryChargeLimitValue: 80
     property string customAvatar: ""
     property int clipboardLimit: 50
     property int launcherMaxResults: 8
@@ -369,6 +371,8 @@ Singleton {
         if (data.faceIdAutoUnlock !== undefined) faceIdAutoUnlock = Boolean(data.faceIdAutoUnlock)
         if (data.batteryShowWarnings !== undefined) batteryShowWarnings = Boolean(data.batteryShowWarnings)
         if (data.batteryLowThreshold !== undefined) batteryLowThreshold = Number(data.batteryLowThreshold)
+        if (data.batteryChargeLimitEnabled !== undefined) batteryChargeLimitEnabled = Boolean(data.batteryChargeLimitEnabled)
+        if (data.batteryChargeLimitValue !== undefined) batteryChargeLimitValue = Number(data.batteryChargeLimitValue)
         if (data.customAvatar !== undefined) customAvatar = String(data.customAvatar)
         if (data.clipboardLimit !== undefined) clipboardLimit = Number(data.clipboardLimit)
         if (data.launcherMaxResults !== undefined) launcherMaxResults = Number(data.launcherMaxResults)
@@ -496,6 +500,8 @@ Singleton {
             faceIdAutoUnlock: faceIdAutoUnlock,
             batteryShowWarnings: batteryShowWarnings,
             batteryLowThreshold: batteryLowThreshold,
+            batteryChargeLimitEnabled: batteryChargeLimitEnabled,
+            batteryChargeLimitValue: batteryChargeLimitValue,
             customAvatar: customAvatar,
             clipboardLimit: clipboardLimit,
             launcherMaxResults: launcherMaxResults,
@@ -611,6 +617,8 @@ Singleton {
         lockscreenShowStatusPill = true
         batteryShowWarnings = true
         batteryLowThreshold = 20
+        batteryChargeLimitEnabled = false
+        batteryChargeLimitValue = 80
         customAvatar = ""
         clipboardLimit = 50
         launcherMaxResults = 8
@@ -836,6 +844,8 @@ Singleton {
     function setFaceIdAutoUnlock(val) { faceIdAutoUnlock = val; saveConfig() }
     function setBatteryShowWarnings(val) { batteryShowWarnings = val; saveConfig() }
     function setBatteryLowThreshold(val) { batteryLowThreshold = val; saveConfig() }
+    function setBatteryChargeLimitEnabled(val) { batteryChargeLimitEnabled = val; saveConfig(); if (Services.Power && Services.Power.updateChargeLimit) Services.Power.updateChargeLimit(); }
+    function setBatteryChargeLimitValue(val) { batteryChargeLimitValue = val; saveConfig(); if (Services.Power && Services.Power.updateChargeLimit) Services.Power.updateChargeLimit(); }
     function setCustomAvatar(path) { customAvatar = path; saveConfig() }
     function clearCustomAvatar() { customAvatar = ""; saveConfig() }
     function setClipboardLimit(val) { clipboardLimit = val; saveConfig() }

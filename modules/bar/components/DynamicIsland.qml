@@ -411,6 +411,7 @@ Item {
     // Initial baseline state guards to prevent false HUD triggers on reload/startup
     property bool lastChargingState: false
     property bool lastSaverEnabled: false
+    property string lastPowerProfile: ""
     property string lastWallpaperPath: ""
     property bool lastDnd: false
 
@@ -623,6 +624,7 @@ Item {
         }
         if (Services.PowerProfile) {
             root.lastSaverEnabled = Services.PowerProfile.saverEnabled
+            root.lastPowerProfile = Services.PowerProfile.profile || "balanced"
         }
         if (Services.Wallpaper) {
             root.lastWallpaperPath = Services.Wallpaper.currentWallpaper || ""
@@ -727,19 +729,40 @@ Item {
 
     Connections {
         target: Services.PowerProfile
-        function onSaverEnabledChanged() {
-            const isSaver = Services.PowerProfile.saverEnabled
+        function onProfileChanged() {
+            const current = Services.PowerProfile.profile
             if (!root.hudReady) {
-                root.lastSaverEnabled = isSaver
+                root.lastPowerProfile = current
+                root.lastSaverEnabled = Services.PowerProfile.saverEnabled
                 return
             }
-            if (isSaver === root.lastSaverEnabled) return
-            root.lastSaverEnabled = isSaver
+            if (!current || current === root.lastPowerProfile) return
+            root.lastPowerProfile = current
+            root.lastSaverEnabled = Services.PowerProfile.saverEnabled
 
-            const icon = Services.Icons.tree
-            const title = isSaver ? "Power Saver On" : "Power Saver Off"
-            const detail = isSaver ? "Battery saver active" : "Standard performance"
-            root.showSysHud(icon, title, detail, isSaver ? "#ff9800" : Services.Theme.accent)
+            let icon = Services.Icons.balance
+            let title = "Switch to Balanced"
+            let detail = "Standard performance"
+            let color = Services.Theme.accent
+
+            if (current === "power-saver") {
+                icon = Services.Icons.tree
+                title = "Power Saver On"
+                detail = "Battery saver active"
+                color = "#ff9800"
+            } else if (current === "performance") {
+                icon = Services.Icons.speed
+                title = "Switch to Performance"
+                detail = "High performance active"
+                color = Services.Theme.danger || "#ef4444"
+            } else if (current === "balanced") {
+                icon = Services.Icons.balance
+                title = "Switch to Balanced"
+                detail = "Standard performance"
+                color = Services.Theme.accent
+            }
+
+            root.showSysHud(icon, title, detail, color)
         }
     }
 

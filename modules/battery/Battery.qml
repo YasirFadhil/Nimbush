@@ -438,6 +438,127 @@ PanelWindow {
                     }
                 }
 
+                // ── 3.5 Battery Protection / Charge Limit ──
+                Rectangle {
+                    visible: Services.Power.chargeLimitSupported
+                    Layout.fillWidth: true
+                    implicitHeight: limitCol.implicitHeight + 20
+                    radius: Services.Theme.radiusMd
+                    color: (Services.Config && Services.Config.batteryChargeLimitEnabled)
+                        ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.12)
+                        : (limitMouse.containsMouse ? Services.Theme.bgHover : Services.Theme.surfaceVariant)
+                    border.color: (Services.Config && Services.Config.batteryChargeLimitEnabled)
+                        ? Services.Theme.accent
+                        : (limitMouse.containsMouse ? Services.Theme.borderHighlight : Services.Theme.borderSubtle)
+                    border.width: 1
+
+                    Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                    Behavior on border.color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+
+                    ColumnLayout {
+                        id: limitCol
+                        anchors.fill: parent
+                        anchors.margins: 12
+                        spacing: 6
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+
+                            Text {
+                                text: Services.Power.isChargeInhibited ? "󰚥" : "󰂄"
+                                font.family: Services.Theme.fontSymbols
+                                font.pixelSize: 18
+                                color: (Services.Config && Services.Config.batteryChargeLimitEnabled)
+                                    ? (Services.Power.isChargeInhibited ? Services.Theme.success : Services.Theme.accent)
+                                    : Services.Theme.textSecondary
+                            }
+
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: 2
+
+                                RowLayout {
+                                    spacing: 6
+                                    Text {
+                                        text: "Charge Limit (80%)"
+                                        font.bold: true
+                                        font.pixelSize: Services.Theme.fontSizeSm
+                                        color: Services.Theme.textPrimary
+                                    }
+                                    Rectangle {
+                                        visible: Services.Config && Services.Config.batteryChargeLimitEnabled
+                                        implicitHeight: 16
+                                        implicitWidth: badgeText.implicitWidth + 8
+                                        radius: 4
+                                        color: Services.Power.isChargeInhibited
+                                            ? Qt.rgba(16/255, 185/255, 129/255, 0.2)
+                                            : Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.2)
+                                        Text {
+                                            id: badgeText
+                                            anchors.centerIn: parent
+                                            text: Services.Power.isChargeInhibited ? "Bypass / Idle" : "Charging"
+                                            font.pixelSize: 9
+                                            font.bold: true
+                                            color: Services.Power.isChargeInhibited ? Services.Theme.success : Services.Theme.accent
+                                        }
+                                    }
+                                }
+
+                                Text {
+                                    text: Services.Power.isChargeInhibited
+                                        ? "Battery protected: Power supplied directly from charger (bypass)"
+                                        : ((Services.Config && Services.Config.batteryChargeLimitEnabled)
+                                            ? "Limits charging to 80% to preserve battery lifespan"
+                                            : "Battery will charge normally up to 100%")
+                                    font.pixelSize: 10
+                                    color: Services.Theme.textSecondary
+                                    Layout.fillWidth: true
+                                    wrapMode: Text.WordWrap
+                                }
+                            }
+
+                            // Switch Toggle
+                            Rectangle {
+                                implicitWidth: 38
+                                implicitHeight: 22
+                                radius: 11
+                                color: (Services.Config && Services.Config.batteryChargeLimitEnabled)
+                                    ? Services.Theme.accent
+                                    : Services.Theme.surfaceVariant
+                                border.color: (Services.Config && Services.Config.batteryChargeLimitEnabled)
+                                    ? Services.Theme.accent
+                                    : Services.Theme.borderHighlight
+                                border.width: 1
+
+                                Behavior on color { ColorAnimation { duration: 200 } }
+
+                                Rectangle {
+                                    width: 16
+                                    height: 16
+                                    radius: 8
+                                    color: (Services.Config && Services.Config.batteryChargeLimitEnabled) ? "#ffffff" : Services.Theme.textSecondary
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    x: (Services.Config && Services.Config.batteryChargeLimitEnabled) ? parent.width - width - 3 : 3
+                                    Behavior on x { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
+                                }
+                            }
+                        }
+                    }
+
+                    MouseArea {
+                        id: limitMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            if (Services.Config) {
+                                Services.Config.setBatteryChargeLimitEnabled(!Services.Config.batteryChargeLimitEnabled)
+                            }
+                        }
+                    }
+                }
+
                 // ── 4. Detailed Hardware Metrics Grid ──
                 ColumnLayout {
                     Layout.fillWidth: true
