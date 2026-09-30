@@ -6,15 +6,39 @@ Works with Linux kernel power_supply charge_behaviour interface (Chromebooks, AC
 
 import sys
 import os
+import glob
 import json
 import subprocess
 
 BAT_DIR = "/sys/class/power_supply/BAT0"
 BEHAVIOUR_FILE = os.path.join(BAT_DIR, "charge_behaviour")
 CAPACITY_FILE = os.path.join(BAT_DIR, "capacity")
+STATUS_FILE = os.path.join(BAT_DIR, "status")
 
 def is_supported():
     return os.path.exists(BEHAVIOUR_FILE)
+
+def is_ac_online():
+    for p in glob.glob('/sys/class/power_supply/*'):
+        if 'BAT' not in os.path.basename(p):
+            online_f = os.path.join(p, 'online')
+            if os.path.exists(online_f):
+                try:
+                    with open(online_f) as f:
+                        if f.read().strip() == '1':
+                            return True
+                except Exception:
+                    pass
+    return False
+
+def get_sysfs_status():
+    if os.path.exists(STATUS_FILE):
+        try:
+            with open(STATUS_FILE) as f:
+                return f.read().strip()
+        except Exception:
+            pass
+    return "Unknown"
 
 def get_current_mode():
     if not is_supported():
@@ -54,6 +78,11 @@ def set_mode(mode):
         return True, "Direct write succeeded"
     except PermissionError:
         pass
+    except OSError as e:
+        # ChromeOS EC may reject inhibit-charge when AC is disconnected (EIO / Errno 5).
+        if not is_ac_online():
+            return True, "On battery (charging already stopped naturally)"
+        return False, str(e)
     except Exception as e:
         return False, str(e)
 
@@ -95,11 +124,15 @@ def get_status():
     supported = is_supported()
     mode = get_current_mode()
     cap = get_capacity()
+    ac_online = is_ac_online()
+    raw_status = get_sysfs_status()
     return {
         "supported": supported,
         "mode": mode,
         "isInhibited": mode == "inhibit-charge",
         "capacity": cap,
+        "acOnline": ac_online,
+        "batteryStatus": raw_status,
         "success": True
     }
 

@@ -17,9 +17,9 @@ Singleton {
 
     readonly property bool upowerActive: UPower.displayDevice && UPower.displayDevice.isPresent && !isNaN(UPower.displayDevice.percentage) && UPower.displayDevice.percentage >= 0
 
-    property bool charging: upowerActive 
+    property bool charging: isChargeInhibited ? false : (upowerActive 
         ? isChargingState(UPower.displayDevice.state) 
-        : (sysfsState === "charging" || sysfsState === "full")
+        : (sysfsState === "charging" || sysfsState === "full"))
 
     property real percentage: upowerActive 
         ? UPower.displayDevice.percentage 
@@ -28,6 +28,7 @@ Singleton {
     readonly property bool hasBattery: (UPower.displayDevice && UPower.displayDevice.isPresent) || sysfsPresent || (sysfsPercentage > 0)
 
     readonly property string stateString: {
+        if (isChargeInhibited) return "Charge Limit Active (Idle)"
         if (upowerActive) {
             const st = UPower.displayDevice.state
             if (st === UPowerDeviceState.Charging) return "Charging"
@@ -175,7 +176,10 @@ Singleton {
                     if (parsed.present !== undefined) root.sysfsPresent = !!parsed.present
 
                     if (parsed.percentage) {
-                        if (parsed.timeToFull) {
+                        if (root.isChargeInhibited) {
+                            root.timeRemaining = ""
+                            root.timeType = ""
+                        } else if (parsed.timeToFull) {
                             root.timeRemaining = parsed.timeToFull
                             root.timeType = "until full"
                         } else if (parsed.timeToEmpty) {
@@ -202,7 +206,7 @@ Singleton {
     }
 
     Process {
-        id: chargeProc
+        id: chargeStatusProc
         stdout: SplitParser {
             onRead: data => {
                 try {
@@ -214,12 +218,24 @@ Singleton {
         }
     }
 
+    Process {
+        id: chargeSetProc
+        stdout: SplitParser {
+            onRead: data => {
+                try {
+                    const parsed = JSON.parse(data.trim())
+                    if (parsed.mode) root.chargeMode = parsed.mode
+                } catch(e) {}
+            }
+        }
+    }
+
     readonly property string chargeHelperScript: (Quickshell.env("HOME") || ("/home/" + (Quickshell.env("USER") || "user"))) + "/.config/quickshell/scripts/battery-charge-helper.py"
 
     function refreshChargeStatus() {
-        if (!chargeProc.running) {
-            chargeProc.command = ["python3", chargeHelperScript, "get"]
-            chargeProc.running = true
+        if (!chargeStatusProc.running) {
+            chargeStatusProc.command = ["python3", chargeHelperScript, "get"]
+            chargeStatusProc.running = true
         }
     }
 
@@ -231,22 +247,25 @@ Singleton {
         const pct = Math.round(percentage * 100)
 
         if (!enabled) {
-            if (chargeMode !== "auto" && !chargeProc.running) {
-                chargeProc.command = ["python3", chargeHelperScript, "set", "auto"]
-                chargeProc.running = true
+            if (chargeMode !== "auto" && !chargeSetProc.running) {
+                chargeMode = "auto"
+                chargeSetProc.command = ["python3", chargeHelperScript, "set", "auto"]
+                chargeSetProc.running = true
             }
             return
         }
 
         if (pct >= limit) {
-            if (chargeMode !== "inhibit-charge" && !chargeProc.running) {
-                chargeProc.command = ["python3", chargeHelperScript, "set", "inhibit-charge"]
-                chargeProc.running = true
+            if (chargeMode !== "inhibit-charge" && !chargeSetProc.running) {
+                chargeMode = "inhibit-charge"
+                chargeSetProc.command = ["python3", chargeHelperScript, "set", "inhibit-charge"]
+                chargeSetProc.running = true
             }
         } else if (pct <= (limit - 5)) {
-            if (chargeMode !== "auto" && !chargeProc.running) {
-                chargeProc.command = ["python3", chargeHelperScript, "set", "auto"]
-                chargeProc.running = true
+            if (chargeMode !== "auto" && !chargeSetProc.running) {
+                chargeMode = "auto"
+                chargeSetProc.command = ["python3", chargeHelperScript, "set", "auto"]
+                chargeSetProc.running = true
             }
         }
     }
