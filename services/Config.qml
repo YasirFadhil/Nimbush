@@ -175,7 +175,6 @@ Singleton {
     property bool lockscreenShowMedia: true
     property string lockscreenMediaStyle: "pill"  // "pill" | "card"
     property bool lockscreenShowWeather: true
-    property bool lockscreenShowNotifs: true
     property bool lockscreenShowUptime: true
     property bool lockscreenWallpaperZoom: true
     property real lockscreenDim: 0.45
@@ -353,7 +352,6 @@ Singleton {
         if (data.lockscreenShowMedia !== undefined) lockscreenShowMedia = Boolean(data.lockscreenShowMedia)
         if (data.lockscreenMediaStyle !== undefined) lockscreenMediaStyle = data.lockscreenMediaStyle
         if (data.lockscreenShowWeather !== undefined) lockscreenShowWeather = Boolean(data.lockscreenShowWeather)
-        if (data.lockscreenShowNotifs !== undefined) lockscreenShowNotifs = Boolean(data.lockscreenShowNotifs)
         if (data.lockscreenShowUptime !== undefined) lockscreenShowUptime = Boolean(data.lockscreenShowUptime)
         if (data.lockscreenWallpaperZoom !== undefined) lockscreenWallpaperZoom = Boolean(data.lockscreenWallpaperZoom)
         if (data.lockscreenDim !== undefined) lockscreenDim = Number(data.lockscreenDim)
@@ -482,7 +480,6 @@ Singleton {
             lockscreenShowMedia: lockscreenShowMedia,
             lockscreenMediaStyle: lockscreenMediaStyle,
             lockscreenShowWeather: lockscreenShowWeather,
-            lockscreenShowNotifs: lockscreenShowNotifs,
             lockscreenShowUptime: lockscreenShowUptime,
             lockscreenWallpaperZoom: lockscreenWallpaperZoom,
             lockscreenDim: lockscreenDim,
@@ -605,7 +602,6 @@ Singleton {
         lockscreenShowMedia = true
         lockscreenMediaStyle = "pill"
         lockscreenShowWeather = true
-        lockscreenShowNotifs = true
         lockscreenWallpaperZoom = true
         lockscreenDim = 0.45
         lockscreen24h = false
@@ -827,7 +823,6 @@ Singleton {
     function setLockscreenShowMedia(val) { lockscreenShowMedia = val; saveConfig() }
     function setLockscreenMediaStyle(style) { lockscreenMediaStyle = style; saveConfig() }
     function setLockscreenShowWeather(val) { lockscreenShowWeather = val; saveConfig() }
-    function setLockscreenShowNotifs(val) { lockscreenShowNotifs = val; saveConfig() }
     function setLockscreenShowUptime(val) { lockscreenShowUptime = val; saveConfig() }
     function setLockscreenWallpaperZoom(val) { lockscreenWallpaperZoom = val; saveConfig() }
     function setLockscreenDim(val) { lockscreenDim = val; saveConfig() }

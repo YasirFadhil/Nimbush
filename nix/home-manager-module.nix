@@ -81,10 +81,19 @@ in
         description = "Automatically inject Quickshell keybindings, autostart, and layer rules into Hyprland if enabled in Home Manager.";
       };
 
+      useLuaConfig = mkOption {
+        type = types.bool;
+        default = true;
+        description = ''Prefer Hyprland Lua configuration format (hyprland.lua) for Hyprland >= 0.55.
+          Set to false to use the classic conf format (hyprland.conf) for older versions.
+          When true, writes conf/quickshell.lua and companion .lua modular files;
+          when false, writes conf/quickshell.conf and companion .conf modular files.'';
+      };
+
       writeModularConfig = mkOption {
         type = types.bool;
         default = true;
-        description = "Write standalone modular Quickshell configuration files (conf/quickshell.conf and conf/quickshell.lua) into ~/.config/hypr/.";
+        description = "Write standalone modular Quickshell configuration files into ~/.config/hypr/. Format follows useLuaConfig.";
       };
 
       writeModularTree = mkOption {
@@ -176,8 +185,9 @@ in
         text = builtins.toJSON wallpaperConfig;
       };
 
-      # Standalone Modular Hyprland Configurations (Conf format)
-      xdg.configFile."hypr/conf/quickshell.conf" = mkIf cfg.hyprland.writeModularConfig {
+      # Standalone Modular Hyprland Configurations
+      # Classic conf format (for Hyprland < 0.55 or when useLuaConfig = false)
+      xdg.configFile."hypr/conf/quickshell.conf" = mkIf (cfg.hyprland.writeModularConfig && !cfg.hyprland.useLuaConfig) {
         text = ''
 # ── Quickshell Desktop Environment Integration (Hyprland Classic) ──
 exec-once = qs
@@ -240,7 +250,7 @@ layerrule = ignorezero, ^quickshell:.*$
 '';
       };
 
-      xdg.configFile."hypr/conf/autostart.conf" = mkIf (cfg.hyprland.writeModularConfig && cfg.hyprland.writeModularTree) {
+      xdg.configFile."hypr/conf/autostart.conf" = mkIf (cfg.hyprland.writeModularConfig && cfg.hyprland.writeModularTree && !cfg.hyprland.useLuaConfig) {
         text = ''
 # ── Autostart Daemons & Background Services (Hyprland Classic) ──
 exec-once = systemctl enable --now --user hyprpolkitagent
@@ -249,7 +259,7 @@ exec-once = wl-paste --type image --watch cliphist store
 '';
       };
 
-      xdg.configFile."hypr/conf/keybinds.conf" = mkIf (cfg.hyprland.writeModularConfig && cfg.hyprland.writeModularTree) {
+      xdg.configFile."hypr/conf/keybinds.conf" = mkIf (cfg.hyprland.writeModularConfig && cfg.hyprland.writeModularTree && !cfg.hyprland.useLuaConfig) {
         text = ''
 # ── Keybindings & Shortcuts (Hyprland Classic) ──
 $mainMod = SUPER
@@ -280,7 +290,7 @@ bind = $mainMod, PRINT, exec, ~/.config/quickshell/scripts/screenshot.sh window
 '';
       };
 
-      xdg.configFile."hypr/conf/rules.conf" = mkIf (cfg.hyprland.writeModularConfig && cfg.hyprland.writeModularTree) {
+      xdg.configFile."hypr/conf/rules.conf" = mkIf (cfg.hyprland.writeModularConfig && cfg.hyprland.writeModularTree && !cfg.hyprland.useLuaConfig) {
         text = ''
 # ── Window Rules (Hyprland Classic) ──
 windowrulev2 = suppressevent maximize, class:.*
@@ -290,8 +300,8 @@ windowrulev2 = float, class:^(pavucontrol|nm-connection-editor|blueman-manager|s
 '';
       };
 
-      # Standalone Modular Hyprland Configurations (Lua format)
-      xdg.configFile."hypr/conf/quickshell.lua" = mkIf cfg.hyprland.writeModularConfig {
+      # Lua format (for Hyprland >= 0.55 or when useLuaConfig = true)
+      xdg.configFile."hypr/conf/quickshell.lua" = mkIf (cfg.hyprland.writeModularConfig && cfg.hyprland.useLuaConfig) {
         text = ''
 -- ── Quickshell Desktop Environment Integration (Hyprland Lua) ──
 local mainMod = "SUPER"
@@ -334,7 +344,7 @@ hl.layer_rule({ match = { namespace = "^quickshell:.*$" },              blur = t
 '';
       };
 
-      xdg.configFile."hypr/conf/autostart.lua" = mkIf (cfg.hyprland.writeModularConfig && cfg.hyprland.writeModularTree) {
+      xdg.configFile."hypr/conf/autostart.lua" = mkIf (cfg.hyprland.writeModularConfig && cfg.hyprland.writeModularTree && cfg.hyprland.useLuaConfig) {
         text = ''
 -- ── Autostart Daemons & Background Services (Hyprland Lua) ──
 hl.on("hyprland.start", function ()
@@ -345,7 +355,7 @@ end)
 '';
       };
 
-      xdg.configFile."hypr/conf/keybinds.lua" = mkIf (cfg.hyprland.writeModularConfig && cfg.hyprland.writeModularTree) {
+      xdg.configFile."hypr/conf/keybinds.lua" = mkIf (cfg.hyprland.writeModularConfig && cfg.hyprland.writeModularTree && cfg.hyprland.useLuaConfig) {
         text = ''
 -- ── Keybindings & Shortcuts (Hyprland Lua) ──
 local mainMod = "SUPER"
@@ -372,7 +382,7 @@ hl.bind(mainMod .. " + print", hl.dsp.exec_cmd("~/.config/quickshell/scripts/scr
 '';
       };
 
-      xdg.configFile."hypr/conf/rules.lua" = mkIf (cfg.hyprland.writeModularConfig && cfg.hyprland.writeModularTree) {
+      xdg.configFile."hypr/conf/rules.lua" = mkIf (cfg.hyprland.writeModularConfig && cfg.hyprland.writeModularTree && cfg.hyprland.useLuaConfig) {
         text = ''
 -- ── Window & Workspace Rules (Hyprland Lua) ──
 hl.window_rule({

@@ -1099,11 +1099,11 @@ Scope {
                                 id: peekBadgeRing
                                 anchors.fill: parent
                                 radius: width / 2
-                                color: masterMorphIcon.isPeek 
-                                    ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.16) 
+                                color: masterMorphIcon.isPeek
+                                    ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.16)
                                     : "transparent"
-                                border.color: masterMorphIcon.isPeek 
-                                    ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.28) 
+                                border.color: masterMorphIcon.isPeek
+                                    ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.28)
                                     : "transparent"
                                 border.width: 1
                                 opacity: masterMorphIcon.isPeek ? 1.0 : 0.0
@@ -2157,8 +2157,8 @@ Scope {
                                 color: {
                                     if (!root.isCompact && (centerAuthCard.inputStyle === "underline" || centerAuthCard.inputStyle === "dots")) return "transparent"
                                     if (!root.isCompact && centerAuthCard.inputStyle === "box") return Services.Theme.bgElevated
-                                    return pwTextInput.activeFocus 
-                                        ? Qt.rgba(Services.Theme.surfaceVariant.r, Services.Theme.surfaceVariant.g, Services.Theme.surfaceVariant.b, 0.85) 
+                                    return pwTextInput.activeFocus
+                                        ? Qt.rgba(Services.Theme.surfaceVariant.r, Services.Theme.surfaceVariant.g, Services.Theme.surfaceVariant.b, 0.85)
                                         : Qt.rgba(Services.Theme.bgDeep.r, Services.Theme.bgDeep.g, Services.Theme.bgDeep.b, 0.65)
                                 }
                                 border.color: (!root.isCompact && (centerAuthCard.inputStyle === "underline" || centerAuthCard.inputStyle === "dots"))
@@ -2943,7 +2943,7 @@ Scope {
 
                             color: root.lockscreenPwrOpen
                                 ? Qt.rgba(Services.Theme.surface.r, Services.Theme.surface.g, Services.Theme.surface.b, 0.96)
-                                : (pwrBottomMouse.containsMouse 
+                                : (pwrBottomMouse.containsMouse
                                     ? Qt.rgba(Services.Theme.danger.r, Services.Theme.danger.g, Services.Theme.danger.b, 0.22)
                                     : Qt.rgba(Services.Theme.bgDeep.r, Services.Theme.bgDeep.g, Services.Theme.bgDeep.b, 0.82))
 
