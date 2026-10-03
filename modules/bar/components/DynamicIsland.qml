@@ -918,7 +918,7 @@ Item {
     readonly property bool expanded: !lockBlocked && hasExpandContent && (pinned || autoExpanded || (slot0Activity === "notif") || (slot0Activity === "syshud") || wallpaperMode || dropSendMode || isDropSending)
     readonly property bool isMediaPeek: !lockBlocked && autoExpanded && !pinned && (slot0Activity === "media") && !wallpaperMode && !dropSendMode && !isDropSending && hasMedia
 
-    property int autoExpandDuration: 2500
+    property int autoExpandDuration: 3000
     property int notifDuration: 5000
 
     // Safe retrieval of current notification entry from the center slot
@@ -976,12 +976,46 @@ Item {
     }
 
     property string lastTrackText: ""
+    property string lastPeekKey: ""
+
+    function triggerMediaPeek(force) {
+        if (root.lockBlocked || Services.OverlayManager.isLocked) return
+        if (root.pinned) return
+        if (root.notifActive && root.notifCount > 0) return
+        if (root.wallpaperMode || root.dropSendMode || root.isDropSending) return
+        if (!root.mediaPlaying) return
+
+        const curKey = (root.activePlayer?.identity || "") + "::" + (root.activePlayer?.trackTitle || "") + "::" + (root.activePlayer?.trackArtist || "")
+        if (!force && curKey === root.lastPeekKey && root.autoExpanded) {
+            autoCollapseTimer.restart()
+            return
+        }
+        root.lastPeekKey = curKey
+
+        mediaStopPhase1Timer.stop()
+        mediaStopPhase2Timer.stop()
+        root.manualCenterId = ""
+        root.mediaActiveTime = Date.now()
+        root.mediaStopping = false
+        root.mediaTextCollapsed = false
+        root.mediaIconTransformed = false
+        root.mediaCollapsedReady = false
+        root.restartGlobalMarquee()
+
+        if (root.autoExpanded) {
+            autoCollapseTimer.restart()
+            return
+        }
+        root.autoExpanded = true
+        autoCollapseTimer.restart()
+    }
+
     onMediaPlayingChanged: {
         if (mediaPlaying) {
             mediaActiveTime = Date.now()
             if (root.hudReady && root.notifCount === 0 && !root.pinned && !root.lockBlocked) {
                 root.mediaCollapsedReady = false
-                root.pulse()
+                root.triggerMediaPeek(true)
             } else {
                 root.mediaCollapsedReady = true
             }
@@ -994,6 +1028,7 @@ Item {
                 lastTrackText = currentMediaText
             }
         } else {
+            root.lastPeekKey = ""
             if (root.hudReady && !root.notifActive && !root.lockBlocked) {
                 root.triggerMediaStop()
             } else {
@@ -1006,6 +1041,9 @@ Item {
             mediaActiveTime = Date.now()
             lastTrackText = currentMediaText
             root.restartGlobalMarquee()
+            if (root.hudReady && root.notifCount === 0 && !root.pinned && !root.lockBlocked) {
+                root.triggerMediaPeek(false)
+            }
         }
     }
     onExpandedChanged: {
@@ -1072,7 +1110,7 @@ Item {
         if (isDropSending) return 400
         if (wallpaperMode) return 480
         if (slot0Activity === "syshud") return 280
-        if (isMediaPeek) return 280
+        if (isMediaPeek) return 295
         if (hasMedia) return 360
         return 260
     }
@@ -1122,12 +1160,7 @@ Item {
             root.mediaCollapsedReady = true
             return
         }
-        if (autoExpanded) {
-            autoCollapseTimer.restart()
-            return
-        }
-        autoExpanded = true
-        autoCollapseTimer.restart()
+        root.triggerMediaPeek(true)
     }
 
     function togglePin() {
@@ -1258,17 +1291,32 @@ Item {
         target: Services.Mpris
         function onActivePlayerChanged() {
             root.restartGlobalMarquee()
-            if (root.hudReady && Services.Mpris.activePlayer && Services.Mpris.activePlayer.isPlaying && root.notifCount === 0 && !root.pinned) {
-                root.pulse()
+            if (root.hudReady && Services.Mpris.activePlayer && (Services.Mpris.activePlayer.isPlaying ?? false) && root.notifCount === 0 && !root.pinned) {
+                root.triggerMediaPeek(true)
+            }
+        }
+        function onPlaybackStarted(player) {
+            if (root.hudReady && root.notifCount === 0 && !root.pinned) {
+                root.triggerMediaPeek(true)
+            }
+        }
+        function onTrackChanged(player) {
+            root.restartGlobalMarquee()
+            if (collapsedTextContainer) {
+                collapsedTextContainer.updateTrackPush(collapsedTextContainer.targetText, root.isNextTrack)
+            }
+            if (root.hudReady && root.notifCount === 0 && !root.pinned) {
+                root.triggerMediaPeek(false)
             }
         }
     }
 
     Connections {
         target: root.activePlayer
+        ignoreUnknownSignals: true
         function onIsPlayingChanged() {
-            if (root.hudReady && root.activePlayer && root.activePlayer.isPlaying && root.notifCount === 0 && !root.pinned) {
-                root.pulse()
+            if (root.hudReady && root.activePlayer && (root.activePlayer.isPlaying ?? false) && root.notifCount === 0 && !root.pinned) {
+                root.triggerMediaPeek(true)
             }
         }
         function onTrackTitleChanged() {
@@ -1276,8 +1324,34 @@ Item {
             if (collapsedTextContainer) {
                 collapsedTextContainer.updateTrackPush(collapsedTextContainer.targetText, root.isNextTrack)
             }
-            if (root.hudReady && root.activePlayer && root.activePlayer.isPlaying && root.notifCount === 0 && !root.pinned) {
-                root.pulse()
+            if (root.hudReady && root.activePlayer && (root.activePlayer.isPlaying ?? false) && root.notifCount === 0 && !root.pinned) {
+                root.triggerMediaPeek(false)
+            }
+        }
+        function onTrackArtistChanged() {
+            root.restartGlobalMarquee()
+            if (root.hudReady && root.activePlayer && (root.activePlayer.isPlaying ?? false) && root.notifCount === 0 && !root.pinned) {
+                root.triggerMediaPeek(false)
+            }
+        }
+        function onTrackArtUrlChanged() {
+            if (root.hudReady && root.activePlayer && (root.activePlayer.isPlaying ?? false) && root.notifCount === 0 && !root.pinned) {
+                root.triggerMediaPeek(false)
+            }
+        }
+        function onTrackChanged() {
+            root.restartGlobalMarquee()
+            if (collapsedTextContainer) {
+                collapsedTextContainer.updateTrackPush(collapsedTextContainer.targetText, root.isNextTrack)
+            }
+            if (root.hudReady && root.activePlayer && (root.activePlayer.isPlaying ?? false) && root.notifCount === 0 && !root.pinned) {
+                root.triggerMediaPeek(false)
+            }
+        }
+        function onMetadataChanged() {
+            root.restartGlobalMarquee()
+            if (root.hudReady && root.activePlayer && (root.activePlayer.isPlaying ?? false) && root.notifCount === 0 && !root.pinned) {
+                root.triggerMediaPeek(false)
             }
         }
     }
@@ -2552,11 +2626,11 @@ Item {
                         // Fallback Music Symbol
                         Text {
                             anchors.centerIn: parent
-                            text: "󰎈"
+                            text: (root.activePlayer && root.activePlayer.identity) ? Services.Icons.playerIcon(root.activePlayer.identity) : "󰎈"
                             font.family: Services.Theme.fontSymbols
                             font.pixelSize: root.isMediaPeek ? 15 : 22
                             color: Services.Theme.accent
-                            opacity: (mediaArtImg.source !== "" && mediaArtImg.status !== Image.Error) ? 0.0 : 1.0
+                            opacity: (mediaArtImg.source !== "" && mediaArtImg.status === Image.Ready) ? 0.0 : 1.0
                             Behavior on opacity { NumberAnimation { duration: 200; easing.type: Easing.OutQuad } }
                             Behavior on font.pixelSize { NumberAnimation { duration: 220 } }
                         }
@@ -2882,9 +2956,9 @@ Item {
                     }
                 }
 
-                // Animated Music Status Icon (Only in Media Peek)
+                // Animated Audio Wave Visualizer (Only in Media Peek)
                 Item {
-                    implicitWidth: 24
+                    implicitWidth: 26
                     implicitHeight: 24
                     Layout.alignment: Qt.AlignVCenter
                     visible: root.isMediaPeek || opacity > 0.01
@@ -2894,19 +2968,15 @@ Item {
                     Behavior on opacity { NumberAnimation { duration: 200; easing.type: Easing.OutQuad } }
                     Behavior on scale   { NumberAnimation { duration: 280; easing.type: Easing.OutBack; easing.overshoot: 1.15 } }
 
-                    Text {
+                    MediaModule.CavaWave {
                         anchors.centerIn: parent
-                        text: "󰎈"
-                        font.family: Services.Theme.fontSymbols
-                        font.pixelSize: 14
-                        color: Services.Theme.success
-
-                        RotationAnimation on rotation {
-                            from: 0; to: 360
-                            duration: 4000
-                            loops: Animation.Infinite
-                            running: root.mediaPlaying && root.isMediaPeek
-                        }
+                        barCount: 3
+                        barWidth: 2.5
+                        barSpacing: 2.0
+                        maxHeight: 14.0
+                        barColor: Services.Theme.accent
+                        isPlaying: root.mediaPlaying
+                        active: root.isMediaPeek
                     }
                 }
             }
@@ -2981,11 +3051,12 @@ Item {
             // Row 3: Full Controls (Shuffle, Prev, Play/Pause, Next, Repeat)
             RowLayout {
                 Layout.fillWidth: true
-                spacing: 0
-                visible: !root.isMediaPeek || opacity > 0.01
+                implicitHeight: (!root.isMediaPeek && root.activePlayer !== null) ? 30 : 0
+                visible: (!root.isMediaPeek && root.activePlayer !== null) || opacity > 0.01
                 opacity: !root.isMediaPeek ? 1.0 : 0.0
                 clip: true
-                Behavior on opacity { NumberAnimation { duration: 220; easing.type: Easing.OutQuad } }
+                Behavior on implicitHeight { NumberAnimation { duration: 260; easing.type: Easing.OutCubic } }
+                Behavior on opacity        { NumberAnimation { duration: 220; easing.type: Easing.OutQuad } }
 
                 transform: Translate {
                     id: controlsRowTranslate

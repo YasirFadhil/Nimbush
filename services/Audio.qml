@@ -46,6 +46,22 @@ Singleton {
     property var sources: []
     property var streams: []
 
+    // Current (default) sink and source derived from the arrays
+    readonly property var currentSink: {
+        if (!sinks || sinks.length === 0) return null
+        for (let i = 0; i < sinks.length; i++) {
+            if (sinks[i].isCurrent) return sinks[i]
+        }
+        return sinks[0] ?? null
+    }
+    readonly property var currentSource: {
+        if (!sources || sources.length === 0) return null
+        for (let i = 0; i < sources.length; i++) {
+            if (sources[i].isCurrent) return sources[i]
+        }
+        return sources[0] ?? null
+    }
+
     property real _fallbackVolume: 0.8
     property bool _fallbackMuted: false
     property real _fallbackSourceVolume: 1.0
@@ -132,14 +148,14 @@ Singleton {
         id: setSinkProc
         property string targetSink: ""
         command: ["pactl", "set-default-sink", targetSink]
-        onExited: refreshDevices()
+        onExited: (code, status) => { running = false; refreshDevices() }
     }
 
     Process {
         id: setSourceProc
         property string targetSource: ""
         command: ["pactl", "set-default-source", targetSource]
-        onExited: refreshDevices()
+        onExited: (code, status) => { running = false; refreshDevices() }
     }
 
     Process {
@@ -147,18 +163,24 @@ Singleton {
         property int targetIndex: 0
         property real targetVol: 1.0
         command: ["pactl", "set-sink-input-volume", String(targetIndex), Math.round(targetVol * 100) + "%"]
-        onExited: refreshDevices()
+        onExited: (code, status) => { running = false; refreshDevices() }
     }
 
     Process {
         id: setStreamMuteProc
         property int targetIndex: 0
         command: ["pactl", "set-sink-input-mute", String(targetIndex), "toggle"]
-        onExited: refreshDevices()
+        onExited: (code, status) => { running = false; refreshDevices() }
     }
 
-    Process { id: setVolFallbackProc }
-    Process { id: setMuteFallbackProc }
+    Process {
+        id: setVolFallbackProc
+        onExited: (code, status) => { running = false }
+    }
+    Process {
+        id: setMuteFallbackProc
+        onExited: (code, status) => { running = false }
+    }
 
     function refreshDevices() {
         if (!getAudioDevicesProc.running) getAudioDevicesProc.running = true
@@ -169,12 +191,14 @@ Singleton {
 
     function setSink(name) {
         if (!name) return
+        if (setSinkProc.running) setSinkProc.running = false
         setSinkProc.targetSink = name
         setSinkProc.running = true
     }
 
     function setSource(name) {
         if (!name) return
+        if (setSourceProc.running) setSourceProc.running = false
         setSourceProc.targetSource = name
         setSourceProc.running = true
     }
@@ -189,6 +213,7 @@ Singleton {
                 root.streams = arr
             }
         }
+        if (setStreamVolProc.running) setStreamVolProc.running = false
         setStreamVolProc.targetIndex = index
         setStreamVolProc.targetVol = val
         setStreamVolProc.running = true
@@ -203,6 +228,7 @@ Singleton {
                 root.streams = arr
             }
         }
+        if (setStreamMuteProc.running) setStreamMuteProc.running = false
         setStreamMuteProc.targetIndex = index
         setStreamMuteProc.running = true
     }
