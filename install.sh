@@ -725,7 +725,7 @@ inject_compositor_configs() {
 # ══════════════════════════════════════════════════════════════════════════════
 
 # ── 1. Autostart Quickshell Desktop Environment & Clipboard Daemons ─────────
-exec-once = bash -c 'source ~/.config/quickshell/state/icon-theme.env 2>/dev/null; export QS_ICON_THEME; exec qs -n'
+exec-once = bash -c 'source ~/.config/quickshell/state/icon-theme.env 2>/dev/null; export QS_ICON_THEME; source ~/.config/quickshell/state/cursor-theme.env 2>/dev/null; export XCURSOR_THEME XCURSOR_SIZE; dbus-update-activation-environment --systemd XCURSOR_THEME XCURSOR_SIZE 2>/dev/null; exec qs -n'
 exec-once = wl-paste --type text --watch cliphist store
 exec-once = wl-paste --type image --watch cliphist store
 
@@ -933,7 +933,7 @@ local mainMod = "SUPER"
 
 -- ── 1. Autostart Quickshell Desktop Environment & Clipboard Daemons ─────────
 hl.on("hyprland.start", function ()
-    hl.exec_cmd("bash -c 'source ~/.config/quickshell/state/icon-theme.env 2>/dev/null; export QS_ICON_THEME; exec qs -n'")
+    hl.exec_cmd("bash -c 'source ~/.config/quickshell/state/icon-theme.env 2>/dev/null; export QS_ICON_THEME; source ~/.config/quickshell/state/cursor-theme.env 2>/dev/null; export XCURSOR_THEME XCURSOR_SIZE; dbus-update-activation-environment --systemd XCURSOR_THEME XCURSOR_SIZE 2>/dev/null; exec qs -n'")
     hl.exec_cmd("wl-paste --type text --watch cliphist store")
     hl.exec_cmd("wl-paste --type image --watch cliphist store")
 end)
@@ -1115,7 +1115,7 @@ EOF
 // ══════════════════════════════════════════════════════════════════════════════
 
 // ── 1. Autostart Quickshell Desktop Environment ──────────────────────────────
-spawn-at-startup "bash" "-c" "source ~/.config/quickshell/state/icon-theme.env 2>/dev/null; export QS_ICON_THEME; exec qs -n"
+spawn-at-startup "bash" "-c" "source ~/.config/quickshell/state/icon-theme.env 2>/dev/null; export QS_ICON_THEME; source ~/.config/quickshell/state/cursor-theme.env 2>/dev/null; export XCURSOR_THEME XCURSOR_SIZE; dbus-update-activation-environment --systemd XCURSOR_THEME XCURSOR_SIZE 2>/dev/null; exec qs -n"
 
 // ── 2. Quickshell IPC Keybindings ─────────────────────────────────────────────
 binds {
