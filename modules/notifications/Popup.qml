@@ -115,8 +115,8 @@ PanelWindow {
 
     function isReplyAction(act) {
         if (!act) return false
-        const id = (act.identifier || "").toLowerCase()
-        const txt = (act.text || "").toLowerCase()
+        const id = (act.actIdentifier || act.identifier || "").toLowerCase()
+        const txt = (act.actText || act.text || "").toLowerCase()
         return id.includes("reply") || id.includes("inline") || id.includes("respond") ||
                txt.includes("reply") || txt.includes("balas") || txt.includes("jawab") || txt.includes("respond")
     }
@@ -365,6 +365,26 @@ PanelWindow {
                         Layout.fillWidth: true
                     }
 
+                    // Origin Device Pill (for phone notifications)
+                    Rectangle {
+                        visible: notifItem && notifItem.isKdeConnect
+                        implicitWidth: devPopTxt.implicitWidth + 8
+                        implicitHeight: 15
+                        radius: 4
+                        color: Qt.rgba(1, 1, 1, 0.08)
+                        border.color: Services.Theme.border
+                        border.width: 1
+                        Layout.alignment: Qt.AlignVCenter
+
+                        RowLayout {
+                            id: devPopTxt
+                            anchors.centerIn: parent
+                            spacing: 3
+                            Text { text: "󰄡"; color: Services.Theme.accent; font.pixelSize: 8 }
+                            Text { text: (notifItem && notifItem.originDevice) ? notifItem.originDevice : "Phone"; color: Services.Theme.textDisabled; font.pixelSize: 8; font.bold: true }
+                        }
+                    }
+
                     // Dismiss '×' Button
                     Rectangle {
                         width: 18
@@ -433,7 +453,7 @@ PanelWindow {
 
                         Text {
                             visible: (notifItem.summary || "").length > 0
-                            text: notifItem.summary || ""
+                            text: Services.Notifications ? Services.Notifications.cleanNotificationText(notifItem.summary || "") : (notifItem.summary || "")
                             color: Services.Theme.textPrimary
                             font.bold: true
                             font.pixelSize: 12
@@ -443,7 +463,7 @@ PanelWindow {
 
                         Text {
                             visible: (notifItem.body || "").length > 0
-                            text: notifItem.body || ""
+                            text: Services.Notifications ? Services.Notifications.cleanNotificationText(notifItem.body || "") : (notifItem.body || "")
                             color: Services.Theme.textSecondary
                             font.pixelSize: 11
                             maximumLineCount: 3
@@ -456,6 +476,7 @@ PanelWindow {
 
                 // Actions Row (when not replying)
                 RowLayout {
+                    id: popActionsRow
                     readonly property var actList: notifItem.actions
                     readonly property int actCount: actList ? (actList.count !== undefined ? actList.count : (actList.length !== undefined ? actList.length : 0)) : 0
                     visible: actCount > 0 && !card.isReplying
@@ -463,11 +484,18 @@ PanelWindow {
                     Layout.topMargin: 2
 
                     Repeater {
-                        model: parent.actList
+                        model: popActionsRow.actList
                         delegate: Rectangle {
                             id: actBtn
-                            required property string identifier
-                            required property string text
+                            required property var modelData
+                            readonly property string actIdentifier: (modelData && modelData.identifier !== undefined)
+                                ? String(modelData.identifier)
+                                : (typeof identifier !== "undefined" ? String(identifier) : "")
+                            readonly property string actText: (modelData && modelData.text !== undefined)
+                                ? String(modelData.text)
+                                : (typeof text !== "undefined" ? String(text) : "")
+
+                            visible: actText.trim().length > 0
                             radius: 6
                             color: actHover.containsMouse ? Services.Theme.bgHover : Services.Theme.surfaceVariant
                             border.color: Services.Theme.border
@@ -479,7 +507,7 @@ PanelWindow {
                             Text {
                                 id: actLabel
                                 anchors.centerIn: parent
-                                text: actBtn.text
+                                text: actBtn.actText
                                 color: Services.Theme.textPrimary
                                 font.pixelSize: 11
                                 font.bold: true
@@ -492,13 +520,13 @@ PanelWindow {
                                 cursorShape: Qt.PointingHandCursor
                                 onClicked: {
                                     if (popupWin.isReplyAction(actBtn)) {
-                                        popupWin.activeReplyActionId = actBtn.identifier
+                                        popupWin.activeReplyActionId = actBtn.actIdentifier
                                         popupWin.activeReplyNotifId = notifItem.notifId
                                         popupWin.replyMode = true
                                         Services.Notifications.replyingNotifId = notifItem.notifId
                                         Qt.callLater(() => popReplyInput.forceActiveFocus())
                                     } else {
-                                        Services.Notifications.invokeAction(notifItem.notifId, actBtn.identifier)
+                                        Services.Notifications.invokeAction(notifItem.notifId, actBtn.actIdentifier)
                                     }
                                 }
                             }

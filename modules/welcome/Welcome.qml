@@ -504,6 +504,7 @@ PanelWindow {
 
                             // Dark Mode Card with Visual Mockup
                             Rectangle {
+                                id: darkCard
                                 Layout.fillWidth: true
                                 Layout.fillHeight: true
                                 radius: Services.Theme.radiusMd
@@ -588,7 +589,7 @@ PanelWindow {
                                         Text { text: "Dark Mode"; font.pixelSize: 15; font.bold: true; color: Services.Theme.textPrimary }
                                         Item { Layout.fillWidth: true }
                                         Rectangle {
-                                            visible: isSel
+                                            visible: darkCard.isSel
                                             height: 20; implicitWidth: dSelTxt.implicitWidth + 12; radius: 10
                                             color: Services.Theme.accent
                                             Text { id: dSelTxt; anchors.centerIn: parent; text: "✓ Active"; font.pixelSize: 10; font.bold: true; color: Services.Theme.bgOnAccent }
@@ -613,6 +614,7 @@ PanelWindow {
 
                             // Light Mode Card with Visual Mockup
                             Rectangle {
+                                id: lightCard
                                 Layout.fillWidth: true
                                 Layout.fillHeight: true
                                 radius: Services.Theme.radiusMd
@@ -694,10 +696,10 @@ PanelWindow {
                                         Layout.fillWidth: true
                                         spacing: 8
                                         Text { text: Services.Icons.sun || "󰃠"; font.family: Services.Theme.fontSymbols; font.pixelSize: 18; color: "#f59e0b" }
-                                        Text { text: "Light Mode"; font.pixelSize: 15; font.bold: true; color: isSel ? "#0f172a" : Services.Theme.textPrimary }
+                                        Text { text: "Light Mode"; font.pixelSize: 15; font.bold: true; color: lightCard.isSel ? "#0f172a" : Services.Theme.textPrimary }
                                         Item { Layout.fillWidth: true }
                                         Rectangle {
-                                            visible: isSel
+                                            visible: lightCard.isSel
                                             height: 20; implicitWidth: lSelTxt.implicitWidth + 12; radius: 10
                                             color: Services.Theme.accent
                                             Text { id: lSelTxt; anchors.centerIn: parent; text: "✓ Active"; font.pixelSize: 10; font.bold: true; color: Services.Theme.bgOnAccent }
@@ -708,7 +710,7 @@ PanelWindow {
                                         Layout.fillWidth: true
                                         text: "Frosted clean surfaces with crisp text for bright daylight environments."
                                         font.pixelSize: 11
-                                        color: isSel ? "#475569" : Services.Theme.textSecondary
+                                        color: lightCard.isSel ? "#475569" : Services.Theme.textSecondary
                                         wrapMode: Text.WordWrap
                                     }
                                 }
@@ -736,6 +738,7 @@ PanelWindow {
 
                         // Matugen Wallpaper Dynamic Accent Card (Hero)
                         Rectangle {
+                            id: matugenCard
                             Layout.fillWidth: true
                             height: 64
                             radius: Services.Theme.radiusSm
@@ -779,7 +782,7 @@ PanelWindow {
                                 }
 
                                 Rectangle {
-                                    visible: isMatugenCur
+                                    visible: matugenCard.isMatugenCur
                                     width: 24; height: 24; radius: 12
                                     color: Services.Theme.accent
                                     Text { anchors.centerIn: parent; text: "✓"; font.pixelSize: 12; font.bold: true; color: Services.Theme.bgOnAccent }
@@ -1036,6 +1039,7 @@ PanelWindow {
 
                             // Right Column: Live Typography Preview Playground
                             Rectangle {
+                                id: fontPreviewCard
                                 Layout.fillWidth: true
                                 Layout.fillHeight: true
                                 radius: Services.Theme.radiusSm
@@ -1069,7 +1073,7 @@ PanelWindow {
                                             }
                                         }
                                         Text {
-                                            text: parent.parent.currentPreviewFont
+                                            text: fontPreviewCard.currentPreviewFont || ""
                                             font.pixelSize: 13; font.bold: true; color: Services.Theme.textPrimary
                                             elide: Text.ElideRight; Layout.fillWidth: true
                                         }
@@ -1080,7 +1084,7 @@ PanelWindow {
                                     // Big Alphabet Display
                                     Text {
                                         text: "Aa Bb Gg 123"
-                                        font.family: parent.currentPreviewFont
+                                        font.family: fontPreviewCard.currentPreviewFont || ""
                                         font.pixelSize: 32
                                         font.bold: true
                                         color: Services.Theme.textPrimary
@@ -1090,7 +1094,7 @@ PanelWindow {
                                     Text {
                                         Layout.fillWidth: true
                                         text: "The quick brown fox jumps over the lazy dog."
-                                        font.family: parent.currentPreviewFont
+                                        font.family: fontPreviewCard.currentPreviewFont || ""
                                         font.pixelSize: 15
                                         color: Services.Theme.textPrimary
                                         wrapMode: Text.WordWrap
@@ -1100,7 +1104,7 @@ PanelWindow {
                                     Text {
                                         Layout.fillWidth: true
                                         text: "0123456789 • !@#$%^&*()_+"
-                                        font.family: parent.currentPreviewFont
+                                        font.family: fontPreviewCard.currentPreviewFont || ""
                                         font.pixelSize: 12
                                         color: Services.Theme.textSecondary
                                         wrapMode: Text.WordWrap
@@ -1125,13 +1129,13 @@ PanelWindow {
                                                 color: Services.Theme.accent
                                                 Text {
                                                     id: mbTxt; anchors.centerIn: parent; text: "Sample Button"
-                                                    font.family: parent.parent.parent.parent.currentPreviewFont
+                                                    font.family: fontPreviewCard.currentPreviewFont || ""
                                                     font.pixelSize: 11; font.bold: true; color: Services.Theme.bgOnAccent
                                                 }
                                             }
                                             Text {
                                                 text: "UI Sample Text • 12pt"
-                                                font.family: parent.parent.parent.parent.currentPreviewFont
+                                                font.family: fontPreviewCard.currentPreviewFont || ""
                                                 font.pixelSize: 11; color: Services.Theme.textSecondary
                                             }
                                         }

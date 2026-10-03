@@ -253,7 +253,7 @@ Singleton {
         id: autoRefreshTimer
         interval: 20 * 60 * 1000 // 20 mins
         repeat: true
-        running: true
+        running: Services.Config ? Services.Config.weatherAutoRefresh : true
         onTriggered: root.refresh()
     }
 }

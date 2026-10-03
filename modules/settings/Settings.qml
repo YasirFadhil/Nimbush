@@ -4951,6 +4951,15 @@ FloatingWindow {
 
                                 SettingsDivider {}
 
+                                SettingsSwitch {
+                                    title: "Separate KDE Connect Apps"
+                                    subtitle: "Group phone notifications by individual app instead of lumping them under KDE Connect"
+                                    checked: Services.Config ? Services.Config.notificationSplitKdeApps : true
+                                    onToggled: (st) => { if (Services.Config) Services.Config.setNotificationSplitKdeApps(st) }
+                                }
+
+                                SettingsDivider {}
+
                                 SettingsRow {
                                     title: "Test & Actions"
 

@@ -66,7 +66,7 @@ Singleton {
 
     Timer {
         id: rebuildDebounceTimer
-        interval: 30
+        interval: 100
         repeat: false
         onTriggered: root._rebuildPinnedItems()
     }

@@ -1551,7 +1551,7 @@ PanelWindow {
                                 onClicked: {
                                     Services.OverlayManager.audioPanelVisible = !Services.OverlayManager.audioPanelVisible
                                     if (Services.OverlayManager.audioPanelVisible) {
-                                        Services.Audio.refreshSinks()
+                                        Services.Audio.refreshAll()
                                         Services.OverlayManager.wifiPanelVisible = false
                                         Services.OverlayManager.btPanelVisible = false
                                     }
@@ -1716,7 +1716,7 @@ PanelWindow {
                                 onClicked: {
                                     if (Services.OverlayManager.wifiPanelVisible) Services.Wifi.scan()
                                     else if (Services.OverlayManager.btPanelVisible) Services.Bluetooth.listDevices()
-                                    else if (Services.OverlayManager.audioPanelVisible) Services.Audio.refreshSinks()
+                                    else if (Services.OverlayManager.audioPanelVisible) Services.Audio.refreshAll()
                                 }
                             }
                         }

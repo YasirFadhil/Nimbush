@@ -20,13 +20,11 @@ Singleton {
     property int enrollStepNumber: 1
     property var availableDevices: ["/dev/video0"]
 
-    readonly property string pythonBin: {
-        var home = Quickshell.env("HOME") || "/home/yasirfadhil"
-        return home + "/.config/quickshell/scripts/.faceid-env/bin/python3"
-    }
+    readonly property string pythonBin: "/usr/bin/env"
+    readonly property string pythonArg: "python3"
 
     readonly property string helperScript: {
-        var home = Quickshell.env("HOME") || "/home/yasirfadhil"
+        var home = Quickshell.env("HOME") || ("/home/" + (Quickshell.env("USER") || "user"))
         return home + "/.config/quickshell/scripts/faceid-helper.py"
     }
 
@@ -74,6 +72,7 @@ Singleton {
 
         verifyProc.command = [
             root.pythonBin,
+            root.pythonArg,
             root.helperScript,
             "verify",
             "--camera", root.cameraDevice,
@@ -115,6 +114,7 @@ Singleton {
 
         enrollProc.command = [
             root.pythonBin,
+            root.pythonArg,
             root.helperScript,
             "enroll",
             "--camera", root.cameraDevice,
@@ -135,14 +135,14 @@ Singleton {
     }
 
     function clearData() {
-        clearProc.command = [root.pythonBin, root.helperScript, "clear"]
+        clearProc.command = [root.pythonBin, root.pythonArg, root.helperScript, "clear"]
         clearProc.running = true
     }
 
     // ── Status Inspection Process ──────────────────────────────────────────
     Process {
         id: statusProc
-        command: [root.pythonBin, root.helperScript, "status"]
+        command: [root.pythonBin, root.pythonArg, root.helperScript, "status"]
         stdout: SplitParser {
             onRead: data => {
                 const line = data.trim()
@@ -163,7 +163,7 @@ Singleton {
     // ── Verification Process ───────────────────────────────────────────────
     Process {
         id: verifyProc
-        command: [root.helperScript, "verify"]
+        command: [root.pythonBin, root.pythonArg, root.helperScript, "verify"]
 
         stdout: SplitParser {
             onRead: data => {
@@ -212,7 +212,7 @@ Singleton {
     // ── Enrollment Process ─────────────────────────────────────────────────
     Process {
         id: enrollProc
-        command: [root.pythonBin, root.helperScript, "enroll"]
+        command: [root.pythonBin, root.pythonArg, root.helperScript, "enroll"]
 
         stdout: SplitParser {
             onRead: data => {
@@ -270,7 +270,7 @@ Singleton {
     // ── Clear Model Process ────────────────────────────────────────────────
     Process {
         id: clearProc
-        command: [root.pythonBin, root.helperScript, "clear"]
+        command: [root.pythonBin, root.pythonArg, root.helperScript, "clear"]
         onExited: {
             root.isEnrolled = false
             root.status = "idle"

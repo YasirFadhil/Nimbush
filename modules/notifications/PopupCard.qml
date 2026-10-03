@@ -37,6 +37,26 @@ Rectangle {
                 Layout.fillWidth: true
             }
 
+            // Origin Device Pill (for phone notifications)
+            Rectangle {
+                visible: root.notif && root.notif.isKdeConnect
+                implicitWidth: devCardTxt.implicitWidth + 8
+                implicitHeight: 15
+                radius: 4
+                color: Qt.rgba(1, 1, 1, 0.08)
+                border.color: Services.Theme.border
+                border.width: 1
+                Layout.alignment: Qt.AlignVCenter
+
+                RowLayout {
+                    id: devCardTxt
+                    anchors.centerIn: parent
+                    spacing: 3
+                    Text { text: "󰄡"; color: Services.Theme.accent; font.pixelSize: 8 }
+                    Text { text: (root.notif && root.notif.originDevice) ? root.notif.originDevice : "Phone"; color: Services.Theme.textDisabled; font.pixelSize: 8; font.bold: true }
+                }
+            }
+
             Rectangle {
                 width: 16; height: 16; radius: 8
                 color: closeMouse.containsMouse ? Services.Theme.danger : "transparent"
@@ -67,7 +87,7 @@ Rectangle {
         // Summary Title
         Text {
             visible: root.notif && root.notif.summary !== undefined && root.notif.summary.length > 0
-            text: root.notif ? root.notif.summary : ""
+            text: root.notif ? (Services.Notifications ? Services.Notifications.cleanNotificationText(root.notif.summary) : root.notif.summary) : ""
             color: Services.Theme.textPrimary
             font.pixelSize: 11
             font.bold: true
@@ -78,7 +98,7 @@ Rectangle {
         // Body Preview
         Text {
             visible: root.notif && root.notif.body !== undefined && root.notif.body.length > 0
-            text: root.notif ? root.notif.body : ""
+            text: root.notif ? (Services.Notifications ? Services.Notifications.cleanNotificationText(root.notif.body) : root.notif.body) : ""
             color: Services.Theme.textSecondary
             font.pixelSize: 10
             maximumLineCount: 2
@@ -99,8 +119,16 @@ Rectangle {
             Repeater {
                 model: actionsRow.actList
                 delegate: Rectangle {
-                    required property string identifier
-                    required property string text
+                    id: actBtn
+                    required property var modelData
+                    readonly property string actIdentifier: (modelData && modelData.identifier !== undefined)
+                        ? String(modelData.identifier)
+                        : (typeof identifier !== "undefined" ? String(identifier) : "")
+                    readonly property string actText: (modelData && modelData.text !== undefined)
+                        ? String(modelData.text)
+                        : (typeof text !== "undefined" ? String(text) : "")
+
+                    visible: actText.trim().length > 0
                     radius: Services.Theme.radiusSm
                     color: actMouse.containsMouse ? Services.Theme.accent : Services.Theme.surface
                     border.color: Services.Theme.border
@@ -111,7 +139,7 @@ Rectangle {
                     Text {
                         id: actLabel
                         anchors.centerIn: parent
-                        text: parent.text
+                        text: actBtn.actText
                         color: actMouse.containsMouse ? Services.Theme.bgOnAccent : Services.Theme.textPrimary
                         font.pixelSize: 10
                         font.bold: true
@@ -124,9 +152,9 @@ Rectangle {
                         cursorShape: Qt.PointingHandCursor
                         onClicked: {
                             if (root.notif && root.notif.notifId !== undefined) {
-                                Services.Notifications.invokeAction(root.notif.notifId, parent.identifier)
+                                Services.Notifications.invokeAction(root.notif.notifId, actBtn.actIdentifier)
                             }
-                            root.actionClicked(parent.identifier, parent.text)
+                            root.actionClicked(actBtn.actIdentifier, actBtn.actText)
                         }
                     }
                 }

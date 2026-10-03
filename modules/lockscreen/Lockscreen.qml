@@ -27,7 +27,7 @@ Scope {
     property string minStr: "00"
     property string dateStr: ""
     property string greetingStr: "Welcome"
-    property string username: "user"
+    property string username: (Services.OsInfo && Services.OsInfo.username.length > 0) ? Services.OsInfo.username : (Quickshell.env("USER") || "user")
     property string hostname: "host"
     property bool capsLockOn: false
     property bool isRevealed: false
@@ -48,6 +48,8 @@ Scope {
     property real unlockSuctionProgress: 0.0
     property bool isUnlockingWithGenie: false
     property real lockTopBarState: 0.0
+    property real lockGenieProgress: 1.0
+    property bool isLockingWithGenie: false
 
     Binding {
         target: Services.OverlayManager
@@ -71,10 +73,12 @@ Scope {
         Services.FaceId.isEnabled &&
         Services.FaceId.isEnrolled &&
         (
+            Services.FaceId.isScanning ||
             Services.FaceId.status === "starting" ||
             Services.FaceId.status === "camera_ready" ||
             Services.FaceId.status === "scanning" ||
             Services.FaceId.status === "detected" ||
+            Services.FaceId.status === "unrecognized" ||
             (Services.FaceId.status === "success" && !root.isFaceContracted) ||
             (Services.FaceId.status === "timeout" && !root.isFaceTimeoutContracted)
         ) &&
@@ -125,14 +129,8 @@ Scope {
     }
 
     Timer {
-        id: revealTimer
-        interval: 50
-        onTriggered: root.isRevealed = true
-    }
-
-    Timer {
         id: sessionLockCommitTimer
-        interval: 290
+        interval: 400 // pre-warm: 160ms buffer after bar absorb (240ms) before compositor switch
         repeat: false
         onTriggered: {
             if (Services.OverlayManager) {
@@ -141,8 +139,13 @@ Scope {
             }
             root.isLocked = true
             sessionLock.locked = true
-            revealTimer.restart()
+            root.isRevealed = true
+            lockTopBarEjectAnim.restart()
+            lockGenieAnim.restart()
             deviceLockedPeekStartTimer.restart()
+            if (typeof pwTextInput !== "undefined" && pwTextInput) {
+                pwTextInput.forceActiveFocus()
+            }
         }
     }
 
@@ -151,11 +154,16 @@ Scope {
             root.deviceLockedPeekActive = false
             deviceLockedPeekStartTimer.restart()
             lockTopBarEjectAnim.restart()
+            lockGenieAnim.restart()
+            if (typeof pwTextInput !== "undefined" && pwTextInput) {
+                pwTextInput.forceActiveFocus()
+            }
         } else {
             deviceLockedPeekStartTimer.stop()
             deviceLockedPeekDurationTimer.stop()
             root.deviceLockedPeekActive = false
             root.lockTopBarState = 0.0
+            root.lockGenieProgress = 0.0
         }
     }
 
@@ -185,6 +193,8 @@ Scope {
             root.faceTextActive = false
             root.isUnlockingWithGenie = false
             root.unlockSuctionProgress = 0.0
+            root.isLockingWithGenie = false
+            root.lockGenieProgress = 1.0
             root.lockTopBarState = 0.0
             if (Services.FaceId) Services.FaceId.resetStatus()
             if (Services.OverlayManager) {
@@ -250,6 +260,20 @@ Scope {
                 Services.OverlayManager.isLocked = false
                 sessionLock.locked = false
             }
+        }
+    }
+
+    NumberAnimation {
+        id: lockGenieAnim
+        target: root
+        property: "lockGenieProgress"
+        from: 0.0
+        to: 1.0
+        duration: 380
+        easing.type: Easing.OutBack
+        easing.overshoot: 1.15
+        onFinished: {
+            root.isLockingWithGenie = false
         }
     }
 
@@ -325,7 +349,7 @@ Scope {
 
     Timer {
         id: faceIdAutoUnlockContractTimer
-        interval: 650
+        interval: 500
         repeat: false
         onTriggered: {
             console.log("[Lockscreen] Auto-unlock: contracting face canvas before unlocking desktop")
@@ -336,13 +360,13 @@ Scope {
 
     Timer {
         id: faceIdTimeoutShrinkTimer
-        interval: 1400
+        interval: 2200
         repeat: false
         onTriggered: {
             root.isFaceTimeoutContracted = true
             if (Services.FaceId) Services.FaceId.stopScan()
             if (!root.faceIdCancelledByUser && root.isLocked && !root.isFaceVerified && root.faceIdRetryCount < root.maxFaceIdRetries) {
-                console.log("[Lockscreen] Face ID failed, scheduling retry in 3s. Current retryCount:", root.faceIdRetryCount)
+                console.log("[Lockscreen] Face ID failed, scheduling retry in 1.8s. Current retryCount:", root.faceIdRetryCount)
                 faceIdRetryTimer.restart()
             } else {
                 console.log("[Lockscreen] Face ID cancelled or max retries reached. No more auto retries.")
@@ -352,7 +376,7 @@ Scope {
 
     Timer {
         id: faceIdRetryTimer
-        interval: 3000
+        interval: 1800
         repeat: false
         onTriggered: {
             if (!root.faceIdCancelledByUser && root.isLocked && !root.isFaceVerified && !root.isFaceActive && root.faceIdRetryCount < root.maxFaceIdRetries) {
@@ -365,7 +389,7 @@ Scope {
 
     Timer {
         id: faceIdUnlockDelayTimer
-        interval: 600
+        interval: 350
         repeat: false
         onTriggered: {
             console.log("[Lockscreen] Face ID auto-unlock triggered (canvas closed)")
@@ -446,7 +470,9 @@ Scope {
         function onScanFailed(reason) {
             console.log("[Lockscreen] Face ID scan failed:", reason)
             if (!root.faceIdCancelledByUser) {
-                faceIdTimeoutShrinkTimer.restart()
+                if (!faceIdTimeoutShrinkTimer.running) {
+                    faceIdTimeoutShrinkTimer.restart()
+                }
             }
         }
     }
@@ -477,6 +503,8 @@ Scope {
         lockTopBarAbsorbAnim.stop()
         root.unlockSuctionProgress = 0.0
         root.isUnlockingWithGenie = false
+        root.isLockingWithGenie = true
+        root.lockGenieProgress = 0.0
         root.lockTopBarState = 0.0
         if (Services.OverlayManager) {
             Services.OverlayManager.isUnlockingWithGenie = false
@@ -494,10 +522,7 @@ Scope {
         isRevealed = false
         userRevealedInput = false
         updateTime()
-        const needsMediaStop = Boolean(Services.Mpris && Services.Mpris.activePlayer && Services.Mpris.activePlayer.isPlaying)
-        const needsNotifShrink = Boolean((Services.OverlayManager && Services.OverlayManager.desktopIslandIsWide) ||
-                                        (Services.Notifications && Services.Notifications.popupList && Services.Notifications.popupList.count > 0))
-        sessionLockCommitTimer.interval = needsMediaStop ? 700 : (needsNotifShrink ? 500 : 280)
+        sessionLockCommitTimer.interval = 400
         sessionLockCommitTimer.restart()
     }
 
@@ -509,6 +534,8 @@ Scope {
         }
         root.isLocked = false
         root.lockTopBarState = 0.0
+        root.isLockingWithGenie = false
+        root.lockGenieProgress = 1.0
         if (Services.OverlayManager) {
             Services.OverlayManager.isLockAbsorbing = false
             Services.OverlayManager.isLocked = false
@@ -566,7 +593,8 @@ Scope {
         isAuthenticating = true
         pendingPassword = pw
         if (Services.FaceId) Services.FaceId.stopScan()
-        pam.start(root.username)
+        pam.user = root.username
+        pam.start()
     }
 
     function triggerShake(msg) {
@@ -622,13 +650,12 @@ Scope {
     // System info process
     Process {
         id: userInfoProc
-        command: ["sh", "-c", "echo $USER && uname -n"]
+        command: ["whoami"]
         running: true
         stdout: SplitParser {
             onRead: data => {
-                const lines = data.trim().split("\n")
-                if (lines.length > 0 && lines[0]) root.username = lines[0]
-                if (lines.length > 1 && lines[1]) root.hostname = lines[1]
+                const u = data.trim()
+                if (u.length > 0) root.username = u
             }
         }
     }
@@ -640,6 +667,7 @@ Scope {
 
     PamContext {
         id: pam
+        user: root.username
         config: "login"
 
         onResponseRequiredChanged: {
@@ -698,7 +726,6 @@ Scope {
                 if (typeof pwTextInput !== "undefined" && pwTextInput) pwTextInput.text = ""
                 if (pam.active) pam.abort()
             } else {
-                sessionLockCommitTimer.stop()
                 if (Services.OverlayManager) {
                     Services.OverlayManager.isLockAbsorbing = false
                     Services.OverlayManager.isLocked = true
@@ -708,7 +735,6 @@ Scope {
                 lockTopBarAbsorbAnim.stop()
                 root.unlockSuctionProgress = 0.0
                 root.isUnlockingWithGenie = false
-                root.lockTopBarState = 0.0
                 faceIdUnlockDelayTimer.stop()
                 faceIdAutoUnlockContractTimer.stop()
                 faceIdContractTimer.stop()
@@ -725,9 +751,15 @@ Scope {
                 root.isFaceVerified = false
                 root.hasPeekedLocked = false
                 root.deviceLockedPeekActive = false
-                root.isRevealed = false
-                revealTimer.restart()
-                deviceLockedPeekStartTimer.restart()
+
+                if (!sessionLockCommitTimer.running) {
+                    if (!root.isRevealed) {
+                        root.isRevealed = true
+                        lockTopBarEjectAnim.restart()
+                        lockGenieAnim.restart()
+                        deviceLockedPeekStartTimer.restart()
+                    }
+                }
             }
         }
 
@@ -814,13 +846,36 @@ Scope {
                     }
                 }
 
-                // Fullscreen Wallpaper Layer (Gets image from Services.Wallpaper or custom lockscreen image, with smooth Zoom and MultiEffect blur)
+                // Fullscreen Wallpaper Layer (Gets image from Services.Wallpaper or custom lockscreen image,
+                // with smooth Zoom and MultiEffect blur)
                 Item {
+                    id: wpContainer
                     anchors.fill: parent
+                    // barP: used by blur/dim overlays for pre-commit GPU warm-up
+                    readonly property real barP: Services.OverlayManager ? Services.OverlayManager.barIslandProgress : 0.0
+                    scale: {
+                        if (Services.Config && !Services.Config.lockscreenWallpaperZoom) return 1.0
+                        // Unlock: zoom out from 1.16 → 1.0 while lock dissolves (visible, same surface)
+                        if (root.isUnlockingWithGenie) return 1.16 - 0.16 * root.unlockSuctionProgress
+                        // Lock: stay at 1.0 until isRevealed (commit), then Behavior animates 1.0 → 1.12.
+                        // This makes the zoom-in happen POST-commit where user can see it,
+                        // mirroring the zoom-out feel of unlock. barP-based zoom was pre-commit (invisible).
+                        if (!root.isLocked && !root.isLockingWithGenie) return 1.0
+                        return root.isRevealed ? 1.12 : 1.0
+                    }
+                    transformOrigin: Item.Center
+                    Behavior on scale {
+                        enabled: !root.isUnlockingWithGenie
+                        NumberAnimation { duration: 500; easing.type: Easing.OutCubic }
+                    }
 
                     Image {
                         id: bgImage
                         anchors.fill: parent
+                        sourceSize: Qt.size(
+                            Math.ceil(((parent.width > 0) ? parent.width : (root.screen ? root.screen.width : 1366)) * 1.15),
+                            Math.ceil(((parent.height > 0) ? parent.height : (root.screen ? root.screen.height : 768)) * 1.15)
+                        )
                         source: {
                             if (Services.Config && Services.Config.lockscreenWallpaperMode === "custom" && Services.Config.lockscreenCustomWallpaper.length > 0) {
                                 return "file://" + Services.Config.lockscreenCustomWallpaper
@@ -828,62 +883,45 @@ Scope {
                             return Services.Wallpaper.currentWallpaper.length > 0 ? ("file://" + Services.Wallpaper.currentWallpaper) : ("file://" + Services.Wallpaper.darkWallbler)
                         }
                         fillMode: Image.PreserveAspectCrop
-                        asynchronous: false
+                        asynchronous: false // force sync GPU upload — eliminates 1-frame texture blink at compositor switch
                         smooth: true
                         cache: true
-                        scale: {
-                            if (Services.Config && !Services.Config.lockscreenWallpaperZoom) return 1.0
-                            if (!root.isLocked) return 1.0
-                            if (root.isUnlockingWithGenie) return 1.16 - 0.16 * root.unlockSuctionProgress
-                            return root.isRevealed ? 1.12 : 1.0
-                        }
-                        transformOrigin: Item.Center
-                        visible: !(Services.Config && Services.Config.lockscreenBlur && (Services.Config.lockscreenBlurRadius > 0))
-                        Behavior on scale {
-                            enabled: !root.isUnlockingWithGenie
-                            NumberAnimation { duration: 350; easing.type: root.isRevealed ? Easing.OutCubic : Easing.InCubic }
-                        }
+                        visible: true
                     }
 
                     MultiEffect {
-                        anchors.fill: bgImage
+                        anchors.fill: parent
                         source: bgImage
-                        scale: bgImage.scale
-                        transformOrigin: Item.Center
                         blurEnabled: (Services.Config && Services.Config.lockscreenBlur) || false
-                        blur: {
-                            if (!root.isLocked || (!root.isRevealed && !root.isUnlockingWithGenie)) return 0.0
-                            var baseBlur = Services.Config ? Services.Config.lockscreenBlurRadius : 0.40
-                            if (root.isUnlockingWithGenie) return baseBlur * (1.0 - root.unlockSuctionProgress)
-                            return root.isRevealed ? baseBlur : 0.0
+                        blur: (Services.Config ? Services.Config.lockscreenBlurRadius : 0.40)
+                        blurMax: 32
+                        opacity: {
+                            // barP: 1=desktop, 0=locked. Blur starts appearing while bar absorbs.
+                            const barP = wpContainer.barP
+                            if (!root.isLocked && !root.isLockingWithGenie && barP > 0.98) return 0.0
+                            if (root.isUnlockingWithGenie) return (1.0 - root.unlockSuctionProgress)
+                            // Threshold 0.82: blur starts at 18% absorb, fully opaque at barP=0.
+                            // No Behavior — opacity tracks barP directly (already smooth via barAbsorbAnim).
+                            // Behavior would cause trailing, making opacity lag behind barP at compositor switch.
+                            return Math.min(1.0, Math.max(0.0, (0.82 - barP) / 0.82))
                         }
-                        blurMax: 64
-                        visible: (Services.Config && Services.Config.lockscreenBlur && (Services.Config.lockscreenBlurRadius > 0)) || false
-                        Behavior on blur {
-                            enabled: !root.isUnlockingWithGenie
-                            NumberAnimation { duration: 300; easing.type: Easing.OutCubic }
-                        }
+                        visible: ((Services.Config && Services.Config.lockscreenBlur && (Services.Config.lockscreenBlurRadius > 0)) || false) && (opacity > 0.001)
                     }
 
-                    // Smooth Dark Dim / Vignette Overlay
+                    // Smooth Dark Dim / Vignette Overlay — phase-synced to barIslandProgress
                     Rectangle {
                         anchors.fill: parent
                         color: Services.Theme.bgDeep
                         opacity: {
-                            if (!root.isLocked) return 0.0
-                            if (!root.isRevealed && !root.isUnlockingWithGenie) return 0.0
+                            const barP = wpContainer.barP
+                            if (!root.isLocked && !root.isLockingWithGenie && barP > 0.98) return 0.0
                             var baseDim = Services.Config ? Services.Config.lockscreenDim : 0.45
                             if (root.isCompact) baseDim = Math.min(0.85, baseDim + 0.15)
                             else if (root.isMinimal) baseDim = Math.max(0.18, baseDim - 0.12)
                             if (root.isUnlockingWithGenie) return baseDim * (1.0 - root.unlockSuctionProgress)
-                            return root.isRevealed ? baseDim : 0.0
-                        }
-                        Behavior on opacity {
-                            enabled: !root.isUnlockingWithGenie
-                            NumberAnimation {
-                                duration: 380
-                                easing.type: root.isRevealed ? Easing.OutCubic : Easing.InCubic
-                            }
+                            // Threshold 0.90: dim starts at 10% absorb, fully opaque at barP=0.
+                            // No Behavior — continuous barP drive doesn't need double-animation.
+                            return baseDim * Math.min(1.0, Math.max(0.0, (0.90 - barP) / 0.90))
                         }
                     }
                 }
@@ -902,6 +940,9 @@ Scope {
                     scale: 1.0
 
                     // Center: Dynamic Island (Apple Face ID & Status Capsule)
+                    // Phase-synced with desktop bar island via barIslandProgress:
+                    //   locking   → lock island fades IN  as bar island fades OUT (barP 1→0)
+                    //   unlocking → lock island fades OUT as bar island fades IN  (barP 0→1)
                     Rectangle {
                         id: lockIsland
                         visible: root.isDefault
@@ -922,28 +963,43 @@ Scope {
 
                         readonly property bool isIslandExpanded: (root.faceIconActive || root.isFaceActive)
 
+                        // barP: 1.0 = desktop bar fully visible; 0.0 = locked/hidden
+                        readonly property real barP: Services.OverlayManager ? Services.OverlayManager.barIslandProgress : 0.0
+                        // lockIslandProgress: 0.0 = invisible (bar showing), 1.0 = fully locked
+                        readonly property real lockIslandProgress: 1.0 - barP
+
+                        // Scale: genie bounce only triggers mid-handoff (barP < 0.5) — single morphing feel
                         scale: {
                             if (root.isUnlockingWithGenie) return 1.0 + 0.14 * Math.sin(root.unlockSuctionProgress * Math.PI)
+                            if (root.isLockingWithGenie && barP < 0.5) return 1.0 + 0.10 * Math.sin(Math.min(1.0, lockIslandProgress * 2.0) * Math.PI)
                             return 1.0
                         }
 
+                        // Cross-fade with bar island: lock island opacity = inverse of bar opacity.
+                        // No Behavior — barP is already a continuous animated value.
+                        // Behavior would cause opacity to trail barP → island not fully visible at compositor switch.
+                        opacity: {
+                            if (root.isUnlockingWithGenie) return Math.max(0.0, 1.0 - root.unlockSuctionProgress * 1.5)
+                            // Threshold 0.90: island starts appearing at 10% absorb, fully visible at barP=0
+                            return Math.min(1.0, Math.max(0.0, (0.90 - barP) / 0.90))
+                        }
+
                         border.color: {
-                            if (root.isFaceVerified || root.isUnlockingWithGenie) return "#30d158"
                             if (lockIsland.isIslandExpanded && Services.FaceId && Services.FaceId.status === "detected") return "#38bdf8"
                             if (root.isDeviceLockedPeek) return Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.35)
                             return Services.Theme.borderSubtle
                         }
-                        border.width: (root.isFaceVerified || root.isUnlockingWithGenie) ? 2.0 : (((lockIsland.isIslandExpanded && Services.FaceId && Services.FaceId.status === "detected") || root.isDeviceLockedPeek) ? 1.5 : 1)
+                        border.width: (((lockIsland.isIslandExpanded && Services.FaceId && Services.FaceId.status === "detected") || root.isDeviceLockedPeek) ? 1.5 : 1)
 
                         width: lockIsland.isIslandExpanded ? 160 : (root.isDeviceLockedPeek ? 218 : 140)
                         height: lockIsland.isIslandExpanded ? 96 : (root.isDeviceLockedPeek ? 44 : 32)
-                        radius: height / 2
+                        radius: lockIsland.isIslandExpanded ? 28 : (height / 2)
 
                         Behavior on width  { enabled: !root.isUnlockingWithGenie; NumberAnimation { duration: 340; easing.type: Easing.OutBack; easing.overshoot: 1.10 } }
                         Behavior on height { enabled: !root.isUnlockingWithGenie; NumberAnimation { duration: 340; easing.type: Easing.OutBack; easing.overshoot: 1.10 } }
                         Behavior on radius {
-                            enabled: lockIsland.isIslandExpanded || (lockIsland.height > 50)
-                            NumberAnimation { duration: 300; easing.type: Easing.OutCubic }
+                            enabled: !root.isUnlockingWithGenie
+                            NumberAnimation { duration: 340; easing.type: Easing.OutBack; easing.overshoot: 1.10 }
                         }
                         Behavior on border.color { ColorAnimation { duration: 250 } }
                         Behavior on border.width { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
@@ -987,8 +1043,7 @@ Scope {
                             x: {
                                 if (masterMorphIcon.isFace) return 63
                                 if (masterMorphIcon.isPeek) return 10
-                                if (root.hasPeekedLocked || root.isFaceVerified) return 14
-                                if (root.isUnlockingWithGenie) return 60
+                                if (root.hasPeekedLocked && !root.isFaceVerified) return 14
                                 return 60
                             }
                             y: {
@@ -1031,12 +1086,12 @@ Scope {
                             readonly property real peekTransitFactor: 4.0 * peekProgress * (1.0 - peekProgress)
                             readonly property real transitFactor: Math.max(faceTransitFactor, peekTransitFactor)
 
-                            // Subtle liquid squash & stretch aligned exactly with flight path
+                            // Keep shape completely undistorted during flight
                             transform: Scale {
                                 origin.x: masterMorphIcon.width / 2
                                 origin.y: masterMorphIcon.height / 2
-                                xScale: 1.0 + 0.14 * masterMorphIcon.transitFactor
-                                yScale: 1.0 - 0.08 * masterMorphIcon.transitFactor
+                                xScale: 1.0
+                                yScale: 1.0
                             }
 
                             // 1. Circular Badge Ring (Blooms during Peek)
@@ -1044,11 +1099,11 @@ Scope {
                                 id: peekBadgeRing
                                 anchors.fill: parent
                                 radius: width / 2
-                                color: masterMorphIcon.isPeek 
-                                    ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.16) 
+                                color: masterMorphIcon.isPeek
+                                    ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.16)
                                     : "transparent"
-                                border.color: masterMorphIcon.isPeek 
-                                    ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.28) 
+                                border.color: masterMorphIcon.isPeek
+                                    ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.28)
                                     : "transparent"
                                 border.width: 1
                                 opacity: masterMorphIcon.isPeek ? 1.0 : 0.0
@@ -1070,20 +1125,19 @@ Scope {
                                     id: morphTextGlyph
                                     anchors.centerIn: parent
                                     text: {
-                                        if (root.isFaceVerified || root.isUnlockingWithGenie) return "󰌿"
-                                        if (root.hasPeekedLocked || masterMorphIcon.isPeek) return "󰌾"
+                                        if (masterMorphIcon.isPeek) return "󰌾"
+                                        if (root.hasPeekedLocked && !root.isFaceVerified) return "󰌾"
                                         return "●"
                                     }
                                     font.family: Services.Theme.fontSymbols
-                                    font.pixelSize: masterMorphIcon.isPeek ? 14 : ((text === "●") ? 13 : 14)
+                                    font.pixelSize: masterMorphIcon.isPeek ? 16 : ((text === "●") ? 13 : 14)
                                     scale: {
                                         if (root.isUnlockingWithGenie) return 1.0 + 0.35 * Math.sin(root.unlockSuctionProgress * Math.PI)
                                         return 1.0
                                     }
                                     color: {
-                                        if (root.isFaceVerified || root.isUnlockingWithGenie) return "#30d158"
                                         if (masterMorphIcon.isPeek) return Services.Theme.accent
-                                        if (root.hasPeekedLocked) return Services.Theme.textPrimary
+                                        if (root.hasPeekedLocked && !root.isFaceVerified) return Services.Theme.textPrimary
                                         return Services.Theme.textDisabled
                                     }
 
@@ -1092,25 +1146,19 @@ Scope {
                                 }
                             }
 
-                            // 3. Apple Face ID Vector Canvas Layer
+                            // 3. Apple Face ID Vector Canvas Layer (Single Clean Fixed Shape)
                             Item {
                                 id: faceCanvasLayer
                                 anchors.fill: parent
                                 // Emerges from within the liquid droplet as it crosses the halfway mark
                                 opacity: Math.min(1.0, Math.max(0.0, (masterMorphIcon.faceProgress - 0.20) / 0.60))
-                                scale: 0.65 + 0.35 * Math.min(1.0, masterMorphIcon.faceProgress / 0.95)
-
-                                // Authentic subtle breathing pulse only runs once arrived and actively scanning
-                                SequentialAnimation {
-                                    running: masterMorphIcon.isFace && (masterMorphIcon.faceProgress >= 0.95) && Services.FaceId && Services.FaceId.isScanning && (Services.FaceId.status !== "success")
-                                    loops: Animation.Infinite
-                                    NumberAnimation { target: appleFaceCanvas; property: "scale"; from: 1.0; to: 1.04; duration: 600; easing.type: Easing.InOutSine }
-                                    NumberAnimation { target: appleFaceCanvas; property: "scale"; from: 1.04; to: 1.0; duration: 600; easing.type: Easing.InOutSine }
-                                }
+                                scale: 1.0
 
                                 Canvas {
                                     id: appleFaceCanvas
-                                    anchors.fill: parent
+                                    width: 34
+                                    height: 34
+                                    anchors.centerIn: parent
                                     renderTarget: Canvas.FramebufferObject
 
                                     readonly property bool isSuccess: Boolean(Services.FaceId && Services.FaceId.status === "success")
@@ -1118,13 +1166,10 @@ Scope {
                                     readonly property bool isTimeout: Boolean(Services.FaceId && Services.FaceId.status === "timeout")
 
                                     property color strokeColor: isSuccess ? "#30d158" : (isDetected ? "#38bdf8" : (isTimeout ? "#ef4444" : Services.Theme.accent))
-                                    property real smileAmount: isSuccess ? 1.40 : 1.0
 
                                     Behavior on strokeColor { ColorAnimation { duration: 250 } }
-                                    Behavior on smileAmount { NumberAnimation { duration: 300; easing.type: Easing.OutBack } }
 
                                     onStrokeColorChanged: requestPaint()
-                                    onSmileAmountChanged: requestPaint()
                                     onVisibleChanged: { if (visible) requestPaint() }
                                     Component.onCompleted: requestPaint()
 
@@ -1146,11 +1191,11 @@ Scope {
                                         ctx.beginPath(); ctx.moveTo(w * 0.10, h * 0.68); ctx.lineTo(w * 0.10, h * 0.82 - r); ctx.arcTo(w * 0.10, h * 0.90, w * 0.18 + r, h * 0.90, r); ctx.lineTo(w * 0.34, h * 0.90); ctx.stroke()
                                         ctx.beginPath(); ctx.moveTo(w * 0.66, h * 0.90); ctx.lineTo(w * 0.82 - r, h * 0.90); ctx.arcTo(w * 0.90, h * 0.90, w * 0.90, h * 0.82 - r, r); ctx.lineTo(w * 0.90, h * 0.68); ctx.stroke()
 
-                                        // Apple Face ID Features
+                                        // Apple Face ID Features (Single Static Geometry)
                                         ctx.beginPath(); ctx.moveTo(w * 0.35, h * 0.36); ctx.lineTo(w * 0.35, h * 0.46); ctx.stroke()
                                         ctx.beginPath(); ctx.moveTo(w * 0.65, h * 0.36); ctx.lineTo(w * 0.65, h * 0.46); ctx.stroke()
                                         ctx.beginPath(); ctx.moveTo(w * 0.50, h * 0.42); ctx.lineTo(w * 0.50, h * 0.54); ctx.lineTo(w * 0.58, h * 0.54); ctx.stroke()
-                                        ctx.beginPath(); ctx.moveTo(w * 0.33, h * 0.69); ctx.quadraticCurveTo(w * 0.50, h * (0.69 + 0.11 * smileAmount), w * 0.67, h * 0.69); ctx.stroke()
+                                        ctx.beginPath(); ctx.moveTo(w * 0.33, h * 0.69); ctx.quadraticCurveTo(w * 0.50, h * 0.78, w * 0.67, h * 0.69); ctx.stroke()
                                     }
                                 }
                             }
@@ -1258,6 +1303,7 @@ Scope {
                                         readonly property string statusText: {
                                             if (Services.FaceId && Services.FaceId.status === "success") return "Verified"
                                             if (Services.FaceId && Services.FaceId.status === "detected") return "Verifying Face..."
+                                            if (Services.FaceId && Services.FaceId.status === "unrecognized") return "Looking for Face..."
                                             if (Services.FaceId && Services.FaceId.status === "scanning") return "Looking for Face..."
                                             if (Services.FaceId && Services.FaceId.status === "timeout") return "Try Again"
                                             return "Starting..."
@@ -1301,6 +1347,7 @@ Scope {
                     }
 
                     // Mode A: Combined Status & Control Center Pill (Desktop-Styled)
+                    // Phase-synced: emerges as bar status tray absorbs, vanishes as it ejects
                     Rectangle {
                         id: combinedControlPill
                         anchors.right: parent.right
@@ -1317,19 +1364,28 @@ Scope {
                         visible: root.isDefault && (Services.Config ? Services.Config.lockscreenShowStatusPill : true)
 
                         readonly property real targetDx: (topBarHeader.width / 2) - (topBarHeader.width - 18 - (combinedControlPill.width / 2))
+                        // barP: 1=desktop bar visible, 0=locked
+                        readonly property real barP: Services.OverlayManager ? Services.OverlayManager.barIslandProgress : 0.0
+                        // pillProgress: max of both sources — tracks bar absorb AND settled lock state
+                        readonly property real pillProgress: Math.max(root.lockTopBarState, Math.min(1.0, Math.max(0.0, (0.90 - barP) / 0.90)))
 
                         transform: [
                             Translate {
-                                x: combinedControlPill.targetDx * (1.0 - root.lockTopBarState)
+                                x: combinedControlPill.targetDx * (1.0 - combinedControlPill.pillProgress)
                             },
                             Scale {
                                 origin.x: combinedControlPill.width / 2
                                 origin.y: combinedControlPill.height / 2
-                                xScale: 0.15 + 0.85 * root.lockTopBarState
-                                yScale: 0.15 + 0.85 * root.lockTopBarState
+                                xScale: 0.15 + 0.85 * combinedControlPill.pillProgress
+                                yScale: 0.15 + 0.85 * combinedControlPill.pillProgress
                             }
                         ]
-                        opacity: root.isRevealed ? Math.min(1.0, Math.max(0.0, root.lockTopBarState * 1.35)) : 0.0
+                        opacity: {
+                            // Only visible when lock layer is active (barP low or fully locked)
+                            if (!root.isLocked && !root.isLockingWithGenie && combinedControlPill.barP > 0.95) return 0.0
+                            if (root.isUnlockingWithGenie) return Math.max(0.0, 1.0 - root.unlockSuctionProgress * 1.8)
+                            return Math.min(1.0, Math.max(0.0, combinedControlPill.pillProgress * 1.35))
+                        }
 
                         Behavior on width { NumberAnimation { duration: 280; easing.type: Easing.OutBack; easing.overshoot: 1.05 } }
                         Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
@@ -1472,19 +1528,25 @@ Scope {
                         spacing: 12
 
                         readonly property real targetDx: (topBarHeader.width / 2) - (topBarHeader.width - 24 - ((minimalControlRow.implicitWidth > 0 ? minimalControlRow.implicitWidth : minimalControlRow.width) / 2))
+                        readonly property real barP: Services.OverlayManager ? Services.OverlayManager.barIslandProgress : 0.0
+                        readonly property real pillProgress: Math.max(root.lockTopBarState, Math.min(1.0, Math.max(0.0, (0.90 - barP) / 0.90)))
 
                         transform: [
                             Translate {
-                                x: minimalControlRow.targetDx * (1.0 - root.lockTopBarState)
+                                x: minimalControlRow.targetDx * (1.0 - minimalControlRow.pillProgress)
                             },
                             Scale {
                                 origin.x: (minimalControlRow.implicitWidth > 0 ? minimalControlRow.implicitWidth : minimalControlRow.width) / 2
                                 origin.y: minimalControlRow.height / 2
-                                xScale: 0.15 + 0.85 * root.lockTopBarState
-                                yScale: 0.15 + 0.85 * root.lockTopBarState
+                                xScale: 0.15 + 0.85 * minimalControlRow.pillProgress
+                                yScale: 0.15 + 0.85 * minimalControlRow.pillProgress
                             }
                         ]
-                        opacity: root.isRevealed ? Math.min(0.75, Math.max(0.0, root.lockTopBarState * 1.0)) : 0.0
+                        opacity: {
+                            if (!root.isLocked && !root.isLockingWithGenie && minimalControlRow.barP > 0.95) return 0.0
+                            if (root.isUnlockingWithGenie) return Math.max(0.0, 1.0 - root.unlockSuctionProgress * 1.8)
+                            return Math.min(0.75, Math.max(0.0, minimalControlRow.pillProgress))
+                        }
 
                         // Wi-Fi
                         Text {
@@ -1541,13 +1603,29 @@ Scope {
                         anchors.fill: parent
                         anchors.horizontalCenterOffset: 0
 
-                        opacity: root.isUnlockingWithGenie ? Math.max(0.0, 1.0 - Math.pow(root.unlockSuctionProgress, 1.5)) : 1.0
+                        opacity: {
+                            if (root.isUnlockingWithGenie) return Math.max(0.0, 1.0 - Math.pow(root.unlockSuctionProgress, 1.5))
+                            if (root.isLockingWithGenie) return Math.min(1.0, root.lockGenieProgress * 1.5)
+                            // Phase-lead: begin fading in when barP < 0.35 (dim is already ~50%)
+                            // so content emerges smoothly from underneath the building dim/blur
+                            const barP = Services.OverlayManager ? Services.OverlayManager.barIslandProgress : 0.0
+                            if (!root.isRevealed && !root.isLocked && !root.isLockingWithGenie) return 0.0
+                            return Math.min(1.0, Math.max(0.0, (0.35 - barP) / 0.35))
+                        }
 
                         transform: Scale {
                             origin.x: mainContainer.width / 2
                             origin.y: 22
-                            xScale: root.isUnlockingWithGenie ? Math.max(0.001, Math.pow(1.0 - root.unlockSuctionProgress, 1.3)) : 1.0
-                            yScale: root.isUnlockingWithGenie ? Math.max(0.001, 1.0 - root.unlockSuctionProgress) : 1.0
+                            xScale: {
+                                if (root.isUnlockingWithGenie) return Math.max(0.001, Math.pow(1.0 - root.unlockSuctionProgress, 1.3))
+                                if (root.isLockingWithGenie) return 0.15 + 0.85 * Math.min(1.0, root.lockGenieProgress)
+                                return 1.0
+                            }
+                            yScale: {
+                                if (root.isUnlockingWithGenie) return Math.max(0.001, 1.0 - root.unlockSuctionProgress)
+                                if (root.isLockingWithGenie) return 0.08 + 0.92 * root.lockGenieProgress
+                                return 1.0
+                            }
                         }
 
                         // Shake Animation on Auth Error or ESC press
@@ -2079,8 +2157,8 @@ Scope {
                                 color: {
                                     if (!root.isCompact && (centerAuthCard.inputStyle === "underline" || centerAuthCard.inputStyle === "dots")) return "transparent"
                                     if (!root.isCompact && centerAuthCard.inputStyle === "box") return Services.Theme.bgElevated
-                                    return pwTextInput.activeFocus 
-                                        ? Qt.rgba(Services.Theme.surfaceVariant.r, Services.Theme.surfaceVariant.g, Services.Theme.surfaceVariant.b, 0.85) 
+                                    return pwTextInput.activeFocus
+                                        ? Qt.rgba(Services.Theme.surfaceVariant.r, Services.Theme.surfaceVariant.g, Services.Theme.surfaceVariant.b, 0.85)
                                         : Qt.rgba(Services.Theme.bgDeep.r, Services.Theme.bgDeep.g, Services.Theme.bgDeep.b, 0.65)
                                 }
                                 border.color: (!root.isCompact && (centerAuthCard.inputStyle === "underline" || centerAuthCard.inputStyle === "dots"))
@@ -2269,17 +2347,15 @@ Scope {
                                 height: 56
 
                                 // Outer Glow / Focus Ring
-                                Canvas {
+                                Rectangle {
                                     id: outerGlowRing
                                     anchors.centerIn: parent
                                     width: 54
                                     height: 54
-                                    visible: centerAuthCard.showAvatarRing
-                                    scale: pwTextInput.activeFocus ? 1.0 : 0.98
-
-                                    property real r: centerAuthCard.ringRadius
-                                    property real bw: pwTextInput.activeFocus ? 2 : 1.5
-                                    property color bc: {
+                                    color: "transparent"
+                                    radius: centerAuthCard.ringRadius
+                                    border.width: pwTextInput.activeFocus ? 2 : 1.5
+                                    border.color: {
                                         if (Services.FaceId && Services.FaceId.status === "success") return Services.Theme.success
                                         if (Services.FaceId && Services.FaceId.isScanning) return Services.Theme.accent
                                         return root.isError
@@ -2288,38 +2364,10 @@ Scope {
                                                 ? Services.Theme.accent
                                                 : Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.3))
                                     }
+                                    visible: centerAuthCard.showAvatarRing
+                                    scale: pwTextInput.activeFocus ? 1.0 : 0.98
 
-                                    onRChanged: requestPaint()
-                                    onBwChanged: requestPaint()
-                                    onBcChanged: requestPaint()
-                                    onWidthChanged: requestPaint()
-                                    onHeightChanged: requestPaint()
-
-                                    onPaint: {
-                                        var ctx = getContext("2d")
-                                        ctx.reset()
-                                        ctx.clearRect(0, 0, width, height)
-                                        if (width <= 0 || height <= 0 || bw <= 0) return
-                                        ctx.strokeStyle = bc
-                                        ctx.lineWidth = bw
-                                        var half = bw / 2
-                                        var rad = Math.max(0, Math.min(r - half, (width - bw) / 2, (height - bw) / 2))
-                                        if (rad <= 0) return
-                                        ctx.beginPath()
-                                        ctx.moveTo(half + rad, half)
-                                        ctx.lineTo(width - half - rad, half)
-                                        ctx.arcTo(width - half, half, width - half, half + rad, rad)
-                                        ctx.lineTo(width - half, height - half - rad)
-                                        ctx.arcTo(width - half, height - half, width - half - rad, height - half, rad)
-                                        ctx.lineTo(half + rad, height - half)
-                                        ctx.arcTo(half, height - half, half, height - half - rad, rad)
-                                        ctx.lineTo(half, half + rad)
-                                        ctx.arcTo(half, half, half + rad, half, rad)
-                                        ctx.closePath()
-                                        ctx.stroke()
-                                    }
-
-                                    Behavior on bc { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                                    Behavior on border.color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                                     Behavior on scale { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                                     SequentialAnimation on opacity {
@@ -2895,7 +2943,7 @@ Scope {
 
                             color: root.lockscreenPwrOpen
                                 ? Qt.rgba(Services.Theme.surface.r, Services.Theme.surface.g, Services.Theme.surface.b, 0.96)
-                                : (pwrBottomMouse.containsMouse 
+                                : (pwrBottomMouse.containsMouse
                                     ? Qt.rgba(Services.Theme.danger.r, Services.Theme.danger.g, Services.Theme.danger.b, 0.22)
                                     : Qt.rgba(Services.Theme.bgDeep.r, Services.Theme.bgDeep.g, Services.Theme.bgDeep.b, 0.82))
 
@@ -3143,28 +3191,32 @@ Scope {
                     id: ccLockscreenOverlay
                     anchors.fill: parent
                     z: 9999
-                    visible: root.lockscreenCcOpen || ccCard.opacity > 0.01
+                    visible: root.lockscreenCcOpen
 
                     MouseArea {
                         anchors.fill: parent
                         onClicked: root.lockscreenCcOpen = false
                     }
 
-                    LockscreenControlCenter {
-                        id: ccCard
+                    Loader {
+                        id: ccLoader
+                        active: root.lockscreenCcOpen
                         anchors.top: parent.top
                         anchors.right: parent.right
                         anchors.topMargin: 42
                         anchors.rightMargin: 18
-                        opacity: root.lockscreenCcOpen ? 1.0 : 0.0
-                        scale: root.lockscreenCcOpen ? 1.0 : 0.96
-                        transform: Translate {
-                            y: root.lockscreenCcOpen ? 0 : -20
-                            Behavior on y { NumberAnimation { duration: 280; easing.type: Easing.OutCubic } }
+                        sourceComponent: LockscreenControlCenter {
+                            id: ccCard
+                            opacity: root.lockscreenCcOpen ? 1.0 : 0.0
+                            scale: root.lockscreenCcOpen ? 1.0 : 0.96
+                            transform: Translate {
+                                y: root.lockscreenCcOpen ? 0 : -20
+                                Behavior on y { NumberAnimation { duration: 280; easing.type: Easing.OutCubic } }
+                            }
+                            Behavior on opacity { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
+                            Behavior on scale { NumberAnimation { duration: 280; easing.type: Easing.OutBack } }
+                            onRequestClose: root.lockscreenCcOpen = false
                         }
-                        Behavior on opacity { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
-                        Behavior on scale { NumberAnimation { duration: 280; easing.type: Easing.OutBack } }
-                        onRequestClose: root.lockscreenCcOpen = false
                     }
                 }
             }

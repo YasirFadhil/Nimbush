@@ -13,6 +13,9 @@ Singleton {
     property bool lockVerified: false
     property bool isLockAbsorbing: false
     property bool desktopIslandIsWide: false
+    // ── Seamless Island / Bar Bridge (0.0 = fully locked/hidden, 1.0 = fully desktop) ──
+    // Bar writes this; lockscreen reads it to phase-sync its island & status pill
+    property real barIslandProgress: 0.0
     property bool wizardOpen: false
     readonly property bool isWizardActive: wizardOpen || (Services.Config ? !Services.Config.firstRunCompleted : false)
     property bool controlCenterVisible: false
@@ -85,7 +88,13 @@ Singleton {
     }
 
     function register(win) {
+        if (!win || _windows.indexOf(win) !== -1) return
         _windows.push(win)
+    }
+
+    function unregister(win) {
+        if (!win) return
+        _windows = _windows.filter(w => w !== win)
     }
 
     // 'except' can be a window object (PowerMenu/Launcher/NotifCenter etc.)
@@ -94,10 +103,13 @@ Singleton {
     function closeAllExcept(except) {
         for (let i = 0; i < _windows.length; i++) {
             const w = _windows[i]
+            if (!w) continue
             if (w.overlayId === "settings") continue
             const isExcepted = (w === except) || (w.overlayId !== undefined && w.overlayId === except)
             if (!isExcepted && w.visible) {
-                w.hide()
+                if (typeof w.hide === "function") {
+                    w.hide()
+                }
             }
         }
         if (except !== "controlCenter") {

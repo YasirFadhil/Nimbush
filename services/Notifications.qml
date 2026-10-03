@@ -17,6 +17,7 @@ Singleton {
     property alias historyList: historyModel
     property int maxHistoryCount: 50
     property int maxPopupCount: 10
+    property int historyRevision: 0
 
     readonly property int retentionDays: Services.Config ? Services.Config.notificationRetentionDays : 7
     onRetentionDaysChanged: pruneExpiredHistory()
@@ -25,6 +26,23 @@ Singleton {
     ListModel { id: historyModel }
 
     readonly property string kdeHelperPath: (Quickshell.env("HOME") || "/home/" + (Quickshell.env("USER") || "user")) + "/.config/quickshell/scripts/kdeconnect-helper.py"
+
+    property var _activeTimers: ({})
+    property int _kdeRestartDelay: 3000
+    property int _kdeRestartCount: 0
+
+    function _startDismissTimer(id, interval) {
+        if (!id || interval <= 0) return
+        if (_activeTimers[id]) {
+            try { _activeTimers[id].destroy() } catch (e) {}
+            delete _activeTimers[id]
+        }
+        const t = dismissTimer.createObject(root, { notifId: id, interval: interval })
+        if (t) {
+            _activeTimers[id] = t
+            t.start()
+        }
+    }
 
     // ── Retention Pruner (1 to 7 days) ──────────────────────────────────────
     function pruneExpiredHistory() {
@@ -62,6 +80,8 @@ Singleton {
         running: true
         stdout: SplitParser {
             onRead: line => {
+                root._kdeRestartCount = 0
+                root._kdeRestartDelay = 3000
                 try {
                     const data = JSON.parse(line.trim())
                     if (data.event === "removed") {
@@ -82,13 +102,16 @@ Singleton {
             }
         }
         onExited: (code, status) => {
+            root._kdeRestartCount++
+            root._kdeRestartDelay = Math.min(60000, Math.floor(3000 * Math.pow(1.5, Math.min(root._kdeRestartCount, 8))))
+            kdeRestartTimer.interval = root._kdeRestartDelay
             kdeRestartTimer.restart()
         }
     }
 
     Timer {
         id: kdeRestartTimer
-        interval: 3000
+        interval: root._kdeRestartDelay
         repeat: false
         onTriggered: kdeWatcherProc.running = true
     }
@@ -151,48 +174,98 @@ Singleton {
             }
         }
 
-        if (Array.isArray(kdeNotifs)) {
+        if (Array.isArray(kdeNotifs) && kdeNotifs.length > 0) {
+            // Build fast lookup maps to replace nested O(N^3) loops with O(1) lookups
+            const popupMap = {}
+            for (let p = 0; p < popupModel.count; p++) {
+                const pItem = popupModel.get(p)
+                if (pItem && pItem.notifId) popupMap[pItem.notifId] = pItem
+            }
+
+            const kdeHistoryMap = {}
+            for (let h = 0; h < historyModel.count; h++) {
+                const hItem = historyModel.get(h)
+                if (hItem && hItem.isKdeConnect && hItem.kdeNotifId) {
+                    kdeHistoryMap[String(hItem.kdeNotifId)] = hItem
+                }
+            }
+
             for (let k = 0; k < kdeNotifs.length; k++) {
                 const kn = kdeNotifs[k]
                 const knId = String(kn.id)
-                for (let h = 0; h < historyModel.count; h++) {
-                    const item = historyModel.get(h)
-                    if (item && item.isKdeConnect && item.kdeNotifId === knId) {
-                        const newSummary = kn.title || item.summary
-                        const newBody = kn.text || item.body
-                        if (item.summary !== newSummary || item.body !== newBody) {
-                            item.summary = newSummary
-                            item.body = newBody
-                            item.time = Date.now()
-                            changed = true
+                const item = kdeHistoryMap[knId]
+                if (item) {
+                    const newSummary = root.cleanNotificationText(kn.title || item.summary)
+                    const newBody = root.cleanNotificationText(kn.text || item.body)
+                    const newApp = (kn.app && kn.app.length > 0) ? root.cleanNotificationText(kn.app) : item.appName
+                    const newIcon = (kn.app && kn.app.length > 0) ? root.resolveAppIcon(newApp, item.appIcon) : item.appIcon
 
-                            let inPopup = false
-                            for (let p = 0; p < popupModel.count; p++) {
-                                if (popupModel.get(p).notifId === item.notifId) {
-                                    inPopup = true
-                                    popupModel.get(p).summary = newSummary
-                                    popupModel.get(p).body = newBody
-                                    popupModel.get(p).time = Date.now()
-                                    break
+                    const knReplyId = (kn.replyId && String(kn.replyId).trim().length > 0) ? String(kn.replyId).trim() : ""
+                    const knHasReply = knReplyId.length > 0
+                    if (item.kdeReplyId !== knReplyId || item.hasInlineReply !== knHasReply) {
+                        item.kdeReplyId = knReplyId
+                        item.hasInlineReply = knHasReply
+                        let newActs = []
+                        if (item.actions) {
+                            const cnt = item.actions.count !== undefined ? item.actions.count : item.actions.length
+                            for (let a = 0; a < cnt; a++) {
+                                const act = item.actions.get ? item.actions.get(a) : item.actions[a]
+                                if (act.identifier !== "inline-reply") {
+                                    newActs.push({ identifier: act.identifier, text: act.text })
                                 }
-                            }
-                            if (!inPopup && !root.doNotDisturb) {
-                                popupModel.insert(0, item)
-                                while (popupModel.count > root.maxPopupCount) {
-                                    popupModel.remove(popupModel.count - 1)
-                                }
-                                root.newNotification(item)
-                                SoundFeedback.playNotification()
-                                dismissTimer.createObject(root, { notifId: item.notifId, interval: 5000 }).start()
                             }
                         }
-                        break
+                        if (knHasReply) {
+                            newActs.push({ identifier: "inline-reply", text: "Reply" })
+                        }
+                        root.updateActionsInItem(item, newActs)
+                        changed = true
+
+                        const pItem = popupMap[item.notifId]
+                        if (pItem) {
+                            pItem.kdeReplyId = knReplyId
+                            pItem.hasInlineReply = knHasReply
+                            root.updateActionsInItem(pItem, newActs)
+                        }
+                    }
+
+                    if (item.summary !== newSummary || item.body !== newBody || item.appName !== newApp) {
+                        item.summary = newSummary
+                        item.body = newBody
+                        if (newApp && (item.appName === "KDE Connect" || !item.appName || item.appName !== newApp)) {
+                            item.appName = newApp
+                            item.appIcon = newIcon
+                        }
+                        item.time = Date.now()
+                        changed = true
+
+                        const pItem = popupMap[item.notifId]
+                        if (pItem) {
+                            pItem.summary = newSummary
+                            pItem.body = newBody
+                            if (newApp) {
+                                pItem.appName = newApp
+                                pItem.appIcon = newIcon
+                            }
+                            pItem.time = Date.now()
+                        } else if (!root.doNotDisturb) {
+                            popupModel.insert(0, item)
+                            while (popupModel.count > root.maxPopupCount) {
+                                popupModel.remove(popupModel.count - 1)
+                            }
+                            root.newNotification(item)
+                            SoundFeedback.playNotification()
+                            root._startDismissTimer(item.notifId, 5000)
+                        }
                     }
                 }
             }
         }
 
-        if (changed) root.saveHistory()
+        if (changed) {
+            root.saveHistory()
+            root.historyRevision++
+        }
     }
 
     // ── Desktop Notification Server ─────────────────────────────────────────
@@ -215,27 +288,37 @@ Singleton {
             const isBattery = root.isBatteryNotification(notif)
             const actionsList = notif.actions.map(a => ({ identifier: a.identifier, text: a.text }))
 
-            // Add inline reply action if messaging or hasInlineReply or KDE Connect
-            if ((isMessaging || notif.hasInlineReply || isKdeConnect) && !actionsList.some(a => a.identifier === "inline-reply" || (a.identifier || "").toLowerCase().includes("reply") || (a.text || "").toLowerCase().includes("reply") || (a.text || "").toLowerCase().includes("balas"))) {
+            // Only add inline reply action if the notification genuinely supports inline reply natively
+            const canReply = notif.hasInlineReply || actionsList.some(a => a.identifier === "inline-reply" || (a.identifier || "").toLowerCase().includes("reply") || (a.text || "").toLowerCase().includes("reply") || (a.text || "").toLowerCase().includes("balas"))
+            if (canReply && !actionsList.some(a => a.identifier === "inline-reply" || (a.identifier || "").toLowerCase().includes("reply") || (a.text || "").toLowerCase().includes("reply") || (a.text || "").toLowerCase().includes("balas"))) {
                 actionsList.push({ identifier: "inline-reply", text: "Reply" })
             }
 
+            // Resolve KDE Connect app name, origin device, sender summary and message body
+            const kdeInfo = isKdeConnect ? root.resolveKdeNotificationInfo(notif) : null
+            const finalAppName = (kdeInfo && kdeInfo.appName) ? kdeInfo.appName : (notif.appName || "Unknown")
+            const finalAppIcon = (kdeInfo && kdeInfo.appIcon) ? kdeInfo.appIcon : notif.appIcon
+            const finalSummary = root.cleanNotificationText((kdeInfo && kdeInfo.summary !== undefined) ? kdeInfo.summary : (notif.summary || ""))
+            const finalBody = root.cleanNotificationText((kdeInfo && kdeInfo.body !== undefined) ? kdeInfo.body : (notif.body || ""))
+            const originDevice = (kdeInfo && kdeInfo.originDevice) ? kdeInfo.originDevice : ""
+
             const entry = {
                 notifId: notif.id,
-                appName: notif.appName || "Unknown",
-                appIcon: notif.appIcon,
-                summary: notif.summary || "",
-                body: notif.body || "",
+                appName: finalAppName,
+                appIcon: finalAppIcon,
+                summary: finalSummary,
+                body: finalBody,
                 image: notif.image || "",
                 urgency: notif.urgency,
                 time: Date.now(),
                 actions: actionsList,
-                hasInlineReply: isMessaging || notif.hasInlineReply || isKdeConnect,
+                hasInlineReply: canReply,
                 isMessaging: isMessaging,
                 isKdeConnect: isKdeConnect,
                 isBattery: isBattery,
                 kdeNotifId: "",
                 kdeReplyId: "",
+                originDevice: originDevice,
                 inlineReplyPlaceholder: notif.inlineReplyPlaceholder || "",
                 desktopEntry: notif.desktopEntry || ""
             }
@@ -245,6 +328,8 @@ Singleton {
             }
 
             historyModel.insert(0, entry)
+            root.historyRevision++
+            root.saveHistory()
             root.pruneExpiredHistory()
 
             if (!root.doNotDisturb) {
@@ -268,7 +353,7 @@ Singleton {
                 const timeout = notif.expireTimeout > 0 ? notif.expireTimeout
                     : (notif.urgency === NotificationUrgency.Critical ? 7000 : (Services.Config ? (Services.Config.notificationTimeout * 1000) : 5000))
                 if (timeout > 0) {
-                    dismissTimer.createObject(root, { notifId: notif.id, interval: timeout }).start()
+                    root._startDismissTimer(notif.id, timeout)
                 }
             }
 
@@ -293,34 +378,55 @@ Singleton {
         const isBattery = root.isBatteryNotification(notif)
         const actionsList = notif.actions.map(a => ({ identifier: a.identifier, text: a.text }))
 
-        if ((isMessaging || notif.hasInlineReply || isKdeConnect) && !actionsList.some(a => a.identifier === "inline-reply" || (a.identifier || "").toLowerCase().includes("reply") || (a.text || "").toLowerCase().includes("reply") || (a.text || "").toLowerCase().includes("balas"))) {
-            actionsList.push({ identifier: "inline-reply", text: "Reply" })
-        }
-
         let existingEntry = null
         for (let i = 0; i < historyModel.count; i++) {
             const h = historyModel.get(i)
             if (h && h.notifId === notif.id) {
-                h.summary = notif.summary || ""
-                h.body = notif.body || ""
-                h.image = notif.image || ""
-                h.time = Date.now()
-                h.actions = actionsList
                 existingEntry = h
-                root.saveHistory()
                 break
             }
+        }
+
+        const canReply = notif.hasInlineReply || (existingEntry && existingEntry.kdeReplyId && existingEntry.kdeReplyId.length > 0) || actionsList.some(a => a.identifier === "inline-reply" || (a.identifier || "").toLowerCase().includes("reply") || (a.text || "").toLowerCase().includes("reply") || (a.text || "").toLowerCase().includes("balas"))
+
+        if (canReply && !actionsList.some(a => a.identifier === "inline-reply" || (a.identifier || "").toLowerCase().includes("reply") || (a.text || "").toLowerCase().includes("reply") || (a.text || "").toLowerCase().includes("balas"))) {
+            actionsList.push({ identifier: "inline-reply", text: "Reply" })
+        }
+
+        const kdeInfo = isKdeConnect ? root.resolveKdeNotificationInfo(notif) : null
+        const finalAppName = (kdeInfo && kdeInfo.appName) ? kdeInfo.appName : (notif.appName || "Unknown")
+        const finalAppIcon = (kdeInfo && kdeInfo.appIcon) ? kdeInfo.appIcon : notif.appIcon
+        const finalSummary = root.cleanNotificationText((kdeInfo && kdeInfo.summary !== undefined) ? kdeInfo.summary : (notif.summary || ""))
+        const finalBody = root.cleanNotificationText((kdeInfo && kdeInfo.body !== undefined) ? kdeInfo.body : (notif.body || ""))
+        const originDevice = (kdeInfo && kdeInfo.originDevice) ? kdeInfo.originDevice : ""
+
+        if (existingEntry) {
+            existingEntry.appName = finalAppName || existingEntry.appName
+            existingEntry.appIcon = finalAppIcon || existingEntry.appIcon
+            existingEntry.summary = finalSummary
+            existingEntry.body = finalBody
+            existingEntry.image = notif.image || ""
+            if (originDevice) existingEntry.originDevice = originDevice
+            existingEntry.time = Date.now()
+            root.updateActionsInItem(existingEntry, actionsList)
+            existingEntry.hasInlineReply = canReply
+            root.saveHistory()
+            root.historyRevision++
         }
 
         let inPopupIndex = -1
         for (let i = 0; i < popupModel.count; i++) {
             const p = popupModel.get(i)
             if (p && p.notifId === notif.id) {
-                p.summary = notif.summary || ""
-                p.body = notif.body || ""
+                p.appName = finalAppName || p.appName
+                p.appIcon = finalAppIcon || p.appIcon
+                p.summary = finalSummary
+                p.body = finalBody
                 p.image = notif.image || ""
+                if (originDevice) p.originDevice = originDevice
                 p.time = Date.now()
-                p.actions = actionsList
+                root.updateActionsInItem(p, actionsList)
+                p.hasInlineReply = canReply
                 inPopupIndex = i
                 existingEntry = p
                 break
@@ -329,38 +435,40 @@ Singleton {
 
         const entry = existingEntry ? {
             notifId: existingEntry.notifId,
-            appName: existingEntry.appName || notif.appName || "Unknown",
-            appIcon: existingEntry.appIcon || notif.appIcon,
-            summary: notif.summary || "",
-            body: notif.body || "",
+            appName: existingEntry.appName || finalAppName,
+            appIcon: existingEntry.appIcon || finalAppIcon,
+            summary: finalSummary,
+            body: finalBody,
             image: notif.image || "",
             urgency: notif.urgency,
             time: Date.now(),
             actions: actionsList,
-            hasInlineReply: isMessaging || notif.hasInlineReply || isKdeConnect,
+            hasInlineReply: canReply,
             isMessaging: isMessaging,
             isKdeConnect: isKdeConnect,
             isBattery: isBattery,
             kdeNotifId: existingEntry.kdeNotifId || "",
             kdeReplyId: existingEntry.kdeReplyId || "",
+            originDevice: existingEntry.originDevice || originDevice,
             inlineReplyPlaceholder: notif.inlineReplyPlaceholder || "",
             desktopEntry: notif.desktopEntry || ""
         } : {
             notifId: notif.id,
-            appName: notif.appName || "Unknown",
-            appIcon: notif.appIcon,
-            summary: notif.summary || "",
-            body: notif.body || "",
+            appName: finalAppName,
+            appIcon: finalAppIcon,
+            summary: finalSummary,
+            body: finalBody,
             image: notif.image || "",
             urgency: notif.urgency,
             time: Date.now(),
             actions: actionsList,
-            hasInlineReply: isMessaging || notif.hasInlineReply || isKdeConnect,
+            hasInlineReply: canReply,
             isMessaging: isMessaging,
             isKdeConnect: isKdeConnect,
             isBattery: isBattery,
             kdeNotifId: "",
             kdeReplyId: "",
+            originDevice: originDevice,
             inlineReplyPlaceholder: notif.inlineReplyPlaceholder || "",
             desktopEntry: notif.desktopEntry || ""
         }
@@ -394,13 +502,14 @@ Singleton {
             const timeout = notif.expireTimeout > 0 ? notif.expireTimeout
                 : (notif.urgency === NotificationUrgency.Critical ? 7000 : (Services.Config ? (Services.Config.notificationTimeout * 1000) : 5000))
             if (timeout > 0) {
-                dismissTimer.createObject(root, { notifId: notif.id, interval: timeout }).start()
+                root._startDismissTimer(notif.id, timeout)
             }
         }
     }
 
     Process {
         id: kdeLinkProc
+        property string targetAppName: ""
         property string targetSummary: ""
         property string targetBody: ""
         property int targetNotifId: -1
@@ -412,15 +521,54 @@ Singleton {
                     if (Array.isArray(list)) {
                         for (let i = 0; i < list.length; i++) {
                             const k = list[i]
-                            const sMatch = (k.app && kdeLinkProc.targetSummary.includes(k.app)) || (k.title && kdeLinkProc.targetSummary.includes(k.title))
-                            const bMatch = (k.text && kdeLinkProc.targetBody.includes(k.text.substring(0, 15))) || (k.title && kdeLinkProc.targetBody.includes(k.title))
-                            if (sMatch || bMatch || list.length === 1) {
+                            const kApp = (k.app || "").toLowerCase()
+                            const kTitle = (k.title || "").toLowerCase()
+                            const kText = (k.text || "").toLowerCase()
+
+                            const tApp = (kdeLinkProc.targetAppName || "").toLowerCase()
+                            const tSum = (kdeLinkProc.targetSummary || "").toLowerCase()
+                            const tBod = (kdeLinkProc.targetBody || "").toLowerCase()
+
+                            const appMatch = kApp.length > 0 && (tApp === kApp || tSum.includes(kApp) || tBod.includes(kApp))
+                            const sMatch = (kApp && tSum.includes(kApp)) || (kTitle && (tSum.includes(kTitle) || tBod.includes(kTitle)))
+                            const bMatch = (kText && (tBod.includes(kText.substring(0, 15)) || (kTitle && tBod.includes(kTitle))))
+
+                            if (appMatch || sMatch || bMatch || list.length === 1) {
+                                const hasReply = Boolean(k.replyId && String(k.replyId).trim().length > 0)
                                 for (let h = 0; h < historyModel.count; h++) {
                                     const hItem = historyModel.get(h)
                                     if (hItem && hItem.notifId === kdeLinkProc.targetNotifId) {
                                         hItem.kdeNotifId = String(k.id)
-                                        hItem.kdeReplyId = String(k.replyId || "")
+                                        hItem.kdeReplyId = hasReply ? String(k.replyId).trim() : ""
+                                        hItem.hasInlineReply = hasReply
+
+                                        let newActs = []
+                                        if (hItem.actions) {
+                                            const cnt = hItem.actions.count !== undefined ? hItem.actions.count : hItem.actions.length
+                                            for (let a = 0; a < cnt; a++) {
+                                                const act = hItem.actions.get ? hItem.actions.get(a) : hItem.actions[a]
+                                                if (act.identifier !== "inline-reply") {
+                                                    newActs.push({ identifier: act.identifier, text: act.text })
+                                                }
+                                            }
+                                        }
+                                        if (hasReply) {
+                                            newActs.push({ identifier: "inline-reply", text: "Reply" })
+                                        }
+                                        root.updateActionsInItem(hItem, newActs)
+
+                                        if (k.app && (hItem.appName === "KDE Connect" || !hItem.appName)) {
+                                            hItem.appName = k.app
+                                            hItem.appIcon = root.resolveAppIcon(k.app, hItem.appIcon)
+                                        }
+                                        if (k.title && k.title.length > 0 && hItem.summary === k.app) {
+                                            hItem.summary = root.cleanNotificationText(k.title)
+                                        }
+                                        if (k.text && k.text.length > 0 && hItem.body.startsWith(k.title + ": ")) {
+                                            hItem.body = root.cleanNotificationText(k.text)
+                                        }
                                         root.saveHistory()
+                                        root.historyRevision++
                                         break
                                     }
                                 }
@@ -428,7 +576,34 @@ Singleton {
                                     const pItem = popupModel.get(p)
                                     if (pItem && pItem.notifId === kdeLinkProc.targetNotifId) {
                                         pItem.kdeNotifId = String(k.id)
-                                        pItem.kdeReplyId = String(k.replyId || "")
+                                        pItem.kdeReplyId = hasReply ? String(k.replyId).trim() : ""
+                                        pItem.hasInlineReply = hasReply
+
+                                        let newActs = []
+                                        if (pItem.actions) {
+                                            const cnt = pItem.actions.count !== undefined ? pItem.actions.count : pItem.actions.length
+                                            for (let a = 0; a < cnt; a++) {
+                                                const act = pItem.actions.get ? pItem.actions.get(a) : pItem.actions[a]
+                                                if (act.identifier !== "inline-reply") {
+                                                    newActs.push({ identifier: act.identifier, text: act.text })
+                                                }
+                                            }
+                                        }
+                                        if (hasReply) {
+                                            newActs.push({ identifier: "inline-reply", text: "Reply" })
+                                        }
+                                        root.updateActionsInItem(pItem, newActs)
+
+                                        if (k.app && (pItem.appName === "KDE Connect" || !pItem.appName)) {
+                                            pItem.appName = k.app
+                                            pItem.appIcon = root.resolveAppIcon(k.app, pItem.appIcon)
+                                        }
+                                        if (k.title && k.title.length > 0 && pItem.summary === k.app) {
+                                            pItem.summary = root.cleanNotificationText(k.title)
+                                        }
+                                        if (k.text && k.text.length > 0 && pItem.body.startsWith(k.title + ": ")) {
+                                            pItem.body = root.cleanNotificationText(k.text)
+                                        }
                                         break
                                     }
                                 }
@@ -443,6 +618,7 @@ Singleton {
 
     function linkKdeNotification(entry) {
         if (!entry) return
+        kdeLinkProc.targetAppName = entry.appName || ""
         kdeLinkProc.targetSummary = entry.summary || ""
         kdeLinkProc.targetBody = entry.body || ""
         kdeLinkProc.targetNotifId = entry.notifId
@@ -459,6 +635,9 @@ Singleton {
                     interval = 4000
                     start()
                     return
+                }
+                if (root._activeTimers[notifId] === this) {
+                    delete root._activeTimers[notifId]
                 }
                 root.removePopup(notifId)
                 destroy()
@@ -479,6 +658,10 @@ Singleton {
     }
 
     function removePopup(id) {
+        if (_activeTimers[id]) {
+            try { _activeTimers[id].destroy() } catch (e) {}
+            delete _activeTimers[id]
+        }
         for (let i = 0; i < popupModel.count; i++) {
             if (popupModel.get(i).notifId === id) { popupModel.remove(i); break }
         }
@@ -489,6 +672,7 @@ Singleton {
             if (historyModel.get(i).notifId === id) {
                 historyModel.remove(i)
                 root.saveHistory()
+                root.historyRevision++
                 break
             }
         }
@@ -525,6 +709,7 @@ Singleton {
 
     function isKdeConnectNotif(n) {
         if (!n) return false
+        if (n.isKdeConnect) return true
         const appName = (n.appName || "").toLowerCase()
         const desktopEntry = (n.desktopEntry || "").toLowerCase()
         const appIcon = (n.appIcon || "").toLowerCase()
@@ -538,6 +723,195 @@ Singleton {
             }
         } catch (e) { }
         return false
+    }
+
+    function decodeOctalString(str) {
+        if (!str || typeof str !== "string") return str || ""
+        if (!str.includes("\\")) return str
+
+        try {
+            if (/\\([0-7]{1,3})/.test(str)) {
+                const bytes = []
+                let i = 0
+                let out = ""
+                while (i < str.length) {
+                    if (str[i] === '\\' && i + 1 < str.length) {
+                        const match = str.substring(i + 1).match(/^([0-7]{1,3})/)
+                        if (match) {
+                            const byteVal = parseInt(match[1], 8)
+                            bytes.push(byteVal)
+                            i += 1 + match[1].length
+                            continue
+                        }
+                    }
+                    if (bytes.length > 0) {
+                        try {
+                            out += new TextDecoder("utf-8").decode(new Uint8Array(bytes))
+                        } catch (e) {
+                            out += String.fromCharCode(...bytes)
+                        }
+                        bytes.length = 0
+                    }
+                    out += str[i]
+                    i++
+                }
+                if (bytes.length > 0) {
+                    try {
+                        out += new TextDecoder("utf-8").decode(new Uint8Array(bytes))
+                    } catch (e) {
+                        out += String.fromCharCode(...bytes)
+                    }
+                }
+                str = out
+            }
+        } catch (e) { }
+
+        return str
+            .replace(/\\n/g, "\n")
+            .replace(/\\r/g, "\r")
+            .replace(/\\t/g, "\t")
+            .replace(/\\'/g, "'")
+            .replace(/\\"/g, '"')
+            .replace(/\\\\/g, "\\")
+    }
+
+    function cleanNotificationText(str) {
+        if (!str || typeof str !== "string") return str || ""
+        let s = root.decodeOctalString(str)
+        if (s.includes("<") || s.includes("&") || s.includes("\\")) {
+            s = s.replace(/&lt;/g, "<")
+                 .replace(/&gt;/g, ">")
+                 .replace(/<(?:br|hr)\s*\/?>/gi, "\n")
+                 .replace(/<\/?(?:p|div)[^>]*>/gi, "\n")
+                 .replace(/<[^>]+>/g, "")
+                 .replace(/&quot;/g, '"')
+                 .replace(/&amp;/g, '&')
+                 .replace(/&#39;/g, "'")
+                 .replace(/&apos;/g, "'")
+                 .replace(/&nbsp;/g, " ")
+                 .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(parseInt(n, 10)))
+                 .replace(/&#x([0-9a-f]+);/gi, (_, n) => String.fromCharCode(parseInt(n, 16)))
+                 .replace(/\r\n/g, "\n")
+                 .replace(/\r/g, "\n")
+                 .replace(/\n{3,}/g, "\n\n")
+        }
+        return s.trim()
+    }
+
+    function updateActionsInItem(item, newActs) {
+        if (!item || !newActs) return
+        if (item.actions && typeof item.actions.clear === "function") {
+            item.actions.clear()
+            for (let i = 0; i < newActs.length; i++) {
+                item.actions.append({ identifier: String(newActs[i].identifier || ""), text: String(newActs[i].text || "") })
+            }
+        } else {
+            item.actions = newActs
+        }
+    }
+
+    function resolveAppIcon(appName, fallbackIcon) {
+        if (!appName) return fallbackIcon || "kdeconnect"
+        const app = appName.toLowerCase().trim()
+
+        if (app.includes("whatsapp")) return "whatsapp"
+        if (app.includes("telegram")) return "telegram"
+        if (app.includes("discord")) return "discord"
+        if (app.includes("instagram")) return "instagram"
+        if (app.includes("reddit")) return "reddit"
+        if (app.includes("threads")) return "threads"
+        if (app.includes("tiktok")) return "tiktok"
+        if (app.includes("twitter") || app === "x") return "twitter"
+        if (app.includes("slack")) return "slack"
+        if (app.includes("signal")) return "signal"
+        if (app.includes("spotify")) return "spotify"
+        if (app.includes("youtube")) return "youtube"
+        if (app.includes("gmail") || app.includes("email") || app.includes("mail")) return "internet-mail"
+        if (app.includes("messages") || app.includes("message") || app.includes("sms")) return "internet-chat"
+        if (app.includes("call") || app.includes("dialer") || app.includes("phone")) return "call-start"
+
+        if (Services.SystemTheme && Services.SystemTheme.getIcon) {
+            const test = Services.SystemTheme.getIcon(app)
+            if (test && test.length > 0) return app
+        }
+
+        return fallbackIcon || "kdeconnect"
+    }
+
+    function resolveKdeNotificationInfo(notif) {
+        if (!notif) return null
+        const isKde = root.isKdeConnectNotif(notif)
+        if (!isKde) return null
+
+        const shouldSplit = (Services.Config && Services.Config.notificationSplitKdeApps !== undefined)
+            ? Services.Config.notificationSplitKdeApps : true
+        if (!shouldSplit) return null
+
+        let originDevice = ""
+        try {
+            const hints = notif.hints || {}
+            if (hints["x-kde-origin-name"]) originDevice = String(hints["x-kde-origin-name"])
+            else if (hints["x-kdeconnect-source-device"]) originDevice = String(hints["x-kdeconnect-source-device"])
+        } catch (e) { }
+
+        let hintApp = ""
+        try {
+            const hints = notif.hints || {}
+            if (hints["x-kde-display-appname"]) hintApp = String(hints["x-kde-display-appname"]).trim()
+        } catch (e) { }
+
+        const rawSummary = root.decodeOctalString(notif.summary || "").trim()
+        const rawBody = root.decodeOctalString(notif.body || "").trim()
+
+        let appName = ""
+        let summary = rawSummary
+        let body = rawBody
+
+        if (hintApp && hintApp.length > 0) {
+            appName = root.decodeOctalString(hintApp).trim()
+            summary = rawSummary
+            body = rawBody
+        } else {
+            const lowSummary = rawSummary.toLowerCase()
+            const isKdeInternal = rawSummary === "" ||
+                                  lowSummary === "kde connect" ||
+                                  lowSummary === "kdeconnect" ||
+                                  lowSummary === "ping" ||
+                                  lowSummary === "find my phone" ||
+                                  lowSummary === "pairing request" ||
+                                  lowSummary === "battery"
+
+            if (isKdeInternal) {
+                return {
+                    appName: "KDE Connect",
+                    summary: rawSummary || "KDE Connect",
+                    body: rawBody,
+                    appIcon: notif.appIcon || "kdeconnect",
+                    originDevice: originDevice
+                }
+            }
+
+            appName = rawSummary
+
+            const colonIdx = rawBody.indexOf(": ")
+            if (colonIdx > 0 && colonIdx < 80) {
+                summary = rawBody.substring(0, colonIdx).trim()
+                body = rawBody.substring(colonIdx + 2).trim()
+            } else if (rawBody.length > 0) {
+                summary = rawSummary
+                body = rawBody
+            }
+        }
+
+        const appIcon = root.resolveAppIcon(appName, notif.appIcon)
+
+        return {
+            appName: appName,
+            summary: summary,
+            body: body,
+            appIcon: appIcon,
+            originDevice: originDevice
+        }
     }
 
     function isMessagingApp(n) {
@@ -607,9 +981,8 @@ Singleton {
             "--body", body,
             "--message", replyText
         ]
-        stdout: SplitParser { onRead: data => console.log("[kdeConnectReplyProc][out]", data) }
-        stderr: SplitParser { onRead: data => console.log("[kdeConnectReplyProc][err]", data) }
-        onExited: (code, status) => console.log("[kdeConnectReplyProc] exited with code", code)
+        stdout: SplitParser { onRead: data => {} }
+        stderr: SplitParser { onRead: data => {} }
     }
 
     Process {
@@ -623,8 +996,8 @@ Singleton {
             "--summary", summary,
             "--body", body
         ]
-        stdout: SplitParser { onRead: data => console.log("[kdeConnectDismissProc][out]", data) }
-        stderr: SplitParser { onRead: data => console.log("[kdeConnectDismissProc][err]", data) }
+        stdout: SplitParser { onRead: data => {} }
+        stderr: SplitParser { onRead: data => {} }
     }
 
     function invokeAction(notifId, actionId, text) {
@@ -744,6 +1117,7 @@ Singleton {
         }
         historyModel.clear()
         root.saveHistory()
+        root.historyRevision++
     }
 
     property int nextSystemNotifId: 900000
@@ -781,10 +1155,11 @@ Singleton {
             const timeout = entry.expireTimeout > 0 ? entry.expireTimeout
                 : (fullEntry.urgency === 2 ? 6000 : (Services.Config ? (Services.Config.notificationTimeout * 1000) : 5000))
             if (timeout > 0) {
-                dismissTimer.createObject(root, { notifId: id, interval: timeout }).start()
+                root._startDismissTimer(id, timeout)
             }
         }
         root.saveHistory()
+        root.historyRevision++
         return id
     }
 
@@ -794,6 +1169,7 @@ Singleton {
         id: loadHistoryProc
         command: ["sh", "-c", "mkdir -p ~/.cache/quickshell && if [ -f \"" + historyCachePath + "\" ]; then cat \"" + historyCachePath + "\"; else echo '[]'; fi"]
         stdout: SplitParser {
+            splitMarker: ""
             onRead: data => {
                 try {
                     const parsed = JSON.parse(data.trim())
@@ -804,9 +1180,37 @@ Singleton {
                             if (entry.image && entry.image.startsWith("image://qsimage/")) {
                                 entry.image = ""
                             }
+                            entry.summary = root.cleanNotificationText(entry.summary || "")
+                            entry.body = root.cleanNotificationText(entry.body || "")
+
+                            if (entry.isKdeConnect) {
+                                const hasKdeReply = Boolean(entry.kdeReplyId && String(entry.kdeReplyId).trim().length > 0)
+                                entry.hasInlineReply = hasKdeReply
+                                if (!hasKdeReply && Array.isArray(entry.actions)) {
+                                    entry.actions = entry.actions.filter(a => a.identifier !== "inline-reply")
+                                }
+                            } else {
+                                const hasNativeReply = Boolean(entry.hasInlineReply || (Array.isArray(entry.actions) && entry.actions.some(a => (a.identifier || "").toLowerCase().includes("reply") || (a.text || "").toLowerCase().includes("reply") || (a.text || "").toLowerCase().includes("balas"))))
+                                entry.hasInlineReply = hasNativeReply
+                                if (!hasNativeReply && Array.isArray(entry.actions)) {
+                                    entry.actions = entry.actions.filter(a => a.identifier !== "inline-reply")
+                                }
+                            }
+
+                            if (entry.isKdeConnect && (entry.appName === "KDE Connect" || !entry.appName) && entry.summary && entry.summary !== "KDE Connect") {
+                                const resolved = root.resolveKdeNotificationInfo(entry)
+                                if (resolved) {
+                                    entry.appName = resolved.appName
+                                    entry.appIcon = resolved.appIcon
+                                    entry.summary = root.cleanNotificationText(resolved.summary)
+                                    entry.body = root.cleanNotificationText(resolved.body)
+                                    if (resolved.originDevice && !entry.originDevice) entry.originDevice = resolved.originDevice
+                                }
+                            }
                             historyModel.append(entry)
                         }
                         root.pruneExpiredHistory()
+                        root.historyRevision++
                     }
                 } catch (e) {
                     console.log("[Notifications] failed to parse history cache:", e)
@@ -861,6 +1265,7 @@ Singleton {
                 isBattery: item.isBattery || false,
                 kdeNotifId: item.kdeNotifId || "",
                 kdeReplyId: item.kdeReplyId || "",
+                originDevice: item.originDevice || "",
                 inlineReplyPlaceholder: item.inlineReplyPlaceholder || "",
                 desktopEntry: item.desktopEntry || ""
             })

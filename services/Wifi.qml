@@ -125,28 +125,27 @@ Singleton {
         }
     }
 
+    property bool ready: false
+
     // Current active connection
     Process {
         id: connProc
-        command: ["sh", "-c", "nmcli -t -f active,ssid,signal dev wifi list --rescan no | grep '^yes'"]
-        property bool foundAny: false
+        command: ["sh", "-c", "dev=$(nmcli -t -f TYPE,STATE,CONNECTION dev 2>/dev/null | awk -F: '$1==\"wifi\" && $2==\"connected\"{print $3; exit}'); if [ -n \"$dev\" ]; then sig=$(nmcli -t -f in-use,signal dev wifi list --rescan no 2>/dev/null | awk -F: '$1==\"*\"{print $2; exit}'); echo \"CONNECTED:$dev:${sig:-0}\"; else echo \"DISCONNECTED\"; fi"]
         stdout: SplitParser {
             onRead: data => {
                 const line = data.trim()
-                if (line.length === 0) return
-                const parts = line.split(":")
-                root.connected = true
-                root.ssid = parts[1] || ""
-                root.signalStrength = parseInt(parts[2]) || 0
-                connProc.foundAny = true
-            }
-        }
-        onRunningChanged: { if (running) foundAny = false }
-        onExited: {
-            if (!foundAny) {
-                root.connected = false
-                root.ssid = ""
-                root.signalStrength = 0
+                if (line.startsWith("CONNECTED:")) {
+                    const parts = line.split(":")
+                    root.connected = true
+                    root.ssid = parts[1] || ""
+                    const sig = parseInt(parts[2])
+                    if (!isNaN(sig) && sig > 0) root.signalStrength = sig
+                } else if (line === "DISCONNECTED") {
+                    root.connected = false
+                    root.ssid = ""
+                    root.signalStrength = 0
+                }
+                root.ready = true
             }
         }
     }

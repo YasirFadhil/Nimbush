@@ -2,6 +2,7 @@ pragma Singleton
 import QtQuick
 import Quickshell
 import Quickshell.Io
+import "." as Services
 
 // High-precision unified system resource & task manager monitor
 Singleton {
@@ -37,11 +38,11 @@ Singleton {
     property int lastKilledPid: -1
     property string lastActionMessage: ""
 
-    // Fast polling loop for basic stats: updates every 2.5 seconds
+    // Fast polling loop for basic stats: updates every 2.5 seconds when active
     Timer {
         id: pollTimer
         interval: 2500
-        running: true
+        running: (Services.Config ? Services.Config.showSysmonTray : true) || (Services.OverlayManager ? Services.OverlayManager.sysmonPanelVisible : false)
         repeat: true
         triggeredOnStart: true
         onTriggered: {
@@ -53,7 +54,7 @@ Singleton {
     Timer {
         id: tasksTimer
         interval: 4000
-        running: (typeof OverlayManager !== "undefined" ? OverlayManager.sysmonPanelVisible : false) && !root.isPaused && root.searchQuery === ""
+        running: (Services.OverlayManager ? Services.OverlayManager.sysmonPanelVisible : false) && !root.isPaused && root.searchQuery === ""
         repeat: true
         onTriggered: {
             refreshTasks()

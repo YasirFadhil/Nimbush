@@ -70,8 +70,8 @@ PanelWindow {
 
     function isReplyAction(act) {
         if (!act) return false
-        const id = (act.identifier || "").toLowerCase()
-        const txt = (act.text || "").toLowerCase()
+        const id = (act.actIdentifier || act.identifier || "").toLowerCase()
+        const txt = (act.actText || act.text || "").toLowerCase()
         return id.includes("reply") || id.includes("inline") || id.includes("respond") ||
                txt.includes("reply") || txt.includes("balas") || txt.includes("jawab") || txt.includes("respond")
     }
@@ -102,14 +102,58 @@ PanelWindow {
         return Qt.formatDateTime(d, "dd/MM hh:mm")
     }
 
+    function extractNotificationItem(rawItem) {
+        if (!rawItem) return null
+        const actions = []
+        if (rawItem.actions) {
+            const cnt = rawItem.actions.count !== undefined ? rawItem.actions.count : (rawItem.actions.length || 0)
+            for (let j = 0; j < cnt; j++) {
+                const a = rawItem.actions.get ? rawItem.actions.get(j) : rawItem.actions[j]
+                if (a) {
+                    const id = String(a.identifier !== undefined ? a.identifier : "")
+                    const txt = String(a.text !== undefined ? a.text : "").trim()
+                    if (txt.length > 0 || id === "inline-reply") {
+                        actions.push({
+                            identifier: id,
+                            text: txt.length > 0 ? txt : "Reply"
+                        })
+                    }
+                }
+            }
+        }
+        return {
+            notifId: rawItem.notifId,
+            appName: rawItem.appName || "",
+            appIcon: rawItem.appIcon || "",
+            summary: Services.Notifications ? Services.Notifications.cleanNotificationText(rawItem.summary || "") : (rawItem.summary || ""),
+            body: Services.Notifications ? Services.Notifications.cleanNotificationText(rawItem.body || "") : (rawItem.body || ""),
+            image: rawItem.image || "",
+            urgency: rawItem.urgency !== undefined ? rawItem.urgency : 1,
+            time: rawItem.time || Date.now(),
+            actions: actions,
+            hasInlineReply: rawItem.hasInlineReply || false,
+            isMessaging: rawItem.isMessaging || false,
+            isKdeConnect: rawItem.isKdeConnect || false,
+            isBattery: rawItem.isBattery || false,
+            kdeNotifId: rawItem.kdeNotifId || "",
+            kdeReplyId: rawItem.kdeReplyId || "",
+            originDevice: rawItem.originDevice || "",
+            inlineReplyPlaceholder: rawItem.inlineReplyPlaceholder || "",
+            desktopEntry: rawItem.desktopEntry || ""
+        }
+    }
+
     // Group notifications by appName (ordered by most recent notification per app)
     property var groupedHistory: {
+        const _rev = Services.Notifications.historyRevision
+        const _open = centerWin.isOpen
         const count = Services.Notifications.historyList.count
         const groups = []
         const appMap = {}
         for (let i = 0; i < count; i++) {
-            const item = Services.Notifications.historyList.get(i)
-            if (!item) continue
+            const rawItem = Services.Notifications.historyList.get(i)
+            if (!rawItem) continue
+            const item = extractNotificationItem(rawItem)
             const app = item.appName || "Unknown"
             if (appMap[app] !== undefined) {
                 const grp = groups[appMap[app]]
@@ -433,6 +477,36 @@ PanelWindow {
                                         Layout.alignment: Qt.AlignVCenter
                                     }
 
+                                    // Origin Device Badge (for phone notifications)
+                                    Rectangle {
+                                        visible: groupCard.primaryItem && groupCard.primaryItem.isKdeConnect
+                                        implicitWidth: devPillRow.implicitWidth + 8
+                                        implicitHeight: 16
+                                        radius: 8
+                                        color: Qt.rgba(centerWin.t.accent.r, centerWin.t.accent.g, centerWin.t.accent.b, 0.12)
+                                        border.color: Qt.rgba(centerWin.t.accent.r, centerWin.t.accent.g, centerWin.t.accent.b, 0.25)
+                                        border.width: 1
+                                        Layout.alignment: Qt.AlignVCenter
+
+                                        RowLayout {
+                                            id: devPillRow
+                                            anchors.centerIn: parent
+                                            spacing: 3
+
+                                            Text {
+                                                text: "󰄡"
+                                                color: centerWin.t.accent
+                                                font.pixelSize: 9
+                                            }
+                                            Text {
+                                                text: (groupCard.primaryItem && groupCard.primaryItem.originDevice) ? groupCard.primaryItem.originDevice : "Phone"
+                                                color: centerWin.t.accent
+                                                font.pixelSize: 9
+                                                font.bold: true
+                                            }
+                                        }
+                                    }
+
                                     // System Warning Pill Tag (for Battery Warning)
                                     Rectangle {
                                         visible: groupCard.isBatteryGroup
@@ -668,6 +742,7 @@ PanelWindow {
 
                             // Primary Notification Actions Row (when not replying)
                             RowLayout {
+                                id: pActionsRow
                                 readonly property var actList: groupCard.primaryItem ? groupCard.primaryItem.actions : null
                                 readonly property int actCount: actList ? (actList.count !== undefined ? actList.count : (actList.length !== undefined ? actList.length : 0)) : 0
                                 visible: actCount > 0 && !groupCard.isReplying
@@ -675,11 +750,18 @@ PanelWindow {
                                 Layout.topMargin: 2
 
                                 Repeater {
-                                    model: parent.actList
+                                    model: pActionsRow.actList
                                     delegate: Rectangle {
                                         id: pActBtn
-                                        required property string identifier
-                                        required property string text
+                                        required property var modelData
+                                        readonly property string actIdentifier: (modelData && modelData.identifier !== undefined)
+                                            ? String(modelData.identifier)
+                                            : (typeof identifier !== "undefined" ? String(identifier) : "")
+                                        readonly property string actText: (modelData && modelData.text !== undefined)
+                                            ? String(modelData.text)
+                                            : (typeof text !== "undefined" ? String(text) : "")
+
+                                        visible: actText.trim().length > 0
                                         radius: 6
                                         color: pActHover.containsMouse ? centerWin.t.bgHover : centerWin.t.surface
                                         border.color: centerWin.t.border
@@ -691,7 +773,7 @@ PanelWindow {
                                         Text {
                                             id: pActLabel
                                             anchors.centerIn: parent
-                                            text: pActBtn.text
+                                            text: pActBtn.actText
                                             color: centerWin.t.textPrimary
                                             font.pixelSize: 11
                                         }
@@ -702,13 +784,13 @@ PanelWindow {
                                             cursorShape: Qt.PointingHandCursor
                                             onClicked: {
                                                 if (centerWin.isReplyAction(pActBtn)) {
-                                                    centerWin.activeReplyActionId = pActBtn.identifier
+                                                    centerWin.activeReplyActionId = pActBtn.actIdentifier
                                                     centerWin.activeReplyNotifId = groupCard.primaryItem.notifId
                                                     Services.Notifications.replyingNotifId = groupCard.primaryItem.notifId
                                                     Qt.callLater(() => pReplyInput.forceActiveFocus())
                                                 } else {
                                                     Services.Notifications.invokeAction(
-                                                        groupCard.primaryItem.notifId, pActBtn.identifier)
+                                                        groupCard.primaryItem.notifId, pActBtn.actIdentifier)
                                                 }
                                             }
                                         }
@@ -1058,18 +1140,26 @@ PanelWindow {
 
                                         // Older Item Actions Row
                                         RowLayout {
-                                            readonly property var actList: olderItemDelegate.notifItem.actions
+                                            id: oActionsRow
+                                            readonly property var actList: olderItemDelegate.notifItem ? olderItemDelegate.notifItem.actions : null
                                             readonly property int actCount: actList ? (actList.count !== undefined ? actList.count : (actList.length !== undefined ? actList.length : 0)) : 0
                                             visible: actCount > 0 && !olderItemDelegate.isReplying
                                             spacing: 6
                                             Layout.topMargin: 2
 
                                             Repeater {
-                                                model: parent.actList
+                                                model: oActionsRow.actList
                                                 delegate: Rectangle {
                                                     id: oActBtn
-                                                    required property string identifier
-                                                    required property string text
+                                                    required property var modelData
+                                                    readonly property string actIdentifier: (modelData && modelData.identifier !== undefined)
+                                                        ? String(modelData.identifier)
+                                                        : (typeof identifier !== "undefined" ? String(identifier) : "")
+                                                    readonly property string actText: (modelData && modelData.text !== undefined)
+                                                        ? String(modelData.text)
+                                                        : (typeof text !== "undefined" ? String(text) : "")
+
+                                                    visible: actText.trim().length > 0
                                                     radius: 6
                                                     color: oActHover.containsMouse ? centerWin.t.bgHover : centerWin.t.surface
                                                     border.color: centerWin.t.border
@@ -1081,7 +1171,7 @@ PanelWindow {
                                                     Text {
                                                         id: oActLabel
                                                         anchors.centerIn: parent
-                                                        text: oActBtn.text
+                                                        text: oActBtn.actText
                                                         color: centerWin.t.textPrimary
                                                         font.pixelSize: 11
                                                     }
@@ -1092,13 +1182,13 @@ PanelWindow {
                                                         cursorShape: Qt.PointingHandCursor
                                                         onClicked: {
                                                             if (centerWin.isReplyAction(oActBtn)) {
-                                                                centerWin.activeReplyActionId = oActBtn.identifier
+                                                                centerWin.activeReplyActionId = oActBtn.actIdentifier
                                                                 centerWin.activeReplyNotifId = olderItemDelegate.notifItem.notifId
                                                                 Services.Notifications.replyingNotifId = olderItemDelegate.notifItem.notifId
                                                                 Qt.callLater(() => oReplyInput.forceActiveFocus())
                                                             } else {
                                                                 Services.Notifications.invokeAction(
-                                                                    olderItemDelegate.notifItem.notifId, oActBtn.identifier)
+                                                                    olderItemDelegate.notifItem.notifId, oActBtn.actIdentifier)
                                                             }
                                                         }
                                                     }

@@ -9,17 +9,41 @@ Singleton {
     id: root
 
     property bool ready: false
-    property bool charging: isChargingState(UPower.displayDevice.state)
-    property real percentage: UPower.displayDevice.percentage
-    readonly property bool hasBattery: UPower.displayDevice.isPresent && !isNaN(percentage) && percentage > 0
+
+    // Sysfs fallback properties when UPower daemon is not running
+    property real sysfsPercentage: 0.0
+    property string sysfsState: ""
+    property bool sysfsPresent: false
+
+    readonly property bool upowerActive: UPower.displayDevice && UPower.displayDevice.isPresent && !isNaN(UPower.displayDevice.percentage) && UPower.displayDevice.percentage >= 0
+
+    property bool charging: isChargeInhibited ? false : (upowerActive 
+        ? isChargingState(UPower.displayDevice.state) 
+        : (sysfsState === "charging" || sysfsState === "full"))
+
+    property real percentage: upowerActive 
+        ? UPower.displayDevice.percentage 
+        : sysfsPercentage
+
+    readonly property bool hasBattery: (UPower.displayDevice && UPower.displayDevice.isPresent) || sysfsPresent || (sysfsPercentage > 0)
+
     readonly property string stateString: {
-        const st = UPower.displayDevice.state
-        if (st === UPowerDeviceState.Charging) return "Charging"
-        if (st === UPowerDeviceState.FullyCharged) return "Fully Charged"
-        if (st === UPowerDeviceState.Discharging) return "Discharging"
-        if (st === UPowerDeviceState.Empty) return "Empty"
+        if (isChargeInhibited) return "Charge Limit Active (Idle)"
+        if (upowerActive) {
+            const st = UPower.displayDevice.state
+            if (st === UPowerDeviceState.Charging) return "Charging"
+            if (st === UPowerDeviceState.FullyCharged) return "Fully Charged"
+            if (st === UPowerDeviceState.Discharging) return "Discharging"
+            if (st === UPowerDeviceState.Empty) return "Empty"
+        }
+        if (sysfsState === "charging") return "Charging"
+        if (sysfsState === "full") return "Fully Charged"
+        if (sysfsState === "discharging") return "Discharging"
+        if (sysfsState === "not charging") return "Not Charging"
+        if (sysfsState === "empty") return "Empty"
         return "AC Power / Unknown"
     }
+
     readonly property bool isWarning: !charging && ready && hasBattery && !isNaN(percentage) && (percentage * 100 <= (Services.Config ? Services.Config.batteryLowThreshold : 20))
     readonly property bool isLow: !charging && ready && hasBattery && !isNaN(percentage) && (percentage * 100 <= 10)
 
@@ -37,9 +61,15 @@ Singleton {
     property string model: ""
     property string technology: ""
 
+    // Charge Limit & Health Protection
+    property bool chargeLimitSupported: true
+    property string chargeMode: "auto" // "auto" | "inhibit-charge"
+    readonly property bool isChargeInhibited: chargeMode === "inhibit-charge"
+
     property bool warn20Sent: false
     property bool warn10Sent: false
     property bool warn5Sent: false
+    property bool autoSaverTriggered: false
 
     signal chargingStateChanged(bool charging, real percentage)
     signal batteryWarning(int level, string title, string message)
@@ -48,19 +78,23 @@ Singleton {
         id: detailProc
         command: [
             "python3", "-c",
-            "import json, subprocess\n" +
+            "import json, subprocess, glob, os\n" +
+            "res = {}\n" +
             "try:\n" +
-            "    dev = subprocess.check_output(['sh', '-c', 'upower -e | grep battery | head -n 1']).decode().strip()\n" +
+            "    dev = subprocess.check_output(['sh', '-c', 'upower -e 2>/dev/null | grep battery | head -n 1'], stderr=subprocess.DEVNULL, timeout=2.0).decode().strip()\n" +
             "    if dev:\n" +
-            "        out = subprocess.check_output(['upower', '-i', dev]).decode()\n" +
+            "        out = subprocess.check_output(['upower', '-i', dev], stderr=subprocess.DEVNULL, timeout=2.0).decode()\n" +
             "        d = {}\n" +
             "        for l in out.splitlines():\n" +
             "            if ':' in l:\n" +
             "                k, v = l.split(':', 1)\n" +
             "                d[k.strip()] = v.strip()\n" +
+            "        pct_val = d.get('percentage', '')\n" +
+            "        raw_pct = float(pct_val.replace('%', '').strip()) / 100.0 if pct_val else 0.0\n" +
             "        res = {\n" +
             "            'state': d.get('state', ''),\n" +
-            "            'percentage': d.get('percentage', ''),\n" +
+            "            'percentage': pct_val,\n" +
+            "            'rawPercentage': raw_pct,\n" +
             "            'timeToFull': d.get('time to full', ''),\n" +
             "            'timeToEmpty': d.get('time to empty', ''),\n" +
             "            'energyRate': d.get('energy-rate', ''),\n" +
@@ -75,18 +109,77 @@ Singleton {
             "            'technology': d.get('technology', ''),\n" +
             "            'present': d.get('present', 'yes') == 'yes'\n" +
             "        }\n" +
-            "        print(json.dumps(res))\n" +
-            "    else:\n" +
-            "        print('{}')\n" +
-            "except Exception as e:\n" +
-            "    print('{}')"
+            "except Exception:\n" +
+            "    pass\n" +
+            "if not res or not res.get('percentage'):\n" +
+            "    bats = glob.glob('/sys/class/power_supply/BAT*')\n" +
+            "    if bats:\n" +
+            "        b = bats[0]\n" +
+            "        def read_f(fname):\n" +
+            "            try:\n" +
+            "                with open(os.path.join(b, fname)) as f:\n" +
+            "                    return f.read().strip()\n" +
+            "            except Exception:\n" +
+            "                return ''\n" +
+            "        status = read_f('status')\n" +
+            "        cap = read_f('capacity')\n" +
+            "        v_now = read_f('voltage_now')\n" +
+            "        c_now = read_f('current_now')\n" +
+            "        p_now = read_f('power_now')\n" +
+            "        c_full = read_f('charge_full') or read_f('energy_full')\n" +
+            "        c_full_design = read_f('charge_full_design') or read_f('energy_full_design')\n" +
+            "        cycles = read_f('cycle_count')\n" +
+            "        mfr = read_f('manufacturer')\n" +
+            "        model = read_f('model_name')\n" +
+            "        tech = read_f('technology')\n" +
+            "        present = read_f('present') != '0'\n" +
+            "        v_val = float(v_now) / 1e6 if v_now.isdigit() else 0.0\n" +
+            "        p_val = 0.0\n" +
+            "        if p_now.isdigit():\n" +
+            "            p_val = float(p_now) / 1e6\n" +
+            "        elif c_now.isdigit() and v_val > 0:\n" +
+            "            p_val = (float(c_now) / 1e6) * v_val\n" +
+            "        health_str = ''\n" +
+            "        if c_full.isdigit() and c_full_design.isdigit() and float(c_full_design) > 0:\n" +
+            "            health_str = f'{round(float(c_full) / float(c_full_design) * 100, 1)}%'\n" +
+            "        res = {\n" +
+            "            'state': status.lower() if status else 'unknown',\n" +
+            "            'percentage': f'{cap}%' if cap else '',\n" +
+            "            'rawPercentage': float(cap) / 100.0 if cap.isdigit() else 0.0,\n" +
+            "            'timeToFull': '',\n" +
+            "            'timeToEmpty': '',\n" +
+            "            'energyRate': f'{p_val:.1f} W' if p_val > 0 else '',\n" +
+            "            'voltage': f'{v_val:.2f} V' if v_val > 0 else '',\n" +
+            "            'capacity': health_str,\n" +
+            "            'energy': '',\n" +
+            "            'energyFull': '',\n" +
+            "            'energyFullDesign': '',\n" +
+            "            'chargeCycles': cycles,\n" +
+            "            'vendor': mfr,\n" +
+            "            'model': model,\n" +
+            "            'technology': tech,\n" +
+            "            'present': present\n" +
+            "        }\n" +
+            "print(json.dumps(res))"
         ]
         stdout: SplitParser {
             onRead: data => {
                 try {
                     const parsed = JSON.parse(data.trim())
+                    if (parsed.rawPercentage !== undefined && !isNaN(parsed.rawPercentage) && parsed.rawPercentage >= 0) {
+                        root.sysfsPercentage = parsed.rawPercentage
+                    } else if (parsed.percentage) {
+                        const p = parseFloat(parsed.percentage)
+                        if (!isNaN(p) && p >= 0) root.sysfsPercentage = p / 100.0
+                    }
+                    if (parsed.state) root.sysfsState = parsed.state.toLowerCase()
+                    if (parsed.present !== undefined) root.sysfsPresent = !!parsed.present
+
                     if (parsed.percentage) {
-                        if (parsed.timeToFull) {
+                        if (root.isChargeInhibited) {
+                            root.timeRemaining = ""
+                            root.timeType = ""
+                        } else if (parsed.timeToFull) {
                             root.timeRemaining = parsed.timeToFull
                             root.timeType = "until full"
                         } else if (parsed.timeToEmpty) {
@@ -112,8 +205,75 @@ Singleton {
         }
     }
 
+    Process {
+        id: chargeStatusProc
+        stdout: SplitParser {
+            onRead: data => {
+                try {
+                    const parsed = JSON.parse(data.trim())
+                    if (parsed.supported !== undefined) root.chargeLimitSupported = parsed.supported
+                    if (parsed.mode) root.chargeMode = parsed.mode
+                } catch(e) {}
+            }
+        }
+    }
+
+    Process {
+        id: chargeSetProc
+        stdout: SplitParser {
+            onRead: data => {
+                try {
+                    const parsed = JSON.parse(data.trim())
+                    if (parsed.mode) root.chargeMode = parsed.mode
+                } catch(e) {}
+            }
+        }
+    }
+
+    readonly property string chargeHelperScript: (Quickshell.env("HOME") || ("/home/" + (Quickshell.env("USER") || "user"))) + "/.config/quickshell/scripts/battery-charge-helper.py"
+
+    function refreshChargeStatus() {
+        if (!chargeStatusProc.running) {
+            chargeStatusProc.command = ["python3", chargeHelperScript, "get"]
+            chargeStatusProc.running = true
+        }
+    }
+
+    function updateChargeLimit() {
+        if (!chargeLimitSupported) return
+        if (!Services.Config) return
+        const enabled = Services.Config.batteryChargeLimitEnabled
+        const limit = Services.Config.batteryChargeLimitValue || 80
+        const pct = Math.round(percentage * 100)
+
+        if (!enabled) {
+            if (chargeMode !== "auto" && !chargeSetProc.running) {
+                chargeMode = "auto"
+                chargeSetProc.command = ["python3", chargeHelperScript, "set", "auto"]
+                chargeSetProc.running = true
+            }
+            return
+        }
+
+        if (pct >= limit) {
+            if (chargeMode !== "inhibit-charge" && !chargeSetProc.running) {
+                chargeMode = "inhibit-charge"
+                chargeSetProc.command = ["python3", chargeHelperScript, "set", "inhibit-charge"]
+                chargeSetProc.running = true
+            }
+        } else if (pct <= (limit - 5)) {
+            if (chargeMode !== "auto" && !chargeSetProc.running) {
+                chargeMode = "auto"
+                chargeSetProc.command = ["python3", chargeHelperScript, "set", "auto"]
+                chargeSetProc.running = true
+            }
+        }
+    }
+
     function refreshDetails() {
         if (!detailProc.running) detailProc.running = true
+        refreshChargeStatus()
+        updateChargeLimit()
     }
 
     function isChargingState(state) {
@@ -154,6 +314,19 @@ Singleton {
             warn5Sent = false
         }
 
+        if (pct > 15) {
+            autoSaverTriggered = false
+        }
+
+        // Auto Power Saver at <= 15% (always active directly when discharging)
+        if (pct <= 15 && !autoSaverTriggered) {
+            autoSaverTriggered = true
+            if (Services.PowerProfile && Services.PowerProfile.profile !== "power-saver") {
+                Services.PowerProfile.setProfile("power-saver")
+                sendNotification("Auto Power Saver", "Battery reached " + pct + "%. Switched to Power Saver mode to preserve battery.", "normal", "battery-low")
+            }
+        }
+
         if (pct <= 5 && pct > 0 && !warn5Sent) {
             warn5Sent = true
             warn10Sent = true
@@ -185,14 +358,19 @@ Singleton {
             warn20Sent = false
             warn10Sent = false
             warn5Sent = false
+            autoSaverTriggered = false
         } else {
             checkBatteryWarnings()
         }
     }
 
+    Component.onCompleted: {
+        root.refreshDetails()
+    }
+
     Timer {
         id: detailPeriodicTimer
-        interval: 15000
+        interval: root.upowerActive ? 15000 : 5000
         running: true
         repeat: true
         triggeredOnStart: true
@@ -201,7 +379,7 @@ Singleton {
 
     Timer {
         id: readyTimer
-        interval: 3500
+        interval: 800
         running: true
         repeat: false
         onTriggered: {
@@ -216,3 +394,5 @@ Singleton {
         }
     }
 }
+
+

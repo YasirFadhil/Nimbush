@@ -68,24 +68,31 @@ Variants {
 
     property real barTransitionState: (Services.OverlayManager && Services.OverlayManager.isLocked) ? 0.0 : 1.0
 
+    // ── Expose bar visibility progress to lockscreen for phase-sync ───────────
+    Binding {
+        target: Services.OverlayManager
+        property: "barIslandProgress"
+        value: root.barTransitionState
+        when: Services.OverlayManager !== null
+    }
+
     NumberAnimation {
         id: barAbsorbAnim
         target: root
         property: "barTransitionState"
         from: 1.0
         to: 0.0
-        duration: 280
-        easing.type: Easing.InBack
-        easing.overshoot: 1.10
+        duration: 240
+        easing.type: Easing.InCubic
     }
 
     NumberAnimation {
         id: barEjectAnim
         target: root
         property: "barTransitionState"
-        from: 0.0
+        from: root.barTransitionState
         to: 1.0
-        duration: 360
+        duration: 380
         easing.type: Easing.OutBack
         easing.overshoot: 1.20
     }
@@ -94,15 +101,29 @@ Variants {
         target: Services.OverlayManager
         function onIsLockAbsorbingChanged() {
             if (Services.OverlayManager && Services.OverlayManager.isLockAbsorbing) {
+                barEjectAnim.stop()
                 barAbsorbAnim.restart()
             }
         }
         function onIsLockedChanged() {
             if (!Services.OverlayManager) return
             if (!Services.OverlayManager.isLocked) {
+                // Desktop layer unlocked — begin eject immediately so bar
+                // is already rising while lockscreen is still dissolving
+                barEjectAnim.from = root.barTransitionState
                 barEjectAnim.restart()
             } else if (!Services.OverlayManager.isLockAbsorbing) {
                 root.barTransitionState = 0.0
+            }
+        }
+        // ── Early eject: begin re-appearing at 55% suction so desktop bar
+        //    overlaps the tail of the lockscreen dissolve — no dead zone
+        function onUnlockSuctionProgressChanged() {
+            if (!Services.OverlayManager) return
+            const p = Services.OverlayManager.unlockSuctionProgress
+            if (p >= 0.55 && root.barTransitionState < 0.05 && !barEjectAnim.running) {
+                barEjectAnim.from = root.barTransitionState
+                barEjectAnim.restart()
             }
         }
     }
@@ -284,5 +305,26 @@ Variants {
         z: dynamicIsland.expanded ? 999 : 5
         visible: root.showDynamicIsland
     }
+
+    // ── Wallpaper Preloader (GPU Pixmap Cache for Zero-Lag Lockscreen Transition) ──
+    Image {
+        id: lockscreenWallpaperCachePreloader
+        visible: false
+        width: 1
+        height: 1
+        sourceSize: Qt.size(Math.ceil(((root.screen && root.screen.width) ? root.screen.width : 1366) * 1.15), Math.ceil(((root.screen && root.screen.height) ? root.screen.height : 768) * 1.15))
+        cache: true
+        asynchronous: true
+        source: {
+            if (Services.Config && Services.Config.lockscreenWallpaperMode === "custom" && Services.Config.lockscreenCustomWallpaper.length > 0) {
+                return "file://" + Services.Config.lockscreenCustomWallpaper
+            }
+            if (Services.Wallpaper && Services.Wallpaper.currentWallpaper && Services.Wallpaper.currentWallpaper.length > 0) {
+                return "file://" + Services.Wallpaper.currentWallpaper
+            }
+            return (Services.Wallpaper && Services.Wallpaper.darkWallbler) ? ("file://" + Services.Wallpaper.darkWallbler) : ""
+        }
+    }
 }
 }
+

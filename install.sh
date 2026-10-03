@@ -202,6 +202,8 @@ EOF
 
     # ── Declarative Compositor Integration (Binds & Blur Layer Rules) ──
     hyprland.enableIntegration = true; # For Hyprland
+    # hyprland.useLuaConfig = true;   # Default: true (Lua for Hyprland >= 0.55)
+    # hyprland.useLuaConfig = false;  # Set false for Hyprland < 0.55 (classic conf)
     niri.enableIntegration     = true; # For Niri
   };
 EOF
@@ -640,11 +642,54 @@ inject_compositor_configs() {
     if [ -f "$HYPR_CONF" ]; then HAS_HYPR_CONF=true; fi
     if [ -f "$NIRI_CONF" ]; then HAS_NIRI_CONF=true; fi
 
-    echo -e "  ${BOLD}Detected Compositor Configuration Status:${NC}"
+    # ── Hyprland Version Detection ────────────────────────────────────────────
+    # Detect installed Hyprland version and decide Lua vs Classic format.
+    # Hyprland >= 0.55 supports native Lua configuration; use it automatically.
+    HYPR_VERSION=""
+    HYPR_VERSION_MAJOR=0
+    HYPR_VERSION_MINOR=0
+    USE_HYPR_LUA=false
+
+    if command -v hyprland &>/dev/null; then
+        # Try to get version string — hyprland --version outputs e.g. "Hyprland 0.55.0"
+        HYPR_VERSION_RAW=$(hyprland --version 2>/dev/null | head -n1 || true)
+        # Extract semver digits (e.g. "0.55.0" or "0.55")
+        HYPR_VERSION=$(echo "$HYPR_VERSION_RAW" | grep -oP '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -n1 || true)
+        if [ -n "$HYPR_VERSION" ]; then
+            HYPR_VERSION_MAJOR=$(echo "$HYPR_VERSION" | cut -d. -f1)
+            HYPR_VERSION_MINOR=$(echo "$HYPR_VERSION" | cut -d. -f2)
+        fi
+    fi
+
+    # Determine config format:
+    #  1. If hyprland.lua already exists → always Lua
+    #  2. Else if version >= 0.55 → Lua
+    #  3. Else if hyprland.conf exists → Classic
+    #  4. Default (no hyprland installed) → Lua when version unknown / new
     if [ "$HAS_HYPR_LUA" = true ]; then
-        echo -e "    ${GREEN}●${NC} Hyprland (Lua format):   ${BOLD}$HYPR_LUA${NC} ${GREEN}(Found)${NC}"
+        USE_HYPR_LUA=true
+    elif [ "$HYPR_VERSION_MAJOR" -gt 0 ] 2>/dev/null || { [ "$HYPR_VERSION_MAJOR" -eq 0 ] && [ "$HYPR_VERSION_MINOR" -ge 55 ] 2>/dev/null; }; then
+        USE_HYPR_LUA=true
     elif [ "$HAS_HYPR_CONF" = true ]; then
-        echo -e "    ${GREEN}●${NC} Hyprland (Classic conf): ${BOLD}$HYPR_CONF${NC} ${GREEN}(Found)${NC}"
+        USE_HYPR_LUA=false
+    fi
+
+    echo -e "  ${BOLD}Detected Compositor Configuration Status:${NC}"
+    if command -v hyprland &>/dev/null; then
+        if [ -n "$HYPR_VERSION" ]; then
+            if [ "$USE_HYPR_LUA" = true ]; then
+                echo -e "    ${GREEN}●${NC} Hyprland ${CYAN}${BOLD}v${HYPR_VERSION}${NC} → ${GREEN}${BOLD}Lua format${NC} ${DIM}(>= 0.55, native Lua config)${NC}"
+            else
+                echo -e "    ${GREEN}●${NC} Hyprland ${CYAN}${BOLD}v${HYPR_VERSION}${NC} → ${YELLOW}${BOLD}Classic conf format${NC} ${DIM}(< 0.55)${NC}"
+            fi
+        else
+            echo -e "    ${YELLOW}●${NC} Hyprland detected but version unresolvable — defaulting to ${YELLOW}Classic format${NC}"
+        fi
+    fi
+    if [ "$HAS_HYPR_LUA" = true ]; then
+        echo -e "    ${GREEN}●${NC} Hyprland Lua entry:      ${BOLD}$HYPR_LUA${NC} ${GREEN}(Found)${NC}"
+    elif [ "$HAS_HYPR_CONF" = true ]; then
+        echo -e "    ${GREEN}●${NC} Hyprland Classic entry:  ${BOLD}$HYPR_CONF${NC} ${GREEN}(Found)${NC}"
     else
         echo -e "    ${DIM}○ Hyprland Configuration: Not found (will create clean modular tree if selected)${NC}"
     fi
@@ -1040,7 +1085,7 @@ EOF
     }
 
     write_hypr_modular() {
-        if [ "$HAS_HYPR_LUA" = true ]; then
+        if [ "$USE_HYPR_LUA" = true ]; then
             write_hypr_lua_modular
         else
             write_hypr_classic_modular

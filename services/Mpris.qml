@@ -10,12 +10,15 @@ Singleton {
     readonly property int playerCount: Mpris.players.values ? Mpris.players.values.length : 0
     property bool manualOverride: false
 
-    // True if active player is from a remote device / phone (e.g. KDE Connect, GSConnect)
-    readonly property bool isRemote: {
-        if (!root.activePlayer) return false
-        const id = (root.activePlayer.identity || "").toLowerCase()
-        const desk = (root.activePlayer.desktopEntry || "").toLowerCase()
-        const bus = (root.activePlayer.dbusName || "").toLowerCase()
+    // Signals for instant reactive awareness across the desktop
+    signal trackChanged(var player)
+    signal playbackStarted(var player)
+
+    function isPlayerRemote(p) {
+        if (!p) return false
+        const id = (p.identity || "").toLowerCase()
+        const desk = (p.desktopEntry || "").toLowerCase()
+        const bus = (p.dbusName || "").toLowerCase()
         return id.includes("kdeconnect") || desk.includes("kdeconnect") || bus.includes("kdeconnect")
             || id.includes("gsconnect") || desk.includes("gsconnect") || bus.includes("gsconnect")
             || id.includes("vivo") || id.includes("samsung") || id.includes("xiaomi")
@@ -23,6 +26,9 @@ Singleton {
             || id.includes("phone") || id.includes("android")
             || desk.includes("phone") || desk.includes("android")
     }
+
+    // True if active player is from a remote device / phone (e.g. KDE Connect, GSConnect)
+    readonly property bool isRemote: isPlayerRemote(root.activePlayer)
     readonly property bool isLocal: !root.isRemote
 
     function pickActive() {
@@ -37,8 +43,34 @@ Singleton {
             return
         }
         root.manualOverride = false
-        const playing = players.find(p => p.isPlaying)
-        root.activePlayer = playing || players[0] || null
+
+        // 1. If currently active player is still playing, keep it
+        if (root.activePlayer && players.includes(root.activePlayer) && (root.activePlayer.isPlaying ?? false)) {
+            return
+        }
+
+        // 2. Prioritize currently playing local players (e.g. browser, spotify, mpv on this PC)
+        const localPlaying = players.find(p => (p.isPlaying ?? false) && !root.isPlayerRemote(p))
+        if (localPlaying) {
+            root.activePlayer = localPlaying
+            return
+        }
+
+        // 3. Fallback to any playing player (including remote/phone)
+        const anyPlaying = players.find(p => (p.isPlaying ?? false))
+        if (anyPlaying) {
+            root.activePlayer = anyPlaying
+            return
+        }
+
+        // 4. Fallback to current player if still in list
+        if (root.activePlayer && players.includes(root.activePlayer)) {
+            return
+        }
+
+        // 5. Fallback to local players first, then first available
+        const localPlayer = players.find(p => !root.isPlayerRemote(p))
+        root.activePlayer = localPlayer || players[0] || null
     }
 
     function selectPlayer(player) {
@@ -86,7 +118,16 @@ Singleton {
     Connections {
         target: Mpris.players
         function onValuesChanged() { 
-            root.pickActive()
+            const players = Mpris.players.values
+            root.playersList = players
+            const localPlaying = players ? players.find(p => (p.isPlaying ?? false) && !root.isPlayerRemote(p)) : null
+            if (localPlaying && (!root.activePlayer || !root.activePlayer.isPlaying || root.activePlayer !== localPlaying)) {
+                root.activePlayer = localPlaying
+                root.playbackStarted(localPlaying)
+                root.trackChanged(localPlaying)
+            } else {
+                root.pickActive()
+            }
             if (root.activePlayer) root.activePlayer.positionChanged()
         }
     }
@@ -96,16 +137,73 @@ Singleton {
         delegate: Connections {
             required property var modelData
             target: modelData
+            ignoreUnknownSignals: true
+
             function onIsPlayingChanged() { 
-                root.pickActive()
+                if (modelData && (modelData.isPlaying ?? false)) {
+                    root.activePlayer = modelData
+                    root.playbackStarted(modelData)
+                    root.trackChanged(modelData)
+                } else {
+                    root.pickActive()
+                }
                 if (modelData) modelData.positionChanged()
             }
             function onTrackTitleChanged() { 
-                root.pickActive()
+                if (modelData && (modelData.isPlaying ?? false)) {
+                    root.activePlayer = modelData
+                }
+                if (root.activePlayer === modelData) {
+                    root.trackChanged(modelData)
+                }
+                if (modelData) modelData.positionChanged()
+            }
+            function onTrackArtistChanged() {
+                if (modelData && (modelData.isPlaying ?? false)) {
+                    root.activePlayer = modelData
+                }
+                if (root.activePlayer === modelData) {
+                    root.trackChanged(modelData)
+                }
+                if (modelData) modelData.positionChanged()
+            }
+            function onTrackArtUrlChanged() {
+                if (modelData && (modelData.isPlaying ?? false)) {
+                    root.activePlayer = modelData
+                }
+                if (root.activePlayer === modelData) {
+                    root.trackChanged(modelData)
+                }
+                if (modelData) modelData.positionChanged()
+            }
+            function onTrackChanged() {
+                if (modelData && (modelData.isPlaying ?? false)) {
+                    root.activePlayer = modelData
+                }
+                if (root.activePlayer === modelData) {
+                    root.trackChanged(modelData)
+                }
+                if (modelData) modelData.positionChanged()
+            }
+            function onMetadataChanged() {
+                if (modelData && (modelData.isPlaying ?? false)) {
+                    root.activePlayer = modelData
+                }
+                if (root.activePlayer === modelData) {
+                    root.trackChanged(modelData)
+                }
                 if (modelData) modelData.positionChanged()
             }
             function onPlaybackStateChanged() {
-                root.pickActive()
+                if (modelData && (modelData.isPlaying ?? false)) {
+                    if (root.activePlayer !== modelData) {
+                        root.activePlayer = modelData
+                        root.playbackStarted(modelData)
+                        root.trackChanged(modelData)
+                    }
+                } else {
+                    root.pickActive()
+                }
                 if (modelData) modelData.positionChanged()
             }
         }

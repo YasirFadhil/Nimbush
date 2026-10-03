@@ -15,6 +15,44 @@ import time
 import subprocess
 import argparse
 import select
+import re
+import html
+
+def decode_busctl_string(raw_val):
+    if not raw_val:
+        return ""
+    s = raw_val.strip()
+    if len(s) >= 2 and s.startswith('"') and s.endswith('"'):
+        s = s[1:-1]
+
+    def octal_to_byte(match):
+        try:
+            return chr(int(match.group(1), 8))
+        except Exception:
+            return match.group(0)
+
+    try:
+        with_bytes = re.sub(r'\\([0-7]{1,3})', octal_to_byte, s)
+        decoded = with_bytes.encode('latin1').decode('utf-8', errors='replace')
+    except Exception:
+        decoded = s
+
+    decoded = (decoded
+               .replace('\\n', '\n')
+               .replace('\\r', '\r')
+               .replace('\\t', '\t')
+               .replace("\\'", "'")
+               .replace('\\"', '"')
+               .replace('\\\\', '\\'))
+
+    if '<' in decoded or '&' in decoded:
+        decoded = re.sub(r'<(?:br|hr)\s*/?>', '\n', decoded, flags=re.I)
+        decoded = re.sub(r'</?(?:p|div)[^>]*>', '\n', decoded, flags=re.I)
+        decoded = re.sub(r'<[^>]+>', '', decoded)
+        decoded = html.unescape(decoded)
+        decoded = re.sub(r'\n{3,}', '\n\n', decoded)
+
+    return decoded.strip()
 
 def get_kde_device_notification_paths():
     try:
@@ -50,24 +88,30 @@ def get_active_notifications():
                 for nid in ids:
                     p = f"{d}/{nid}"
                     try:
-                        app = subprocess.check_output(
+                        app_raw = subprocess.check_output(
                             ["busctl", "--user", "get-property", "org.kde.kdeconnect", p, "org.kde.kdeconnect.device.notifications.notification", "appName"],
                             stderr=subprocess.DEVNULL,
                             text=True,
                             timeout=0.6
-                        ).strip().split(" ", 1)[-1].strip('"')
-                        title = subprocess.check_output(
+                        ).strip().split(" ", 1)[-1]
+                        app = decode_busctl_string(app_raw)
+
+                        title_raw = subprocess.check_output(
                             ["busctl", "--user", "get-property", "org.kde.kdeconnect", p, "org.kde.kdeconnect.device.notifications.notification", "title"],
                             stderr=subprocess.DEVNULL,
                             text=True,
                             timeout=0.6
-                        ).strip().split(" ", 1)[-1].strip('"')
-                        text = subprocess.check_output(
+                        ).strip().split(" ", 1)[-1]
+                        title = decode_busctl_string(title_raw)
+
+                        text_raw = subprocess.check_output(
                             ["busctl", "--user", "get-property", "org.kde.kdeconnect", p, "org.kde.kdeconnect.device.notifications.notification", "text"],
                             stderr=subprocess.DEVNULL,
                             text=True,
                             timeout=0.6
-                        ).strip().split(" ", 1)[-1].strip('"')
+                        ).strip().split(" ", 1)[-1]
+                        text = decode_busctl_string(text_raw)
+
                         reply_id = subprocess.check_output(
                             ["busctl", "--user", "get-property", "org.kde.kdeconnect", p, "org.kde.kdeconnect.device.notifications.notification", "replyId"],
                             stderr=subprocess.DEVNULL,

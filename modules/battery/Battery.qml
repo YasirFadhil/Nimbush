@@ -129,21 +129,23 @@ PanelWindow {
                         implicitHeight: 22
                         implicitWidth: statusBadgeText.implicitWidth + 14
                         radius: 11
-                        color: Services.Power.charging 
-                            ? Qt.rgba(Services.Theme.success.r, Services.Theme.success.g, Services.Theme.success.b, 0.18)
-                            : (Services.Power.isLow 
-                                ? Qt.rgba(Services.Theme.danger.r, Services.Theme.danger.g, Services.Theme.danger.b, 0.18)
-                                : Qt.rgba(Services.Theme.textSecondary.r, Services.Theme.textSecondary.g, Services.Theme.textSecondary.b, 0.15))
-                        border.color: Services.Power.charging ? Services.Theme.success : "transparent"
+                        color: Services.Power.isChargeInhibited
+                            ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.18)
+                            : (Services.Power.charging 
+                                ? Qt.rgba(Services.Theme.success.r, Services.Theme.success.g, Services.Theme.success.b, 0.18)
+                                : (Services.Power.isLow 
+                                    ? Qt.rgba(Services.Theme.danger.r, Services.Theme.danger.g, Services.Theme.danger.b, 0.18)
+                                    : Qt.rgba(Services.Theme.textSecondary.r, Services.Theme.textSecondary.g, Services.Theme.textSecondary.b, 0.15)))
+                        border.color: Services.Power.isChargeInhibited ? Services.Theme.accent : (Services.Power.charging ? Services.Theme.success : "transparent")
                         border.width: 1
 
                         Text {
                             id: statusBadgeText
                             anchors.centerIn: parent
-                            text: Services.Power.charging ? "Charging" : (Services.Power.hasBattery ? "On Battery" : "AC Power")
+                            text: Services.Power.isChargeInhibited ? "Bypass / Idle" : (Services.Power.charging ? "Charging" : (Services.Power.hasBattery ? "On Battery" : "AC Power"))
                             font.pixelSize: 10
                             font.bold: true
-                            color: Services.Power.charging ? Services.Theme.success : (Services.Power.isLow ? Services.Theme.danger : Services.Theme.textSecondary)
+                            color: Services.Power.isChargeInhibited ? Services.Theme.accent : (Services.Power.charging ? Services.Theme.success : (Services.Power.isLow ? Services.Theme.danger : Services.Theme.textSecondary))
                         }
                     }
 
@@ -203,16 +205,17 @@ PanelWindow {
                                         color: Services.Power.isLow ? Services.Theme.danger : (Services.Power.isWarning ? Services.Theme.warning : Services.Theme.textPrimary)
                                     }
                                     Text {
-                                        visible: Services.Power.charging
-                                        text: Services.Icons.bolt
+                                        visible: Services.Power.charging || Services.Power.isChargeInhibited
+                                        text: Services.Power.isChargeInhibited ? "󰚥" : Services.Icons.bolt
                                         font.family: Services.Theme.fontSymbols
                                         font.pixelSize: 18
-                                        color: Services.Theme.success
+                                        color: Services.Power.isChargeInhibited ? Services.Theme.accent : Services.Theme.success
                                     }
                                 }
 
                                 Text {
                                     text: {
+                                        if (Services.Power.isChargeInhibited) return "Power bypassed • Charge limit (80%) active"
                                         if (Services.Power.charging) {
                                             if (Services.Power.timeRemaining) return Services.Power.timeRemaining + " until full"
                                             return "Connected to power source"
@@ -232,18 +235,20 @@ PanelWindow {
                                 width: 44
                                 height: 44
                                 radius: 22
-                                color: Services.Power.charging 
-                                    ? Qt.rgba(Services.Theme.success.r, Services.Theme.success.g, Services.Theme.success.b, 0.2)
-                                    : (Services.PowerProfile.saverEnabled ? Qt.rgba(245/255, 158/255, 11/255, 0.2) : Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.15))
-                                border.color: Services.Power.charging ? Services.Theme.success : "transparent"
+                                color: Services.Power.isChargeInhibited
+                                    ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.2)
+                                    : (Services.Power.charging 
+                                        ? Qt.rgba(Services.Theme.success.r, Services.Theme.success.g, Services.Theme.success.b, 0.2)
+                                        : (Services.PowerProfile.saverEnabled ? Qt.rgba(245/255, 158/255, 11/255, 0.2) : Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.15)))
+                                border.color: Services.Power.isChargeInhibited ? Services.Theme.accent : (Services.Power.charging ? Services.Theme.success : "transparent")
                                 border.width: 1
 
                                 Text {
                                     anchors.centerIn: parent
-                                    text: Services.Icons.powerIcon(Services.Power.charging, Services.Power.percentage * 100)
+                                    text: Services.Power.isChargeInhibited ? "󰚥" : Services.Icons.powerIcon(Services.Power.charging, Services.Power.percentage * 100)
                                     font.family: Services.Theme.fontSymbols
                                     font.pixelSize: 20
-                                    color: Services.Power.charging ? Services.Theme.success : (Services.PowerProfile.saverEnabled ? "#f59e0b" : Services.Theme.accent)
+                                    color: Services.Power.isChargeInhibited ? Services.Theme.accent : (Services.Power.charging ? Services.Theme.success : (Services.PowerProfile.saverEnabled ? "#f59e0b" : Services.Theme.accent))
                                 }
                             }
                         }
@@ -260,9 +265,11 @@ PanelWindow {
                                 height: parent.height
                                 radius: parent.radius
                                 width: Math.max(8, Math.min(parent.width, (Services.Power.percentage || 0) * parent.width))
-                                color: Services.Power.charging 
-                                    ? Services.Theme.success 
-                                    : (Services.Power.isLow ? Services.Theme.danger : (Services.Power.isWarning ? Services.Theme.warning : (Services.PowerProfile.saverEnabled ? "#f59e0b" : Services.Theme.accent)))
+                                color: Services.Power.isChargeInhibited
+                                    ? Services.Theme.accent
+                                    : (Services.Power.charging 
+                                        ? Services.Theme.success 
+                                        : (Services.Power.isLow ? Services.Theme.danger : (Services.Power.isWarning ? Services.Theme.warning : (Services.PowerProfile.saverEnabled ? "#f59e0b" : Services.Theme.accent))))
                                 Behavior on width { NumberAnimation { duration: 300; easing.type: Easing.OutCubic } }
                                 Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                             }
@@ -438,6 +445,127 @@ PanelWindow {
                     }
                 }
 
+                // ── 3.5 Battery Protection / Charge Limit ──
+                Rectangle {
+                    visible: Services.Power.chargeLimitSupported
+                    Layout.fillWidth: true
+                    implicitHeight: limitCol.implicitHeight + 20
+                    radius: Services.Theme.radiusMd
+                    color: (Services.Config && Services.Config.batteryChargeLimitEnabled)
+                        ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.12)
+                        : (limitMouse.containsMouse ? Services.Theme.bgHover : Services.Theme.surfaceVariant)
+                    border.color: (Services.Config && Services.Config.batteryChargeLimitEnabled)
+                        ? Services.Theme.accent
+                        : (limitMouse.containsMouse ? Services.Theme.borderHighlight : Services.Theme.borderSubtle)
+                    border.width: 1
+
+                    Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                    Behavior on border.color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+
+                    ColumnLayout {
+                        id: limitCol
+                        anchors.fill: parent
+                        anchors.margins: 12
+                        spacing: 6
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+
+                            Text {
+                                text: Services.Power.isChargeInhibited ? "󰚥" : "󰂄"
+                                font.family: Services.Theme.fontSymbols
+                                font.pixelSize: 18
+                                color: (Services.Config && Services.Config.batteryChargeLimitEnabled)
+                                    ? (Services.Power.isChargeInhibited ? Services.Theme.success : Services.Theme.accent)
+                                    : Services.Theme.textSecondary
+                            }
+
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: 2
+
+                                RowLayout {
+                                    spacing: 6
+                                    Text {
+                                        text: "Charge Limit (80%)"
+                                        font.bold: true
+                                        font.pixelSize: Services.Theme.fontSizeSm
+                                        color: Services.Theme.textPrimary
+                                    }
+                                    Rectangle {
+                                        visible: Services.Config && Services.Config.batteryChargeLimitEnabled
+                                        implicitHeight: 16
+                                        implicitWidth: badgeText.implicitWidth + 8
+                                        radius: 4
+                                        color: Services.Power.isChargeInhibited
+                                            ? Qt.rgba(16/255, 185/255, 129/255, 0.2)
+                                            : Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.2)
+                                        Text {
+                                            id: badgeText
+                                            anchors.centerIn: parent
+                                            text: Services.Power.isChargeInhibited ? "Bypass / Idle" : "Charging"
+                                            font.pixelSize: 9
+                                            font.bold: true
+                                            color: Services.Power.isChargeInhibited ? Services.Theme.success : Services.Theme.accent
+                                        }
+                                    }
+                                }
+
+                                Text {
+                                    text: Services.Power.isChargeInhibited
+                                        ? "Battery protected: Power supplied directly from charger (bypass)"
+                                        : ((Services.Config && Services.Config.batteryChargeLimitEnabled)
+                                            ? "Limits charging to 80% to preserve battery lifespan"
+                                            : "Battery will charge normally up to 100%")
+                                    font.pixelSize: 10
+                                    color: Services.Theme.textSecondary
+                                    Layout.fillWidth: true
+                                    wrapMode: Text.WordWrap
+                                }
+                            }
+
+                            // Switch Toggle
+                            Rectangle {
+                                implicitWidth: 38
+                                implicitHeight: 22
+                                radius: 11
+                                color: (Services.Config && Services.Config.batteryChargeLimitEnabled)
+                                    ? Services.Theme.accent
+                                    : Services.Theme.surfaceVariant
+                                border.color: (Services.Config && Services.Config.batteryChargeLimitEnabled)
+                                    ? Services.Theme.accent
+                                    : Services.Theme.borderHighlight
+                                border.width: 1
+
+                                Behavior on color { ColorAnimation { duration: 200 } }
+
+                                Rectangle {
+                                    width: 16
+                                    height: 16
+                                    radius: 8
+                                    color: (Services.Config && Services.Config.batteryChargeLimitEnabled) ? "#ffffff" : Services.Theme.textSecondary
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    x: (Services.Config && Services.Config.batteryChargeLimitEnabled) ? parent.width - width - 3 : 3
+                                    Behavior on x { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
+                                }
+                            }
+                        }
+                    }
+
+                    MouseArea {
+                        id: limitMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            if (Services.Config) {
+                                Services.Config.setBatteryChargeLimitEnabled(!Services.Config.batteryChargeLimitEnabled)
+                            }
+                        }
+                    }
+                }
+
                 // ── 4. Detailed Hardware Metrics Grid ──
                 ColumnLayout {
                     Layout.fillWidth: true
@@ -505,17 +633,21 @@ PanelWindow {
                                 spacing: 10
 
                                 Text {
-                                    text: Services.Icons.bolt
+                                    text: Services.Power.isChargeInhibited ? "󰚥" : Services.Icons.bolt
                                     font.family: Services.Theme.fontSymbols
                                     font.pixelSize: 15
-                                    color: Services.Power.charging ? Services.Theme.success : Services.Theme.warning
+                                    color: Services.Power.isChargeInhibited ? Services.Theme.accent : (Services.Power.charging ? Services.Theme.success : Services.Theme.warning)
                                 }
                                 ColumnLayout {
                                     Layout.fillWidth: true
                                     spacing: 1
-                                    Text { text: Services.Power.charging ? "Charge Rate" : "Discharge Rate"; font.pixelSize: 10; color: Services.Theme.textSecondary }
+                                    Text { 
+                                        text: Services.Power.isChargeInhibited ? "Power Flow" : (Services.Power.charging ? "Charge Rate" : "Discharge Rate")
+                                        font.pixelSize: 10
+                                        color: Services.Theme.textSecondary 
+                                    }
                                     Text {
-                                        text: Services.Power.energyRate || "0.0 W"
+                                        text: Services.Power.isChargeInhibited ? "Bypass / Idle" : (Services.Power.energyRate || "0.0 W")
                                         font.bold: true
                                         font.pixelSize: 11
                                         color: Services.Theme.textPrimary

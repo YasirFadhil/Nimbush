@@ -52,40 +52,66 @@ Singleton {
     property string barMonitorMode: "all"         // "all" | "primary" | "custom"
     property var barMonitorsList: []              // string[] of monitor names e.g. ["eDP-1", "DP-1"]
 
-    readonly property var barScreens: {
-        if (!Quickshell.screens || Quickshell.screens.length === 0) return []
-        const count = Quickshell.screens.length
+    property var barScreens: Quickshell.screens || []
+
+    function updateBarScreens() {
+        if (!Quickshell.screens || Quickshell.screens.length === 0) {
+            if (barScreens && barScreens.length > 0) barScreens = []
+            return
+        }
+        var next = Quickshell.screens
         if (barMonitorMode === "all") {
-            var all = []
-            for (var i = 0; i < count; i++) {
-                if (Quickshell.screens[i]) all.push(Quickshell.screens[i])
-            }
-            return all
+            next = Quickshell.screens
         } else if (barMonitorMode === "primary") {
             var prim = ""
             if (Services.Compositor && Services.Compositor.monitorsList && Services.Compositor.monitorsList.length > 0) {
                 var f = Services.Compositor.monitorsList.find(m => m.focused)
                 prim = f ? f.name : Services.Compositor.monitorsList[0].name
             }
-            for (var j = 0; j < count; j++) {
+            var target = null
+            for (var j = 0; j < Quickshell.screens.length; j++) {
                 if (Quickshell.screens[j] && Quickshell.screens[j].name === prim) {
-                    return [Quickshell.screens[j]]
+                    target = Quickshell.screens[j]
+                    break
                 }
             }
-            return Quickshell.screens[0] ? [Quickshell.screens[0]] : []
+            if (!target && Quickshell.screens[0]) target = Quickshell.screens[0]
+            next = target ? [target] : []
         } else if (barMonitorMode === "custom") {
             var list = barMonitorsList || []
             var res = []
-            for (var k = 0; k < count; k++) {
+            for (var k = 0; k < Quickshell.screens.length; k++) {
                 var sc = Quickshell.screens[k]
                 if (sc && list.indexOf(sc.name) !== -1) {
                     res.push(sc)
                 }
             }
-            if (res.length > 0) return res
-            return Quickshell.screens[0] ? [Quickshell.screens[0]] : []
+            next = res.length > 0 ? res : (Quickshell.screens[0] ? [Quickshell.screens[0]] : [])
         }
-        return Quickshell.screens
+
+        // Only update if screens array actually changed to avoid triggering Variants rebuild
+        if (!barScreens || barScreens.length !== next.length) {
+            barScreens = next
+            return
+        }
+        for (var i = 0; i < next.length; i++) {
+            if (barScreens[i] !== next[i]) {
+                barScreens = next
+                return
+            }
+        }
+    }
+
+    onBarMonitorModeChanged: updateBarScreens()
+    onBarMonitorsListChanged: updateBarScreens()
+
+    Connections {
+        target: Services.Compositor
+        function onMonitorsListChanged() {
+            if (root.barMonitorMode === "primary") {
+                root.updateBarScreens()
+            }
+        }
     }
 
     // ── Dashboard & Weather ──────────────────────────────────────────────────
@@ -112,6 +138,7 @@ Singleton {
     property bool dndEnabled: false
     property string notificationPosition: "top_right" // "top_right" | "top_center" | "top_left" | "bottom_right"
     property bool notificationShowInFullscreen: false
+    property bool notificationSplitKdeApps: true
 
     // ── Application Dock ─────────────────────────────────────────────────────
     property bool dockEnabled: true
@@ -148,7 +175,6 @@ Singleton {
     property bool lockscreenShowMedia: true
     property string lockscreenMediaStyle: "pill"  // "pill" | "card"
     property bool lockscreenShowWeather: true
-    property bool lockscreenShowNotifs: true
     property bool lockscreenShowUptime: true
     property bool lockscreenWallpaperZoom: true
     property real lockscreenDim: 0.45
@@ -166,6 +192,8 @@ Singleton {
     property bool faceIdAutoUnlock: true
     property bool batteryShowWarnings: true
     property int batteryLowThreshold: 20
+    property bool batteryChargeLimitEnabled: false
+    property int batteryChargeLimitValue: 80
     property string customAvatar: ""
     property int clipboardLimit: 50
     property int launcherMaxResults: 8
@@ -233,6 +261,7 @@ Singleton {
         if (!root.isLoaded) {
             loadConfigProc.running = true
         }
+        root.updateBarScreens()
     }
 
     function applyData(data) {
@@ -304,6 +333,7 @@ Singleton {
         if (data.dndEnabled !== undefined) dndEnabled = Boolean(data.dndEnabled)
         if (data.notificationPosition !== undefined) notificationPosition = data.notificationPosition
         if (data.notificationShowInFullscreen !== undefined) notificationShowInFullscreen = Boolean(data.notificationShowInFullscreen)
+        if (data.notificationSplitKdeApps !== undefined) notificationSplitKdeApps = Boolean(data.notificationSplitKdeApps)
 
         if (data.lockscreenClockStyle !== undefined) lockscreenClockStyle = data.lockscreenClockStyle
         if (data.lockscreenAuthStyle !== undefined) lockscreenAuthStyle = data.lockscreenAuthStyle
@@ -322,7 +352,6 @@ Singleton {
         if (data.lockscreenShowMedia !== undefined) lockscreenShowMedia = Boolean(data.lockscreenShowMedia)
         if (data.lockscreenMediaStyle !== undefined) lockscreenMediaStyle = data.lockscreenMediaStyle
         if (data.lockscreenShowWeather !== undefined) lockscreenShowWeather = Boolean(data.lockscreenShowWeather)
-        if (data.lockscreenShowNotifs !== undefined) lockscreenShowNotifs = Boolean(data.lockscreenShowNotifs)
         if (data.lockscreenShowUptime !== undefined) lockscreenShowUptime = Boolean(data.lockscreenShowUptime)
         if (data.lockscreenWallpaperZoom !== undefined) lockscreenWallpaperZoom = Boolean(data.lockscreenWallpaperZoom)
         if (data.lockscreenDim !== undefined) lockscreenDim = Number(data.lockscreenDim)
@@ -340,6 +369,8 @@ Singleton {
         if (data.faceIdAutoUnlock !== undefined) faceIdAutoUnlock = Boolean(data.faceIdAutoUnlock)
         if (data.batteryShowWarnings !== undefined) batteryShowWarnings = Boolean(data.batteryShowWarnings)
         if (data.batteryLowThreshold !== undefined) batteryLowThreshold = Number(data.batteryLowThreshold)
+        if (data.batteryChargeLimitEnabled !== undefined) batteryChargeLimitEnabled = Boolean(data.batteryChargeLimitEnabled)
+        if (data.batteryChargeLimitValue !== undefined) batteryChargeLimitValue = Number(data.batteryChargeLimitValue)
         if (data.customAvatar !== undefined) customAvatar = String(data.customAvatar)
         if (data.clipboardLimit !== undefined) clipboardLimit = Number(data.clipboardLimit)
         if (data.launcherMaxResults !== undefined) launcherMaxResults = Number(data.launcherMaxResults)
@@ -436,6 +467,7 @@ Singleton {
             dndEnabled: dndEnabled,
             notificationPosition: notificationPosition,
             notificationShowInFullscreen: notificationShowInFullscreen,
+            notificationSplitKdeApps: notificationSplitKdeApps,
 
             lockscreenClockStyle: lockscreenClockStyle,
             lockscreenAuthStyle: lockscreenAuthStyle,
@@ -448,7 +480,6 @@ Singleton {
             lockscreenShowMedia: lockscreenShowMedia,
             lockscreenMediaStyle: lockscreenMediaStyle,
             lockscreenShowWeather: lockscreenShowWeather,
-            lockscreenShowNotifs: lockscreenShowNotifs,
             lockscreenShowUptime: lockscreenShowUptime,
             lockscreenWallpaperZoom: lockscreenWallpaperZoom,
             lockscreenDim: lockscreenDim,
@@ -466,6 +497,8 @@ Singleton {
             faceIdAutoUnlock: faceIdAutoUnlock,
             batteryShowWarnings: batteryShowWarnings,
             batteryLowThreshold: batteryLowThreshold,
+            batteryChargeLimitEnabled: batteryChargeLimitEnabled,
+            batteryChargeLimitValue: batteryChargeLimitValue,
             customAvatar: customAvatar,
             clipboardLimit: clipboardLimit,
             launcherMaxResults: launcherMaxResults,
@@ -557,6 +590,7 @@ Singleton {
         dndEnabled = false
         notificationPosition = "top_right"
         notificationShowInFullscreen = false
+        notificationSplitKdeApps = true
 
         lockscreenClockStyle = "hero"
         lockscreenLayout = "default"
@@ -568,7 +602,6 @@ Singleton {
         lockscreenShowMedia = true
         lockscreenMediaStyle = "pill"
         lockscreenShowWeather = true
-        lockscreenShowNotifs = true
         lockscreenWallpaperZoom = true
         lockscreenDim = 0.45
         lockscreen24h = false
@@ -580,6 +613,8 @@ Singleton {
         lockscreenShowStatusPill = true
         batteryShowWarnings = true
         batteryLowThreshold = 20
+        batteryChargeLimitEnabled = false
+        batteryChargeLimitValue = 80
         customAvatar = ""
         clipboardLimit = 50
         launcherMaxResults = 8
@@ -660,7 +695,6 @@ Singleton {
         if (Services.SystemTheme) {
             Services.SystemTheme.setColorScheme(mode === "dark" ? "prefer-dark" : "prefer-light")
         }
-        root.configChanged()
         saveConfig()
     }
 
@@ -775,6 +809,7 @@ Singleton {
     function setNotificationRetentionDays(days) { notificationRetentionDays = Math.max(1, Math.min(7, days)); saveConfig() }
     function setNotificationPosition(pos) { notificationPosition = pos; saveConfig() }
     function setNotificationShowInFullscreen(val) { notificationShowInFullscreen = Boolean(val); saveConfig() }
+    function setNotificationSplitKdeApps(val) { notificationSplitKdeApps = Boolean(val); saveConfig() }
     function setDndEnabled(val) { dndEnabled = val; saveConfig() }
 
     function setLockscreenClockStyle(style) { lockscreenClockStyle = style; saveConfig() }
@@ -788,7 +823,6 @@ Singleton {
     function setLockscreenShowMedia(val) { lockscreenShowMedia = val; saveConfig() }
     function setLockscreenMediaStyle(style) { lockscreenMediaStyle = style; saveConfig() }
     function setLockscreenShowWeather(val) { lockscreenShowWeather = val; saveConfig() }
-    function setLockscreenShowNotifs(val) { lockscreenShowNotifs = val; saveConfig() }
     function setLockscreenShowUptime(val) { lockscreenShowUptime = val; saveConfig() }
     function setLockscreenWallpaperZoom(val) { lockscreenWallpaperZoom = val; saveConfig() }
     function setLockscreenDim(val) { lockscreenDim = val; saveConfig() }
@@ -805,6 +839,8 @@ Singleton {
     function setFaceIdAutoUnlock(val) { faceIdAutoUnlock = val; saveConfig() }
     function setBatteryShowWarnings(val) { batteryShowWarnings = val; saveConfig() }
     function setBatteryLowThreshold(val) { batteryLowThreshold = val; saveConfig() }
+    function setBatteryChargeLimitEnabled(val) { batteryChargeLimitEnabled = val; saveConfig(); if (Services.Power && Services.Power.updateChargeLimit) Services.Power.updateChargeLimit(); }
+    function setBatteryChargeLimitValue(val) { batteryChargeLimitValue = val; saveConfig(); if (Services.Power && Services.Power.updateChargeLimit) Services.Power.updateChargeLimit(); }
     function setCustomAvatar(path) { customAvatar = path; saveConfig() }
     function clearCustomAvatar() { customAvatar = ""; saveConfig() }
     function setClipboardLimit(val) { clipboardLimit = val; saveConfig() }

@@ -308,7 +308,7 @@ Singleton {
         if (!identity) return "\uf001"
         const id = identity.toLowerCase()
         if (id.includes("spotify")) return "󰓇"
-        if (id.includes("firefox")) return "󰈹"
+        if (id.includes("firefox") || id.includes("zen")) return "󰈹"
         if (id.includes("chrome") || id.includes("chromium") || id.includes("brave")) return "󰊯"
         if (id.includes("vlc")) return "󰕼"
         if (id.includes("mpv")) return "󰎈"
