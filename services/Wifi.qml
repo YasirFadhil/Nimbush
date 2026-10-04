@@ -17,6 +17,8 @@ Singleton {
     property var savedNetworks: []
     property bool scanning: false
     property string lastError: ""
+    property string connectingSsid: ""
+    property string statusMessage: ""
 
     function refresh() {
         if (!radioProc.running) radioProc.running = true
@@ -25,7 +27,14 @@ Singleton {
     function refreshAll() {
         refresh()
         if (!savedProc.running) savedProc.running = true
-        if (root.enabled) scan()
+        if (root.enabled) {
+            listNetworks()
+            scan()
+        }
+    }
+
+    function listNetworks() {
+        if (!listProc.running) listProc.running = true
     }
 
     function isSaved(targetSsid) {
@@ -46,11 +55,14 @@ Singleton {
         if (scanning || rescanProc.running) return
         scanning = true
         lastError = ""
+        statusMessage = "Scanning for networks..."
         rescanProc.running = true
     }
 
     function connectNetwork(targetSsid, password) {
         lastError = ""
+        statusMessage = "Connecting to " + targetSsid + "..."
+        connectingSsid = targetSsid
         if (password && password.length > 0) {
             connectProc.command = ["nmcli", "dev", "wifi", "connect", targetSsid, "password", password]
         } else {
@@ -61,6 +73,8 @@ Singleton {
 
     function disconnectNetwork() {
         if (root.ssid.length === 0) return
+        statusMessage = "Disconnecting from " + root.ssid + "..."
+        connectingSsid = root.ssid
         disconnectProc.command = ["nmcli", "con", "down", "id", root.ssid]
         disconnectProc.running = true
     }
@@ -99,6 +113,7 @@ Singleton {
         function onWifiPanelVisibleChanged() {
             if (Services.OverlayManager.wifiPanelVisible) {
                 root.refresh()
+                root.listNetworks()
                 delayedScanTimer.restart()
             } else {
                 delayedScanTimer.stop()
@@ -183,6 +198,7 @@ Singleton {
             }
             root.networks = Object.values(bySsid).sort((a, b) => b.signal - a.signal)
             root.scanning = false
+            if (root.statusMessage === "Scanning for networks...") root.statusMessage = ""
         }
     }
 
@@ -192,12 +208,32 @@ Singleton {
             onRead: data => { if (data.trim().length > 0) root.lastError = data.trim() }
         }
         onExited: (exitCode) => {
+            if (root.connectingSsid.length > 0) {
+                if (exitCode === 0) {
+                    root.statusMessage = "Connected to " + root.connectingSsid
+                    root.lastError = ""
+                } else if (root.lastError.length === 0) {
+                    root.lastError = "Could not connect to " + root.connectingSsid
+                    root.statusMessage = ""
+                }
+                root.connectingSsid = ""
+            }
             root.refresh()
             if (exitCode === 0) root.scan()
         }
     }
 
-    Process { id: disconnectProc; onExited: root.refresh() }
+    Process {
+        id: disconnectProc
+        onExited: {
+            if (root.connectingSsid.length > 0) {
+                if (exitCode === 0) root.statusMessage = "Disconnected"
+                else if (root.lastError.length === 0) root.lastError = "Could not disconnect"
+                root.connectingSsid = ""
+            }
+            root.refresh()
+        }
+    }
     Process { id: toggleProc; onExited: root.refresh() }
 
     // Saved WiFi connection profiles (for "Saved" badge + forget connection feature)

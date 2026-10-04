@@ -14,6 +14,9 @@ Singleton {
     property bool refreshing: false
     property bool scanning: false
     property string pairingMac: ""
+    property string actionMac: ""
+    property string actionMessage: ""
+    property string lastError: ""
 
     readonly property string helperScript: (Quickshell.env("HOME") || ("/home/" + (Quickshell.env("USER") || "user"))) + "/.config/quickshell/scripts/bluetooth-helper.py"
 
@@ -81,22 +84,34 @@ Singleton {
     }
 
     function pairAndConnect(mac) {
+        lastError = ""
+        actionMessage = "Pairing and connecting..."
+        actionMac = mac
         pairingMac = mac
         pairProc.command = ["python3", root.helperScript, "pair", mac]
         pairProc.running = true
     }
 
     function connectDevice(mac) {
+        lastError = ""
+        actionMessage = "Connecting..."
+        actionMac = mac
         connectProc.command = ["python3", root.helperScript, "connect", mac]
         connectProc.running = true
     }
 
     function disconnectDevice(mac) {
+        lastError = ""
+        actionMessage = "Disconnecting..."
+        actionMac = mac
         disconnectProc.command = ["python3", root.helperScript, "disconnect", mac]
         disconnectProc.running = true
     }
 
     function removeDevice(mac) {
+        lastError = ""
+        actionMessage = "Removing device..."
+        actionMac = mac
         removeProc.command = ["python3", root.helperScript, "remove", mac]
         removeProc.running = true
     }
@@ -145,6 +160,7 @@ Singleton {
         function onBtPanelVisibleChanged() {
             if (Services.OverlayManager && Services.OverlayManager.btPanelVisible) {
                 root.refresh()
+                if (root.enabled) root.listDevices()
                 delayedBtTimer.restart()
             } else {
                 delayedBtTimer.stop()
@@ -264,16 +280,64 @@ Singleton {
         }
     }
 
+    function handleActionResult(output, exitCode) {
+        let result = null
+        try {
+            result = JSON.parse(output.trim())
+        } catch (e) {
+            result = null
+        }
+        if (exitCode === 0 && result && result.success) {
+            root.lastError = ""
+            root.actionMessage = "Done"
+        } else {
+            root.lastError = (result && result.output) || (result && result.error) || "Bluetooth operation failed"
+            root.actionMessage = ""
+        }
+        root.actionMac = ""
+    }
+
     Process {
         id: pairProc
+        property string rawOutput: ""
+        stdout: SplitParser { onRead: data => pairProc.rawOutput += data }
+        onRunningChanged: { if (running) rawOutput = "" }
         onExited: {
             root.pairingMac = ""
+            root.handleActionResult(pairProc.rawOutput, exitCode)
             root.listDevices()
         }
     }
 
-    Process { id: connectProc; onExited: root.listDevices() }
-    Process { id: disconnectProc; onExited: root.listDevices() }
+    Process {
+        id: connectProc
+        property string rawOutput: ""
+        stdout: SplitParser { onRead: data => connectProc.rawOutput += data }
+        onRunningChanged: { if (running) rawOutput = "" }
+        onExited: {
+            root.handleActionResult(connectProc.rawOutput, exitCode)
+            root.listDevices()
+        }
+    }
+    Process {
+        id: disconnectProc
+        property string rawOutput: ""
+        stdout: SplitParser { onRead: data => disconnectProc.rawOutput += data }
+        onRunningChanged: { if (running) rawOutput = "" }
+        onExited: {
+            root.handleActionResult(disconnectProc.rawOutput, exitCode)
+            root.listDevices()
+        }
+    }
     Process { id: toggleProc; onExited: root.refresh() }
-    Process { id: removeProc; onExited: root.listDevices() }
+    Process {
+        id: removeProc
+        property string rawOutput: ""
+        stdout: SplitParser { onRead: data => removeProc.rawOutput += data }
+        onRunningChanged: { if (running) rawOutput = "" }
+        onExited: {
+            root.handleActionResult(removeProc.rawOutput, exitCode)
+            root.listDevices()
+        }
+    }
 }

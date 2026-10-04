@@ -158,29 +158,6 @@ Rectangle {
         }
     }
 
-    // Signal strength indicator
-    component SignalBars: Item {
-        id: bars
-        property int signal: 0   // 0-100
-        implicitWidth: 18
-        implicitHeight: 14
-        readonly property int tier: signal <= 0 ? 0 : Math.min(4, Math.ceil(signal / 25))
-
-        Repeater {
-            model: 4
-            delegate: Rectangle {
-                required property int index
-                width: 3
-                radius: 1
-                height: 4 + index * 3
-                x: index * 4
-                y: bars.height - height
-                color: (index < bars.tier) ? (root.wifiExpanded ? Services.Theme.accent : Services.Theme.bgDeep) : Services.Theme.border
-                opacity: (index < bars.tier) ? 1 : 0.4
-            }
-        }
-    }
-
     // Consume clicks on the control center card so it doesn't close on click
     MouseArea {
         anchors.fill: parent
@@ -311,12 +288,14 @@ Rectangle {
                             border.color: Services.Wifi.enabled ? "transparent" : Services.Theme.border
                             border.width: 1
 
-                            Text {
+                            Services.WifiSignal {
                                 anchors.centerIn: parent
-                                text: Services.Icons.wifiIcon(Services.Wifi.signalStrength, Services.Wifi.connected, Services.Wifi.enabled)
-                                font.family: Services.Theme.fontSymbols
-                                font.pixelSize: 16
-                                color: Services.Wifi.enabled ? Services.Theme.bgDeep : Services.Theme.textPrimary
+                                width: 20
+                                height: 20
+                                signalStrength: Services.Wifi.signalStrength
+                                connected: Services.Wifi.connected
+                                wifiEnabled: Services.Wifi.enabled
+                                activeColor: Services.Wifi.enabled ? Services.Theme.bgDeep : Services.Theme.textPrimary
                             }
 
                             MouseArea {
@@ -431,8 +410,13 @@ Rectangle {
                                             Layout.fillWidth: true
                                             spacing: 6
 
-                                            SignalBars {
-                                                signal: netRow.modelData.signal || 0
+                                            Services.WifiSignal {
+                                                width: 20
+                                                height: 20
+                                                signalStrength: netRow.modelData.signal || 0
+                                                connected: true
+                                                wifiEnabled: true
+                                                activeColor: Services.Theme.bgDeep
                                             }
 
                                             Text {

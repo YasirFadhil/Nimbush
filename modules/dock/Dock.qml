@@ -54,7 +54,7 @@ Variants {
         readonly property int edgeMargin: Services.Config ? Services.Config.dockFloatingDistance : 6
 
         // Dock Dimensions
-        readonly property int dockBarHeight: iconSize + 16
+        readonly property int dockBarHeight: iconSize + 24
         // Extra headroom for icon lift, shadow, and tooltips
         readonly property int windowHeadroom: 64
         readonly property int windowBreadth: dockBarHeight + windowHeadroom
@@ -302,7 +302,7 @@ Variants {
             radius: Math.min(22, Math.round(root.dockBarHeight * 0.35))
 
             // macOS Liquid Glass Styling
-            color: Services.Theme.isDark ? Qt.rgba(0.08, 0.08, 0.12, 0.84) : Qt.rgba(0.96, 0.96, 0.98, 0.90)
+            color: Services.Theme.isDark ? Qt.rgba(0.08, 0.08, 0.12, 0.58) : Qt.rgba(0.96, 0.96, 0.98, 0.64)
             border.color: Services.Theme.isDark
                 ? Qt.rgba(1, 1, 1, root.isHovered ? 0.22 : 0.14)
                 : Qt.rgba(0, 0, 0, root.isHovered ? 0.16 : 0.10)
@@ -537,13 +537,14 @@ Variants {
                     id: iconVisual
                     anchors.horizontalCenter: parent.horizontalCenter
                     anchors.alignWhenCentered: false
-                    anchors.bottom: parent.bottom
-                    anchors.bottomMargin: root.isBottom ? (4 + Math.round((iconDelegate.visualScale - 1.0) * 8)) : 0
+                    anchors.bottom: root.isBottom ? undefined : parent.bottom
+                    anchors.bottomMargin: 0
                     anchors.left: root.isLeft ? parent.left : undefined
                     anchors.leftMargin: root.isLeft ? (4 + Math.round((iconDelegate.visualScale - 1.0) * 8)) : 0
                     anchors.right: root.isRight ? parent.right : undefined
                     anchors.rightMargin: root.isRight ? (4 + Math.round((iconDelegate.visualScale - 1.0) * 8)) : 0
-                    anchors.verticalCenter: root.isVertical ? parent.verticalCenter : undefined
+                    anchors.verticalCenter: root.isBottom || root.isVertical ? parent.verticalCenter : undefined
+                    anchors.verticalCenterOffset: -2
 
                     width: root.iconSize
                     height: root.iconSize
@@ -737,10 +738,10 @@ Variants {
                     anchors.horizontalCenter: root.isBottom ? parent.horizontalCenter : undefined
                     anchors.verticalCenter: root.isVertical ? parent.verticalCenter : undefined
                     anchors.alignWhenCentered: false
-                    anchors.bottom: root.isBottom ? parent.bottom : undefined
+                    anchors.top: root.isBottom ? iconVisual.bottom : undefined
                     anchors.left: root.isLeft ? parent.left : undefined
                     anchors.right: root.isRight ? parent.right : undefined
-                    anchors.bottomMargin: root.isBottom ? -4 : 0
+                    anchors.topMargin: root.isBottom ? 2 : 0
                     anchors.leftMargin: root.isLeft ? -4 : 0
                     anchors.rightMargin: root.isRight ? -4 : 0
 
@@ -752,12 +753,12 @@ Variants {
                             if (style === "line") return 3
                             if (style === "pill") return 4
                             if (style === "glow") return 4
-                            return isActiveApp ? 6 : 4 // "dot"
+                            return isActiveApp ? 5 : 4 // "dot"
                         } else {
                             if (style === "line") return isActiveApp ? 18 : 10
                             if (style === "pill") return isActiveApp ? 12 : 7
                             if (style === "glow") return isActiveApp ? 20 : 12
-                            return isActiveApp ? 6 : 4 // "dot"
+                            return isActiveApp ? 5 : 4 // "dot"
                         }
                     }
 
@@ -767,12 +768,12 @@ Variants {
                             if (style === "line") return isActiveApp ? 18 : 10
                             if (style === "pill") return isActiveApp ? 12 : 7
                             if (style === "glow") return isActiveApp ? 20 : 12
-                            return isActiveApp ? 6 : 4 // "dot"
+                            return isActiveApp ? 5 : 4 // "dot"
                         } else {
                             if (style === "line") return 3
                             if (style === "pill") return 4
                             if (style === "glow") return 4
-                            return isActiveApp ? 6 : 4 // "dot"
+                            return isActiveApp ? 5 : 4 // "dot"
                         }
                     }
 
@@ -783,8 +784,8 @@ Variants {
                         return 2 // "glow"
                     }
 
-                    color: isActiveApp ? Services.Theme.accent : Services.Theme.textDisabled
-                    opacity: isActiveApp ? 1.0 : (style === "glow" ? 0.6 : 0.75)
+                    color: isActiveApp ? Services.Theme.accent : Services.Theme.borderHighlight
+                    opacity: 1.0
 
                     Behavior on width { NumberAnimation { duration: 150 } }
                     Behavior on height { NumberAnimation { duration: 150 } }
@@ -796,8 +797,8 @@ Variants {
                         width: parent.width + (runIndicator.style === "glow" ? 8 : 6)
                         height: parent.height + (runIndicator.style === "glow" ? 6 : 6)
                         radius: parent.radius + 2
-                        visible: runIndicator.isActiveApp
-                        color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, runIndicator.style === "glow" ? 0.5 : 0.35)
+                        visible: runIndicator.isActiveApp && runIndicator.style === "glow"
+                        color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.5)
                         z: -1
                     }
                 }

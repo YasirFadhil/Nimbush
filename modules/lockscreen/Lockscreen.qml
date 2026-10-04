@@ -1397,12 +1397,14 @@ Scope {
                             spacing: 8
 
                             // Wi-Fi Status Icon (if enabled)
-                            Text {
+                            Services.WifiSignal {
                                 visible: Services.Wifi && Services.Wifi.enabled
-                                text: Services.Icons.wifiIcon(Services.Wifi.signalStrength, Services.Wifi.connected, Services.Wifi.enabled)
-                                font.family: Services.Theme.fontSymbols
-                                font.pixelSize: Services.Theme.fontSizeSm
-                                color: (Services.Wifi && Services.Wifi.connected) ? Services.Theme.accent : Services.Theme.textDisabled
+                                width: 20
+                                height: 20
+                                signalStrength: Services.Wifi.signalStrength
+                                connected: Services.Wifi.connected
+                                wifiEnabled: Services.Wifi.enabled
+                                activeColor: (Services.Wifi && Services.Wifi.connected) ? Services.Theme.accent : Services.Theme.textDisabled
                             }
 
                             // Bluetooth Status Icon (if enabled and connected)
@@ -1549,12 +1551,14 @@ Scope {
                         }
 
                         // Wi-Fi
-                        Text {
+                        Services.WifiSignal {
                             visible: Services.Wifi && Services.Wifi.enabled
-                            text: Services.Icons.wifi
-                            font.family: Services.Theme.fontSymbols
-                            font.pixelSize: Services.Theme.fontSizeSm
-                            color: (Services.Wifi && Services.Wifi.connected) ? Services.Theme.accent : Services.Theme.textDisabled
+                            width: 20
+                            height: 20
+                            signalStrength: Services.Wifi.signalStrength
+                            connected: Services.Wifi.connected
+                            wifiEnabled: Services.Wifi.enabled
+                            activeColor: (Services.Wifi && Services.Wifi.connected) ? Services.Theme.accent : Services.Theme.textDisabled
                         }
 
                         // Battery

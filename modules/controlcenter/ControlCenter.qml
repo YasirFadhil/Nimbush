@@ -198,29 +198,6 @@ PanelWindow {
         }
     }
 
-    // Signal strength indicator — 4 ascending bars filled according to percentage
-    component SignalBars: Item {
-        id: bars
-        property int signal: 0   // 0-100
-        implicitWidth: 18
-        implicitHeight: 14
-        readonly property int tier: signal <= 0 ? 0 : Math.min(4, Math.ceil(signal / 25))
-
-        Repeater {
-            model: 4
-            delegate: Rectangle {
-                required property int index
-                width: 3
-                radius: 1
-                height: 4 + index * 3
-                x: index * 4
-                y: bars.height - height
-                color: (index < bars.tier) ? Services.Theme.accent : Services.Theme.border
-                opacity: (index < bars.tier) ? 1 : 0.6
-            }
-        }
-    }
-
     MouseArea {
         anchors.fill: parent
         onClicked: root.close()
@@ -464,16 +441,15 @@ PanelWindow {
                                     Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                                     Behavior on scale { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
 
-                                    Text {
+                                    Services.WifiSignal {
                                         id: wifiIcon
                                         anchors.centerIn: parent
-                                        text: Services.Icons.wifiIcon(Services.Wifi.signalStrength, Services.Wifi.connected, Services.Wifi.enabled)
-                                        font.family: Services.Theme.fontSymbols
-                                        font.pixelSize: 16
-                                        scale: Services.Wifi.enabled ? 1.08 : 1.0
-                                        color: Services.Wifi.enabled ? Services.Theme.bgOnAccent : Services.Theme.textPrimary
-                                        Behavior on scale { NumberAnimation { duration: 200; easing.type: Easing.OutBack } }
-                                        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                                        width: 20
+                                        height: 20
+                                        signalStrength: Services.Wifi.signalStrength
+                                        connected: Services.Wifi.connected
+                                        wifiEnabled: Services.Wifi.enabled
+                                        activeColor: Services.Wifi.enabled ? Services.Theme.bgOnAccent : Services.Theme.textPrimary
                                     }
 
                                     MouseArea {
@@ -613,6 +589,16 @@ PanelWindow {
                                         Layout.alignment: Qt.AlignHCenter
                                     }
 
+                                    Text {
+                                        visible: Services.Wifi.lastError !== "" || Services.Wifi.statusMessage !== ""
+                                        text: Services.Wifi.lastError !== "" ? Services.Wifi.lastError : Services.Wifi.statusMessage
+                                        font.pixelSize: 10
+                                        color: Services.Wifi.lastError !== "" ? Services.Theme.danger : "#444444"
+                                        Layout.fillWidth: true
+                                        horizontalAlignment: Text.AlignHCenter
+                                        elide: Text.ElideRight
+                                    }
+
                                     Repeater {
                                         model: Services.Wifi.enabled ? Services.Wifi.networks : []
                                         delegate: Rectangle {
@@ -658,10 +644,26 @@ PanelWindow {
                                                             spacing: 8
 
                                                             Text {
-                                                                text: Services.Icons.wifiIcon(netRow.modelData.signal, true, true)
+                                                                visible: netRow.modelData.security.length > 0
+                                                                text: Services.Icons.wifiLock
                                                                 font.family: Services.Theme.fontSymbols
-                                                                font.pixelSize: 12
-                                                                color: Services.Wifi.enabled ? Services.Theme.bgDeep : Services.Theme.textSecondary
+                                                                font.pixelSize: 9
+                                                                color: Services.Wifi.enabled ? Qt.rgba(Services.Theme.bgDeep.r, Services.Theme.bgDeep.g, Services.Theme.bgDeep.b, 0.7) : Services.Theme.textDisabled
+                                                            }
+
+                                                            Services.WifiSignal {
+                                                                width: 20
+                                                                height: 20
+                                                                signalStrength: netRow.modelData.signal || 0
+                                                                connected: true
+                                                                wifiEnabled: true
+                                                                activeColor: root.wifiExpanded ? Services.Theme.accent : Services.Theme.bgDeep
+                                                            }
+
+                                                            Text {
+                                                                text: (netRow.modelData.signal || 0) + "%"
+                                                                font.pixelSize: 9
+                                                                color: Services.Wifi.enabled ? Qt.rgba(Services.Theme.bgDeep.r, Services.Theme.bgDeep.g, Services.Theme.bgDeep.b, 0.7) : Services.Theme.textDisabled
                                                             }
 
                                                             ColumnLayout {
@@ -681,13 +683,6 @@ PanelWindow {
                                                                         elide: Text.ElideRight
                                                                     }
 
-                                                                    Text {
-                                                                        visible: netRow.modelData.security.length > 0
-                                                                        text: Services.Icons.wifiLock
-                                                                        font.family: Services.Theme.fontSymbols
-                                                                        font.pixelSize: 9
-                                                                        color: Services.Wifi.enabled ? Qt.rgba(Services.Theme.bgDeep.r, Services.Theme.bgDeep.g, Services.Theme.bgDeep.b, 0.7) : Services.Theme.textDisabled
-                                                                    }
                                                                 }
 
                                                                 Text {
@@ -697,9 +692,7 @@ PanelWindow {
                                                                     color: Services.Wifi.enabled ? "#333333" : Services.Theme.textDisabled
                                                                 }
                                                             }
-
-                                                            SignalBars { signal: netRow.modelData.signal }
-                                                        }
+                                                            }
                                                     }
 
                                                     // Forget Button
@@ -961,6 +954,16 @@ PanelWindow {
                                         font.pixelSize: 11
                                         color: Services.Bluetooth.enabled ? "#333333" : Services.Theme.textDisabled
                                         Layout.alignment: Qt.AlignHCenter
+                                    }
+
+                                    Text {
+                                        visible: Services.Bluetooth.lastError !== "" || Services.Bluetooth.actionMessage !== ""
+                                        text: Services.Bluetooth.lastError !== "" ? Services.Bluetooth.lastError : Services.Bluetooth.actionMessage
+                                        font.pixelSize: 10
+                                        color: Services.Bluetooth.lastError !== "" ? Services.Theme.danger : "#444444"
+                                        Layout.fillWidth: true
+                                        horizontalAlignment: Text.AlignHCenter
+                                        elide: Text.ElideRight
                                     }
 
                                     Repeater {
@@ -1854,7 +1857,14 @@ PanelWindow {
                                                             }
                                                         }
 
-                                                        SignalBars { signal: netRow.modelData.signal }
+                                                        Services.WifiSignal {
+                                                            width: 20
+                                                            height: 20
+                                                            signalStrength: netRow.modelData.signal || 0
+                                                            connected: true
+                                                            wifiEnabled: true
+                                                            activeColor: Services.Theme.bgDeep
+                                                        }
                                                     }
                                                 }
 
