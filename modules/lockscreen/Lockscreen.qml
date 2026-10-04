@@ -1410,9 +1410,9 @@ Scope {
                             // Bluetooth Status Icon (if enabled and connected)
                             Text {
                                 visible: Services.Bluetooth && Services.Bluetooth.enabled && Services.Bluetooth.hasConnectedDevice
-                                text: Services.Icons.btDeviceIcon(Services.Bluetooth.connectedDeviceIcon, Services.Bluetooth.connectedDeviceName)
+                                text: Services.Icons.bluetoothConnect
                                 font.family: Services.Theme.fontSymbols
-                                font.pixelSize: Services.Theme.fontSizeSm
+                                font.pixelSize: Services.Theme.fontSizeXl
                                 color: Services.Theme.accent
                             }
 
@@ -1447,66 +1447,6 @@ Scope {
                                 }
                             }
 
-                            // Vertical Separator
-                            Rectangle {
-                                width: 1
-                                height: 12
-                                color: Services.Theme.border
-                                opacity: 0.8
-                            }
-
-                            // Control Center Toggle Glyph (Morphs & Spins 180° into Close Icon)
-                            Item {
-                                width: 14
-                                height: 14
-                                Layout.alignment: Qt.AlignVCenter
-
-                                Item {
-                                    anchors.centerIn: parent
-                                    width: 14
-                                    height: 14
-                                    rotation: root.lockscreenCcOpen ? 180 : 0
-                                    Behavior on rotation {
-                                        NumberAnimation {
-                                            duration: 320
-                                            easing.type: Easing.OutBack
-                                            easing.overshoot: 1.3
-                                        }
-                                    }
-
-                                    // Sliders icon (Morphs out)
-                                    Text {
-                                        anchors.centerIn: parent
-                                        text: Services.Icons.controlcenter
-                                        font.family: Services.Theme.fontSymbols
-                                        font.pixelSize: 13
-                                        font.weight: Font.Bold
-                                        color: (pillMouse.containsMouse || root.lockscreenCcOpen) ? Services.Theme.accent : Services.Theme.textPrimary
-                                        opacity: root.lockscreenCcOpen ? 0.0 : 1.0
-                                        scale: root.lockscreenCcOpen ? 0.4 : 1.0
-                                        rotation: root.lockscreenCcOpen ? -90 : 0
-                                        Behavior on opacity { NumberAnimation { duration: 180 } }
-                                        Behavior on scale { NumberAnimation { duration: 220; easing.type: Easing.OutBack } }
-                                        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
-                                    }
-
-                                    // Close icon (Morphs in)
-                                    Text {
-                                        anchors.centerIn: parent
-                                        text: Services.Icons.close
-                                        font.family: Services.Theme.fontSymbols
-                                        font.pixelSize: 10
-                                        font.weight: Font.Bold
-                                        color: (pillMouse.containsMouse || root.lockscreenCcOpen) ? Services.Theme.accent : Services.Theme.textPrimary
-                                        opacity: root.lockscreenCcOpen ? 1.0 : 0.0
-                                        scale: root.lockscreenCcOpen ? 1.0 : 0.4
-                                        rotation: root.lockscreenCcOpen ? 0 : 90
-                                        Behavior on opacity { NumberAnimation { duration: 180 } }
-                                        Behavior on scale { NumberAnimation { duration: 220; easing.type: Easing.OutBack } }
-                                        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
-                                    }
-                                }
-                            }
                         }
 
                         MouseArea {

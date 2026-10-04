@@ -77,6 +77,7 @@ Singleton {
     // ── Bluetooth ───────────────────────────────────────────────────────────────
     readonly property string bluetooth:    "\uf294"  // nf-fa-bluetooth
     readonly property string bluetoothOff: "\uf293"  // nf-fa-bluetooth_b
+    readonly property string bluetoothConnect: "󰂱"       // nf-md-bluetooth_connect
     readonly property string btHeadset:    "󰋋"       // nf-md-headphones / tws
     readonly property string btSpeaker:    "󰓃"       // nf-md-speaker
     readonly property string btPhone:      "󰏲"       // nf-md-cellphone

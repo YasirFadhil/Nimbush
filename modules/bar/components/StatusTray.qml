@@ -480,7 +480,57 @@ RowLayout {
                 opacity: 0.8
             }
 
-            Components.ControlCenterToggle {}
+            // Network status replaces the control-center/settings glyph.
+            // Keep the whole group clickable so the existing control-center
+            // interaction remains available without adding another icon.
+            Item {
+                id: networkStatusToggle
+                implicitWidth: networkStatusRow.implicitWidth
+                implicitHeight: networkStatusRow.implicitHeight
+                Layout.alignment: Qt.AlignVCenter
+
+                RowLayout {
+                    id: networkStatusRow
+                    anchors.centerIn: parent
+                    spacing: root.isMinimal ? 5 : 8
+
+                    Services.WifiSignal {
+                        visible: Services.Wifi && Services.Wifi.enabled
+                        width: root.isMinimal ? 17 : 20
+                        height: root.isMinimal ? 17 : 20
+                        signalStrength: Services.Wifi ? Services.Wifi.signalStrength : 0
+                        connected: Services.Wifi ? Services.Wifi.connected : false
+                        wifiEnabled: Services.Wifi ? Services.Wifi.enabled : false
+                        activeColor: Services.Wifi && Services.Wifi.connected
+                            ? Services.Theme.accent
+                            : Services.Theme.textDisabled
+                    }
+
+                    Text {
+                        visible: Services.Bluetooth
+                            && Services.Bluetooth.enabled
+                            && Services.Bluetooth.hasConnectedDevice
+                        text: Services.Icons.bluetoothConnect
+                        font.family: Services.Theme.fontSymbols
+                        font.pixelSize: root.isMinimal
+                            ? Services.Theme.fontSizeMd
+                            : Services.Theme.fontSizeXl
+                        color: Services.Theme.accent
+                    }
+                }
+
+                MouseArea {
+                    anchors.fill: parent
+                    anchors.margins: -4
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: {
+                        const newState = !Services.OverlayManager.controlCenterVisible
+                        if (newState) Services.OverlayManager.closeAllExcept("controlCenter")
+                        Services.OverlayManager.controlCenterVisible = newState
+                    }
+                }
+            }
         }
     }
 
