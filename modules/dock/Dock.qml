@@ -27,6 +27,7 @@ Variants {
         return Quickshell.screens || []
     }
 
+    // qmllint disable uncreatable-type
     delegate: PanelWindow {
         id: root
         required property var modelData

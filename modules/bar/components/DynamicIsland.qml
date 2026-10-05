@@ -1,4 +1,6 @@
 // DynamicIsland.qml
+pragma ComponentBehavior: Bound
+
 import QtQuick
 import QtQuick.Layouts
 import QtQuick.Effects
@@ -79,7 +81,7 @@ Item {
         if (path.startsWith("file://")) path = path.substring(7)
         try { path = decodeURIComponent(path) } catch (e) {}
         root.dropFileName = path.substring(path.lastIndexOf("/") + 1)
-        
+
         let lower = path.toLowerCase()
         if (lower.endsWith(".png") || lower.endsWith(".jpg") || lower.endsWith(".jpeg") ||
             lower.endsWith(".webp") || lower.endsWith(".gif") || lower.endsWith(".svg") ||
@@ -1626,8 +1628,7 @@ Item {
                         anchors.right: undefined
                     }
                     PropertyChanges {
-                        target: statusIconContainer
-                        anchors.leftMargin: 12
+                        statusIconContainer.anchors.leftMargin: 12
                     }
                 },
                 State {
@@ -1655,8 +1656,7 @@ Item {
                         anchors.right: island.right
                     }
                     PropertyChanges {
-                        target: statusIconContainer
-                        anchors.rightMargin: 12
+                        statusIconContainer.anchors.rightMargin: 12
                     }
                 }
             ]
@@ -2985,20 +2985,16 @@ Item {
             Item {
                 Layout.fillWidth: true
                 implicitHeight: (!root.isMediaPeek && root.activePlayer !== null) ? 22 : 0
+                Layout.topMargin: (root.expanded && !root.isMediaPeek) ? 0 : 8
                 visible: (!root.isMediaPeek && root.activePlayer !== null) || opacity > 0.01
                 opacity: !root.isMediaPeek ? 1.0 : 0.0
                 clip: true
                 Behavior on implicitHeight { NumberAnimation { duration: 260; easing.type: Easing.OutCubic } }
                 Behavior on opacity        { NumberAnimation { duration: 220; easing.type: Easing.OutQuad } }
-
-                transform: Translate {
-                    id: progressRowTranslate
-                    y: (root.expanded && !root.isMediaPeek) ? 0 : 8
-                    Behavior on y {
-                        SequentialAnimation {
-                            PauseAnimation { duration: 50 }
-                            NumberAnimation { duration: 240; easing.type: Easing.OutCubic }
-                        }
+                Behavior on Layout.topMargin {
+                    SequentialAnimation {
+                        PauseAnimation { duration: 50 }
+                        NumberAnimation { duration: 240; easing.type: Easing.OutCubic }
                     }
                 }
 
@@ -3052,20 +3048,16 @@ Item {
             RowLayout {
                 Layout.fillWidth: true
                 implicitHeight: (!root.isMediaPeek && root.activePlayer !== null) ? 30 : 0
+                Layout.topMargin: (root.expanded && !root.isMediaPeek) ? 0 : 8
                 visible: (!root.isMediaPeek && root.activePlayer !== null) || opacity > 0.01
                 opacity: !root.isMediaPeek ? 1.0 : 0.0
                 clip: true
                 Behavior on implicitHeight { NumberAnimation { duration: 260; easing.type: Easing.OutCubic } }
                 Behavior on opacity        { NumberAnimation { duration: 220; easing.type: Easing.OutQuad } }
-
-                transform: Translate {
-                    id: controlsRowTranslate
-                    y: (root.expanded && !root.isMediaPeek) ? 0 : 8
-                    Behavior on y {
-                        SequentialAnimation {
-                            PauseAnimation { duration: 75 }
-                            NumberAnimation { duration: 260; easing.type: Easing.OutCubic }
-                        }
+                Behavior on Layout.topMargin {
+                    SequentialAnimation {
+                        PauseAnimation { duration: 75 }
+                        NumberAnimation { duration: 260; easing.type: Easing.OutCubic }
                     }
                 }
 
@@ -3306,7 +3298,9 @@ Item {
 
                 // Add Custom Button
                 Rectangle {
-                    width: 22; height: 22; radius: 11
+                    Layout.preferredWidth: 22
+                    Layout.preferredHeight: 22
+                    radius: 11
                     color: addBtnMouse.containsMouse ? Services.Theme.bgHover : "transparent"
                     border.color: addBtnMouse.containsMouse ? Services.Theme.borderHighlight : Services.Theme.borderSubtle
                     border.width: 1
@@ -3333,7 +3327,9 @@ Item {
 
                 // Close Button
                 Rectangle {
-                    width: 22; height: 22; radius: 11
+                    Layout.preferredWidth: 22
+                    Layout.preferredHeight: 22
+                    radius: 11
                     color: closeIslandWallMouse.containsMouse ? Qt.rgba(239, 68, 68, 0.2) : "transparent"
 
                     Text {
@@ -3653,7 +3649,9 @@ Item {
 
                     // Animated Transfer / Radar Icon (Borderless)
                     Rectangle {
-                        width: 24; height: 24; radius: 12
+                        Layout.preferredWidth: 24
+                        Layout.preferredHeight: 24
+                        radius: 12
                         color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.16)
 
                         Text {
@@ -3682,7 +3680,7 @@ Item {
                     // File Count Badge (Borderless)
                     Rectangle {
                         visible: root.dropFileCount > 0
-                        height: 18
+                        Layout.preferredHeight: 18
                         implicitWidth: fileCountText.implicitWidth + 12
                         radius: 9
                         color: Qt.rgba(255, 255, 255, 0.07)
@@ -3704,7 +3702,9 @@ Item {
                         visible: root.dropPreviewUrl !== ""
                         spacing: 6
                         Rectangle {
-                            width: 22; height: 22; radius: 6
+                            Layout.preferredWidth: 22
+                            Layout.preferredHeight: 22
+                            radius: 6
                             color: Qt.rgba(255, 255, 255, 0.08)
                             clip: true
 
@@ -3728,7 +3728,9 @@ Item {
 
                     // Cancel / Close Button (Borderless)
                     Rectangle {
-                        width: 22; height: 22; radius: 11
+                        Layout.preferredWidth: 22
+                        Layout.preferredHeight: 22
+                        radius: 11
                         color: closeDropMouse.containsMouse ? Qt.rgba(239 / 255, 68 / 255, 68 / 255, 0.2) : Qt.rgba(255, 255, 255, 0.06)
 
                         Behavior on color { ColorAnimation { duration: 150 } }
@@ -3785,7 +3787,9 @@ Item {
                                 spacing: 10
 
                                 Rectangle {
-                                    width: 36; height: 36; radius: 18
+                                    Layout.preferredWidth: 36
+                                    Layout.preferredHeight: 36
+                                    radius: 18
                                     color: kdeCard.isHovered
                                         ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.3)
                                         : Qt.rgba(255, 255, 255, 0.07)
@@ -3808,7 +3812,9 @@ Item {
                                     RowLayout {
                                         spacing: 5
                                         Rectangle {
-                                            width: 6; height: 6; radius: 3
+                                            Layout.preferredWidth: 6
+                                            Layout.preferredHeight: 6
+                                            radius: 3
                                             color: kdeCard.hasDev ? "#22c55e" : "#eab308"
                                         }
                                         Text {
@@ -3921,7 +3927,9 @@ Item {
                                 spacing: 10
 
                                 Rectangle {
-                                    width: 36; height: 36; radius: 18
+                                    Layout.preferredWidth: 36
+                                    Layout.preferredHeight: 36
+                                    radius: 18
                                     color: localCard.isHovered
                                         ? Qt.rgba(56 / 255, 189 / 255, 248 / 255, 0.3)
                                         : Qt.rgba(255, 255, 255, 0.07)
@@ -3944,7 +3952,9 @@ Item {
                                     RowLayout {
                                         spacing: 5
                                         Rectangle {
-                                            width: 6; height: 6; radius: 3
+                                            Layout.preferredWidth: 6
+                                            Layout.preferredHeight: 6
+                                            radius: 3
                                             color: "#38bdf8"
                                         }
                                         Text {
@@ -4034,6 +4044,7 @@ Item {
 
             // ─── Sub-View 2: Sending / Success Transfer Feedback ───
             RowLayout {
+                id: transferFeedback
                 anchors.fill: parent
                 spacing: 12
                 visible: root.isDropSending
@@ -4055,8 +4066,8 @@ Item {
                     // Image Preview
                     Image {
                         anchors.fill: parent
-                        visible: parent.parent.hasPreview
-                        source: parent.parent.previewUrl
+                        visible: transferFeedback.hasPreview
+                        source: transferFeedback.previewUrl
                         fillMode: Image.PreserveAspectCrop
                         asynchronous: true
                         cache: true
@@ -4065,12 +4076,12 @@ Item {
                     // Fallback Icon if not an image
                     Text {
                         anchors.centerIn: parent
-                        visible: !parent.parent.hasPreview
-                        text: parent.parent.isSuccess ? "󰄬" : "󰄶"
+                        visible: !transferFeedback.hasPreview
+                        text: transferFeedback.isSuccess ? "󰄬" : "󰄶"
                         font.family: Services.Theme.fontSymbols
                         font.pixelSize: 22
                         font.bold: true
-                        color: parent.parent.isSuccess ? Services.Theme.success : Services.Theme.accent
+                        color: transferFeedback.isSuccess ? Services.Theme.success : Services.Theme.accent
                     }
 
                     // Corner Mini Badge
@@ -4081,13 +4092,13 @@ Item {
                         width: 14
                         height: 14
                         radius: 7
-                        color: parent.parent.isSuccess ? Services.Theme.success : Services.Theme.accent
-                        visible: parent.parent.hasPreview
+                        color: transferFeedback.isSuccess ? Services.Theme.success : Services.Theme.accent
+                        visible: transferFeedback.hasPreview
 
                         Text {
                             anchors.centerIn: parent
-                            text: parent.parent.parent.isSuccess ? "✓" : "󰄶"
-                            font.family: parent.parent.parent.isSuccess ? Services.Theme.fontPrimary : Services.Theme.fontSymbols
+                            text: transferFeedback.isSuccess ? "✓" : "󰄶"
+                            font.family: transferFeedback.isSuccess ? Services.Theme.fontPrimary : Services.Theme.fontSymbols
                             font.pixelSize: 8
                             font.bold: true
                             color: "#ffffff"
@@ -4107,9 +4118,9 @@ Item {
                         spacing: 6
 
                         Text {
-                            text: parent.parent.parent.isSuccess
-                                ? ("Sent to " + parent.parent.parent.targetDevice)
-                                : ("Sending to " + parent.parent.parent.targetDevice + "...")
+                            text: transferFeedback.isSuccess
+                                ? ("Sent to " + transferFeedback.targetDevice)
+                                : ("Sending to " + transferFeedback.targetDevice + "...")
                             font.bold: true
                             font.pixelSize: 12
                             color: Services.Theme.textPrimary
@@ -4119,8 +4130,8 @@ Item {
 
                         // Success "Done" Badge
                         Rectangle {
-                            visible: parent.parent.parent.isSuccess
-                            height: 16
+                            visible: transferFeedback.isSuccess
+                            Layout.preferredHeight: 16
                             implicitWidth: doneText.implicitWidth + 10
                             radius: 8
                             color: Qt.rgba(34 / 255, 197 / 255, 94 / 255, 0.18)
@@ -4140,7 +4151,7 @@ Item {
                     Rectangle {
                         id: progressBarTrack
                         Layout.fillWidth: true
-                        height: 4
+                        Layout.preferredHeight: 4
                         radius: 2
                         color: Qt.rgba(255, 255, 255, 0.08)
                         clip: true
@@ -4151,7 +4162,7 @@ Item {
                             anchors.left: parent.left
                             anchors.top: parent.top
                             anchors.bottom: parent.bottom
-                            width: parent.parent.parent.isSuccess ? parent.width : 0
+                            width: transferFeedback.isSuccess ? parent.width : 0
                             color: Services.Theme.success
                             radius: 2
 
@@ -4163,7 +4174,7 @@ Item {
                         // Indeterminate glowing sweep beam while sending
                         Rectangle {
                             id: progressSendingBeam
-                            visible: root.isDropSending && !parent.parent.parent.isSuccess
+                            visible: root.isDropSending && !transferFeedback.isSuccess
                             width: 140
                             anchors.top: parent.top
                             anchors.bottom: parent.bottom
@@ -4186,7 +4197,7 @@ Item {
                     // Subtitle: File name or transfer message
                     Text {
                         Layout.fillWidth: true
-                        text: parent.parent.parent.isSuccess
+                        text: transferFeedback.isSuccess
                             ? (root.dropFileName !== "" ? root.dropFileName : (Services.DeviceShare ? Services.DeviceShare.transferMessage : "Transfer completed"))
                             : (Services.DeviceShare ? Services.DeviceShare.transferMessage : "Transfer in progress")
                         font.pixelSize: 10
@@ -4201,7 +4212,7 @@ Item {
                     implicitHeight: 30
                     radius: 15
                     Layout.alignment: Qt.AlignVCenter
-                    color: parent.isSuccess
+                    color: transferFeedback.isSuccess
                         ? Qt.rgba(34 / 255, 197 / 255, 94 / 255, 0.18)
                         : Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.15)
 
@@ -4209,14 +4220,14 @@ Item {
 
                     Text {
                         anchors.centerIn: parent
-                        text: parent.parent.isSuccess ? "󰄬" : "󰄶"
+                        text: transferFeedback.isSuccess ? "󰄬" : "󰄶"
                         font.family: Services.Theme.fontSymbols
                         font.pixelSize: 15
-                        color: parent.parent.isSuccess ? Services.Theme.success : Services.Theme.accent
+                        color: transferFeedback.isSuccess ? Services.Theme.success : Services.Theme.accent
                     }
 
                     SequentialAnimation on scale {
-                        running: root.isDropSending && !parent.parent.isSuccess
+                        running: root.isDropSending && !transferFeedback.isSuccess
                         loops: Animation.Infinite
                         NumberAnimation { to: 1.12; duration: 500; easing.type: Easing.InOutQuad }
                         NumberAnimation { to: 1.0; duration: 500; easing.type: Easing.InOutQuad }
@@ -4518,6 +4529,7 @@ Item {
                 Repeater {
                     model: 3
                     Rectangle {
+                        id: rightWaveBar
                         required property int index
                         width: 2.5
                         height: 10
@@ -4529,13 +4541,13 @@ Item {
                             running: rightSatDot.activity === "media" && rightSatDot.visible
                             loops: Animation.Infinite
                             NumberAnimation {
-                                to: index === 0 ? 14 : (index === 1 ? 6 : 12)
-                                duration: index === 0 ? 280 : (index === 1 ? 400 : 340)
+                                to: rightWaveBar.index === 0 ? 14 : (rightWaveBar.index === 1 ? 6 : 12)
+                                duration: rightWaveBar.index === 0 ? 280 : (rightWaveBar.index === 1 ? 400 : 340)
                                 easing.type: Easing.InOutSine
                             }
                             NumberAnimation {
-                                to: index === 0 ? 4 : (index === 1 ? 14 : 4)
-                                duration: index === 0 ? 320 : (index === 1 ? 300 : 380)
+                                to: rightWaveBar.index === 0 ? 4 : (rightWaveBar.index === 1 ? 14 : 4)
+                                duration: rightWaveBar.index === 0 ? 320 : (rightWaveBar.index === 1 ? 300 : 380)
                                 easing.type: Easing.InOutSine
                             }
                         }
@@ -4928,6 +4940,7 @@ Item {
                 Repeater {
                     model: 3
                     Rectangle {
+                        id: leftWaveBar
                         required property int index
                         width: 2.5
                         height: 10
@@ -4939,13 +4952,13 @@ Item {
                             running: leftSatDot.activity === "media" && leftSatDot.visible
                             loops: Animation.Infinite
                             NumberAnimation {
-                                to: index === 0 ? 14 : (index === 1 ? 6 : 12)
-                                duration: index === 0 ? 280 : (index === 1 ? 400 : 340)
+                                to: leftWaveBar.index === 0 ? 14 : (leftWaveBar.index === 1 ? 6 : 12)
+                                duration: leftWaveBar.index === 0 ? 280 : (leftWaveBar.index === 1 ? 400 : 340)
                                 easing.type: Easing.InOutSine
                             }
                             NumberAnimation {
-                                to: index === 0 ? 4 : (index === 1 ? 14 : 4)
-                                duration: index === 0 ? 320 : (index === 1 ? 300 : 380)
+                                to: leftWaveBar.index === 0 ? 4 : (leftWaveBar.index === 1 ? 14 : 4)
+                                duration: leftWaveBar.index === 0 ? 320 : (leftWaveBar.index === 1 ? 300 : 380)
                                 easing.type: Easing.InOutSine
                             }
                         }
@@ -5081,7 +5094,3 @@ Item {
     readonly property alias satDot2: leftSatDot
 
 }
-
-
-
-

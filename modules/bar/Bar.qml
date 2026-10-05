@@ -9,6 +9,7 @@ Variants {
     id: barVariants
     model: (Services.Config && Services.Config.barScreens) ? Services.Config.barScreens : Quickshell.screens
 
+    // qmllint disable uncreatable-type
     delegate: PanelWindow {
         id: root
         required property var modelData
@@ -327,4 +328,3 @@ Variants {
     }
 }
 }
-
