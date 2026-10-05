@@ -495,26 +495,29 @@ RowLayout {
                     spacing: root.isMinimal ? 5 : 8
 
                     Services.WifiSignal {
-                        visible: Services.Wifi && Services.Wifi.enabled
-                        width: root.isMinimal ? 17 : 20
-                        height: root.isMinimal ? 17 : 20
+                        visible: Services.Wifi
+                        width: root.isMinimal ? 16 : 18
+                        height: root.isMinimal ? 16 : 18
                         signalStrength: Services.Wifi ? Services.Wifi.signalStrength : 0
                         connected: Services.Wifi ? Services.Wifi.connected : false
                         wifiEnabled: Services.Wifi ? Services.Wifi.enabled : false
+                        showDisabledStatus: true
                         activeColor: Services.Wifi && Services.Wifi.connected
                             ? Services.Theme.accent
                             : Services.Theme.textDisabled
+                        inactiveColor: Services.Theme.textSecondary
                     }
 
                     Text {
                         visible: Services.Bluetooth
                             && Services.Bluetooth.enabled
-                            && Services.Bluetooth.hasConnectedDevice
-                        text: Services.Icons.bluetoothConnect
+                        text: Services.Bluetooth.hasConnectedDevice
+                            ? Services.Icons.bluetoothConnect
+                            : Services.Icons.bluetooth
                         font.family: Services.Theme.fontSymbols
                         font.pixelSize: root.isMinimal
-                            ? Services.Theme.fontSizeMd
-                            : Services.Theme.fontSizeXl
+                            ? Services.Theme.fontSizeLg
+                            : Math.round(Services.Theme.fontSizeXl * 1.25)
                         color: Services.Theme.accent
                     }
                 }

@@ -6,6 +6,7 @@ Item {
     property int signalStrength: 0
     property bool connected: false
     property bool wifiEnabled: true
+    property bool showDisabledStatus: false
     property color activeColor: "#ffffff"
     property color inactiveColor: Qt.rgba(activeColor.r, activeColor.g, activeColor.b, 0.22)
 
@@ -17,7 +18,8 @@ Item {
         anchors.fill: parent
 
         function level() {
-            if (!root.wifiEnabled || !root.connected) return 0
+            if (!root.wifiEnabled && root.showDisabledStatus) return 3
+            if (!root.connected) return 0
             if (root.signalStrength >= 75) return 3
             if (root.signalStrength >= 40) return 2
             if (root.signalStrength > 0) return 1
@@ -46,15 +48,25 @@ Item {
             }
 
             ctx.beginPath()
-            ctx.fillStyle = currentLevel > 0 ? root.activeColor : root.inactiveColor
+            ctx.fillStyle = root.wifiEnabled && currentLevel > 0 ? root.activeColor : root.inactiveColor
             ctx.arc(cx, cy, Math.max(1.5, scale * 0.075), 0, Math.PI * 2, false)
             ctx.fill()
+
+            if (!root.wifiEnabled && root.showDisabledStatus) {
+                ctx.beginPath()
+                ctx.strokeStyle = root.inactiveColor
+                ctx.lineWidth = Math.max(1.8, scale * 0.13)
+                ctx.moveTo(scale * 0.18, scale * 0.18)
+                ctx.lineTo(scale * 0.82, scale * 0.82)
+                ctx.stroke()
+            }
         }
     }
 
     onSignalStrengthChanged: canvas.requestPaint()
     onConnectedChanged: canvas.requestPaint()
     onWifiEnabledChanged: canvas.requestPaint()
+    onShowDisabledStatusChanged: canvas.requestPaint()
     onActiveColorChanged: canvas.requestPaint()
     onInactiveColorChanged: canvas.requestPaint()
     onWidthChanged: canvas.requestPaint()

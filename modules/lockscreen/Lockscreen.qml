@@ -1398,21 +1398,25 @@ Scope {
 
                             // Wi-Fi Status Icon (if enabled)
                             Services.WifiSignal {
-                                visible: Services.Wifi && Services.Wifi.enabled
-                                width: 20
-                                height: 20
+                                visible: Services.Wifi
+                                width: 18
+                                height: 18
                                 signalStrength: Services.Wifi.signalStrength
                                 connected: Services.Wifi.connected
                                 wifiEnabled: Services.Wifi.enabled
+                                showDisabledStatus: true
                                 activeColor: (Services.Wifi && Services.Wifi.connected) ? Services.Theme.accent : Services.Theme.textDisabled
+                                inactiveColor: Services.Theme.textSecondary
                             }
 
-                            // Bluetooth Status Icon (if enabled and connected)
+                            // Bluetooth status icon while the adapter is enabled
                             Text {
-                                visible: Services.Bluetooth && Services.Bluetooth.enabled && Services.Bluetooth.hasConnectedDevice
-                                text: Services.Icons.bluetoothConnect
+                                visible: Services.Bluetooth && Services.Bluetooth.enabled
+                                text: Services.Bluetooth.hasConnectedDevice
+                                    ? Services.Icons.bluetoothConnect
+                                    : Services.Icons.bluetooth
                                 font.family: Services.Theme.fontSymbols
-                                font.pixelSize: Services.Theme.fontSizeXl
+                                font.pixelSize: Math.round(Services.Theme.fontSizeXl * 1.25)
                                 color: Services.Theme.accent
                             }
 
