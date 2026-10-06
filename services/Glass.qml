@@ -55,6 +55,12 @@ Singleton {
     readonly property color specular: Qt.rgba(1, 1, 1, dark ? 0.28 : 0.55)
     readonly property color specularEdge: Qt.rgba(1, 1, 1, 0)
 
+    // Sheen "liquid": kilau vertikal lembut, terang di atas, redup di bawah.
+    // Opt-in lewat GlassSurface.sheen supaya bar/dock tidak bergeser.
+    readonly property color sheenTop:    Qt.rgba(1, 1, 1, clamp01((dark ? 0.14 : 0.35) * intensity))
+    readonly property color sheenMid:    Qt.rgba(1, 1, 1, 0)
+    readonly property color sheenBottom: Qt.rgba(0, 0, 0, clamp01((dark ? 0.10 : 0.04) * intensity))
+
     // ── Bentuk ──────────────────────────────────────────────────────────
     readonly property int borderWidth: 1
     readonly property int radiusXs: 6

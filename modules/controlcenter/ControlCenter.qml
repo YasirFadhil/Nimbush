@@ -242,6 +242,7 @@ PanelWindow {
             Common.GlassSurface {
                 anchors.fill: parent
                 level: 1
+                sheen: true
                 radius: panel.cornerRadius
             }
 

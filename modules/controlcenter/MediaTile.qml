@@ -3,6 +3,7 @@ import QtQuick.Layouts
 import QtQuick.Effects
 import Quickshell.Services.Mpris
 import "../../services" as Services
+import "../common" as Common
 import "../media" as MediaModule
 
 Rectangle {
@@ -14,13 +15,10 @@ Rectangle {
     Layout.fillWidth: true
     implicitHeight: hasPlayer ? 86 : 48
     radius: Services.Theme.radiusLg
-    color: Services.Glass.fill(0)
-    border.color: Services.Glass.border(0, isPlaying)
-    border.width: 1
+    color: "transparent"
     clip: true
 
     Behavior on implicitHeight { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
-    Behavior on border.color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
     function fmtTime(sec) {
         const s = Math.max(0, Math.floor(sec ?? 0))
@@ -32,6 +30,15 @@ Rectangle {
         running: card.visible && card.isPlaying
         repeat: true
         onTriggered: card.player?.positionChanged?.()
+    }
+
+    // Permukaan kaca (level 0 + sheen); border menegas saat lagu diputar
+    Common.GlassSurface {
+        anchors.fill: parent
+        level: 0
+        sheen: true
+        radius: card.radius
+        hovered: card.isPlaying
     }
 
     // ── Idle State (No Media Playing) ──
@@ -215,7 +222,7 @@ Rectangle {
                         const dur = len > 0 ? card.fmtTime(len) : "--:--"
                         return pos + " / " + dur
                     }
-                    color: Services.Theme.textDisabled
+                    color: Services.Theme.textSecondary
                     font.pixelSize: 9
                     font.family: Services.Theme.fontMono
                 }
@@ -318,7 +325,7 @@ Rectangle {
                             width: parent.width - 2
                             height: parent.height - 2
                             radius: parent.radius
-                            color: Qt.rgba(0, 0, 0, 0.30)
+                            color: Qt.rgba(0, 0, 0, 0.16)
                             z: -1
                         }
 

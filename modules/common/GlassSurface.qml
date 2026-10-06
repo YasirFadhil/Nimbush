@@ -10,6 +10,7 @@ Item {
     property int level: 1          // 0 / 1 / 2, lihat Glass.qml
     property real radius: Services.Glass.radiusMd
     property bool hovered: false   // mempertegas border
+    property bool sheen: false     // gradient kilau vertikal (tampilan "liquid")
 
     // Fill + border
     Rectangle {
@@ -19,6 +20,19 @@ Item {
         border.width: Services.Glass.borderWidth
         border.color: Services.Glass.border(root.level, root.hovered)
         Behavior on border.color { ColorAnimation { duration: Services.Glass.durNormal } }
+    }
+
+    // Sheen vertikal: terang di atas, memudar ke tengah, redup di dasar
+    Rectangle {
+        visible: root.sheen
+        anchors.fill: parent
+        anchors.margins: 1
+        radius: Math.max(0, root.radius - 1)
+        gradient: Gradient {
+            GradientStop { position: 0.0; color: Services.Glass.sheenTop }
+            GradientStop { position: 0.5; color: Services.Glass.sheenMid }
+            GradientStop { position: 1.0; color: Services.Glass.sheenBottom }
+        }
     }
 
     // Rim dalam (tepi kaca)

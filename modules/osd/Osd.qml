@@ -118,19 +118,11 @@ PanelWindow {
         border.width: 1
 
         opacity: osd.active ? 1.0 : 0.0
-        scale: osd.active ? 1.0 : 0.94
-        transform: Translate {
-            y: osd.active ? 0 : 10
-            Behavior on y {
-                NumberAnimation {
-                    duration: osd.active ? 300 : 180
-                    easing.type: osd.active ? Easing.OutExpo : Easing.InCubic
-                }
-            }
-        }
+        scale: osd.active ? 1.0 : 0.95
+
         Behavior on opacity {
             NumberAnimation {
-                duration: osd.active ? 200 : 160
+                duration: osd.active ? 200 : 140
                 easing.type: osd.active ? Easing.OutCubic : Easing.InCubic
             }
         }
