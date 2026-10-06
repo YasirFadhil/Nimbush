@@ -3,6 +3,7 @@ import QtQuick.Layouts
 import Quickshell
 import Quickshell.Wayland
 import "../../services" as Services
+import "../common" as Common
 
 Variants {
     id: dockVariants
@@ -82,7 +83,7 @@ Variants {
 
         color: "transparent"
         WlrLayershell.layer: WlrLayer.Top
-        WlrLayershell.namespace: "quickshell:dock"
+        WlrLayershell.namespace: "nimbush-dock"
         WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
 
         // Reserve space for tiled windows only when auto-hide is disabled
@@ -234,7 +235,7 @@ Variants {
         )
 
         // ── Main Dock Container (Liquid Glass Floating Pill) ─────────────────
-        Rectangle {
+        Item {
             id: dockContainer
             opacity: (Services.OverlayManager && Services.OverlayManager.isWizardActive) ? 0.0 : (root.isDockHiddenForLock ? 0.0 : 1.0)
             Behavior on opacity {
@@ -300,24 +301,15 @@ Variants {
             // Expands in 100% hardware lockstep with icon magnification.
             height: root.isVertical ? Math.max(root.dockBarHeight, Math.round(itemsLayout.height + 16)) : root.dockBarHeight
             width: root.isVertical ? root.dockBarHeight : Math.max(root.dockBarHeight, Math.round(itemsLayout.width + 16))
-            radius: Math.min(22, Math.round(root.dockBarHeight * 0.35))
+            readonly property real radius: Math.min(Services.Glass.radiusLg, Math.round(root.dockBarHeight * 0.35))
 
-            // macOS Liquid Glass Styling
-            color: Services.Theme.isDark ? Qt.rgba(0.08, 0.08, 0.12, 0.58) : Qt.rgba(0.96, 0.96, 0.98, 0.64)
-            border.color: Services.Theme.isDark
-                ? Qt.rgba(1, 1, 1, root.isHovered ? 0.22 : 0.14)
-                : Qt.rgba(0, 0, 0, root.isHovered ? 0.16 : 0.10)
-            border.width: 1
-            Behavior on border.color { ColorAnimation { duration: 180 } }
-
-            // Inner subtle border rim
-            Rectangle {
+            // Liquid glass: seluruh tampilan (fill, border, rim, kilau) ada di GlassSurface.
+            // Harus deklarasi pertama supaya berada di bawah tracker dan ikon.
+            Common.GlassSurface {
                 anchors.fill: parent
-                anchors.margins: 1
-                radius: parent.radius - 1
-                color: "transparent"
-                border.color: Qt.rgba(1, 1, 1, Services.Theme.isDark ? 0.04 : 0.15)
-                border.width: 1
+                level: 2
+                radius: dockContainer.radius
+                hovered: root.isHovered
             }
 
             // ── Unified Dock Tracker MouseArea ───────────────────────────────
@@ -398,7 +390,7 @@ Variants {
                         anchors.centerIn: parent
                         width: root.isVertical ? (root.iconSize * 0.55) : 1
                         height: root.isVertical ? 1 : (root.iconSize * 0.55)
-                        color: Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.22) : Qt.rgba(0, 0, 0, 0.18)
+                        color: Services.Glass.separator
 
                         // Subtle shadow alongside hairline
                         Rectangle {
@@ -408,7 +400,7 @@ Variants {
                             anchors.right: root.isVertical ? parent.right : undefined
                             width: root.isVertical ? parent.width : 1
                             height: root.isVertical ? 1 : parent.height
-                            color: Services.Theme.isDark ? Qt.rgba(0, 0, 0, 0.3) : Qt.rgba(1, 1, 1, 0.45)
+                            color: Services.Glass.separatorShadow
                         }
                     }
                 }
@@ -661,8 +653,8 @@ Variants {
                         anchors.fill: parent
                         radius: Math.round(root.iconSize * 0.24)
                         color: (iconDelegate.modelData && iconDelegate.modelData.isActive)
-                            ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.25)
-                            : (iconDelegate.isDirectlyHovered ? Services.Theme.bgHover : Qt.rgba(255, 255, 255, 0.08))
+                            ? Services.Glass.accentAlpha(0.25)
+                            : (iconDelegate.isDirectlyHovered ? Services.Theme.bgHover : Services.Glass.iconBubble)
                         border.color: (iconDelegate.modelData && iconDelegate.modelData.isActive) ? Services.Theme.accent : "transparent"
                         border.width: (iconDelegate.modelData && iconDelegate.modelData.isActive) ? 1 : 0
                         visible: !appImg.source || appImg.status !== Image.Ready || !appImg.visible
@@ -799,13 +791,13 @@ Variants {
                         height: parent.height + (runIndicator.style === "glow" ? 6 : 6)
                         radius: parent.radius + 2
                         visible: runIndicator.isActiveApp && runIndicator.style === "glow"
-                        color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.5)
+                        color: Services.Glass.accentAlpha(0.5)
                         z: -1
                     }
                 }
 
                 // ── Tooltip Floating Beside / Above Icon ─────────────────────
-                Rectangle {
+                Item {
                     id: tooltip
                     anchors.bottom: root.isBottom ? parent.top : undefined
                     anchors.left: root.isLeft ? parent.right : undefined
@@ -821,15 +813,17 @@ Variants {
                     visible: opacity > 0.01
                     opacity: shouldShow ? 1 : 0
                     scale: shouldShow ? 1 : 0.92
-                    Behavior on opacity { NumberAnimation { duration: 120 } }
-                    Behavior on scale { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
+                    Behavior on opacity { NumberAnimation { duration: Services.Glass.durFast } }
+                    Behavior on scale { NumberAnimation { duration: Services.Glass.durFast; easing.type: Easing.OutCubic } }
 
                     implicitWidth: tooltipText.implicitWidth + 16
                     implicitHeight: tooltipText.implicitHeight + 8
-                    radius: 8
-                    color: Services.Theme.bgElevated
-                    border.color: Services.Theme.borderHighlight
-                    border.width: 1
+
+                    Common.GlassSurface {
+                        anchors.fill: parent
+                        level: 1
+                        radius: Services.Glass.radiusSm
+                    }
 
                     Text {
                         id: tooltipText

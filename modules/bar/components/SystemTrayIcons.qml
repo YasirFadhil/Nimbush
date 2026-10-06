@@ -5,7 +5,7 @@ import Quickshell.Widgets
 import Quickshell.Services.SystemTray
 import "../../../services" as Services
 
-Rectangle {
+BarPill {
     id: trayPill
     property var trayMenuPopup: null
     property var trayOverflowPopup: null
@@ -24,10 +24,6 @@ Rectangle {
 
     implicitHeight: 28
     implicitWidth: trayLayout.implicitWidth + 16
-    radius: 14
-    color: Services.Theme.surface
-    border.color: Services.Theme.border
-    border.width: 1
     visible: allItems.length > 0
 
     RowLayout {

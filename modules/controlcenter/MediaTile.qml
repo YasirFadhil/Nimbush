@@ -14,8 +14,8 @@ Rectangle {
     Layout.fillWidth: true
     implicitHeight: hasPlayer ? 86 : 48
     radius: Services.Theme.radiusLg
-    color: Services.Theme.surfaceVariant
-    border.color: isPlaying ? Services.Theme.borderHighlight : Services.Theme.borderSubtle
+    color: Services.Glass.fill(0)
+    border.color: Services.Glass.border(0, isPlaying)
     border.width: 1
     clip: true
 
@@ -67,7 +67,7 @@ Rectangle {
         Rectangle {
             width: 60; height: 60
             radius: Services.Theme.radiusMd
-            color: Services.Theme.surface
+            color: Services.Glass.hoverFill
             clip: true
             Layout.alignment: Qt.AlignVCenter
 
@@ -116,8 +116,8 @@ Rectangle {
                     implicitHeight: 20
                     implicitWidth: stepperRow.implicitWidth + 8
                     radius: 10
-                    color: Services.Theme.surface
-                    border.color: Services.Theme.borderSubtle
+                    color: Services.Glass.hoverFill
+                    border.color: Services.Glass.border(0, false)
                     border.width: 1
                     visible: (card.player?.identity ?? "").length > 0
 
@@ -130,7 +130,7 @@ Rectangle {
                         Rectangle {
                             visible: Services.Mpris.playerCount > 1
                             width: 14; height: 14; radius: 7
-                            color: prevArrMouse.containsMouse ? Services.Theme.bgHover : "transparent"
+                            color: prevArrMouse.containsMouse ? Services.Glass.hoverFill : "transparent"
                             Text {
                                 anchors.centerIn: parent
                                 text: "‹"
@@ -172,7 +172,7 @@ Rectangle {
                         Rectangle {
                             visible: Services.Mpris.playerCount > 1
                             width: 14; height: 14; radius: 7
-                            color: nextArrMouse.containsMouse ? Services.Theme.bgHover : "transparent"
+                            color: nextArrMouse.containsMouse ? Services.Glass.hoverFill : "transparent"
                             Text {
                                 anchors.centerIn: parent
                                 text: "›"
@@ -233,7 +233,7 @@ Rectangle {
                     height: 20
                     isPlaying: card.isPlaying
                     waveColor: Services.Theme.accent
-                    trackColor: Services.Theme.surface
+                    trackColor: Services.Glass.separator
                     lineWidth: 2.2
                     maxAmplitude: 2.2
                     position: card.player?.position ?? 0
@@ -254,7 +254,7 @@ Rectangle {
                     // Prev
                     Rectangle {
                         width: 22; height: 22; radius: 11
-                        color: prevHover.containsMouse ? Services.Theme.bgHover : "transparent"
+                        color: prevHover.containsMouse ? Services.Glass.hoverFill : "transparent"
                         opacity: (card.player?.canGoPrevious ?? false) ? 1 : 0.3
                         Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
@@ -344,7 +344,7 @@ Rectangle {
                     // Next
                     Rectangle {
                         width: 22; height: 22; radius: 11
-                        color: nextHover.containsMouse ? Services.Theme.bgHover : "transparent"
+                        color: nextHover.containsMouse ? Services.Glass.hoverFill : "transparent"
                         opacity: (card.player?.canGoNext ?? false) ? 1 : 0.3
                         Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 

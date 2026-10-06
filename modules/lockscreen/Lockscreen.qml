@@ -41,7 +41,7 @@ Scope {
     property bool deviceLockedPeekActive: false
     property bool hasPeekedLocked: false
     property int faceIdRetryCount: 0
-    readonly property int maxFaceIdRetries: 1
+    readonly property int maxFaceIdRetries: 0
     property bool faceIdCancelledByUser: false
     property bool faceIconActive: false
     property bool faceTextActive: false
@@ -444,7 +444,7 @@ Scope {
     Connections {
         target: Services.FaceId
         function onAuthenticated(user, confidence) {
-            console.log("[Lockscreen] Face ID authenticated for:", user, "autoUnlock:", Services.FaceId.autoUnlock)
+            console.log("[Lockscreen] Face ID authenticated for:", user, "confidence:", confidence, "autoUnlock:", Services.FaceId.autoUnlock)
             if (!root.isLocked) return
 
             root.isError = false

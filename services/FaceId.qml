@@ -34,7 +34,7 @@ Singleton {
 
     readonly property real maxDistance: (Services.Config && Services.Config.faceIdConfidence > 0)
         ? Services.Config.faceIdConfidence
-        : 98.0
+        : 75.0
 
     readonly property bool autoUnlock: Services.Config ? Services.Config.faceIdAutoUnlock : true
 

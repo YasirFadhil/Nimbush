@@ -4,6 +4,7 @@ import Quickshell
 import Quickshell.Wayland
 import "components" as Components
 import "../../services" as Services
+import "../common" as Common
 
 Variants {
     id: barVariants
@@ -134,8 +135,8 @@ Variants {
         anchors.fill: parent
         opacity: (Services.OverlayManager && Services.OverlayManager.isWizardActive) ? 0.0 : 1.0
 
-        // ── 1. Floating Glass Bar Container ───────────────────────────────────
-        Rectangle {
+        // ── 1. Floating: satu permukaan kaca yang melayang ────────────────────
+        Common.GlassSurface {
             id: floatingBg
             visible: root.isFloating
             anchors.left: parent.left
@@ -144,62 +145,25 @@ Variants {
             anchors.rightMargin: 12
             y: root.barYOffset
             height: root.barHeight
+            level: 2
             radius: Math.min(18, Services.Theme.baseRadius)
-            color: Services.Theme.bgElevated
-            border.color: Services.Theme.border
-            border.width: 1
             opacity: root.barTransitionState
-
-            // Subtle top/inner glow
-            Rectangle {
-                anchors.fill: parent
-                radius: parent.radius
-                color: "transparent"
-                border.color: Qt.rgba(1, 1, 1, Services.Theme.isDark ? 0.07 : 0.2)
-                border.width: 1
-            }
         }
 
-        // ── 2. Unified Edge-to-Edge Bar Container ────────────────────────────
-        Rectangle {
-            id: unifiedBg
-            visible: root.isUnified
-            anchors.left: parent.left
-            anchors.right: parent.right
-            y: root.barYOffset
-            height: root.barHeight
-            color: Services.Theme.bgElevated
+        // ── 2. Unified & Minimal: strip kaca yang menempel di tepi layar ──────
+        // Surface sengaja dilebarkan 2px keluar window di sisi yang menempel
+        // layar, supaya border 4 sisi milik GlassSurface terpotong di sana dan
+        // hanya garis di sisi dalam yang terlihat (seperti desain sebelumnya).
+        Common.GlassSurface {
+            id: edgeBg
+            visible: root.isUnified || root.isMinimal
+            x: -2
+            width: parent.width + 4
+            y: root.isBottom ? root.barYOffset : (root.barYOffset - 2)
+            height: root.barHeight + 2
+            level: 2
+            radius: 0
             opacity: root.barTransitionState
-
-            Rectangle {
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.bottom: root.isBottom ? undefined : parent.bottom
-                anchors.top: root.isBottom ? parent.top : undefined
-                height: 1
-                color: Services.Theme.border
-            }
-        }
-
-        // ── 3. Minimalist Bar Container ──────────────────────────────────────
-        Rectangle {
-            id: minimalBg
-            visible: root.isMinimal
-            anchors.left: parent.left
-            anchors.right: parent.right
-            y: root.barYOffset
-            height: root.barHeight
-            color: Qt.rgba(Services.Theme.bgElevated.r, Services.Theme.bgElevated.g, Services.Theme.bgElevated.b, 0.65)
-            opacity: root.barTransitionState
-
-            Rectangle {
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.bottom: root.isBottom ? undefined : parent.bottom
-                anchors.top: root.isBottom ? parent.top : undefined
-                height: 1
-                color: Services.Theme.borderSubtle
-            }
         }
 
         // ── Main Bar Content Row ─────────────────────────────────────────────

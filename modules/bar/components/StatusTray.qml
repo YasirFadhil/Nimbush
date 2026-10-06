@@ -34,22 +34,6 @@ RowLayout {
     readonly property int pillRadius: isMinimal ? 6 : (isIslands ? 14 : 10)
     readonly property int innerSpacing: isMinimal ? 4 : 6
 
-    function getPillBg(hovered) {
-        if (hovered) return Services.Theme.bgHover
-        if (isIslands) return Services.Theme.surface
-        if (isFloating) return Qt.rgba(Services.Theme.surface.r, Services.Theme.surface.g, Services.Theme.surface.b, 0.45)
-        if (isUnified) return Qt.rgba(Services.Theme.bgDeep.r, Services.Theme.bgDeep.g, Services.Theme.bgDeep.b, 0.4)
-        return "transparent"
-    }
-
-    function getPillBorder(hovered) {
-        if (hovered) return Services.Theme.borderHighlight
-        if (isIslands) return Services.Theme.border
-        if (isFloating) return Qt.rgba(Services.Theme.border.r, Services.Theme.border.g, Services.Theme.border.b, 0.4)
-        if (isUnified) return Qt.rgba(Services.Theme.border.r, Services.Theme.border.g, Services.Theme.border.b, 0.3)
-        return "transparent"
-    }
-
     // ── Daftar item dan urutan mengalah ───────────────────────────
     readonly property var yieldOrder: [volPill, sysmonInd, sysTrayIcons, batPill, ctrlPill, clockCenterPill]
     readonly property var compactables: [volPill, sysmonInd]
@@ -190,7 +174,7 @@ RowLayout {
     }
 
     // ── 3. Volume Pill ────────────────────────────────────────────────────
-    Rectangle {
+    Components.BarPill {
         id: volPill
 
         readonly property int yieldIndex: root.yieldOrder.indexOf(volPill)
@@ -226,17 +210,12 @@ RowLayout {
         Layout.rightMargin: isYielded ? 0 : root.itemSpacing
         Layout.alignment: Qt.AlignVCenter
         clip: true
-        radius: root.pillRadius
-        color: root.getPillBg(volMouse.containsMouse || Services.OverlayManager.volumePanelVisible)
-        border.color: root.getPillBorder(volMouse.containsMouse || Services.OverlayManager.volumePanelVisible)
-        border.width: root.isMinimal ? 0 : 1
+        hovered: volMouse.containsMouse || Services.OverlayManager.volumePanelVisible
         
         opacity: isYielded ? 0.0 : 1.0
         visible: Services.Config ? Services.Config.showVolumeTray : true
         enabled: opacity > 0.5
 
-        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
-        Behavior on border.color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
         Behavior on Layout.preferredWidth { NumberAnimation { duration: 360; easing.type: Easing.OutCubic } }
         Behavior on Layout.rightMargin { NumberAnimation { duration: 360; easing.type: Easing.OutCubic } }
         Behavior on opacity { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
@@ -325,7 +304,7 @@ RowLayout {
     }
 
     // ── 4. Battery Pill (Anchor) ──────────────────────────────────────────
-    Rectangle {
+    Components.BarPill {
         id: batPill
 
         readonly property int yieldIndex: root.yieldOrder.indexOf(batPill)
@@ -360,17 +339,12 @@ RowLayout {
         Layout.rightMargin: isYielded ? 0 : root.itemSpacing
         Layout.alignment: Qt.AlignVCenter
         clip: true
-        radius: root.pillRadius
-        color: root.getPillBg(batMouse.containsMouse || Services.OverlayManager.batteryPanelVisible)
-        border.color: root.getPillBorder(batMouse.containsMouse || Services.OverlayManager.batteryPanelVisible)
-        border.width: root.isMinimal ? 0 : 1
+        hovered: batMouse.containsMouse || Services.OverlayManager.batteryPanelVisible
 
         opacity: isYielded ? 0.0 : 1.0
         visible: Services.Config ? Services.Config.showBatteryTray : true
         enabled: opacity > 0.5
 
-        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
-        Behavior on border.color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
         Behavior on Layout.preferredWidth { NumberAnimation { duration: 360; easing.type: Easing.OutCubic } }
         Behavior on Layout.rightMargin { NumberAnimation { duration: 360; easing.type: Easing.OutCubic } }
         Behavior on opacity { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
@@ -431,7 +405,7 @@ RowLayout {
     }
 
     // ── 5. Notification Bell & Control Center Pill ────────────────────────
-    Rectangle {
+    Components.BarPill {
         id: ctrlPill
 
         readonly property int yieldIndex: root.yieldOrder.indexOf(ctrlPill)
@@ -451,17 +425,12 @@ RowLayout {
         Layout.rightMargin: isYielded ? 0 : root.itemSpacing
         Layout.alignment: Qt.AlignVCenter
         clip: true
-        radius: root.pillRadius
-        color: root.getPillBg(Services.OverlayManager.controlCenterVisible || Services.Notifications.centerVisible)
-        border.color: root.getPillBorder(Services.OverlayManager.controlCenterVisible || Services.Notifications.centerVisible)
-        border.width: root.isMinimal ? 0 : 1
+        hovered: Services.OverlayManager.controlCenterVisible || Services.Notifications.centerVisible
 
         opacity: isYielded ? 0.0 : 1.0
         visible: Services.Config ? Services.Config.showControlCenterTray : true
         enabled: opacity > 0.5
 
-        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
-        Behavior on border.color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
         Behavior on Layout.preferredWidth { NumberAnimation { duration: 360; easing.type: Easing.OutCubic } }
         Behavior on Layout.rightMargin { NumberAnimation { duration: 360; easing.type: Easing.OutCubic } }
         Behavior on opacity { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }

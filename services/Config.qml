@@ -188,7 +188,7 @@ Singleton {
     property bool lockscreenGenieUnlock: true
     property bool faceIdEnabled: true
     property string faceIdCameraDevice: "/dev/video0"
-    property real faceIdConfidence: 98.0
+    property real faceIdConfidence: 75.0
     property bool faceIdAutoUnlock: true
     property bool batteryShowWarnings: true
     property int batteryLowThreshold: 20

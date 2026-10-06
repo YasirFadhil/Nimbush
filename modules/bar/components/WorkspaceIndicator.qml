@@ -16,36 +16,13 @@ RowLayout {
     readonly property bool isUnified: barStyle === "unified"
 
     readonly property int pillHeight: isMinimal ? 24 : 28
-    readonly property int pillRadius: isMinimal ? 6 : (isIslands ? 14 : 10)
-
-    function getPillBg(hovered) {
-        if (hovered) return Services.Theme.bgHover
-        if (isIslands) return Services.Theme.surface
-        if (isFloating) return Qt.rgba(Services.Theme.surface.r, Services.Theme.surface.g, Services.Theme.surface.b, 0.45)
-        if (isUnified) return Qt.rgba(Services.Theme.bgDeep.r, Services.Theme.bgDeep.g, Services.Theme.bgDeep.b, 0.4)
-        return "transparent"
-    }
-
-    function getPillBorder(hovered) {
-        if (hovered) return Services.Theme.borderHighlight
-        if (isIslands) return Services.Theme.border
-        if (isFloating) return Qt.rgba(Services.Theme.border.r, Services.Theme.border.g, Services.Theme.border.b, 0.4)
-        if (isUnified) return Qt.rgba(Services.Theme.border.r, Services.Theme.border.g, Services.Theme.border.b, 0.3)
-        return "transparent"
-    }
 
     // OS Logo & Workspaces Pill
-    Rectangle {
+    BarPill {
         id: wsPill
         implicitHeight: wsRoot.pillHeight
         implicitWidth: wsPillLayout.implicitWidth + (wsRoot.isMinimal ? 12 : 20)
-        radius: wsRoot.pillRadius
-        color: wsRoot.getPillBg(wsPillMouse.containsMouse)
-        border.color: wsRoot.getPillBorder(wsPillMouse.containsMouse)
-        border.width: wsRoot.isMinimal ? 0 : 1
-
-        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
-        Behavior on border.color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+        hovered: wsPillMouse.containsMouse
 
         MouseArea {
             id: wsPillMouse
@@ -109,7 +86,7 @@ RowLayout {
                 id: wsRow
                 spacing: (wsRoot.workspaceStyle === "numbers" || wsRoot.workspaceStyle === "icons") ? (wsRoot.isMinimal ? 2 : 4) : 6
                 Layout.alignment: Qt.AlignVCenter
-
+                
                 property var workspaceList: {
                     const list = wsRoot.showAll ? [1, 2, 3, 4, 5] : []
                     const openList = Services.Workspaces.workspaceIds || []
@@ -266,19 +243,12 @@ RowLayout {
     }
 
     // Active Window Title Pill
-    Rectangle {
+    BarPill {
         id: titlePill
         implicitHeight: wsRoot.pillHeight
         implicitWidth: titleText.implicitWidth + (wsRoot.isMinimal ? 12 : 20)
-        radius: wsRoot.pillRadius
-        color: wsRoot.getPillBg(false)
-        border.color: wsRoot.getPillBorder(false)
-        border.width: wsRoot.isMinimal ? 0 : 1
         visible: Services.Workspaces.activeWindowTitle.length > 0
         Layout.maximumWidth: wsRoot.isMinimal ? 220 : 280
-
-        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
-        Behavior on border.color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
         Text {
             id: titleText
@@ -287,7 +257,7 @@ RowLayout {
             text: Services.Workspaces.activeWindowTitle
             font.family: Services.Theme.fontMono
             font.pixelSize: wsRoot.isMinimal ? Services.Theme.fontSizeMd : Services.Theme.fontSizeLg
-            color: Services.Theme.textSecondary
+            color: Services.Theme.textPrimary
             elide: Text.ElideRight
         }
     }

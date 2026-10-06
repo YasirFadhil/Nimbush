@@ -1,7 +1,7 @@
 import QtQuick
 import "../../../services" as Services
 
-Rectangle {
+BarPill {
     id: clockPill
 
     readonly property string barStyle: Services.Config ? Services.Config.barStyle : "islands"
@@ -42,21 +42,8 @@ Rectangle {
 
     implicitHeight: isMinimal ? 24 : 28
     implicitWidth: trayCompact ? trayWidthCompact : trayWidthFull
-    radius: isMinimal ? 6 : (isIslands ? 14 : 10)
 
-    color: clockArea.containsMouse ? Services.Theme.bgHover 
-         : (isIslands ? Services.Theme.surface 
-         : (isFloating ? Qt.rgba(Services.Theme.surface.r, Services.Theme.surface.g, Services.Theme.surface.b, 0.45) 
-         : (isUnified ? Qt.rgba(Services.Theme.bgDeep.r, Services.Theme.bgDeep.g, Services.Theme.bgDeep.b, 0.4) : "transparent")))
-
-    border.color: clockArea.containsMouse ? Services.Theme.borderHighlight 
-         : (isIslands ? Services.Theme.border 
-         : (isFloating ? Qt.rgba(Services.Theme.border.r, Services.Theme.border.g, Services.Theme.border.b, 0.4) 
-         : (isUnified ? Qt.rgba(Services.Theme.border.r, Services.Theme.border.g, Services.Theme.border.b, 0.3) : "transparent")))
-    border.width: isMinimal ? 0 : 1
-
-    Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
-    Behavior on border.color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+    hovered: clockArea.containsMouse
 
     onTrayCompactChanged: clockText.updateTime()
 

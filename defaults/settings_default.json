@@ -66,7 +66,7 @@
   "lockscreenGenieUnlock": true,
   "faceIdEnabled": false,
   "faceIdCameraDevice": "/dev/video0",
-  "faceIdConfidence": 98.0,
+  "faceIdConfidence": 75.0,
   "faceIdAutoUnlock": true,
   "batteryShowWarnings": true,
   "batteryLowThreshold": 20,

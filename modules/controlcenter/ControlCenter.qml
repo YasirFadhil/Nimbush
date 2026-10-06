@@ -5,6 +5,7 @@ import Quickshell
 import Quickshell.Io
 import Quickshell.Wayland
 import "../../services" as Services
+import "../common" as Common
 import "." as Local
 
 PanelWindow {
@@ -17,9 +18,9 @@ PanelWindow {
     anchors { top: true; bottom: true; left: true; right: true }
     color: "transparent"
     exclusiveZone: 0
-    visible: Services.OverlayManager.controlCenterVisible
+    visible: Services.OverlayManager.controlCenterVisible || panel.opacity > 0.01
     WlrLayershell.layer: WlrLayer.Top
-    WlrLayershell.namespace: "quickshell:controlcenter"
+    WlrLayershell.namespace: "nimbush-controlcenter"
     WlrLayershell.keyboardFocus: Services.OverlayManager.isLocked ? WlrKeyboardFocus.Exclusive : (root.wifiPasswordTarget !== "" ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None)
 
     mask: Region {
@@ -34,6 +35,17 @@ PanelWindow {
     property string wifiPasswordTarget: ""
     property string wifiPasswordInput: ""
     property bool audioSinkSelectorOpen: false
+
+    // ── Glass tokens lokal (level 0: elemen DI DALAM panel kaca) ─────────
+    // Semua angka berasal dari Services.Glass supaya ikut intensity/tema.
+    readonly property color gFill:        Services.Glass.fill(0)
+    readonly property color gHover:       Services.Glass.hoverFill
+    readonly property color gSelected:    Services.Glass.accentAlpha(0.18)
+    readonly property color gActive:      Services.Glass.accentAlpha(0.88)
+    readonly property color gBorder:      Services.Glass.border(0, false)
+    readonly property color gBorderHover: Services.Glass.border(0, true)
+    // Cekungan gelap untuk kotak "inset" (commit log). Kandidat pindah ke Glass.qml.
+    readonly property color gInset: Services.Glass.dark ? Qt.rgba(0, 0, 0, 0.25) : Qt.rgba(0, 0, 0, 0.06)
 
     Process {
         id: pwrProc
@@ -83,8 +95,10 @@ PanelWindow {
         Layout.fillWidth: true
         implicitHeight: 38
         radius: Services.Theme.radiusMd
-        color: sliderMouse.containsMouse ? Services.Theme.bgHover : Services.Theme.surfaceVariant
-        border.color: sliderMouse.containsMouse ? Services.Theme.borderHighlight : "transparent"
+        color: sliderMouse.containsMouse
+               ? Qt.alpha(Services.Glass.hoverFill, Math.min(1, Services.Glass.hoverFill.a * 1.6))
+               : Services.Glass.hoverFill
+        border.color: Services.Glass.border(0, sliderMouse.containsMouse)
         border.width: 1
         clip: true
 
@@ -96,7 +110,7 @@ PanelWindow {
             id: fillBar
             height: parent.height
             radius: parent.radius
-            color: sliderMouse.containsMouse ? Qt.lighter(Services.Theme.accent, 1.1) : Services.Theme.accent
+            color: sliderMouse.containsMouse ? Qt.lighter(Services.Glass.accentAlpha(0.9), 1.1) : Services.Glass.accentAlpha(0.9)
             width: Math.max(38, Math.min(parent.width, sliderRoot.value * parent.width))
             Behavior on width { NumberAnimation { duration: 80 } }
             Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
@@ -187,7 +201,9 @@ PanelWindow {
         default property alias content: inner.data
         Layout.fillWidth: true
         radius: Services.Theme.radiusLg
-        color: Services.Theme.surfaceVariant
+        color: Services.Glass.fill(0)
+        border.color: Services.Glass.border(0, false)
+        border.width: 1
         implicitHeight: inner.implicitHeight + 24
 
         ColumnLayout {
@@ -202,17 +218,15 @@ PanelWindow {
         anchors.fill: parent
         onClicked: root.close()
 
-        Rectangle {
+        Item {
             id: panel
             anchors.right: parent.right
             anchors.rightMargin: 12
             y: root.isBottom ? (parent.height - height - 12) : 12
             width: 356
             height: Math.min(530, parent.height - 24)
-            radius: Services.Theme.radiusMd
-            color: Services.Theme.surface
-            border.color: Services.Theme.border
-            border.width: 1
+            // Konsentris dengan tile di dalamnya (inset 16 ~ radius tile + 12).
+            readonly property real cornerRadius: Services.Theme.radiusLg + 12
             clip: true
 
             opacity: Services.OverlayManager.controlCenterVisible ? 1.0 : 0.0
@@ -223,6 +237,13 @@ PanelWindow {
             }
             Behavior on opacity { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
             Behavior on scale   { NumberAnimation { duration: 280; easing.type: Easing.OutBack } }
+
+            // Permukaan kaca utama (blur dari layer rule nimbush-controlcenter)
+            Common.GlassSurface {
+                anchors.fill: parent
+                level: 1
+                radius: panel.cornerRadius
+            }
 
             MouseArea { anchors.fill: parent; onClicked: {} }
 
@@ -258,8 +279,8 @@ PanelWindow {
                         implicitHeight: 24
                         implicitWidth: headerBatLayout.implicitWidth + 14
                         radius: 12
-                        color: Services.Theme.surfaceVariant
-                        border.color: Services.Theme.border
+                        color: root.gFill
+                        border.color: root.gBorder
                         border.width: 1
 
                         RowLayout {
@@ -297,11 +318,11 @@ PanelWindow {
                     Rectangle {
                         width: 26; height: 26; radius: 13
                         color: updateBtnMouse.containsMouse
-                               ? Services.Theme.surfaceVariant
-                               : (Services.OverlayManager.updatePanelVisible || Services.ShellUpdate.hasUpdate ? Services.Theme.bgHover : "transparent")
+                               ? root.gHover
+                               : (Services.OverlayManager.updatePanelVisible || Services.ShellUpdate.hasUpdate ? root.gFill : "transparent")
                         border.color: Services.ShellUpdate.hasUpdate
                                       ? Services.Theme.accent
-                                      : (Services.OverlayManager.updatePanelVisible ? Services.Theme.border : "transparent")
+                                      : (Services.OverlayManager.updatePanelVisible ? root.gBorder : "transparent")
                         border.width: (Services.ShellUpdate.hasUpdate || Services.OverlayManager.updatePanelVisible) ? 1 : 0
                         Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
@@ -345,7 +366,7 @@ PanelWindow {
                     // Settings Icon Button
                     Rectangle {
                         width: 26; height: 26; radius: 13
-                        color: settingsHover.containsMouse ? Services.Theme.surfaceVariant : "transparent"
+                        color: settingsHover.containsMouse ? root.gHover : "transparent"
                         Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                         Text {
@@ -371,7 +392,7 @@ PanelWindow {
                     // Power Menu Icon Button
                     Rectangle {
                         width: 26; height: 26; radius: 13
-                        color: pwrHover.containsMouse ? Services.Theme.surfaceVariant : "transparent"
+                        color: pwrHover.containsMouse ? root.gHover : "transparent"
                         Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                         Text {
@@ -409,7 +430,9 @@ PanelWindow {
                         Layout.preferredWidth: Services.OverlayManager.btPanelVisible ? 0 : (Services.OverlayManager.wifiPanelVisible ? 324 : 157)
                         Layout.preferredHeight: Services.OverlayManager.wifiPanelVisible ? 240 : 72
                         radius: Services.Theme.radiusLg
-                        color: Services.Wifi.enabled ? Services.Theme.accent : Services.Theme.surfaceVariant
+                        color: Services.Wifi.enabled ? root.gActive : root.gFill
+                        border.color: root.gBorder
+                        border.width: 1
                         clip: true
 
                         visible: opacity > 0.01
@@ -437,7 +460,7 @@ PanelWindow {
                                     Layout.preferredHeight: 32
                                     radius: 16
                                     color: wifiIconMouse.containsMouse
-                                           ? (Services.Wifi.enabled ? "#35000000" : Services.Theme.bgHover)
+                                           ? (Services.Wifi.enabled ? "#35000000" : root.gHover)
                                            : (Services.Wifi.enabled ? "#20000000" : "transparent")
                                     scale: wifiIconMouse.pressed ? 0.88 : (wifiIconMouse.containsMouse ? 1.06 : 1.0)
                                     Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
@@ -551,7 +574,7 @@ PanelWindow {
                                 opacity: Services.OverlayManager.wifiPanelVisible ? 0.5 : 0
                                 Layout.fillWidth: true
                                 height: 1
-                                color: Services.Wifi.enabled ? "#30000000" : Services.Theme.border
+                                color: Services.Wifi.enabled ? "#30000000" : Services.Glass.separator
                                 Behavior on opacity { NumberAnimation { duration: 160 } }
                             }
 
@@ -613,7 +636,7 @@ PanelWindow {
                                             radius: Services.Theme.radiusSm
                                             color: Services.Wifi.enabled
                                                    ? (netRowArea.containsMouse ? "#25000000" : (netRow.modelData.inUse ? "#35000000" : "transparent"))
-                                                   : (netRowArea.containsMouse ? Services.Theme.bgHover : "transparent")
+                                                   : (netRowArea.containsMouse ? root.gHover : "transparent")
 
                                             readonly property bool isSaved: Services.Wifi.isSaved(netRow.modelData.ssid)
                                             readonly property bool isPwOpen: root.wifiPasswordTarget === netRow.modelData.ssid
@@ -736,7 +759,7 @@ PanelWindow {
                                                         Layout.fillWidth: true
                                                         height: 30
                                                         radius: 6
-                                                        color: Services.Wifi.enabled ? "#35000000" : Services.Theme.surfaceVariant
+                                                        color: Services.Wifi.enabled ? "#35000000" : root.gHover
 
                                                         TextInput {
                                                             anchors.fill: parent
@@ -769,7 +792,9 @@ PanelWindow {
                         Layout.preferredWidth: Services.OverlayManager.wifiPanelVisible ? 0 : (Services.OverlayManager.btPanelVisible ? 324 : 157)
                         Layout.preferredHeight: Services.OverlayManager.btPanelVisible ? 240 : 72
                         radius: Services.Theme.radiusLg
-                        color: Services.Bluetooth.enabled ? Services.Theme.accent : Services.Theme.surfaceVariant
+                        color: Services.Bluetooth.enabled ? root.gActive : root.gFill
+                        border.color: root.gBorder
+                        border.width: 1
                         clip: true
 
                         visible: opacity > 0.01
@@ -797,7 +822,7 @@ PanelWindow {
                                     Layout.preferredHeight: 32
                                     radius: 16
                                     color: btIconMouse.containsMouse
-                                           ? (Services.Bluetooth.enabled ? "#35000000" : Services.Theme.bgHover)
+                                           ? (Services.Bluetooth.enabled ? "#35000000" : root.gHover)
                                            : (Services.Bluetooth.enabled ? "#20000000" : "transparent")
                                     scale: btIconMouse.pressed ? 0.88 : (btIconMouse.containsMouse ? 1.06 : 1.0)
                                     Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
@@ -922,7 +947,7 @@ PanelWindow {
                                 opacity: Services.OverlayManager.btPanelVisible ? 0.5 : 0
                                 Layout.fillWidth: true
                                 height: 1
-                                color: Services.Bluetooth.enabled ? "#30000000" : Services.Theme.border
+                                color: Services.Bluetooth.enabled ? "#30000000" : Services.Glass.separator
                                 Behavior on opacity { NumberAnimation { duration: 160 } }
                             }
 
@@ -984,7 +1009,7 @@ PanelWindow {
                                             radius: Services.Theme.radiusSm
                                             color: Services.Bluetooth.enabled
                                                    ? (btItemArea.containsMouse ? "#25000000" : (btItem.modelData.connected ? "#35000000" : "transparent"))
-                                                   : (btItemArea.containsMouse ? Services.Theme.bgHover : "transparent")
+                                                   : (btItemArea.containsMouse ? root.gHover : "transparent")
 
                                             MouseArea {
                                                 id: btItemArea
@@ -1023,7 +1048,7 @@ PanelWindow {
                                                         Layout.preferredHeight: 18
                                                         implicitWidth: devBatRow.implicitWidth + 8
                                                         radius: 9
-                                                        color: Services.Bluetooth.enabled ? "#25000000" : Services.Theme.surfaceVariant
+                                                        color: Services.Bluetooth.enabled ? "#25000000" : root.gHover
 
                                                         RowLayout {
                                                             id: devBatRow
@@ -1208,9 +1233,9 @@ PanelWindow {
                                 radius: Services.Theme.radiusLg
                                 readonly property bool isActive: Services.Notifications.doNotDisturb
                                 color: isActive
-                                    ? Services.Theme.accent
-                                    : (dndMouse.containsMouse ? Services.Theme.bgHover : Services.Theme.surfaceVariant)
-                                border.color: isActive ? Services.Theme.accent : (dndMouse.containsMouse ? Services.Theme.borderHighlight : "transparent")
+                                    ? root.gActive
+                                    : (dndMouse.containsMouse ? root.gHover : root.gFill)
+                                border.color: dndMouse.containsMouse ? root.gBorderHover : root.gBorder
                                 border.width: 1
                                 scale: dndMouse.pressed ? 0.93 : 1.0
                                 clip: true
@@ -1280,9 +1305,9 @@ PanelWindow {
                                 radius: Services.Theme.radiusLg
                                 readonly property bool isActive: Services.PowerProfile.saverEnabled
                                 color: isActive
-                                    ? Services.Theme.accent
-                                    : (saverMouse.containsMouse ? Services.Theme.bgHover : Services.Theme.surfaceVariant)
-                                border.color: isActive ? Services.Theme.accent : (saverMouse.containsMouse ? Services.Theme.borderHighlight : "transparent")
+                                    ? root.gActive
+                                    : (saverMouse.containsMouse ? root.gHover : root.gFill)
+                                border.color: saverMouse.containsMouse ? root.gBorderHover : root.gBorder
                                 border.width: 1
                                 scale: saverMouse.pressed ? 0.93 : 1.0
                                 clip: true
@@ -1348,9 +1373,9 @@ PanelWindow {
                                 radius: Services.Theme.radiusLg
                                 readonly property bool isDark: Services.Config ? (Services.Config.themeMode === "dark" || Services.Config.themeMode !== "light") : true
                                 color: isDark
-                                    ? Services.Theme.accent
-                                    : (themeMouse.containsMouse ? Services.Theme.bgHover : Services.Theme.surfaceVariant)
-                                border.color: isDark ? Services.Theme.accent : (themeMouse.containsMouse ? Services.Theme.borderHighlight : "transparent")
+                                    ? root.gActive
+                                    : (themeMouse.containsMouse ? root.gHover : root.gFill)
+                                border.color: themeMouse.containsMouse ? root.gBorderHover : root.gBorder
                                 border.width: 1
                                 scale: themeMouse.pressed ? 0.93 : 1.0
                                 clip: true
@@ -1414,9 +1439,9 @@ PanelWindow {
                                 radius: Services.Theme.radiusLg
                                 readonly property bool isActive: Services.Audio.muted
                                 color: isActive
-                                    ? Services.Theme.accent
-                                    : (muteMouse.containsMouse ? Services.Theme.bgHover : Services.Theme.surfaceVariant)
-                                border.color: isActive ? Services.Theme.accent : (muteMouse.containsMouse ? Services.Theme.borderHighlight : "transparent")
+                                    ? root.gActive
+                                    : (muteMouse.containsMouse ? root.gHover : root.gFill)
+                                border.color: muteMouse.containsMouse ? root.gBorderHover : root.gBorder
                                 border.width: 1
                                 scale: muteMouse.pressed ? 0.93 : 1.0
                                 clip: true
@@ -1502,8 +1527,7 @@ PanelWindow {
                 Rectangle {
                     Layout.fillWidth: true
                     height: 1
-                    color: Services.Theme.border
-                    opacity: 0.4
+                    color: Services.Glass.separator
                 }
 
                 ControlCard {
@@ -1522,7 +1546,7 @@ PanelWindow {
                         // Audio Output Device Selector Button (Opens sub-panel like WiFi/BT)
                         Rectangle {
                             height: 20; radius: 10
-                            color: audioSinkMouse.containsMouse ? Services.Theme.bgHover : "transparent"
+                            color: audioSinkMouse.containsMouse ? root.gHover : "transparent"
                             implicitWidth: sinkRow.implicitWidth + 12
                             Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
@@ -1589,7 +1613,9 @@ PanelWindow {
                     Layout.fillWidth: true
                     height: 30
                     radius: Services.Theme.radiusMd
-                    color: Services.Theme.surfaceVariant
+                    color: root.gFill
+                    border.color: root.gBorder
+                    border.width: 1
 
                     RowLayout {
                         anchors.fill: parent
@@ -1639,8 +1665,8 @@ PanelWindow {
                 id: fullPanelOverlay
                 z: 100
                 anchors.fill: parent
-                color: Services.Theme.surface
-                radius: Services.Theme.radiusMd
+                color: "transparent"
+                radius: panel.cornerRadius
                 clip: true
 
                 readonly property bool isOpen: Services.OverlayManager.audioPanelVisible || Services.OverlayManager.updatePanelVisible
@@ -1664,7 +1690,7 @@ PanelWindow {
                         // Back Button (<)
                         Rectangle {
                             width: 28; height: 28; radius: 14
-                            color: backBtnMouse.containsMouse ? Services.Theme.surfaceVariant : "transparent"
+                            color: backBtnMouse.containsMouse ? root.gHover : "transparent"
                             Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                             Text {
@@ -1708,7 +1734,7 @@ PanelWindow {
                         Rectangle {
                             width: 28; height: 28; radius: 14
                             visible: !Services.OverlayManager.updatePanelVisible
-                            color: refreshBtnMouse.containsMouse ? Services.Theme.surfaceVariant : "transparent"
+                            color: refreshBtnMouse.containsMouse ? root.gHover : "transparent"
                             Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                             Text {
@@ -1736,7 +1762,7 @@ PanelWindow {
                             width: 38; height: 20; radius: 10
                             visible: Services.OverlayManager.wifiPanelVisible || Services.OverlayManager.btPanelVisible
                             color: (Services.OverlayManager.wifiPanelVisible ? Services.Wifi.enabled : Services.Bluetooth.enabled)
-                                   ? Services.Theme.accent : Services.Theme.surfaceVariant
+                                   ? root.gActive : root.gHover
                             Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                             Rectangle {
@@ -1758,7 +1784,7 @@ PanelWindow {
                         }
                     }
 
-                    Rectangle { Layout.fillWidth: true; height: 1; color: Services.Theme.border; opacity: 0.4 }
+                    Rectangle { Layout.fillWidth: true; height: 1; color: Services.Glass.separator }
 
                     // Scrollable List Body Container
                     Flickable {
@@ -1803,7 +1829,7 @@ PanelWindow {
                                         Layout.fillWidth: true
                                         implicitHeight: wifiPanelNetCol.implicitHeight + 14
                                         radius: Services.Theme.radiusSm
-                                        color: wifiPanelNetArea.containsMouse ? Services.Theme.bgHover : (wifiPanelNetRow.modelData.inUse ? Services.Theme.surfaceVariant : "transparent")
+                                        color: wifiPanelNetArea.containsMouse ? root.gHover : (wifiPanelNetRow.modelData.inUse ? root.gSelected : "transparent")
                                         Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                                         readonly property bool isSaved: Services.Wifi.isSaved(wifiPanelNetRow.modelData.ssid)
@@ -1913,8 +1939,8 @@ PanelWindow {
                                                     Layout.fillWidth: true
                                                     height: 32
                                                     radius: 6
-                                                    color: Services.Theme.surfaceVariant
-                                                    border.color: pwInput.activeFocus ? Services.Theme.accent : Services.Theme.border
+                                                    color: root.gHover
+                                                    border.color: pwInput.activeFocus ? Services.Theme.accent : root.gBorder
                                                     border.width: 1
 
                                                     TextInput {
@@ -1969,7 +1995,7 @@ PanelWindow {
                                         Layout.fillWidth: true
                                         implicitHeight: 44
                                         radius: Services.Theme.radiusMd
-                                        color: btArea.containsMouse ? Services.Theme.bgHover : Services.Theme.surfaceVariant
+                                        color: btArea.containsMouse ? root.gHover : root.gFill
                                         Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                                         MouseArea {
@@ -2016,7 +2042,7 @@ PanelWindow {
                                                     implicitWidth: btBtnText.implicitWidth + 14
                                                     implicitHeight: 22
                                                     radius: 11
-                                                    color: btRow.modelData.connected ? Services.Theme.surfaceVariant : Services.Theme.accent
+                                                    color: btRow.modelData.connected ? root.gHover : Services.Theme.accent
 
                                                     Text {
                                                         id: btBtnText
@@ -2047,7 +2073,7 @@ PanelWindow {
                                         Layout.fillWidth: true
                                         implicitHeight: 44
                                         radius: Services.Theme.radiusMd
-                                        color: audioSinkRow.modelData.isCurrent ? Services.Theme.accent : (audioSinkRowArea.containsMouse ? Services.Theme.bgHover : Services.Theme.surfaceVariant)
+                                        color: audioSinkRow.modelData.isCurrent ? root.gActive : (audioSinkRowArea.containsMouse ? root.gHover : root.gFill)
 
                                         MouseArea {
                                             id: audioSinkRowArea
@@ -2118,9 +2144,9 @@ PanelWindow {
                                             implicitHeight: 32
                                             radius: Services.Theme.radiusSm
                                             color: Services.ShellUpdate.currentBranch === "main"
-                                                   ? Services.Theme.accent
-                                                   : (stableBtnMouse.containsMouse ? Services.Theme.surfaceVariant : Services.Theme.bgHover)
-                                            border.color: Services.ShellUpdate.currentBranch === "main" ? Services.Theme.accent : Services.Theme.border
+                                                   ? root.gActive
+                                                   : (stableBtnMouse.containsMouse ? root.gHover : root.gFill)
+                                            border.color: Services.ShellUpdate.currentBranch === "main" ? Services.Theme.accent : root.gBorder
                                             border.width: 1
                                             Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
@@ -2159,9 +2185,9 @@ PanelWindow {
                                             implicitHeight: 32
                                             radius: Services.Theme.radiusSm
                                             color: Services.ShellUpdate.currentBranch === "master"
-                                                   ? Services.Theme.accent
-                                                   : (unstableBtnMouse.containsMouse ? Services.Theme.surfaceVariant : Services.Theme.bgHover)
-                                            border.color: Services.ShellUpdate.currentBranch === "master" ? Services.Theme.accent : Services.Theme.border
+                                                   ? root.gActive
+                                                   : (unstableBtnMouse.containsMouse ? root.gHover : root.gFill)
+                                            border.color: Services.ShellUpdate.currentBranch === "master" ? Services.Theme.accent : root.gBorder
                                             border.width: 1
                                             Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
@@ -2201,8 +2227,8 @@ PanelWindow {
                                     Layout.fillWidth: true
                                     implicitHeight: statusCol.implicitHeight + 20
                                     radius: Services.Theme.radiusSm
-                                    color: Services.Theme.surfaceVariant
-                                    border.color: Services.Theme.border
+                                    color: root.gFill
+                                    border.color: root.gBorder
                                     border.width: 1
 
                                     ColumnLayout {
@@ -2255,8 +2281,8 @@ PanelWindow {
                                             Layout.fillWidth: true
                                             implicitHeight: commitLogText.implicitHeight + 12
                                             radius: 4
-                                            color: Services.Theme.bgDeep
-                                            border.color: Services.Theme.border
+                                            color: root.gInset
+                                            border.color: root.gBorder
                                             border.width: 1
 
                                             Text {
@@ -2304,8 +2330,8 @@ PanelWindow {
                                         Layout.fillWidth: true
                                         implicitHeight: 32
                                         radius: Services.Theme.radiusSm
-                                        color: checkBtnMouse.containsMouse ? Services.Theme.surfaceVariant : Services.Theme.bgHover
-                                        border.color: Services.Theme.border
+                                        color: checkBtnMouse.containsMouse ? root.gHover : root.gFill
+                                        border.color: root.gBorder
                                         border.width: 1
                                         Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
@@ -2331,7 +2357,7 @@ PanelWindow {
                                         Layout.fillWidth: true
                                         implicitHeight: 32
                                         radius: Services.Theme.radiusSm
-                                        color: updateBtnClickMouse.containsMouse ? Services.Theme.accent : Services.Theme.bgHover
+                                        color: updateBtnClickMouse.containsMouse ? root.gActive : root.gFill
                                         border.color: Services.Theme.accent
                                         border.width: 1
                                         Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }

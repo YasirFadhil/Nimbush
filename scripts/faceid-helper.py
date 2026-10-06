@@ -114,6 +114,19 @@ def enhance_low_light(gray):
         return enhanced, True, mean_val
     return gray, False, mean_val
 
+def is_frame_valid(gray, min_brightness=15.0, max_brightness=245.0, min_variance=80.0):
+    """
+    Validasi frame: tolak frame yang terlalu gelap, terlalu overexposed,
+    atau terlalu seragam (tidak ada texture = bukan wajah / kamera tertutup).
+    """
+    mean_val = float(np.mean(gray))
+    variance = float(np.var(gray))
+    if mean_val < min_brightness or mean_val > max_brightness:
+        return False, f"brightness={mean_val:.1f}"
+    if variance < min_variance:
+        return False, f"variance={variance:.1f} (blank/uniform)"
+    return True, "ok"
+
 def open_camera(camera_device, warmup=True, notify_ready=False):
     optimize_camera(camera_device)
     dev_idx = 0
@@ -167,7 +180,7 @@ def cmd_clear():
         os.remove(SAMPLE_PREVIEW)
     print(json.dumps({"status": "cleared", "message": "Enrolled face data removed."}), flush=True)
 
-def cmd_verify(camera_device="/dev/video0", timeout_sec=10.0, max_distance=98.0):
+def cmd_verify(camera_device="/dev/video0", timeout_sec=10.0, max_distance=75.0):
     if not os.path.isfile(MODEL_FILE):
         print(json.dumps({"status": "not_enrolled", "message": "Face ID has not been registered yet."}), flush=True)
         sys.exit(2)
@@ -193,7 +206,7 @@ def cmd_verify(camera_device="/dev/video0", timeout_sec=10.0, max_distance=98.0)
 
     start_time = time.time()
     match_count = 0
-    consecutive_needed = 2
+    consecutive_needed = 4
 
     try:
         while True:
@@ -209,21 +222,31 @@ def cmd_verify(camera_device="/dev/video0", timeout_sec=10.0, max_distance=98.0)
 
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
+            valid, _ = is_frame_valid(gray)
+            if not valid:
+                match_count = max(0, match_count - 1)
+                time.sleep(0.04)
+                continue
+
             faces = detector.detectMultiScale(
-                gray, scaleFactor=1.1, minNeighbors=3, minSize=(50, 50), flags=cv2.CASCADE_SCALE_IMAGE
+                gray, scaleFactor=1.1, minNeighbors=5, minSize=(70, 70), flags=cv2.CASCADE_SCALE_IMAGE
             )
 
             if len(faces) == 0:
                 enhanced, is_low_light, mean_b = enhance_low_light(gray)
                 if is_low_light:
                     faces = detector.detectMultiScale(
-                        enhanced, scaleFactor=1.08, minNeighbors=3, minSize=(45, 45), flags=cv2.CASCADE_SCALE_IMAGE
+                        enhanced, scaleFactor=1.08, minNeighbors=5, minSize=(60, 60), flags=cv2.CASCADE_SCALE_IMAGE
                     )
-                    if len(faces) == 0 and mean_b < 45.0:
-                        faces = detector.detectMultiScale(
-                            enhanced, scaleFactor=1.08, minNeighbors=2, minSize=(45, 45), flags=cv2.CASCADE_SCALE_IMAGE
-                        )
 
+            if len(faces) == 0:
+                match_count = max(0, match_count - 1)
+                time.sleep(0.03)
+                continue
+
+            # Minimum face area filter: wajah harus minimal 4% frame area (menghindari artefak kecil / orang jauh)
+            frame_area = gray.shape[0] * gray.shape[1]
+            faces = [f for f in faces if (f[2] * f[3]) >= (frame_area * 0.04)]
             if len(faces) == 0:
                 match_count = max(0, match_count - 1)
                 time.sleep(0.03)
@@ -246,7 +269,7 @@ def cmd_verify(camera_device="/dev/video0", timeout_sec=10.0, max_distance=98.0)
                     "matches": match_count
                 }), flush=True)
 
-                if match_count >= consecutive_needed or distance <= (max_distance - 16.0):
+                if match_count >= consecutive_needed or (match_count >= 2 and distance <= (max_distance * 0.60)):
                     username = os.environ.get("USER", "user")
                     print(json.dumps({
                         "status": "success",
@@ -664,7 +687,7 @@ def main():
     verify_p = subparsers.add_parser("verify")
     verify_p.add_argument("--camera", default="/dev/video0")
     verify_p.add_argument("--timeout", type=float, default=10.0)
-    verify_p.add_argument("--confidence", type=float, default=98.0)
+    verify_p.add_argument("--confidence", type=float, default=75.0)
 
     enroll_p = subparsers.add_parser("enroll")
     enroll_p.add_argument("--camera", default="/dev/video0")

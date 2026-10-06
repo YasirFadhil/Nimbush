@@ -2,21 +2,44 @@ import QtQuick
 import QtQuick.Layouts
 import Quickshell
 import Quickshell.Wayland
+import Quickshell.Hyprland
 import "../../services" as Services
+import "../common" as Common
 
 PanelWindow {
     id: root
     property string overlayId: "dockMenu"
 
     readonly property bool isOpen: Services.DockService ? Services.DockService.isMenuOpen : false
-    readonly property var item: Services.DockService ? Services.DockService.contextMenuItem : null
+    // contextMenuItem dikosongkan DockService saat menu ditutup. Simpan salinan terakhir
+    // supaya isi kartu tidak berubah jadi "?" / "Pin to Dock" selama animasi tutup.
+    readonly property var liveItem: Services.DockService ? Services.DockService.contextMenuItem : null
+    property var item: null
+    onLiveItemChanged: if (liveItem) item = liveItem
     readonly property string dockPos: Services.Config ? Services.Config.dockPosition : "bottom"
     readonly property int iconSize: Services.Config ? Services.Config.dockIconSize : 48
-    readonly property int dockBarH: iconSize + 16
+    readonly property int dockBarH: iconSize + 24
     readonly property int floatingDist: Services.Config ? Services.Config.dockFloatingDistance : 6
 
-    visible: root.isOpen
+    // Window tetap ter-map sampai animasi tutup selesai. Kalau langsung unmap,
+    // Hyprland memutar animasi layer-nya sendiri di atas buffer lama (ghost).
+    // Fade level window: HyprlandWindow.opacity ikut memudarkan blur, bukan cuma kontennya.
+    property real fade: root.isOpen ? 1.0 : 0.0
+    Behavior on fade { NumberAnimation { duration: Services.Glass.durFast } }
+    HyprlandWindow.opacity: root.fade
+
+    visible: root.isOpen || root.fade > 0.01
     color: "transparent"
+
+    // Input hanya diterima di area kartu. Klik di luar kartu tembus ke window di bawah.
+    mask: Region { item: menuCard }
+
+    // Klik di luar kartu menutup menu (pengganti dismissArea).
+    HyprlandFocusGrab {
+        windows: [root]
+        active: root.isOpen
+        onCleared: root.close()
+    }
 
     anchors {
         top: true
@@ -26,8 +49,8 @@ PanelWindow {
     }
 
     WlrLayershell.layer: WlrLayer.Overlay
-    WlrLayershell.namespace: "quickshell:dockmenu"
-    WlrLayershell.keyboardFocus: WlrKeyboardFocus.OnDemand
+    WlrLayershell.namespace: "nimbush-dock-menu"
+    WlrLayershell.keyboardFocus: root.isOpen ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
     exclusiveZone: 0
 
     function close() {
@@ -36,6 +59,7 @@ PanelWindow {
     function hide() { close() }
 
     Component.onCompleted: {
+        if (liveItem) item = liveItem
         if (Services.OverlayManager) Services.OverlayManager.register(root)
     }
 
@@ -52,26 +76,19 @@ PanelWindow {
         }
     }
 
-    // ── Backdrop Dismiss Area (Click anywhere outside to close) ──────────────
-    MouseArea {
-        id: dismissArea
-        anchors.fill: parent
-        acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
-        onPressed: root.close()
-    }
-
     // ── Context Menu Card ────────────────────────────────────────────────────
-    Rectangle {
+    Item {
         id: menuCard
         width: 224
         implicitHeight: dockMenuCol.implicitHeight + 16
         height: implicitHeight
-        radius: 12
 
-        // Liquid Glass Styling
-        color: Services.Theme.bgElevated
-        border.color: Services.Theme.borderHighlight
-        border.width: 1
+        // Liquid glass, deklarasi pertama supaya di bawah konten
+        Common.GlassSurface {
+            anchors.fill: parent
+            level: 1
+            radius: Services.Glass.radiusMd
+        }
 
         // Consume mouse clicks within the card to prevent backdrop dismiss
         MouseArea {
@@ -110,23 +127,9 @@ PanelWindow {
             }
         }
 
-        // Subtle top specular highlight
-        Rectangle {
-            anchors.top: parent.top
-            anchors.left: parent.left
-            anchors.right: parent.right
-            anchors.topMargin: 1
-            anchors.leftMargin: 8
-            anchors.rightMargin: 8
-            height: 1
-            color: Qt.rgba(1, 1, 1, 0.15)
-        }
-
         // Smooth entry animation
         scale: root.isOpen ? 1.0 : 0.94
-        opacity: root.isOpen ? 1.0 : 0.0
-        Behavior on scale { NumberAnimation { duration: 140; easing.type: Easing.OutBack; easing.overshoot: 1.1 } }
-        Behavior on opacity { NumberAnimation { duration: 120 } }
+        Behavior on scale { NumberAnimation { duration: Services.Glass.durNormal; easing.type: Easing.OutBack; easing.overshoot: 1.1 } }
 
         ColumnLayout {
             id: dockMenuCol
@@ -233,7 +236,7 @@ PanelWindow {
                     Text {
                         text: (root.item && root.item.comment) ? root.item.comment : "Application"
                         font.pixelSize: 10
-                        color: Services.Theme.textDisabled
+                        color: Services.Theme.textSecondary
                         elide: Text.ElideRight
                         Layout.fillWidth: true
                         visible: !Boolean(root.item && root.item.isRunning)
@@ -456,7 +459,7 @@ PanelWindow {
                 implicitHeight: visible ? 30 : 0
                 radius: 6
                 visible: Boolean(root.item && root.item.isRunning)
-                color: quitMouse.containsMouse ? Qt.rgba(0.9, 0.2, 0.2, 0.15) : "transparent"
+                color: quitMouse.containsMouse ? Services.Glass.dangerHover : "transparent"
 
                 RowLayout {
                     anchors.fill: parent
