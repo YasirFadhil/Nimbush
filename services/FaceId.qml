@@ -12,6 +12,8 @@ Singleton {
     property bool isEnrolled: false
     property bool isScanning: false
     property bool isEnrolling: false
+    property bool hasFaceModule: false
+    property bool hasFaceDetector: false
     property string status: "idle" // "idle" | "starting" | "scanning" | "detected" | "success" | "unrecognized" | "timeout" | "camera_unavailable" | "not_enrolled"
     property string statusMessage: ""
     property real confidence: 0.0
@@ -20,8 +22,7 @@ Singleton {
     property int enrollStepNumber: 1
     property var availableDevices: ["/dev/video0"]
 
-    readonly property string pythonBin: "/usr/bin/env"
-    readonly property string pythonArg: "python3"
+    readonly property string pythonExec: Quickshell.env("FACEID_PYTHON") || "python3"
 
     readonly property string helperScript: {
         var home = Quickshell.env("HOME") || ("/home/" + (Quickshell.env("USER") || "user"))
@@ -37,6 +38,7 @@ Singleton {
         : 98.0
 
     readonly property bool autoUnlock: Services.Config ? Services.Config.faceIdAutoUnlock : true
+    readonly property bool canEnroll: isEnabled && hasFaceModule && hasFaceDetector
 
     // Signals
     signal authenticated(string user, real confidence)
@@ -65,17 +67,23 @@ Singleton {
         }
         if (isScanning || verifyProc.running) return
         if (isEnrolling || enrollProc.running) return
+        const blocker = root.enrollBlockReason()
+        if (blocker.length > 0) {
+            root.status = "error"
+            root.statusMessage = blocker
+            root.scanFailed(blocker)
+            return
+        }
 
         status = "starting"
         statusMessage = "Starting Face ID..."
         isScanning = true
 
         verifyProc.command = [
-            root.pythonBin,
-            root.pythonArg,
+            root.pythonExec,
             root.helperScript,
             "verify",
-            "--camera", root.cameraDevice,
+            "--camera", root.effectiveCameraDevice(),
             "--timeout", "10.0",
             "--confidence", String(root.maxDistance)
         ]
@@ -105,6 +113,13 @@ Singleton {
     function startEnroll() {
         if (verifyProc.running) stopScan()
         if (enrollProc.running) return
+        const blocker = root.enrollBlockReason()
+        if (blocker.length > 0) {
+            root.status = "error"
+            root.statusMessage = blocker
+            root.enrollError(blocker)
+            return
+        }
 
         isEnrolling = true
         enrollProgress = 0.0
@@ -113,11 +128,10 @@ Singleton {
         statusMessage = "Preparing camera for enrollment..."
 
         enrollProc.command = [
-            root.pythonBin,
-            root.pythonArg,
+            root.pythonExec,
             root.helperScript,
             "enroll",
-            "--camera", root.cameraDevice,
+            "--camera", root.effectiveCameraDevice(),
             "--samples", "24"
         ]
         enrollProc.running = true
@@ -135,14 +149,41 @@ Singleton {
     }
 
     function clearData() {
-        clearProc.command = [root.pythonBin, root.pythonArg, root.helperScript, "clear"]
+        clearProc.command = [root.pythonExec, root.helperScript, "clear"]
         clearProc.running = true
+    }
+
+    function enrollBlockReason() {
+        if (!isEnabled) return "Face ID is disabled."
+        if (!hasFaceModule) return "OpenCV contrib / cv2.face is missing on this system."
+        if (!hasFaceDetector) return "Face detector cascade is not available."
+        return ""
+    }
+
+    function effectiveCameraDevice() {
+        var preferred = root.cameraDevice
+        if (preferred && root.availableDevices && root.availableDevices.indexOf(preferred) !== -1) {
+            return preferred
+        }
+        if (preferred && preferred.indexOf("/dev/video") === 0) {
+            var preferredSuffix = preferred.replace("/dev/video", "")
+            if (preferredSuffix.length > 0 && !isNaN(parseInt(preferredSuffix))) {
+                var mapped = "/dev/video" + parseInt(preferredSuffix)
+                if (root.availableDevices && root.availableDevices.indexOf(mapped) !== -1) {
+                    return mapped
+                }
+            }
+        }
+        if (root.availableDevices && root.availableDevices.length > 0) {
+            return root.availableDevices[0]
+        }
+        return preferred || "/dev/video0"
     }
 
     // ── Status Inspection Process ──────────────────────────────────────────
     Process {
         id: statusProc
-        command: [root.pythonBin, root.pythonArg, root.helperScript, "status"]
+        command: [root.pythonExec, root.helperScript, "status"]
         stdout: SplitParser {
             onRead: data => {
                 const line = data.trim()
@@ -150,6 +191,12 @@ Singleton {
                 try {
                     const parsed = JSON.parse(line)
                     root.isEnrolled = Boolean(parsed.enrolled)
+                    if (parsed.face_module_available !== undefined) {
+                        root.hasFaceModule = Boolean(parsed.face_module_available)
+                    }
+                    if (parsed.detector_available !== undefined) {
+                        root.hasFaceDetector = Boolean(parsed.detector_available)
+                    }
                     if (parsed.devices && Array.isArray(parsed.devices)) {
                         root.availableDevices = parsed.devices
                     }
@@ -158,12 +205,20 @@ Singleton {
                 }
             }
         }
+        stderr: SplitParser {
+            onRead: data => {
+                const line = data.trim()
+                if (line.length > 0) {
+                    console.warn("[FaceId] status stderr:", line)
+                }
+            }
+        }
     }
 
     // ── Verification Process ───────────────────────────────────────────────
     Process {
         id: verifyProc
-        command: [root.pythonBin, root.pythonArg, root.helperScript, "verify"]
+        command: [root.pythonExec, root.helperScript, "verify"]
 
         stdout: SplitParser {
             onRead: data => {
@@ -192,6 +247,14 @@ Singleton {
                 }
             }
         }
+        stderr: SplitParser {
+            onRead: data => {
+                const line = data.trim()
+                if (line.length > 0) {
+                    console.warn("[FaceId] verify stderr:", line)
+                }
+            }
+        }
 
         onExited: (code, status) => {
             root.isScanning = false
@@ -212,7 +275,7 @@ Singleton {
     // ── Enrollment Process ─────────────────────────────────────────────────
     Process {
         id: enrollProc
-        command: [root.pythonBin, root.pythonArg, root.helperScript, "enroll"]
+        command: [root.pythonExec, root.helperScript, "enroll"]
 
         stdout: SplitParser {
             onRead: data => {
@@ -258,11 +321,27 @@ Singleton {
                 }
             }
         }
+        stderr: SplitParser {
+            onRead: data => {
+                const line = data.trim()
+                if (line.length > 0) {
+                    console.warn("[FaceId] enroll stderr:", line)
+                    if (root.isEnrolling) {
+                        root.status = "error"
+                        root.statusMessage = line
+                    }
+                }
+            }
+        }
 
         onExited: (code, status) => {
             root.isEnrolling = false
             if (code !== 0 && !root.isEnrolled) {
-                root.enrollError("Enrollment process exited with code " + code)
+                root.status = "error"
+                if (!root.statusMessage || root.statusMessage.length === 0) {
+                    root.statusMessage = "Enrollment failed with code " + code
+                }
+                root.enrollError(root.statusMessage)
             }
         }
     }
@@ -270,7 +349,7 @@ Singleton {
     // ── Clear Model Process ────────────────────────────────────────────────
     Process {
         id: clearProc
-        command: [root.pythonBin, root.pythonArg, root.helperScript, "clear"]
+        command: [root.pythonExec, root.helperScript, "clear"]
         onExited: {
             root.isEnrolled = false
             root.status = "idle"

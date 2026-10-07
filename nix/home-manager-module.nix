@@ -7,6 +7,14 @@ with lib;
 let
   cfg = config.programs.quickshell-shell;
   defaultPackage = if (self.packages ? ${pkgs.system}) then self.packages.${pkgs.system}.default else null;
+  opencvContrib = pkgs.opencv4.override {
+    enableContrib = true;
+    enablePython = true;
+  };
+  faceIdPython = pkgs.python3.withPackages (ps: with ps; [
+    opencvContrib
+    numpy
+  ]);
 
   # Build JSON wallpaper config declaratively
   wallpaperConfig = {
@@ -132,6 +140,8 @@ in
 
   config = mkIf cfg.enable (mkMerge [
     {
+      home.sessionVariables.FACEID_PYTHON = "${faceIdPython}/bin/python";
+
       home.packages = (optional (cfg.package != null) cfg.package)
         ++ (optional cfg.hyprland.enablePackage pkgs.hyprland)
         ++ (optional cfg.niri.enablePackage pkgs.niri)
@@ -163,6 +173,8 @@ in
           wireplumber
           awww
           swaybg
+          ffmpeg
+          v4l-utils
           (python3.withPackages (ps: with ps; [
             pygobject3
             dbus-python
@@ -492,6 +504,7 @@ window-rule {
 
         Service = {
           EnvironmentFile = "-%h/.config/quickshell/state/icon-theme.env";
+          Environment = [ "FACEID_PYTHON=${faceIdPython}/bin/python" ];
           ExecStart = if cfg.package != null
             then "${cfg.package}/bin/quickshell-shell"
             else "${pkgs.quickshell}/bin/qs -c %h/.config/quickshell";

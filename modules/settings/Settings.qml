@@ -62,6 +62,7 @@ FloatingWindow {
     property bool dispShowSnapGuideX: false
     property bool dispShowSnapGuideY: false
     property string dispDockMessage: ""
+    property string faceIdEnrollmentNotice: ""
 
     onDispMonitorsChanged: syncDisplaysLocal(false)
 
@@ -5306,6 +5307,8 @@ FloatingWindow {
                                     title: "Biometric Data"
                                     subtitle: (Services.FaceId && Services.FaceId.isEnrolling)
                                         ? (Services.FaceId.statusMessage || "Enrolling face...")
+                                        : (rootWindow.faceIdEnrollmentNotice.length > 0)
+                                            ? rootWindow.faceIdEnrollmentNotice
                                         : ((Services.FaceId && Services.FaceId.isEnrolled)
                                             ? "Face registered for " + (Services.OsInfo.username || Quickshell.env("USER") || "user")
                                             : "No face registered yet")
@@ -5356,6 +5359,7 @@ FloatingWindow {
                                                 : Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.14)
                                             border.color: Services.Theme.accent
                                             border.width: 1
+                                            opacity: (Services.FaceId && Services.FaceId.canEnroll) ? 1.0 : 0.55
 
                                             Text {
                                                 id: enrollBtnTxt
@@ -5371,8 +5375,14 @@ FloatingWindow {
                                                 anchors.fill: parent
                                                 hoverEnabled: true
                                                 cursorShape: Qt.PointingHandCursor
+                                                enabled: Services.FaceId ? Services.FaceId.isEnabled : true
                                                 onClicked: {
-                                                    if (Services.FaceId) Services.FaceId.startEnroll()
+                                                    rootWindow.faceIdEnrollmentNotice = ""
+                                                    if (Services.FaceId && Services.FaceId.canEnroll) {
+                                                        Services.FaceId.startEnroll()
+                                                    } else if (Services.FaceId) {
+                                                        rootWindow.faceIdEnrollmentNotice = Services.FaceId.enrollBlockReason()
+                                                    }
                                                 }
                                             }
                                         }
@@ -5460,6 +5470,16 @@ FloatingWindow {
                                         onSelected: (val) => {
                                             if (Services.Config) Services.Config.setFaceIdCameraDevice(val)
                                         }
+                                    }
+                                }
+
+                                Connections {
+                                    target: Services.FaceId
+                                    function onEnrollSuccess(message) {
+                                        rootWindow.faceIdEnrollmentNotice = message || "Face ID enrolled successfully"
+                                    }
+                                    function onEnrollError(error) {
+                                        rootWindow.faceIdEnrollmentNotice = error || "Enrollment failed"
                                     }
                                 }
                             }

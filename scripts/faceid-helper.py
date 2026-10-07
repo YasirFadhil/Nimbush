@@ -11,22 +11,33 @@ import time
 import glob
 import argparse
 import subprocess
+import shutil
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 BASE_DIR = os.path.dirname(SCRIPT_DIR)
-STATE_DIR = os.path.join(BASE_DIR, "state")
 ASSETS_DIR = os.path.join(BASE_DIR, "assets")
+
+
+def xdg_dir(env_name, fallback_parts):
+    base = os.environ.get(env_name)
+    if not base:
+        base = os.path.join(os.path.expanduser("~"), *fallback_parts)
+    return base
+
+
+STATE_DIR = os.path.join(xdg_dir("XDG_STATE_HOME", [".local", "state"]), "quickshell", "faceid")
+LEGACY_STATE_DIR = os.path.join(BASE_DIR, "state")
 
 try:
     import cv2
     import numpy as np
 except ImportError:
-    print(json.dumps({"status": "error", "message": "OpenCV belum terinstall. Jalankan: sudo pacman -S python-opencv"}), flush=True)
+    print(json.dumps({"status": "error", "message": "OpenCV belum terinstall. Pasang opencv4/python-opencv beserta modul face recognition-nya."}), flush=True)
     sys.exit(1)
 
 # Pastikan modul contrib (cv2.face) tersedia
 if not hasattr(cv2, 'face'):
-    print(json.dumps({"status": "error", "message": "Modul cv2.face tidak ditemukan. Install ulang via: sudo pacman -S python-opencv"}), flush=True)
+    print(json.dumps({"status": "error", "message": "Modul cv2.face tidak ditemukan. Pasang build OpenCV yang menyertakan contrib/face recognition."}), flush=True)
     sys.exit(1)
 
 MODEL_FILE = os.path.join(STATE_DIR, "faceid_model.xml")
@@ -53,6 +64,38 @@ def list_video_devices():
         if os.path.exists(dev):
             devices.append(dev)
     return devices
+
+def ensure_state_dir():
+    os.makedirs(STATE_DIR, exist_ok=True)
+    if os.path.isdir(LEGACY_STATE_DIR):
+        for name in ("faceid_model.xml", "faceid_sample.jpg"):
+            legacy_file = os.path.join(LEGACY_STATE_DIR, name)
+            new_file = os.path.join(STATE_DIR, name)
+            if os.path.isfile(legacy_file) and not os.path.isfile(new_file):
+                try:
+                    shutil.copy2(legacy_file, new_file)
+                except Exception:
+                    pass
+
+def resolve_camera_device(camera_device):
+    if isinstance(camera_device, str):
+        if os.path.exists(camera_device):
+            return camera_device
+        if camera_device.startswith("/dev/video"):
+            pass
+        if camera_device.isdigit():
+            candidate = f"/dev/video{camera_device}"
+            if os.path.exists(candidate):
+                return candidate
+    elif isinstance(camera_device, int):
+        candidate = f"/dev/video{camera_device}"
+        if os.path.exists(candidate):
+            return candidate
+
+    devices = list_video_devices()
+    if devices:
+        return devices[0]
+    return camera_device
 
 def get_face_detector():
     casc_path = get_cascade_path()
@@ -89,8 +132,8 @@ def preprocess_face(face_gray):
     return equalized
 
 def optimize_camera(camera_device):
-    dev_path = camera_device if (isinstance(camera_device, str) and os.path.exists(camera_device)) else f"/dev/video{camera_device}"
-    if os.path.exists(str(dev_path)):
+    dev_path = resolve_camera_device(camera_device)
+    if isinstance(dev_path, str) and os.path.exists(dev_path):
         try:
             subprocess.run([
                 "v4l2-ctl", "-d", str(dev_path),
@@ -116,14 +159,13 @@ def enhance_low_light(gray):
 
 def open_camera(camera_device, warmup=True, notify_ready=False):
     optimize_camera(camera_device)
-    dev_idx = 0
-    if isinstance(camera_device, str) and camera_device.startswith("/dev/video"):
+    dev_path = resolve_camera_device(camera_device)
+    dev_idx = dev_path
+    if isinstance(dev_path, str) and dev_path.startswith("/dev/video"):
         try:
-            dev_idx = int(camera_device.replace("/dev/video", ""))
+            dev_idx = int(dev_path.replace("/dev/video", ""))
         except ValueError:
-            dev_idx = camera_device
-    else:
-        dev_idx = camera_device
+            dev_idx = dev_path
 
     cap = cv2.VideoCapture(dev_idx, cv2.CAP_V4L2)
     if not cap.isOpened():
@@ -143,16 +185,20 @@ def open_camera(camera_device, warmup=True, notify_ready=False):
     return cap
 
 def cmd_status():
+    ensure_state_dir()
+    face_module = hasattr(cv2, 'face')
     detector = get_face_detector()
     enrolled = os.path.isfile(MODEL_FILE) and os.path.getsize(MODEL_FILE) > 1000
     devices = list_video_devices()
     result = {
-        "available": detector is not None,
+        "face_module_available": face_module,
+        "detector_available": detector is not None,
         "enrolled": enrolled,
         "model_file": MODEL_FILE,
         "sample_preview": SAMPLE_PREVIEW if os.path.isfile(SAMPLE_PREVIEW) else "",
         "devices": devices,
-        "cascade": get_cascade_path()
+        "cascade": get_cascade_path(),
+        "ready_to_enroll": face_module and detector is not None and len(devices) > 0,
     }
     print(json.dumps(result), flush=True)
 
@@ -160,14 +206,18 @@ def cmd_devices():
     print(json.dumps({"devices": list_video_devices()}), flush=True)
 
 def cmd_clear():
-    os.makedirs(STATE_DIR, exist_ok=True)
-    if os.path.isfile(MODEL_FILE):
-        os.remove(MODEL_FILE)
-    if os.path.isfile(SAMPLE_PREVIEW):
-        os.remove(SAMPLE_PREVIEW)
+    ensure_state_dir()
+    for path in (MODEL_FILE, SAMPLE_PREVIEW):
+        if os.path.isfile(path):
+            os.remove(path)
+    for name in ("faceid_model.xml", "faceid_sample.jpg"):
+        legacy_file = os.path.join(LEGACY_STATE_DIR, name)
+        if os.path.isfile(legacy_file):
+            os.remove(legacy_file)
     print(json.dumps({"status": "cleared", "message": "Enrolled face data removed."}), flush=True)
 
 def cmd_verify(camera_device="/dev/video0", timeout_sec=10.0, max_distance=98.0):
+    ensure_state_dir()
     if not os.path.isfile(MODEL_FILE):
         print(json.dumps({"status": "not_enrolled", "message": "Face ID has not been registered yet."}), flush=True)
         sys.exit(2)
@@ -269,7 +319,11 @@ def cmd_verify(camera_device="/dev/video0", timeout_sec=10.0, max_distance=98.0)
         cap.release()
 
 def cmd_enroll(camera_device="/dev/video0", samples_needed=24, show_preview=True):
-    os.makedirs(STATE_DIR, exist_ok=True)
+    ensure_state_dir()
+
+    if not hasattr(cv2, 'face'):
+        print(json.dumps({"status": "error", "message": "cv2.face tidak tersedia. Pasang OpenCV contrib / build yang menyertakan face recognizer."}), flush=True)
+        sys.exit(1)
 
     detector = get_face_detector()
     profile_detector = get_profile_detector()

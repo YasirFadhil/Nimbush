@@ -10,6 +10,14 @@
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = import nixpkgs { inherit system; };
+        opencvContrib = pkgs.opencv4.override {
+          enableContrib = true;
+          enablePython = true;
+        };
+        faceIdPython = pkgs.python3.withPackages (ps: with ps; [
+          opencvContrib
+          numpy
+        ]);
 
         runtimeDependencies = with pkgs; [
           networkmanager
@@ -40,11 +48,11 @@
           wireplumber
           awww
           swaybg
+          ffmpeg
+          v4l-utils
           (python3.withPackages (ps: with ps; [
             pygobject3
             dbus-python
-            opencv4
-            numpy
           ]))
           gobject-introspection
           gtk3
@@ -72,6 +80,7 @@
             # Create runner executable script
             makeWrapper ${pkgs.quickshell}/bin/qs $out/bin/quickshell-shell \
               --add-flags "-c $out/share/quickshell" \
+              --set FACEID_PYTHON ${faceIdPython}/bin/python \
               --prefix PATH : ${pkgs.lib.makeBinPath (runtimeDependencies ++ extraPkgs)} \
               --prefix XDG_DATA_DIRS : "${pkgs.gsettings-desktop-schemas}/share/gsettings-schemas/${pkgs.gsettings-desktop-schemas.name}:${pkgs.gtk3}/share/gsettings-schemas/${pkgs.gtk3.name}"
           '';
