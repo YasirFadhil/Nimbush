@@ -16,7 +16,7 @@ RowLayout {
 
     // ── Konstanta tuning ──────────────────────────────────────────
     readonly property real safetyGap: 20      // jarak napas minimum island↔tray
-    readonly property real hysteresisPx: 20   // beda ambang naik vs turun tier
+    readonly property real hysteresisPx: 6    // beda ambang naik vs turun tier
     readonly property int  restoreDelayMs: 80
 
     // ── Ruang yang tersedia ───────────────────────────────────────
