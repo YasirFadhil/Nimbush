@@ -65,7 +65,7 @@ print_help() {
     echo "  -y, --yes          Non-interactive mode (automatically answer yes to prompts)"
     echo "  --check-only       Only perform real-time dependency and health diagnostics"
     echo "  --inject-only      Only run compositor configuration injection (Hyprland / Niri)"
-    echo "  --hyprland         Target Hyprland compositor (auto-detects Lua or Classic format)"
+    echo "  --hyprland         Target Hyprland compositor (Lua config, requires >= 0.55)"
     echo "  --niri             Target Niri scrollable compositor"
     echo "  --skip-deps        Skip dependency package checking & installation"
     echo "  --nix-guide        Display NixOS & Home Manager declarative setup instructions"
@@ -201,9 +201,7 @@ EOF
     enableDefaultDependencies = true; # Automatically installs runtime CLI dependencies
 
     # ── Declarative Compositor Integration (Binds & Blur Layer Rules) ──
-    hyprland.enableIntegration = true; # For Hyprland
-    # hyprland.useLuaConfig = true;   # Default: true (Lua for Hyprland >= 0.55)
-    # hyprland.useLuaConfig = false;  # Set false for Hyprland < 0.55 (classic conf)
+    hyprland.enableIntegration = true; # For Hyprland (Lua config, >= 0.55)
     niri.enableIntegration     = true; # For Niri
   };
 EOF
@@ -623,8 +621,6 @@ inject_compositor_configs() {
 
     HYPR_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/hypr"
     HYPR_CONF_DIR="$HYPR_DIR/conf"
-    HYPR_CONF="$HYPR_DIR/hyprland.conf"
-    HYPR_QS_CONF="$HYPR_CONF_DIR/quickshell.conf"
     HYPR_LUA="$HYPR_DIR/hyprland.lua"
     HYPR_QS_LUA="$HYPR_CONF_DIR/quickshell.lua"
 
@@ -635,61 +631,43 @@ inject_compositor_configs() {
 
     # Scan current environment
     HAS_HYPR_LUA=false
-    HAS_HYPR_CONF=false
     HAS_NIRI_CONF=false
 
     if [ -f "$HYPR_LUA" ]; then HAS_HYPR_LUA=true; fi
-    if [ -f "$HYPR_CONF" ]; then HAS_HYPR_CONF=true; fi
     if [ -f "$NIRI_CONF" ]; then HAS_NIRI_CONF=true; fi
 
-    # ── Hyprland Version Detection ────────────────────────────────────────────
-    # Detect installed Hyprland version and decide Lua vs Classic format.
-    # Hyprland >= 0.55 supports native Lua configuration; use it automatically.
+    # ── Hyprland Version Check ────────────────────────────────────────────────
+    # Installer hanya menulis format Lua (Hyprland >= 0.55).
     HYPR_VERSION=""
     HYPR_VERSION_MAJOR=0
     HYPR_VERSION_MINOR=0
-    USE_HYPR_LUA=false
+    HYPR_TOO_OLD=false
 
     if command -v hyprland &>/dev/null; then
-        # Try to get version string — hyprland --version outputs e.g. "Hyprland 0.55.0"
+        # hyprland --version outputs e.g. "Hyprland 0.55.0"
         HYPR_VERSION_RAW=$(hyprland --version 2>/dev/null | head -n1 || true)
-        # Extract semver digits (e.g. "0.55.0" or "0.55")
         HYPR_VERSION=$(echo "$HYPR_VERSION_RAW" | grep -oP '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -n1 || true)
         if [ -n "$HYPR_VERSION" ]; then
             HYPR_VERSION_MAJOR=$(echo "$HYPR_VERSION" | cut -d. -f1)
             HYPR_VERSION_MINOR=$(echo "$HYPR_VERSION" | cut -d. -f2)
+            if [ "$HYPR_VERSION_MAJOR" -eq 0 ] && [ "$HYPR_VERSION_MINOR" -lt 55 ] 2>/dev/null; then
+                HYPR_TOO_OLD=true
+            fi
         fi
-    fi
-
-    # Determine config format:
-    #  1. If hyprland.lua already exists → always Lua
-    #  2. Else if version >= 0.55 → Lua
-    #  3. Else if hyprland.conf exists → Classic
-    #  4. Default (no hyprland installed) → Lua when version unknown / new
-    if [ "$HAS_HYPR_LUA" = true ]; then
-        USE_HYPR_LUA=true
-    elif [ "$HYPR_VERSION_MAJOR" -gt 0 ] 2>/dev/null || { [ "$HYPR_VERSION_MAJOR" -eq 0 ] && [ "$HYPR_VERSION_MINOR" -ge 55 ] 2>/dev/null; }; then
-        USE_HYPR_LUA=true
-    elif [ "$HAS_HYPR_CONF" = true ]; then
-        USE_HYPR_LUA=false
     fi
 
     echo -e "  ${BOLD}Detected Compositor Configuration Status:${NC}"
     if command -v hyprland &>/dev/null; then
-        if [ -n "$HYPR_VERSION" ]; then
-            if [ "$USE_HYPR_LUA" = true ]; then
-                echo -e "    ${GREEN}●${NC} Hyprland ${CYAN}${BOLD}v${HYPR_VERSION}${NC} → ${GREEN}${BOLD}Lua format${NC} ${DIM}(>= 0.55, native Lua config)${NC}"
-            else
-                echo -e "    ${GREEN}●${NC} Hyprland ${CYAN}${BOLD}v${HYPR_VERSION}${NC} → ${YELLOW}${BOLD}Classic conf format${NC} ${DIM}(< 0.55)${NC}"
-            fi
+        if [ -z "$HYPR_VERSION" ]; then
+            echo -e "    ${YELLOW}●${NC} Hyprland detected but version unresolvable — assuming ${GREEN}Lua format${NC}"
+        elif [ "$HYPR_TOO_OLD" = true ]; then
+            echo -e "    ${RED}●${NC} Hyprland ${CYAN}${BOLD}v${HYPR_VERSION}${NC} → ${RED}${BOLD}too old${NC} ${DIM}(Lua config needs >= 0.55; update Hyprland first)${NC}"
         else
-            echo -e "    ${YELLOW}●${NC} Hyprland detected but version unresolvable — defaulting to ${YELLOW}Classic format${NC}"
+            echo -e "    ${GREEN}●${NC} Hyprland ${CYAN}${BOLD}v${HYPR_VERSION}${NC} → ${GREEN}${BOLD}Lua format${NC}"
         fi
     fi
     if [ "$HAS_HYPR_LUA" = true ]; then
         echo -e "    ${GREEN}●${NC} Hyprland Lua entry:      ${BOLD}$HYPR_LUA${NC} ${GREEN}(Found)${NC}"
-    elif [ "$HAS_HYPR_CONF" = true ]; then
-        echo -e "    ${GREEN}●${NC} Hyprland Classic entry:  ${BOLD}$HYPR_CONF${NC} ${GREEN}(Found)${NC}"
     else
         echo -e "    ${DIM}○ Hyprland Configuration: Not found (will create clean modular tree if selected)${NC}"
     fi
@@ -702,212 +680,7 @@ inject_compositor_configs() {
 
     # ── Injection Helper Functions ────────────────────────────────────────────
 
-    write_hypr_classic_modular() {
-        mkdir -p "$HYPR_CONF_DIR"
-        info "Modularizing Hyprland Classic configuration: $HYPR_CONF -> $HYPR_CONF_DIR/..."
-
-        local helper=""
-        if [ -f "$TARGET_DIR/scripts/compositor-helper.py" ]; then
-            helper="$TARGET_DIR/scripts/compositor-helper.py"
-        elif [ -f "$SCRIPT_DIR/scripts/compositor-helper.py" ]; then
-            helper="$SCRIPT_DIR/scripts/compositor-helper.py"
-        fi
-
-        if command -v python3 &>/dev/null && [ -n "$helper" ]; then
-            python3 "$helper" modularize hypr_conf >/dev/null 2>&1 || true
-            success "Generated clean modular Hyprland tree in $HYPR_CONF_DIR without duplicates."
-        else
-            # ── Fallback bash deduplicating modularization ──
-            # 1. Quickshell Integration
-            cat << 'EOF' > "$HYPR_QS_CONF"
-# ══════════════════════════════════════════════════════════════════════════════
-#  Quickshell Desktop Environment Integration (~/.config/hypr/conf/quickshell.conf)
-# ══════════════════════════════════════════════════════════════════════════════
-
-# ── 1. Autostart Quickshell Desktop Environment & Clipboard Daemons ─────────
-exec-once = bash -c 'source ~/.config/quickshell/state/icon-theme.env 2>/dev/null; export QS_ICON_THEME; source ~/.config/quickshell/state/cursor-theme.env 2>/dev/null; export XCURSOR_THEME XCURSOR_SIZE; dbus-update-activation-environment --systemd XCURSOR_THEME XCURSOR_SIZE 2>/dev/null; exec qs -n'
-exec-once = wl-paste --type text --watch cliphist store
-exec-once = wl-paste --type image --watch cliphist store
-
-# ── 2. Quickshell IPC Keybindings ─────────────────────────────────────────────
-bind = SUPER, SPACE,         exec, qs ipc call launcher toggle
-bind = SUPER, C,             exec, qs ipc call controlCenter toggle
-bind = SUPER, D,             exec, qs ipc call dashboard toggle
-bind = SUPER, N,             exec, qs ipc call notifCenter toggle
-bind = SUPER, V,             exec, qs ipc call clipboard toggle
-bind = SUPER SHIFT, E,       exec, qs ipc call emoji toggle
-bind = SUPER SHIFT, W,       exec, qs ipc call wallpaper toggle
-bind = SUPER, P,             exec, qs ipc call powermenu toggle
-bind = SUPER ALT, L,         exec, qs ipc call lockscreen toggle
-bind = SUPER, comma,         exec, qs ipc call settings toggle
-bind = SUPER, M,             exec, qs ipc call sysmon toggle
-bind = SUPER, B,             exec, qs ipc call battery toggle
-
-# ── 3. Quickshell Layer Rules (Blur & Transparency) ───────────────────────────
-layerrule = blur, quickshell:bar
-layerrule = blur, quickshell:launcher
-layerrule = ignorezero, quickshell:launcher
-layerrule = blur, quickshell:wallpaperselector
-layerrule = ignorezero, quickshell:wallpaperselector
-layerrule = blur, quickshell:emojipicker
-layerrule = ignorezero, quickshell:emojipicker
-layerrule = blur, quickshell:clipboard
-layerrule = ignorezero, quickshell:clipboard
-layerrule = blur, quickshell:controlcenter
-layerrule = ignorezero, quickshell:controlcenter
-layerrule = blur, quickshell:notifcenter
-layerrule = ignorezero, quickshell:notifcenter
-layerrule = blur, quickshell:dashboard
-layerrule = ignorezero, quickshell:dashboard
-layerrule = blur, quickshell:calendar
-layerrule = ignorezero, quickshell:calendar
-layerrule = blur, quickshell:hud
-layerrule = ignorezero, quickshell:hud
-layerrule = blur, quickshell:traymenu
-layerrule = ignorezero, quickshell:traymenu
-layerrule = blur, quickshell:trayoverflow
-layerrule = ignorezero, quickshell:trayoverflow
-layerrule = blur, quickshell:settings
-layerrule = ignorezero, quickshell:settings
-layerrule = blur, quickshell:battery
-layerrule = ignorezero, quickshell:battery
-layerrule = blur, quickshell:volume
-layerrule = ignorezero, quickshell:volume
-layerrule = blur, quickshell:welcome
-layerrule = ignorezero, quickshell:welcome
-layerrule = blur, quickshell:powermenu
-layerrule = ignorezero, quickshell:powermenu
-layerrule = blur, quickshell:lockscreen
-layerrule = blur, quickshell:osd
-layerrule = ignorezero, quickshell:osd
-layerrule = blur, quickshell:volumeosd
-layerrule = ignorezero, quickshell:volumeosd
-layerrule = blur, quickshell:brightnessosd
-layerrule = ignorezero, quickshell:brightnessosd
-layerrule = blur, ^quickshell:.*$
-layerrule = ignorezero, ^quickshell:.*$
-EOF
-            success "Wrote $HYPR_QS_CONF"
-
-            # 2. Autostart Daemons
-            if [ ! -f "$HYPR_CONF_DIR/autostart.conf" ]; then
-                cat << 'EOF' > "$HYPR_CONF_DIR/autostart.conf"
-# ══════════════════════════════════════════════════════════════════════════════
-#  Autostart Daemons & Background Services (~/.config/hypr/conf/autostart.conf)
-# ══════════════════════════════════════════════════════════════════════════════
-
-# Polkit Authentication Agent
-exec-once = systemctl enable --now --user hyprpolkitagent
-
-# Clipboard History Daemons
-exec-once = wl-paste --type text --watch cliphist store
-exec-once = wl-paste --type image --watch cliphist store
-EOF
-                success "Wrote $HYPR_CONF_DIR/autostart.conf"
-            fi
-
-            # 3. Keybindings
-            if [ ! -f "$HYPR_CONF_DIR/keybinds.conf" ]; then
-                cat << 'EOF' > "$HYPR_CONF_DIR/keybinds.conf"
-# ══════════════════════════════════════════════════════════════════════════════
-#  Keybindings & Shortcuts (~/.config/hypr/conf/keybinds.conf)
-# ══════════════════════════════════════════════════════════════════════════════
-
-$mainMod = SUPER
-$terminal = kitty
-$fileManager = nautilus
-
-bind = $mainMod, T, exec, $terminal
-bind = $mainMod, E, exec, $fileManager
-bind = $mainMod, Q, killactive,
-bind = $mainMod ALT, F, togglefloating,
-bind = $mainMod SHIFT, F, fullscreen, 0
-bind = $mainMod, J, togglesplit,
-
-bind = $mainMod, 1, workspace, 1
-bind = $mainMod, 2, workspace, 2
-bind = $mainMod, 3, workspace, 3
-bind = $mainMod, 4, workspace, 4
-bind = $mainMod, 5, workspace, 5
-bind = $mainMod, 6, workspace, 6
-bind = $mainMod, 7, workspace, 7
-bind = $mainMod, 8, workspace, 8
-bind = $mainMod, 9, workspace, 9
-bind = $mainMod, 0, workspace, 10
-
-bind = , PRINT, exec, ~/.config/quickshell/scripts/screenshot.sh full
-bind = SHIFT, PRINT, exec, ~/.config/quickshell/scripts/screenshot.sh region
-bind = $mainMod, PRINT, exec, ~/.config/quickshell/scripts/screenshot.sh window
-EOF
-                success "Wrote $HYPR_CONF_DIR/keybinds.conf"
-            fi
-
-            # 4. Rules
-            if [ ! -f "$HYPR_CONF_DIR/rules.conf" ]; then
-                cat << 'EOF' > "$HYPR_CONF_DIR/rules.conf"
-# ══════════════════════════════════════════════════════════════════════════════
-#  Window Rules (~/.config/hypr/conf/rules.conf)
-# ══════════════════════════════════════════════════════════════════════════════
-
-windowrulev2 = suppressevent maximize, class:.*
-windowrulev2 = float, title:^(Picture-in-Picture|Picture in picture)$
-windowrulev2 = pin, title:^(Picture-in-Picture|Picture in picture)$
-windowrulev2 = float, class:^(pavucontrol|nm-connection-editor|blueman-manager|swappy)$
-EOF
-                success "Wrote $HYPR_CONF_DIR/rules.conf"
-            fi
-
-            # 5. Clean & Connect Main hyprland.conf
-            if [ -f "$HYPR_CONF" ]; then
-                local backup_conf="${HYPR_CONF}.bak"
-                cp "$HYPR_CONF" "$backup_conf"
-                info "Created backup: $backup_conf"
-                sed -i '/quickshell\.conf/d' "$HYPR_CONF"
-                sed -i '/qs ipc call/d' "$HYPR_CONF"
-                sed -i '/quickshell:/d' "$HYPR_CONF"
-                sed -i '/exec-once = qs\b/d' "$HYPR_CONF"
-                sed -i '/source = ~\/\.config\/hypr\/conf\//d' "$HYPR_CONF"
-                echo -e "\n# ── Modular Configuration Sources ──\nsource = ~/.config/hypr/conf/autostart.conf\nsource = ~/.config/hypr/conf/keybinds.conf\nsource = ~/.config/hypr/conf/rules.conf\nsource = ~/.config/hypr/conf/quickshell.conf" >> "$HYPR_CONF"
-                success "Connected modular sources to $HYPR_CONF without duplicates."
-            else
-                info "Creating starter $HYPR_CONF with modular sources..."
-                cat << 'EOF' > "$HYPR_CONF"
-# ══════════════════════════════════════════════════════════════════════════════
-#  Hyprland Classic Modular Configuration (~/.config/hypr/hyprland.conf)
-# ══════════════════════════════════════════════════════════════════════════════
-
-monitor=,preferred,auto,1
-
-general {
-    gaps_in = 5
-    gaps_out = 10
-    border_size = 2
-    col.active_border = rgba(89b4faee) rgba(cba6f7ee) 45deg
-    col.inactive_border = rgba(313244aa)
-    layout = dwindle
-}
-
-decoration {
-    rounding = 10
-    blur {
-        enabled = true
-        size = 6
-        passes = 3
-    }
-}
-
-# ── Modular Configuration Sources ──
-source = ~/.config/hypr/conf/autostart.conf
-source = ~/.config/hypr/conf/keybinds.conf
-source = ~/.config/hypr/conf/rules.conf
-source = ~/.config/hypr/conf/quickshell.conf
-EOF
-                success "Created starter $HYPR_CONF"
-            fi
-        fi
-    }
-
-    write_hypr_lua_modular() {
+    write_hypr_modular() {
         mkdir -p "$HYPR_CONF_DIR"
         info "Modularizing Hyprland Lua configuration: $HYPR_LUA -> $HYPR_CONF_DIR/..."
 
@@ -953,24 +726,10 @@ hl.bind(mainMod .. " + M",             hl.dsp.exec_cmd("qs ipc call sysmon toggl
 hl.bind(mainMod .. " + B",             hl.dsp.exec_cmd("qs ipc call battery toggle"))
 
 -- ── 3. Quickshell Layer Rules (Blur & Transparency) ───────────────────────────
-hl.layer_rule({ match = { namespace = "quickshell:bar" },               blur = true })
-hl.layer_rule({ match = { namespace = "quickshell:launcher" },          blur = true, ignore_alpha = 0 })
-hl.layer_rule({ match = { namespace = "quickshell:wallpaperselector" }, blur = true, ignore_alpha = 0 })
-hl.layer_rule({ match = { namespace = "quickshell:emojipicker" },       blur = true, ignore_alpha = 0 })
-hl.layer_rule({ match = { namespace = "quickshell:clipboard" },         blur = true, ignore_alpha = 0 })
-hl.layer_rule({ match = { namespace = "quickshell:controlcenter" },     blur = true, ignore_alpha = 0 })
-hl.layer_rule({ match = { namespace = "quickshell:notifcenter" },       blur = true, ignore_alpha = 0 })
-hl.layer_rule({ match = { namespace = "quickshell:dashboard" },         blur = true, ignore_alpha = 0 })
-hl.layer_rule({ match = { namespace = "quickshell:calendar" },          blur = true, ignore_alpha = 0 })
-hl.layer_rule({ match = { namespace = "quickshell:hud" },               blur = true, ignore_alpha = 0 })
-hl.layer_rule({ match = { namespace = "quickshell:traymenu" },          blur = true, ignore_alpha = 0 })
-hl.layer_rule({ match = { namespace = "quickshell:trayoverflow" },      blur = true, ignore_alpha = 0 })
-hl.layer_rule({ match = { namespace = "quickshell:settings" },          blur = true, ignore_alpha = 0 })
-hl.layer_rule({ match = { namespace = "quickshell:battery" },           blur = true, ignore_alpha = 0 })
-hl.layer_rule({ match = { namespace = "quickshell:volume" },            blur = true, ignore_alpha = 0 })
-hl.layer_rule({ match = { namespace = "quickshell:welcome" },           blur = true, ignore_alpha = 0 })
-hl.layer_rule({ match = { namespace = "quickshell:powermenu" },         blur = true, ignore_alpha = 0 })
-hl.layer_rule({ match = { namespace = "^quickshell:.*$" },              blur = true, ignore_alpha = 0 })
+hl.layer_rule({ match = { namespace = "^quickshell:.*$" }, blur = true, ignore_alpha = 0.2 })
+
+-- Override per-namespace (taruh di bawah catch-all), contoh:
+-- hl.layer_rule({ match = { namespace = "quickshell:launcher" }, ignore_alpha = 0.4 })
 EOF
             success "Wrote $HYPR_QS_LUA"
 
@@ -1084,14 +843,6 @@ EOF
         fi
     }
 
-    write_hypr_modular() {
-        if [ "$USE_HYPR_LUA" = true ]; then
-            write_hypr_lua_modular
-        else
-            write_hypr_classic_modular
-        fi
-    }
-
     write_niri_modular() {
         mkdir -p "$NIRI_CONF_DIR"
         info "Modularizing Niri configuration: $NIRI_CONF -> $NIRI_CONF_DIR/..."
@@ -1178,7 +929,7 @@ EOF
     elif [ "$AUTO_YES" = false ]; then
         echo -e "\n  ${BOLD}Compositor Integration Menu:${NC}"
         echo -e "    ${CYAN}1)${NC} ${BOLD}Smart Auto-Detect & Inject${NC} (Hyprland / Niri) ${GREEN}(Recommended)${NC}"
-        echo -e "    ${CYAN}2)${NC} ${BOLD}Hyprland${NC} (Auto-detects whether your setup uses Lua or Classic format)"
+        echo -e "    ${CYAN}2)${NC} ${BOLD}Hyprland${NC} (Lua config, requires >= 0.55)"
         echo -e "    ${CYAN}3)${NC} ${BOLD}Niri${NC} (${DIM}~/.config/niri/conf/quickshell.kdl + config.kdl${NC})"
         echo -e "    ${CYAN}4)${NC} ${BOLD}Both${NC} (Hyprland & Niri)"
         echo -e "    ${CYAN}5)${NC} Skip Compositor Configuration"
@@ -1195,7 +946,7 @@ EOF
     case "$INJECT_TARGET" in
         auto)
             applied=false
-            if [ "$HAS_HYPR_LUA" = true ] || [ "$HAS_HYPR_CONF" = true ] || [ "$HAS_HYPRLAND" = true ]; then
+            if [ "$HAS_HYPR_LUA" = true ] || [ "$HAS_HYPRLAND" = true ]; then
                 write_hypr_modular
                 applied=true
             fi
