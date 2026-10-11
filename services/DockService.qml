@@ -151,10 +151,22 @@ Singleton {
 
     // ── Hyprland Dispatcher ───────────────────────────────────────────────────
 
-    function _hyprDispatch(standardArgs) {
-        var p = Qt.createQmlObject('import Quickshell.Io; Process { running: false }', root)
-        p.command = ["hyprctl", "dispatch"].concat(standardArgs)
-        p.onExited.connect(() => p.destroy())
+    // Hyprland 0.55+: `hyprctl dispatch` menerima SATU ekspresi Lua (hl.dsp.*),
+    // bukan lagi bentuk lama `dispatch <nama> <arg>`.
+    function _luaStr(s) {
+        return '"' + String(s).replace(/\\/g, "\\\\").replace(/"/g, '\\"') + '"'
+    }
+
+    function _hyprDispatch(luaExpr) {
+        var p = Qt.createQmlObject(
+            'import Quickshell.Io; Process { property string out: ""; stdout: SplitParser { onRead: d => parent.out += d } stderr: SplitParser { onRead: d => parent.out += d } }',
+            root)
+        p.command = ["hyprctl", "dispatch", luaExpr]
+        p.onExited.connect((code) => {
+            if (code !== 0 || (p.out.length > 0 && p.out.trim() !== "ok"))
+                console.warn("[DockService] dispatch gagal:", luaExpr, "->", p.out.trim())
+            p.destroy()
+        })
         p.running = true
     }
 
@@ -562,7 +574,7 @@ Singleton {
         }
         const targetId = (item.desktopId || "").replace(/\.desktop$/, '')
         if (targetId.length > 0) {
-            _hyprDispatch(['exec', targetId])
+            _hyprDispatch('hl.dsp.exec_cmd(' + _luaStr(targetId) + ')')
         }
     }
 
@@ -595,14 +607,14 @@ Singleton {
 
     function focusWindow(address) {
         if (!address) return
-        _hyprDispatch(['focuswindow', 'address:' + address])
-        root.activeWindowAddress = address
-        root._updateActiveState()
+        // Jangan set activeWindowAddress manual di sini; biarkan event
+        // activewindowv2 dari socket2 yang jadi sumber kebenaran.
+        _hyprDispatch('hl.dsp.focus({ window = ' + _luaStr("address:" + address) + ' })')
     }
 
     function closeWindow(address) {
         if (!address) return
-        _hyprDispatch(['closewindow', 'address:' + address])
+        _hyprDispatch('hl.dsp.window.close({ window = ' + _luaStr("address:" + address) + ' })')
         clientDebounceTimer.restart()
     }
 

@@ -5703,9 +5703,53 @@ FloatingWindow {
                                 SettingsDivider {}
 
                                 SettingsSwitch {
-                                    title: "Show System Uptime Tag"
-                                    checked: Services.Config ? Services.Config.lockscreenShowUptime : true
-                                    onToggled: (st) => { if (Services.Config) Services.Config.setLockscreenShowUptime(st) }
+                                    title: "Show Profile Avatar"
+                                    subtitle: "Display your profile picture above the password field"
+                                    checked: Services.Config ? Services.Config.lockscreenShowAvatar : true
+                                    onToggled: (st) => { if (Services.Config) Services.Config.setLockscreenShowAvatar(st) }
+                                }
+
+                                SettingsDivider {}
+
+                                SettingsRow {
+                                    title: "Avatar Shape"
+                                    subtitle: "Corner style of the profile picture"
+
+                                    SettingsDropdown {
+                                        currentValue: Services.Config ? Services.Config.lockscreenAvatarShape : "squircle"
+                                        model: [
+                                            { id: "circle",   label: "Circle" },
+                                            { id: "squircle", label: "Squircle" },
+                                            { id: "rounded",  label: "Rounded Square" }
+                                        ]
+                                        onSelected: (val) => { if (Services.Config) Services.Config.setLockscreenAvatarShape(val) }
+                                    }
+                                }
+
+                                SettingsDivider {}
+
+                                SettingsSwitch {
+                                    title: "Avatar Focus Ring"
+                                    subtitle: "Accent ring around the avatar that reacts to typing and Face ID"
+                                    checked: Services.Config ? Services.Config.lockscreenAvatarRing : false
+                                    onToggled: (st) => { if (Services.Config) Services.Config.setLockscreenAvatarRing(st) }
+                                }
+
+                                SettingsDivider {}
+
+                                SettingsSwitch {
+                                    title: "Show Username Under Avatar"
+                                    checked: Services.Config ? Services.Config.lockscreenShowGreeting : false
+                                    onToggled: (st) => { if (Services.Config) Services.Config.setLockscreenShowGreeting(st) }
+                                }
+
+                                SettingsDivider {}
+
+                                SettingsSwitch {
+                                    title: "Show Notifications"
+                                    subtitle: "Display notification cards on the lockscreen"
+                                    checked: Services.Config ? Services.Config.lockscreenShowNotifs : false
+                                    onToggled: (st) => { if (Services.Config) Services.Config.setLockscreenShowNotifs(st) }
                                 }
                             }
 

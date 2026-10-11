@@ -1938,29 +1938,6 @@ Scope {
                                     }
                                 }
                             }
-
-                            // Ambient Greeting / Weather Subtitle (for styles other than vertical/radial/cyber)
-                            RowLayout {
-                                visible: (topClockColumn.clockStyle !== "vertical" && topClockColumn.clockStyle !== "radial" && topClockColumn.clockStyle !== "cyber") && (Services.Config ? Services.Config.lockscreenShowWeather : true)
-                                Layout.alignment: Qt.AlignHCenter
-                                spacing: 6
-                                opacity: 0.85
-
-                                Text {
-                                    text: Services.Icons.sun || Services.Icons.sparkle
-                                    font.family: Services.Theme.fontSymbols
-                                    font.pixelSize: 12
-                                    color: Services.Theme.accent
-                                }
-                                Text {
-                                    text: root.greetingStr + ", " + (Services.OsInfo.username || root.username)
-                                    color: Services.Theme.textSecondary
-                                    font.pixelSize: Services.Theme.fontSizeSm
-                                    font.weight: Font.Medium
-                                    style: Text.Outline
-                                    styleColor: Services.Theme.overlayDim
-                                }
-                            }
                         }
 
                         // ── 2. Bottom Profile Picture & Password Input System ────────────────────────
@@ -1977,21 +1954,20 @@ Scope {
                             width: root.isCompact ? Math.min(mainContainer.width - 40, 390) : 300
                             height: 195
 
-                            readonly property string avatarShape: Services.Config ? Services.Config.lockscreenAvatarShape : "circle"
-                            readonly property bool showAvatarRing: Services.Config ? Services.Config.lockscreenAvatarRing : true
+                            readonly property string avatarShape: Services.Config ? Services.Config.lockscreenAvatarShape : "squircle"
+                            readonly property bool showAvatarRing: Services.Config ? Services.Config.lockscreenAvatarRing : false
                             readonly property string inputStyle: root.isMinimal ? "underline" : (Services.Config ? Services.Config.lockscreenInputStyle : "pill")
                             readonly property bool showPasswordBox: root.userRevealedInput || (root.passwordInput.length > 0) || root.isError || root.isAuthenticating || root.isCompact
 
+                            // Avatar size (px) - everything else (ring, container, radii, fallback letter) derives from this
+                            readonly property int avatarSize: 64
+
                             readonly property int avatarRadius: {
-                                if (avatarShape === "circle") return 24
-                                if (avatarShape === "squircle") return 14
-                                return 10
+                                if (avatarShape === "circle") return Math.round(avatarSize / 2)
+                                if (avatarShape === "squircle") return Math.round(avatarSize * 0.29)
+                                return Math.round(avatarSize * 0.21)
                             }
-                            readonly property int ringRadius: {
-                                if (avatarShape === "circle") return 27
-                                if (avatarShape === "squircle") return 17
-                                return 13
-                            }
+                            readonly property int ringRadius: avatarRadius + 3
 
                             opacity: {
                                 if (root.isUnlockingWithGenie) {
@@ -2247,6 +2223,9 @@ Scope {
                                             }
 
                                             onTextChanged: {
+                                                // Hide the box again once the user has erased everything
+                                                if (text.length === 0 && !root.isError && !root.isAuthenticating)
+                                                    root.userRevealedInput = false
                                                 root.passwordInput = text
                                                 if (root.isError) {
                                                     root.isError = false
@@ -2285,21 +2264,21 @@ Scope {
                                 }
                             }
 
-                            // ── 3. User Avatar (Fixed at Y: 72 - 100% IMMUTABLE POSITION) ────────
+                            // ── 3. User Avatar (Fixed at Y: 80 - 100% IMMUTABLE POSITION) ────────
                             Item {
                                 id: avatarBoxContainer
                                 visible: root.isDefault && (Services.Config ? Services.Config.lockscreenShowAvatar : false)
                                 anchors.horizontalCenter: parent.horizontalCenter
-                                y: 72
-                                width: 56
-                                height: 56
+                                y: 80
+                                width: centerAuthCard.avatarSize + 8
+                                height: centerAuthCard.avatarSize + 8
 
                                 // Outer Glow / Focus Ring
                                 Rectangle {
                                     id: outerGlowRing
                                     anchors.centerIn: parent
-                                    width: 54
-                                    height: 54
+                                    width: centerAuthCard.avatarSize + 6
+                                    height: centerAuthCard.avatarSize + 6
                                     color: "transparent"
                                     radius: centerAuthCard.ringRadius
                                     border.width: pwTextInput.activeFocus ? 2 : 1.5
@@ -2330,8 +2309,8 @@ Scope {
                                 Services.AvatarFrame {
                                     id: avatarBox
                                     anchors.centerIn: parent
-                                    width: 48
-                                    height: 48
+                                    width: centerAuthCard.avatarSize
+                                    height: centerAuthCard.avatarSize
                                     source: Services.OsInfo.avatarPath.length > 0 ? Services.OsInfo.avatarPath : ("file://" + (Quickshell.env("HOME") || "/home/" + (Quickshell.env("USER") || "user")) + "/.face")
                                     shapeRadius: centerAuthCard.avatarRadius
                                     backgroundColor: Services.Theme.surfaceVariant
@@ -2342,18 +2321,18 @@ Scope {
                                         return u.charAt(0).toUpperCase()
                                     }
                                     fallbackFontFamily: Services.Theme.fontDisplay
-                                    fallbackFontSize: 20
+                                    fallbackFontSize: Math.round(centerAuthCard.avatarSize * 0.4)
                                     fallbackColor: Services.Theme.accent
                                     Behavior on borderColor { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                                 }
                             }
 
-                            // ── 4. Username Tag (Fixed at Y: 136 - 100% IMMUTABLE POSITION) ──────
+                            // ── 4. Username Tag (Fixed at Y: 156 - 100% IMMUTABLE POSITION) ──────
                             Text {
                                 id: usernameText
                                 visible: root.isDefault && (Services.Config ? Services.Config.lockscreenShowGreeting : false)
                                 anchors.horizontalCenter: parent.horizontalCenter
-                                y: 136
+                                y: 156
                                 horizontalAlignment: Text.AlignHCenter
                                 text: Services.OsInfo.username.length > 0 ? Services.OsInfo.username : root.username
                                 color: Services.Theme.textPrimary
@@ -2364,14 +2343,14 @@ Scope {
                                 styleColor: Services.Theme.overlayDim
                             }
 
-                            // ── 5. Idle Prompt (Fixed at Y: 160 - Fades smoothly without shifting layout) ──
+                            // ── 5. Idle Prompt (Y: 164, or 175 when username tag is shown - Fades smoothly without shifting layout) ──
                             Item {
                                 id: authPrompt
                                 visible: opacity > 0.01
                                 opacity: (!centerAuthCard.showPasswordBox && !root.isCompact) ? 0.85 : 0.0
                                 scale: (!centerAuthCard.showPasswordBox && !root.isCompact) ? 1.0 : 0.82
                                 anchors.horizontalCenter: parent.horizontalCenter
-                                y: 160
+                                y: usernameText.visible ? 175 : 164
                                 width: promptLabel.implicitWidth + 20
                                 height: 20
                                 Behavior on opacity { NumberAnimation { duration: 240; easing.type: Easing.OutCubic } }

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 power-profile-helper.py - Power Profile & Manager helper for Quickshell
-Supports both power-profiles-daemon (powerprofilesctl) and TLP.
+Supports both power-profiles-daemon (powerprofilesctl) and TLP (with intel_pstate fallback).
 """
 
 import sys
@@ -10,22 +10,51 @@ import json
 import shutil
 import subprocess
 
+PSTATE_MAX_PERF = "/sys/devices/system/cpu/intel_pstate/max_perf_pct"
+
+
+def set_pstate_max_perf(pct):
+    if not os.path.exists(PSTATE_MAX_PERF):
+        return
+    # Coba via sudo -n tee dulu
+    try:
+        cmd = f"echo {pct} | sudo -n /run/current-system/sw/bin/tee {PSTATE_MAX_PERF}"
+        res = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=2)
+        if res.returncode == 0:
+            return
+    except Exception:
+        pass
+
+    # Direct write fallback jika punya izin
+    try:
+        with open(PSTATE_MAX_PERF, "w") as f:
+            f.write(str(pct))
+    except Exception:
+        pass
+
+
 def detect_backend():
-    # 1. Check if powerprofilesctl exists and daemon is actively responding
     pp_cmd = shutil.which("powerprofilesctl")
     if pp_cmd:
         try:
-            res = subprocess.run([pp_cmd, "get"], capture_output=True, text=True, timeout=1.5)
+            res = subprocess.run(
+                [pp_cmd, "get"], capture_output=True, text=True, timeout=1.5
+            )
             if res.returncode == 0 and res.stdout.strip():
                 return "ppd"
         except Exception:
             pass
 
-    # 2. Check if TLP is installed or active
-    if os.path.exists("/run/tlp/last_pwr") or os.path.exists("/run/tlp/run.conf") or shutil.which("tlp") or shutil.which("tlp-stat"):
+    if (
+        os.path.exists("/run/tlp/last_pwr")
+        or os.path.exists("/run/tlp/run.conf")
+        or shutil.which("tlp")
+        or shutil.which("tlp-stat")
+    ):
         return "tlp"
 
     return "none"
+
 
 def get_tlp_profile():
     pp_map = {"0": "performance", "1": "balanced", "2": "power-saver"}
@@ -35,7 +64,6 @@ def get_tlp_profile():
     is_manual = False
     pwr_src = ""
 
-    # Check manual override
     if os.path.exists("/run/tlp/manual_mode"):
         try:
             with open("/run/tlp/manual_mode") as f:
@@ -46,7 +74,6 @@ def get_tlp_profile():
         except Exception:
             pass
 
-    # Check last applied profile from /run/tlp/last_pwr
     if os.path.exists("/run/tlp/last_pwr"):
         try:
             with open("/run/tlp/last_pwr") as f:
@@ -59,29 +86,22 @@ def get_tlp_profile():
         except Exception:
             pass
 
-    # Fallback to tlp-stat -s if needed
-    if not prof:
-        tlp_stat = shutil.which("tlp-stat")
-        if tlp_stat:
-            try:
-                out = subprocess.check_output([tlp_stat, "-s"], timeout=2.0).decode()
-                for line in out.splitlines():
-                    if "TLP profile" in line:
-                        v = line.split("=", 1)[1].strip().lower()
-                        if "manual" in v:
-                            is_manual = True
-                        if "power-saver" in v:
-                            prof = "power-saver"
-                        elif "performance" in v:
-                            prof = "performance"
-                        elif "balanced" in v:
-                            prof = "balanced"
-                    elif "Power source" in line:
-                        pwr_src = line.split("=", 1)[1].strip()
-            except Exception:
-                pass
+    # Fallback cek dari pstate max_perf_pct jika tlp tidak memberikan status jelas
+    if not prof and os.path.exists(PSTATE_MAX_PERF):
+        try:
+            with open(PSTATE_MAX_PERF, "r") as f:
+                val = int(f.read().strip())
+                if val <= 50:
+                    prof = "power-saver"
+                elif val >= 90:
+                    prof = "performance"
+                else:
+                    prof = "balanced"
+        except Exception:
+            pass
 
     return prof or "balanced", is_manual, pwr_src
+
 
 def get_status():
     backend = detect_backend()
@@ -92,7 +112,7 @@ def get_status():
         "supported": ["power-saver", "balanced", "performance"],
         "isManual": False,
         "powerSource": "",
-        "success": True
+        "success": True,
     }
 
     if backend == "ppd":
@@ -112,10 +132,12 @@ def get_status():
                 l = l.strip()
                 if l.startswith("*"):
                     p = l.lstrip("* ").rstrip(":")
-                    if p and p not in profs: profs.append(p)
+                    if p and p not in profs:
+                        profs.append(p)
                 elif l.endswith(":") and " " not in l:
                     p = l.rstrip(":")
-                    if p and p not in profs: profs.append(p)
+                    if p and p not in profs:
+                        profs.append(p)
             if profs:
                 res["supported"] = profs
         except Exception:
@@ -131,40 +153,48 @@ def get_status():
 
     return res
 
+
 def run_tlp_command(args):
-    candidate_paths = [
-        "/run/current-system/sw/bin/tlp",
-        shutil.which("tlp") or ""
-    ]
-    tlp_paths = list(dict.fromkeys([p for p in candidate_paths if p and os.path.exists(p)]))
+    candidate_paths = ["/run/current-system/sw/bin/tlp", shutil.which("tlp") or ""]
+    tlp_paths = list(
+        dict.fromkeys([p for p in candidate_paths if p and os.path.exists(p)])
+    )
     if not tlp_paths:
         return False, "tlp executable not found"
 
-    # 1. Try sudo -n for each candidate path (works if sudoers has NOPASSWD)
     for tp in tlp_paths:
         try:
-            res = subprocess.run(["sudo", "-n", tp] + args, capture_output=True, text=True, timeout=3)
+            res = subprocess.run(
+                ["sudo", "-n", tp] + args, capture_output=True, text=True, timeout=3
+            )
             if res.returncode == 0:
                 return True, res.stdout
         except Exception:
             pass
 
-    # 2. Try pkexec (ensure SHELL is a valid standard shell present in /etc/shells, avoiding nushell issue)
     pkexec_path = shutil.which("pkexec")
     if pkexec_path:
         env = dict(os.environ)
-        # /etc/shells on NixOS contains /run/current-system/sw/bin/bash or /bin/sh
-        std_shell = "/run/current-system/sw/bin/bash" if os.path.exists("/run/current-system/sw/bin/bash") else (shutil.which("bash") or "/bin/sh")
+        std_shell = (
+            "/run/current-system/sw/bin/bash"
+            if os.path.exists("/run/current-system/sw/bin/bash")
+            else (shutil.which("bash") or "/bin/sh")
+        )
         env["SHELL"] = std_shell
         for tp in tlp_paths:
             try:
-                res = subprocess.run([pkexec_path, "--disable-internal-agent", tp] + args, env=env, capture_output=True, text=True, timeout=5)
+                res = subprocess.run(
+                    [pkexec_path, "--disable-internal-agent", tp] + args,
+                    env=env,
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
                 if res.returncode == 0:
                     return True, res.stdout
             except Exception:
                 pass
 
-    # 3. Direct execution fallback
     for tp in tlp_paths:
         try:
             res = subprocess.run([tp] + args, capture_output=True, text=True, timeout=3)
@@ -184,11 +214,21 @@ def set_profile(name):
         res = subprocess.run([pp_cmd, "set", name], capture_output=True, text=True)
         return res.returncode == 0, res.stderr or res.stdout
     elif backend == "tlp":
-        if name in ("auto", "start"):
+        # Atur batas performa CPU Intel sesuai profile
+        if name == "power-saver":
+            set_pstate_max_perf(45)
+            return run_tlp_command(["bat"])
+        elif name == "performance":
+            set_pstate_max_perf(100)
+            return run_tlp_command(["ac"])
+        elif name == "balanced":
+            set_pstate_max_perf(70)
             return run_tlp_command(["start"])
-        # name is power-saver, balanced, or performance
-        return run_tlp_command([name])
+        elif name in ("auto", "start"):
+            return run_tlp_command(["start"])
+
     return False, "No active power profile backend detected"
+
 
 def main():
     if len(sys.argv) < 2 or sys.argv[1] == "get":
@@ -200,6 +240,7 @@ def main():
         target = sys.argv[2]
         ok, msg = set_profile(target)
         status = get_status()
+        status["profile"] = target
         status["success"] = ok
         if not ok:
             status["error"] = str(msg).strip()
@@ -212,8 +253,11 @@ def main():
             status["error"] = str(msg).strip()
         print(json.dumps(status))
     else:
-        print(json.dumps({"success": False, "error": f"Unknown command: {sys.argv[1]}"}))
+        print(
+            json.dumps({"success": False, "error": f"Unknown command: {sys.argv[1]}"})
+        )
         sys.exit(1)
+
 
 if __name__ == "__main__":
     main()

@@ -72,10 +72,23 @@ RowLayout {
             if (i < yieldCount) continue   // item ini mengalah pada tier ini
             const isCompactable = compactables.indexOf(item) !== -1
             const useCompact = compact && isCompactable
-            total += (useCompact ? item.trayWidthCompact : item.trayWidthFull) + spacing
+            // Samakan dengan Layout.rightMargin asli: clock = 0, lainnya = spacing
+            const gap = (item === clockCenterPill) ? 0 : spacing
+            total += (useCompact ? item.trayWidthCompact : item.trayWidthFull) + gap
         }
-        return Math.max(0, total - spacing)
+        return Math.max(0, total)
     }
+
+    // ── Pemicu recompute saat lebar item berubah ──────────────────
+    // Binding ini melacak semua trayWidthFull/Compact + visible yang dibaca
+    // widthAtTier(), jadi berubah otomatis saat font/teks/visibilitas berubah.
+    readonly property real fullWidthSignal: widthAtTier(0)
+    readonly property real compactWidthSignal: widthAtTier(1)
+    onFullWidthSignalChanged: requestLayout()
+    onCompactWidthSignalChanged: requestLayout()
+
+    // Set true sementara untuk debug, lihat log di terminal quickshell
+    property bool debugLayout: false
 
     // ── State Machine & Histeresis ────────────────────────────────
     property int layoutTier: 0
@@ -84,6 +97,11 @@ RowLayout {
     function recomputeLayout() {
         const avail = availableWidth
         let tier = layoutTier
+
+        if (debugLayout)
+            console.log("[StatusTray] tier", layoutTier, "bar", barWidth,
+                        "reserved", centerReservedWidth, "avail", avail,
+                        "w0", widthAtTier(0), "w1", widthAtTier(1))
 
         // Naik tier (perketat) — langsung, tanpa histeresis
         while (tier < maxTier && widthAtTier(tier) > avail) {

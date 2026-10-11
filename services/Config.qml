@@ -167,26 +167,27 @@ Singleton {
     property string lockscreenClockStyle: "hero"  // "hero" | "modern" | "compact" | "minimal" | "vertical" | "typographic" | "radial" | "cyber"
     property string lockscreenAuthStyle: "pill"   // "pill" | "card"
     property string lockscreenLayout: "default"   // "default" | "compact" | "minimal"
-    property string lockscreenAvatarShape: "circle" // "circle" | "squircle" | "rounded"
-    property bool lockscreenAvatarRing: true
+    property string lockscreenAvatarShape: "squircle" // "circle" | "squircle" | "rounded"
+    property bool lockscreenAvatarRing: false
     property string lockscreenInputStyle: "pill"  // "pill" | "underline" | "box" | "dots"
-    property bool lockscreenShowAvatar: false
+    property bool lockscreenShowAvatar: true
     property bool lockscreenShowGreeting: false
     property bool lockscreenShowMedia: true
-    property string lockscreenMediaStyle: "pill"  // "pill" | "card"
+    property bool lockscreenShowNotifs: false
+    property string lockscreenMediaStyle: "card"  // "pill" | "card"
     property bool lockscreenShowWeather: true
     property bool lockscreenShowUptime: true
     property bool lockscreenWallpaperZoom: true
     property real lockscreenDim: 0.45
     property bool lockscreen24h: false
-    property bool lockscreenBlur: true
+    property bool lockscreenBlur: false
     property real lockscreenBlurRadius: 0.40
     property string lockscreenWallpaperMode: "sync" // "sync" | "custom"
     property string lockscreenCustomWallpaper: ""
     property bool lockscreenShowQuickPower: true
     property bool lockscreenShowStatusPill: true
     property bool lockscreenGenieUnlock: true
-    property bool faceIdEnabled: true
+    property bool faceIdEnabled: false
     property string faceIdCameraDevice: "/dev/video0"
     property real faceIdConfidence: 98.0
     property bool faceIdAutoUnlock: true
@@ -350,6 +351,7 @@ Singleton {
         if (data.lockscreenShowAvatar !== undefined) lockscreenShowAvatar = Boolean(data.lockscreenShowAvatar)
         if (data.lockscreenShowGreeting !== undefined) lockscreenShowGreeting = Boolean(data.lockscreenShowGreeting)
         if (data.lockscreenShowMedia !== undefined) lockscreenShowMedia = Boolean(data.lockscreenShowMedia)
+        if (data.lockscreenShowNotifs !== undefined) lockscreenShowNotifs = Boolean(data.lockscreenShowNotifs)
         if (data.lockscreenMediaStyle !== undefined) lockscreenMediaStyle = data.lockscreenMediaStyle
         if (data.lockscreenShowWeather !== undefined) lockscreenShowWeather = Boolean(data.lockscreenShowWeather)
         if (data.lockscreenShowUptime !== undefined) lockscreenShowUptime = Boolean(data.lockscreenShowUptime)
@@ -478,6 +480,7 @@ Singleton {
             lockscreenShowAvatar: lockscreenShowAvatar,
             lockscreenShowGreeting: lockscreenShowGreeting,
             lockscreenShowMedia: lockscreenShowMedia,
+            lockscreenShowNotifs: lockscreenShowNotifs,
             lockscreenMediaStyle: lockscreenMediaStyle,
             lockscreenShowWeather: lockscreenShowWeather,
             lockscreenShowUptime: lockscreenShowUptime,
@@ -593,24 +596,28 @@ Singleton {
         notificationSplitKdeApps = true
 
         lockscreenClockStyle = "hero"
+        lockscreenAuthStyle = "pill"
         lockscreenLayout = "default"
-        lockscreenAvatarShape = "circle"
-        lockscreenAvatarRing = true
+        lockscreenAvatarShape = "squircle"
+        lockscreenAvatarRing = false
         lockscreenInputStyle = "pill"
         lockscreenShowAvatar = true
-        lockscreenShowGreeting = true
+        lockscreenShowGreeting = false
         lockscreenShowMedia = true
-        lockscreenMediaStyle = "pill"
+        lockscreenShowNotifs = false
+        lockscreenMediaStyle = "card"
         lockscreenShowWeather = true
+        lockscreenShowUptime = true
         lockscreenWallpaperZoom = true
         lockscreenDim = 0.45
         lockscreen24h = false
-        lockscreenBlur = true
+        lockscreenBlur = false
         lockscreenBlurRadius = 0.40
         lockscreenWallpaperMode = "sync"
         lockscreenCustomWallpaper = ""
         lockscreenShowQuickPower = true
         lockscreenShowStatusPill = true
+        lockscreenGenieUnlock = true
         batteryShowWarnings = true
         batteryLowThreshold = 20
         batteryChargeLimitEnabled = false
@@ -821,6 +828,7 @@ Singleton {
     function setLockscreenShowAvatar(val) { lockscreenShowAvatar = val; saveConfig() }
     function setLockscreenShowGreeting(val) { lockscreenShowGreeting = val; saveConfig() }
     function setLockscreenShowMedia(val) { lockscreenShowMedia = val; saveConfig() }
+    function setLockscreenShowNotifs(val) { lockscreenShowNotifs = val; saveConfig() }
     function setLockscreenMediaStyle(style) { lockscreenMediaStyle = style; saveConfig() }
     function setLockscreenShowWeather(val) { lockscreenShowWeather = val; saveConfig() }
     function setLockscreenShowUptime(val) { lockscreenShowUptime = val; saveConfig() }
@@ -833,13 +841,14 @@ Singleton {
     function setLockscreenCustomWallpaper(path) { lockscreenCustomWallpaper = path; saveConfig() }
     function setLockscreenShowQuickPower(val) { lockscreenShowQuickPower = val; saveConfig() }
     function setLockscreenShowStatusPill(val) { lockscreenShowStatusPill = val; saveConfig() }
+    function setLockscreenGenieUnlock(val) { lockscreenGenieUnlock = val; saveConfig() }
     function setFaceIdEnabled(val) { faceIdEnabled = val; saveConfig() }
     function setFaceIdCameraDevice(path) { faceIdCameraDevice = path; saveConfig() }
     function setFaceIdConfidence(val) { faceIdConfidence = val; saveConfig() }
     function setFaceIdAutoUnlock(val) { faceIdAutoUnlock = val; saveConfig() }
     function setBatteryShowWarnings(val) { batteryShowWarnings = val; saveConfig() }
     function setBatteryLowThreshold(val) { batteryLowThreshold = val; saveConfig() }
-    function setBatteryChargeLimitEnabled(val) { batteryChargeLimitEnabled = val; saveConfig(); if (Services.Power && Services.Power.updateChargeLimit) Services.Power.updateChargeLimit(); }
+    function setBatteryChargeLimitEnabled(val) { batteryChargeLimitEnabled = val; saveConfig(); }
     function setBatteryChargeLimitValue(val) { batteryChargeLimitValue = val; saveConfig(); if (Services.Power && Services.Power.updateChargeLimit) Services.Power.updateChargeLimit(); }
     function setCustomAvatar(path) { customAvatar = path; saveConfig() }
     function clearCustomAvatar() { customAvatar = ""; saveConfig() }
