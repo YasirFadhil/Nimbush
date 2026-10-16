@@ -5280,6 +5280,9 @@ FloatingWindow {
                             SettingsSection {
                                 title: "Face ID & Biometrics"
                                 icon: "󰄀"
+                                Component.onCompleted: {
+                                    if (Services.FaceId) Services.FaceId.checkStatus()
+                                }
 
                                 SettingsSwitch {
                                     title: "Face ID Unlock"
@@ -5381,6 +5384,7 @@ FloatingWindow {
                                                     if (Services.FaceId && Services.FaceId.canEnroll) {
                                                         Services.FaceId.startEnroll()
                                                     } else if (Services.FaceId) {
+                                                        Services.FaceId.checkStatus()
                                                         rootWindow.faceIdEnrollmentNotice = Services.FaceId.enrollBlockReason()
                                                     }
                                                 }

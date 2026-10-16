@@ -311,7 +311,7 @@ DEPENDENCIES_DB=(
     "pactl|Audio|libpulse|pulseaudio-utils|pulseaudio-utils|pulseaudio|PulseAudio / PipeWire audio control utility|req"
     "paplay|Audio|libpulse|pulseaudio-utils|pulseaudio-utils|pulseaudio|Event sound feedback playback (paplay/pw-play)|req"
     "wpctl|Audio|wireplumber|wireplumber|wireplumber|wireplumber|WirePlumber PipeWire session controller (wpctl)|opt"
-    "powerprofilesctl|Power|power-profiles-daemon|power-profiles-daemon|power-profiles-daemon|power-profiles-daemon|System power profiles daemon|req"
+    "tlp|Power|tlp|tlp|tlp|tlp|TLP Linux power management & optimization daemon|req"
     "upower|Power|upower|upower|upower|upower|UPower battery & power management daemon|req"
     "nmcli|Network|networkmanager|network-manager|NetworkManager|networkmanager|NetworkManager command line tool|req"
     "bluetoothctl|Bluetooth|bluez-utils|bluez|bluez-tools|bluez|BlueZ Bluetooth management CLI|req"
@@ -339,6 +339,10 @@ DEPENDENCIES_DB=(
     "python3|Python|python|python3|python3|python3|Python 3 runtime for helper scripts|req"
     "zenity|GUI|zenity|zenity|zenity|zenity|XDG File Picker Dialog (fallback for wallpaper)|opt"
     "fastfetch|System|fastfetch|fastfetch|fastfetch|fastfetch|Fast system hardware & OS information tool|opt"
+
+    # Biometric Face ID (YuNet + SFace)
+    "v4l2-ctl|FaceID|v4l-utils|v4l-utils|v4l-utils|v4l-utils|Video4Linux hardware controls for Face ID camera tuning|opt"
+    "ffplay|FaceID|ffmpeg|ffmpeg|ffmpeg|ffmpeg|FFmpeg media engine for Face ID enrollment preview|opt"
 )
 
 # ── Dependency Diagnostics & Scan ─────────────────────────────────────────────
@@ -479,6 +483,32 @@ run_dependency_diagnostics() {
         printf "  %-22s %-12s ${YELLOW}%-14s${NC} ${YELLOW}%s${NC}\n" "nerd-fonts" "[Typography]" "[! WARNING]" "No Nerd Font detected (icons may render as boxes)"
     fi
 
+    # Check Face ID (YuNet + SFace) Neural Engine & Dependencies
+    FACE_PYTHON_BIN="${FACEID_PYTHON:-$(command -v python3 2>/dev/null || true)}"
+    if [ -n "$FACE_PYTHON_BIN" ] && "$FACE_PYTHON_BIN" -c "import cv2, numpy; exit(0 if hasattr(cv2, 'FaceDetectorYN') and hasattr(cv2, 'FaceRecognizerSF') else 1)" &>/dev/null; then
+        INSTALLED_COUNT=$((INSTALLED_COUNT + 1))
+        printf "  %-22s %-12s ${GREEN}%-14s${NC} ${DIM}%s${NC}\n" "faceid-engine" "[Biometric]" "[✔ INSTALLED]" "OpenCV YuNet + SFace ready"
+    else
+        MISSING_COUNT=$((MISSING_COUNT + 1))
+        case "$PKG_MGR" in
+            yay|paru|pacman)   MISSING_PKGS+=("python-opencv" "python-numpy") ;;
+            apt)               MISSING_PKGS+=("python3-opencv" "python3-numpy") ;;
+            dnf)               MISSING_PKGS+=("python3-opencv" "python3-numpy") ;;
+            *)                 MISSING_PKGS+=("python-opencv" "python-numpy") ;;
+        esac
+        printf "  %-22s %-12s ${YELLOW}%-14s${NC} ${DIM}%s${NC}\n" "faceid-engine" "[Biometric]" "[○ OPTIONAL]" "python-opencv & python-numpy (>=4.5.4)"
+    fi
+
+    # Check Face ID ONNX Model Assets
+    FACEID_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    if [ -f "$FACEID_SCRIPT_DIR/assets/face_detection_yunet_2023mar.onnx" ] && [ -f "$FACEID_SCRIPT_DIR/assets/face_recognition_sface_2021dec.onnx" ]; then
+        INSTALLED_COUNT=$((INSTALLED_COUNT + 1))
+        printf "  %-22s %-12s ${GREEN}%-14s${NC} ${DIM}%s${NC}\n" "faceid-models" "[Biometric]" "[✔ INSTALLED]" "YuNet & SFace ONNX models present"
+    else
+        MISSING_COUNT=$((MISSING_COUNT + 1))
+        printf "  %-22s %-12s ${YELLOW}%-14s${NC} ${YELLOW}%s${NC}\n" "faceid-models" "[Biometric]" "[! WARNING]" "YuNet/SFace ONNX models missing in assets/"
+    fi
+
     echo -e "  ${DIM}────────────────────────────────────────────────────────────────────────────────${NC}"
     echo -e "  ${BOLD}Diagnostic Result:${NC} Installed: ${GREEN}${BOLD}${INSTALLED_COUNT}${NC} | Missing: ${RED}${BOLD}${MISSING_COUNT}${NC}\n"
 
@@ -606,6 +636,26 @@ run_dependency_diagnostics() {
         fi
     else
         success "All required and optional dependencies are satisfied!"
+    fi
+
+    # Auto-fetch Face ID ONNX Neural Models if missing
+    FACEID_ASSETS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/assets"
+    YUNET_M="$FACEID_ASSETS_DIR/face_detection_yunet_2023mar.onnx"
+    SFACE_M="$FACEID_ASSETS_DIR/face_recognition_sface_2021dec.onnx"
+    if [ ! -f "$YUNET_M" ] || [ ! -f "$SFACE_M" ]; then
+        if [ "$CHECK_ONLY" = false ]; then
+            info "Fetching Face ID neural models (YuNet + SFace ONNX)..."
+            mkdir -p "$FACEID_ASSETS_DIR"
+            if [ ! -f "$YUNET_M" ]; then
+                curl -sL -o "$YUNET_M" "https://github.com/opencv/opencv_zoo/raw/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx" || true
+            fi
+            if [ ! -f "$SFACE_M" ]; then
+                curl -sL -o "$SFACE_M" "https://github.com/opencv/opencv_zoo/raw/main/models/face_recognition_sface/face_recognition_sface_2021dec.onnx" || true
+            fi
+            if [ -f "$YUNET_M" ] && [ -f "$SFACE_M" ]; then
+                success "Face ID ONNX models downloaded successfully to assets/!"
+            fi
+        fi
     fi
 
     step_footer
@@ -984,7 +1034,7 @@ setup_system_services() {
 
     step_header "4/5 System Daemons & Services"
 
-    SERVICES=("NetworkManager" "bluetooth" "power-profiles-daemon" "upower")
+    SERVICES=("NetworkManager" "bluetooth" "tlp" "upower")
     INACTIVE_SERVICES=()
 
     for s in "${SERVICES[@]}"; do

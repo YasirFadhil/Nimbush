@@ -10,12 +10,8 @@
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = import nixpkgs { inherit system; };
-        opencvContrib = pkgs.opencv4.override {
-          enableContrib = true;
-          enablePython = true;
-        };
         faceIdPython = pkgs.python3.withPackages (ps: with ps; [
-          opencvContrib
+          opencv4
           numpy
         ]);
 
@@ -29,7 +25,7 @@
           cliphist
           wl-clipboard
           wtype
-          power-profiles-daemon
+          tlp
           upower
           socat
           psmisc

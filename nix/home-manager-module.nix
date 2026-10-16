@@ -145,7 +145,7 @@ in
           cliphist
           wl-clipboard
           wtype
-          power-profiles-daemon
+          tlp
           upower
           socat
           psmisc

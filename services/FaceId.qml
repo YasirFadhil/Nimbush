@@ -22,7 +22,16 @@ Singleton {
     property int enrollStepNumber: 1
     property var availableDevices: ["/dev/video0"]
 
-    readonly property string pythonExec: Quickshell.env("FACEID_PYTHON") || "python3"
+    readonly property string pythonExec: {
+        var envPy = Quickshell.env("FACEID_PYTHON")
+        if (envPy && envPy.length > 0) return envPy
+        var home = Quickshell.env("HOME") || ("/home/" + (Quickshell.env("USER") || "user"))
+        var nixPy = home + "/.local/state/quickshell/faceid/python-env/bin/python"
+        if (Services.OsInfo && Services.OsInfo.distroId === "nixos") {
+            return nixPy
+        }
+        return "python3"
+    }
 
     readonly property string helperScript: {
         var home = Quickshell.env("HOME") || ("/home/" + (Quickshell.env("USER") || "user"))
@@ -51,8 +60,17 @@ Singleton {
         checkStatus()
     }
 
+    Timer {
+        id: statusRetryTimer
+        interval: 3000
+        repeat: true
+        running: (!root.hasFaceModule || !root.hasFaceDetector) && !root.isScanning && !root.isEnrolling
+        onTriggered: root.checkStatus()
+    }
+
     function checkStatus() {
         if (!statusProc.running) {
+            statusProc.command = [root.pythonExec, root.helperScript, "status"]
             statusProc.running = true
         }
     }
@@ -155,8 +173,8 @@ Singleton {
 
     function enrollBlockReason() {
         if (!isEnabled) return "Face ID is disabled."
-        if (!hasFaceModule) return "OpenCV contrib / cv2.face is missing on this system."
-        if (!hasFaceDetector) return "Face detector cascade is not available."
+        if (!hasFaceModule) return "OpenCV / Neural face recognizer engine is missing on this system."
+        if (!hasFaceDetector) return "Neural face detector (YuNet) is not available."
         return ""
     }
 

@@ -51,27 +51,40 @@ RowLayout {
     }
 
     // ── Daftar item dan urutan mengalah ───────────────────────────
-    readonly property var yieldOrder: [volPill, sysmonInd, sysTrayIcons, batPill, ctrlPill, clockCenterPill]
-    readonly property var compactables: [volPill, sysmonInd]
+    readonly property var yieldOrder: [sysmonInd, volPill, sysTrayIcons, batPill, ctrlPill, clockCenterPill]
+    // Tahap compact berurutan: tier 1 = tahap pertama, tier 2 = tahap pertama + kedua, dst.
+    // Setelah semua tahap compact habis, baru item mulai mengalah (yield).
+    readonly property var compactStages: [[volPill, sysmonInd], [batPill]]
+    readonly property int compactStageCount: compactStages.length
+
+    // Berapa item di yieldOrder yang sedang mengalah pada layoutTier saat ini
+    readonly property int yieldCount: Math.max(0, layoutTier - compactStageCount)
+
+    // Apakah item compact pada tier tertentu
+    function isCompactAt(item, tier) {
+        const stages = Math.min(tier, compactStageCount)
+        for (let s = 0; s < stages; s++) {
+            if (compactStages[s].indexOf(item) !== -1) return true
+        }
+        return false
+    }
 
     // ── Tier Spacing & Width ──────────────────────────────────────
     readonly property int itemSpacing: isMinimal ? 4 : 8
 
     function widthAtTier(tier) {
         // tier 0 = full
-        // tier 1 = compact (volPill & sysmonInd only)
-        // tier 2+ = compact + yield bertahap
+        // tier 1..N = tahap compact bertahap (lihat compactStages)
+        // tier N+1.. = semua compact + yield bertahap
         const spacing = itemSpacing
-        const compact = tier >= 1
         let total = 0
-        let yieldCount = Math.max(0, tier - 1)
+        const yields = Math.max(0, tier - compactStageCount)
 
         for (let i = 0; i < yieldOrder.length; i++) {
             const item = yieldOrder[i]
             if (!item || !item.visible) continue
-            if (i < yieldCount) continue   // item ini mengalah pada tier ini
-            const isCompactable = compactables.indexOf(item) !== -1
-            const useCompact = compact && isCompactable
+            if (i < yields) continue   // item ini mengalah pada tier ini
+            const useCompact = isCompactAt(item, tier)
             // Samakan dengan Layout.rightMargin asli: clock = 0, lainnya = spacing
             const gap = (item === clockCenterPill) ? 0 : spacing
             total += (useCompact ? item.trayWidthCompact : item.trayWidthFull) + gap
@@ -84,15 +97,17 @@ RowLayout {
     // widthAtTier(), jadi berubah otomatis saat font/teks/visibilitas berubah.
     readonly property real fullWidthSignal: widthAtTier(0)
     readonly property real compactWidthSignal: widthAtTier(1)
+    readonly property real compactWidthSignal2: widthAtTier(2)
     onFullWidthSignalChanged: requestLayout()
     onCompactWidthSignalChanged: requestLayout()
+    onCompactWidthSignal2Changed: requestLayout()
 
     // Set true sementara untuk debug, lihat log di terminal quickshell
     property bool debugLayout: false
 
     // ── State Machine & Histeresis ────────────────────────────────
     property int layoutTier: 0
-    readonly property int maxTier: 1 + yieldOrder.length
+    readonly property int maxTier: compactStageCount + yieldOrder.length
 
     function recomputeLayout() {
         const avail = availableWidth
@@ -149,7 +164,7 @@ RowLayout {
         trayOverflowPopup: trayOverflowPopup
 
         readonly property int yieldIndex: root.yieldOrder.indexOf(sysTrayIcons)
-        readonly property bool isYielded: Services.OverlayManager.isLocked || (root.layoutTier >= 2 && yieldIndex < (root.layoutTier - 1))
+        readonly property bool isYielded: Services.OverlayManager.isLocked || yieldIndex < root.yieldCount
         readonly property bool isCompact: false
 
         trayCompact: false
@@ -187,8 +202,8 @@ RowLayout {
         hPadOverride: -1
 
         readonly property int yieldIndex: root.yieldOrder.indexOf(sysmonInd)
-        readonly property bool isYielded: Services.OverlayManager.isLocked || (root.layoutTier >= 2 && yieldIndex < (root.layoutTier - 1))
-        readonly property bool isCompact: root.layoutTier >= 1 && root.compactables.indexOf(sysmonInd) !== -1
+        readonly property bool isYielded: Services.OverlayManager.isLocked || yieldIndex < root.yieldCount
+        readonly property bool isCompact: root.isCompactAt(sysmonInd, root.layoutTier)
 
         trayCompact: isCompact
         trayYielded: isYielded
@@ -212,8 +227,8 @@ RowLayout {
         id: volPill
 
         readonly property int yieldIndex: root.yieldOrder.indexOf(volPill)
-        readonly property bool isYielded: Services.OverlayManager.isLocked || (root.layoutTier >= 2 && yieldIndex < (root.layoutTier - 1))
-        readonly property bool isCompact: root.layoutTier >= 1 && root.compactables.indexOf(volPill) !== -1
+        readonly property bool isYielded: Services.OverlayManager.isLocked || yieldIndex < root.yieldCount
+        readonly property bool isCompact: root.isCompactAt(volPill, root.layoutTier)
 
         property bool trayCompact: isCompact
         property bool trayYielded: isYielded
@@ -347,9 +362,10 @@ RowLayout {
         id: batPill
 
         readonly property int yieldIndex: root.yieldOrder.indexOf(batPill)
-        readonly property bool isYielded: Services.OverlayManager.isLocked || (root.layoutTier >= 2 && yieldIndex < (root.layoutTier - 1))
+        readonly property bool isYielded: Services.OverlayManager.isLocked || yieldIndex < root.yieldCount
+        readonly property bool isCompact: root.isCompactAt(batPill, root.layoutTier)
 
-        property bool trayCompact: false
+        property bool trayCompact: isCompact
         property bool trayYielded: isYielded
 
         readonly property int baseHPad: root.isMinimal ? 12 : 20
@@ -368,12 +384,12 @@ RowLayout {
             text: Services.Icons.powerIcon(Services.Power.charging, Services.Power.percentage * 100)
         }
 
-        readonly property real trayWidthFull: Math.ceil(mBatIcon.width) + baseHPad + innerSpacing + Math.ceil(mBatPct.width)
-        readonly property real trayWidthCompact: trayWidthFull
+        readonly property real trayWidthCompact: Math.ceil(mBatIcon.width) + baseHPad
+        readonly property real trayWidthFull: trayWidthCompact + innerSpacing + Math.ceil(mBatPct.width)
 
         implicitHeight: root.pillHeight
         implicitWidth: trayWidthFull
-        Layout.preferredWidth: isYielded ? 0 : trayWidthFull
+        Layout.preferredWidth: isYielded ? 0 : (isCompact ? trayWidthCompact : trayWidthFull)
         Layout.preferredHeight: implicitHeight
         Layout.rightMargin: isYielded ? 0 : root.itemSpacing
         Layout.alignment: Qt.AlignVCenter
@@ -395,7 +411,9 @@ RowLayout {
 
         RowLayout {
             id: batLayout
-            anchors.centerIn: parent
+            anchors.verticalCenter: parent.verticalCenter
+            anchors.left: parent.left
+            anchors.leftMargin: root.isMinimal ? 6 : 10
             spacing: root.innerSpacing
 
             Text {
@@ -429,7 +447,10 @@ RowLayout {
                 font.family: Services.Theme.fontMono
                 font.pixelSize: root.isMinimal ? Services.Theme.fontSizeSm : Services.Theme.fontSizeMd
                 color: Services.Power.isLow ? "#ff4444" : (Services.Power.isWarning ? "#e06c75" : (Services.PowerProfile.saverEnabled ? "#ff9800" : ((batMouse.containsMouse || Services.OverlayManager.batteryPanelVisible) ? Services.Theme.accent : Services.Theme.textSecondary)))
+                opacity: batPill.trayCompact ? 0.0 : 1.0
+                visible: opacity > 0.01
                 Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                Behavior on opacity { NumberAnimation { duration: batPill.trayCompact ? 160 : 260; easing.type: Easing.OutCubic } }
             }
         }
 
@@ -453,7 +474,7 @@ RowLayout {
         id: ctrlPill
 
         readonly property int yieldIndex: root.yieldOrder.indexOf(ctrlPill)
-        readonly property bool isYielded: Services.OverlayManager.isLocked || (root.layoutTier >= 2 && yieldIndex < (root.layoutTier - 1))
+        readonly property bool isYielded: Services.OverlayManager.isLocked || yieldIndex < root.yieldCount
         readonly property bool isCompact: false
 
         property bool trayCompact: false
@@ -561,7 +582,7 @@ RowLayout {
         hPadOverride: -1
 
         readonly property int yieldIndex: root.yieldOrder.indexOf(clockCenterPill)
-        readonly property bool isYielded: Services.OverlayManager.isLocked || (root.layoutTier >= 2 && yieldIndex < (root.layoutTier - 1))
+        readonly property bool isYielded: Services.OverlayManager.isLocked || yieldIndex < root.yieldCount
 
         trayCompact: false
         trayYielded: isYielded
