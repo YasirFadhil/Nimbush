@@ -487,15 +487,37 @@ Item {
 
     Process {
         id: cameraProc
-        command: ["sh", "-c", "ls /dev/video* >/dev/null 2>&1 || { echo 0; exit 0; }; pids=$(fuser /dev/video* 2>/dev/null); [ -z \"$pids\" ] && { echo 0; exit 0; }; active=0; for p in $pids; do cmd=$(ps -p \"$p\" -o args= 2>/dev/null); case \"$cmd\" in *faceid-helper*|*wireplumber*|*pipewire*|*systemd-udevd*|*udevd*) ;; *) active=1; break ;; esac; done; echo $active"]
+        // Detect an actively running PipeWire video-capture stream rather than
+        // any process that merely has a /dev/video* file open. Browsers may
+        // probe/hold camera devices while idle, which caused false indicators.
+        command: [
+            "python3", "-c",
+            "import json, subprocess\n" +
+            "try:\n" +
+            "    raw = subprocess.check_output(['pw-dump'], stderr=subprocess.DEVNULL, timeout=2)\n" +
+            "    objects = json.loads(raw.decode('utf-8', errors='replace'))\n" +
+            "    active = False\n" +
+            "    for obj in objects:\n" +
+            "        if obj.get('type') != 'PipeWire:Interface:Node':\n" +
+            "            continue\n" +
+            "        info = obj.get('info') or {}\n" +
+            "        props = info.get('props') or {}\n" +
+            "        media_class = str(props.get('media.class', ''))\n" +
+            "        state = str(info.get('state', '')).lower()\n" +
+            "        if media_class.startswith('Stream/Input/Video') and state == 'running':\n" +
+            "            active = True\n" +
+            "            break\n" +
+            "    print('1' if active else '0')\n" +
+            "except Exception:\n" +
+            "    print('0')"
+        ]
         stdout: SplitParser {
             onRead: data => {
                 const isActive = data.trim() === "1"
-                root.cameraActive = isActive
+                if (root.cameraActive !== isActive) root.cameraActive = isActive
             }
         }
     }
-
     Timer {
         id: capsLockPollTimer
         interval: 1200
@@ -617,6 +639,7 @@ Item {
     }
 
     Component.onCompleted: {
+        root.syncMediaMetadataNow()
         root.lastAudioSink = Services.Audio.sink
         if (Services.Audio.sink) {
             root.lastAudioMuted = Services.Audio.muted
@@ -916,6 +939,72 @@ Item {
     readonly property bool mediaPlaying: activePlayer !== null && activePlayer.isPlaying
     readonly property bool hasMedia: activePlayer !== null && (activePlayer.trackTitle !== "" || mediaPlaying)
 
+    // Track metadata from browser MPRIS providers can arrive in several signals.
+    // Keep the currently displayed metadata stable until the burst has settled.
+    // Keep the cached track fields in one object so they change atomically.
+    // Separate assignments can briefly combine the new title with the old artist.
+    property var stableMedia: ({ title: "", artist: "", identity: "", player: null })
+    readonly property string stableTrackTitle: String(stableMedia.title || "")
+    readonly property string stableTrackArtist: String(stableMedia.artist || "")
+    readonly property string stableTrackIdentity: String(stableMedia.identity || "")
+    property bool mediaPeekPending: false
+    property double blankTrackTitleSince: 0
+
+    function scheduleMediaMetadataSync(requestPeek) {
+        if (requestPeek === true) root.mediaPeekPending = true
+        mediaMetadataSettleTimer.restart()
+    }
+
+    function syncMediaMetadataNow() {
+        const player = root.activePlayer
+        root.stableMedia = {
+            title: String(player?.trackTitle || "").trim(),
+            artist: String(player?.trackArtist || "").trim(),
+            identity: String(player?.identity || "").trim(),
+            player: player
+        }
+    }
+
+    Timer {
+        id: mediaMetadataSettleTimer
+        interval: 350
+        repeat: false
+        onTriggered: {
+            const player = root.activePlayer
+            const previous = root.stableMedia || {}
+            const samePlayer = player === previous.player
+            const title = String(player?.trackTitle || "").trim()
+            const artist = String(player?.trackArtist || "").trim()
+            const identity = String(player?.identity || "").trim()
+
+            // Allow a short metadata grace period when the same browser player
+            // clears the title between tracks. Never keep stale metadata forever.
+            if (samePlayer && root.mediaPlaying && title === "" && root.stableTrackTitle !== "") {
+                if (root.blankTrackTitleSince === 0) root.blankTrackTitleSince = Date.now()
+                if (Date.now() - root.blankTrackTitleSince < 1200) {
+                    mediaMetadataSettleTimer.restart()
+                    return
+                }
+            } else {
+                root.blankTrackTitleSince = 0
+            }
+
+            root.blankTrackTitleSince = 0
+            const requestPeek = root.mediaPeekPending
+            root.mediaPeekPending = false
+            root.stableMedia = {
+                title: title,
+                artist: artist,
+                identity: identity,
+                player: player
+            }
+
+            if (requestPeek && root.mediaPlaying && root.hudReady && root.notifCount === 0 && !root.pinned && !root.lockBlocked) {
+                root.triggerMediaPeek(false)
+            }
+        }
+    }
+
     readonly property bool hasExpandContent: ((slot0Activity !== "idle") || wallpaperMode || dropSendMode || isDropSending)
     readonly property bool expanded: !lockBlocked && hasExpandContent && (pinned || autoExpanded || (slot0Activity === "notif") || (slot0Activity === "syshud") || wallpaperMode || dropSendMode || isDropSending)
     readonly property bool isMediaPeek: !lockBlocked && autoExpanded && !pinned && (slot0Activity === "media") && !wallpaperMode && !dropSendMode && !isDropSending && hasMedia
@@ -971,8 +1060,8 @@ Item {
 
     readonly property string currentMediaText: {
         if (!activePlayer) return ""
-        const title = activePlayer.trackTitle || ""
-        const artist = activePlayer.trackArtist || ""
+        const title = root.stableTrackTitle
+        const artist = root.stableTrackArtist
         if (title !== "" && artist !== "") return title + " • " + artist
         return title || artist || "Playing"
     }
@@ -987,7 +1076,7 @@ Item {
         if (root.wallpaperMode || root.dropSendMode || root.isDropSending) return
         if (!root.mediaPlaying) return
 
-        const curKey = (root.activePlayer?.identity || "") + "::" + (root.activePlayer?.trackTitle || "") + "::" + (root.activePlayer?.trackArtist || "")
+        const curKey = (root.stableTrackIdentity || root.activePlayer?.identity || "") + "::" + (root.stableTrackTitle || "") + "::" + (root.stableTrackArtist || "")
         if (!force && curKey === root.lastPeekKey && root.autoExpanded) {
             autoCollapseTimer.restart()
             return
@@ -1015,9 +1104,9 @@ Item {
     onMediaPlayingChanged: {
         if (mediaPlaying) {
             mediaActiveTime = Date.now()
+            root.scheduleMediaMetadataSync(true)
             if (root.hudReady && root.notifCount === 0 && !root.pinned && !root.lockBlocked) {
                 root.mediaCollapsedReady = false
-                root.triggerMediaPeek(true)
             } else {
                 root.mediaCollapsedReady = true
             }
@@ -1030,6 +1119,8 @@ Item {
                 lastTrackText = currentMediaText
             }
         } else {
+            mediaMetadataSettleTimer.stop()
+            root.mediaPeekPending = false
             root.lastPeekKey = ""
             if (root.hudReady && !root.notifActive && !root.lockBlocked) {
                 root.triggerMediaStop()
@@ -1043,9 +1134,6 @@ Item {
             mediaActiveTime = Date.now()
             lastTrackText = currentMediaText
             root.restartGlobalMarquee()
-            if (root.hudReady && root.notifCount === 0 && !root.pinned && !root.lockBlocked) {
-                root.triggerMediaPeek(false)
-            }
         }
     }
     onExpandedChanged: {
@@ -1059,8 +1147,8 @@ Item {
     function restartGlobalMarquee() {
         globalMediaMarqueeAnim.stop()
         globalMediaMarqueeRatio = 0.0
-        const tLen = (root.activePlayer?.trackTitle || "").length
-        const aLen = (root.activePlayer?.trackArtist || "").length
+        const tLen = (root.stableTrackTitle || "").length
+        const aLen = (root.stableTrackArtist || "").length
         const maxLen = Math.max(tLen, aLen, (root.currentMediaText || "").length)
         const approxOverflow = Math.max(40, (maxLen * 7.5) - 130)
         globalMediaMarqueeDuration = Math.max(3000, Math.min(8500, approxOverflow * 35))
@@ -1291,73 +1379,26 @@ Item {
 
     Connections {
         target: Services.Mpris
-        function onActivePlayerChanged() {
-            root.restartGlobalMarquee()
-            if (root.hudReady && Services.Mpris.activePlayer && (Services.Mpris.activePlayer.isPlaying ?? false) && root.notifCount === 0 && !root.pinned) {
-                root.triggerMediaPeek(true)
-            }
-        }
-        function onPlaybackStarted(player) {
-            if (root.hudReady && root.notifCount === 0 && !root.pinned) {
-                root.triggerMediaPeek(true)
-            }
-        }
-        function onTrackChanged(player) {
-            root.restartGlobalMarquee()
-            if (collapsedTextContainer) {
-                collapsedTextContainer.updateTrackPush(collapsedTextContainer.targetText, root.isNextTrack)
-            }
-            if (root.hudReady && root.notifCount === 0 && !root.pinned) {
-                root.triggerMediaPeek(false)
-            }
-        }
+        ignoreUnknownSignals: true
+        function onActivePlayerChanged() { root.scheduleMediaMetadataSync(true) }
+        function onPlaybackStarted(player) { root.scheduleMediaMetadataSync(true) }
     }
 
     Connections {
         target: root.activePlayer
         ignoreUnknownSignals: true
         function onIsPlayingChanged() {
-            if (root.hudReady && root.activePlayer && (root.activePlayer.isPlaying ?? false) && root.notifCount === 0 && !root.pinned) {
-                root.triggerMediaPeek(true)
+            if (root.activePlayer && (root.activePlayer.isPlaying ?? false)) {
+                root.scheduleMediaMetadataSync(true)
             }
         }
-        function onTrackTitleChanged() {
-            root.restartGlobalMarquee()
-            if (collapsedTextContainer) {
-                collapsedTextContainer.updateTrackPush(collapsedTextContainer.targetText, root.isNextTrack)
-            }
-            if (root.hudReady && root.activePlayer && (root.activePlayer.isPlaying ?? false) && root.notifCount === 0 && !root.pinned) {
-                root.triggerMediaPeek(false)
-            }
-        }
-        function onTrackArtistChanged() {
-            root.restartGlobalMarquee()
-            if (root.hudReady && root.activePlayer && (root.activePlayer.isPlaying ?? false) && root.notifCount === 0 && !root.pinned) {
-                root.triggerMediaPeek(false)
-            }
-        }
-        function onTrackArtUrlChanged() {
-            if (root.hudReady && root.activePlayer && (root.activePlayer.isPlaying ?? false) && root.notifCount === 0 && !root.pinned) {
-                root.triggerMediaPeek(false)
-            }
-        }
-        function onTrackChanged() {
-            root.restartGlobalMarquee()
-            if (collapsedTextContainer) {
-                collapsedTextContainer.updateTrackPush(collapsedTextContainer.targetText, root.isNextTrack)
-            }
-            if (root.hudReady && root.activePlayer && (root.activePlayer.isPlaying ?? false) && root.notifCount === 0 && !root.pinned) {
-                root.triggerMediaPeek(false)
-            }
-        }
-        function onMetadataChanged() {
-            root.restartGlobalMarquee()
-            if (root.hudReady && root.activePlayer && (root.activePlayer.isPlaying ?? false) && root.notifCount === 0 && !root.pinned) {
-                root.triggerMediaPeek(false)
-            }
-        }
+        function onTrackTitleChanged() { root.scheduleMediaMetadataSync(true) }
+        function onTrackArtistChanged() { root.scheduleMediaMetadataSync(true) }
+        function onTrackChanged() { root.scheduleMediaMetadataSync(true) }
+        function onPostTrackChanged() { root.scheduleMediaMetadataSync(true) }
+        function onMetadataChanged() { root.scheduleMediaMetadataSync(true) }
+        function onTrackArtUrlChanged() { root.scheduleMediaMetadataSync(false) }
     }
-
     // Click outside area to collapse expanded island
     MouseArea {
         id: outsideMouseArea
@@ -2678,8 +2719,8 @@ Item {
                     spacing: root.expanded ? (root.isMediaPeek ? 1 : 2) : 0
                     Behavior on spacing { NumberAnimation { duration: 220 } }
 
-                    readonly property string fullTitle: root.activePlayer ? (root.activePlayer.trackTitle || "Playing") : "Playing"
-                    readonly property string fullArtist: root.activePlayer ? (root.activePlayer.trackArtist || root.activePlayer.identity || "Now Playing") : "Now Playing"
+                    readonly property string fullTitle: root.activePlayer ? (root.stableTrackTitle || "Playing") : "Playing"
+                    readonly property string fullArtist: root.activePlayer ? (root.stableTrackArtist || root.stableTrackIdentity || "Now Playing") : "Now Playing"
 
                     onFullArtistChanged: {
                         if (!mediaTextSwitchAnim.running) {
