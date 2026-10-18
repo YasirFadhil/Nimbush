@@ -855,6 +855,14 @@ PanelWindow {
                             delegate: Rectangle {
                                 id: streamItem
                                 required property var modelData
+                                // Keep drag state local for smooth UI feedback while the audio service
+                                // throttles backend updates without rebuilding this Repeater model.
+                                property bool streamSliderDragging: false
+                                property bool streamVolumePending: false
+                                property real streamSliderDraft: modelData.volume ?? 0
+                                readonly property real displayedStreamVolume: (streamSliderDragging || streamVolumePending)
+                                    ? streamSliderDraft
+                                    : (modelData.volume ?? 0)
                                 Layout.fillWidth: true
                                 implicitHeight: 44
                                 radius: Services.Theme.radiusMd
@@ -896,7 +904,7 @@ PanelWindow {
                                                 Layout.fillWidth: true
                                             }
                                             Text {
-                                                text: streamItem.modelData.muted ? "Muted" : (Math.round(streamItem.modelData.volume * 100) + "%")
+                                                text: streamItem.modelData.muted ? "Muted" : (Math.round(streamItem.displayedStreamVolume * 100) + "%")
                                                 color: streamItem.modelData.muted ? Services.Theme.danger : Services.Theme.textSecondary
                                                 font.pixelSize: 9
                                                 font.family: Services.Theme.fontMono
@@ -916,17 +924,51 @@ PanelWindow {
                                                 height: parent.height
                                                 radius: parent.radius
                                                 color: streamItem.modelData.muted ? Services.Theme.textDisabled : Services.Theme.accent
-                                                width: Math.max(12, Math.min(parent.width, (streamItem.modelData.muted ? 0 : streamItem.modelData.volume) * parent.width))
+                                                width: parent.width * Math.max(0, Math.min(1,
+                                                    streamItem.modelData.muted ? 0 : streamItem.displayedStreamVolume))
                                             }
 
                                             MouseArea {
+                                                id: streamVolumeMouse
                                                 anchors.fill: parent
-                                                anchors.margins: -4
                                                 hoverEnabled: true
+                                                preventStealing: true
                                                 cursorShape: Qt.PointingHandCursor
-                                                onPressed: (mouse) => Services.Audio.setStreamVolume(streamItem.modelData.index, Math.max(0, Math.min(1, mouse.x / width)))
+
+                                                function volumeAt(mouseX) {
+                                                    if (width <= 0)
+                                                        return streamItem.displayedStreamVolume
+                                                    return Math.max(0, Math.min(1, mouseX / width))
+                                                }
+
+                                                // Keep a local draft for smooth animation, while the audio
+                                                // service applies throttled updates in the background.
+                                                onPressed: (mouse) => {
+                                                    Services.Audio.beginStreamVolumeDrag()
+                                                    streamItem.streamVolumePending = false
+                                                    streamItem.streamSliderDragging = true
+                                                    streamItem.streamSliderDraft = volumeAt(mouse.x)
+                                                }
                                                 onPositionChanged: (mouse) => {
-                                                    if (pressed) Services.Audio.setStreamVolume(streamItem.modelData.index, Math.max(0, Math.min(1, mouse.x / width)))
+                                                    if (pressed) {
+                                                        const nextVolume = volumeAt(mouse.x)
+                                                        streamItem.streamSliderDraft = nextVolume
+                                                        Services.Audio.setStreamVolume(streamItem.modelData.index, nextVolume, false)
+                                                    }
+                                                }
+                                                onReleased: {
+                                                    const targetIndex = streamItem.modelData.index
+                                                    const targetVolume = streamItem.streamSliderDraft
+                                                    streamItem.streamSliderDragging = false
+                                                    streamItem.streamVolumePending = true
+                                                    Services.Audio.setStreamVolume(targetIndex, targetVolume, true)
+                                                }
+                                                onCanceled: {
+                                                    const targetIndex = streamItem.modelData.index
+                                                    const targetVolume = streamItem.streamSliderDraft
+                                                    streamItem.streamSliderDragging = false
+                                                    streamItem.streamVolumePending = true
+                                                    Services.Audio.setStreamVolume(targetIndex, targetVolume, true)
                                                 }
                                             }
                                         }

@@ -201,6 +201,8 @@ Variants {
                 color: Services.Theme.borderSubtle
             }
         }
+        
+
 
         // ── Main Bar Content Row ─────────────────────────────────────────────
         Item {
