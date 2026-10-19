@@ -175,8 +175,10 @@ Item {
     property var lastAudioSink: null
     property bool lastAudioMuted: false
 
-    // Camera Active State & Monitoring
+    // Camera and screen-recording activity state.
     property bool cameraActive: false
+    property bool recordingActive: false
+    readonly property color recordingColor: "#ff5b36"
 
     // CapsLock Active State & Monitoring
     property bool capsLockActive: false
@@ -185,6 +187,7 @@ Item {
     property double mediaActiveTime: 0
     property double sysHudActiveTime: 0
     property double cameraActiveTime: 0
+    property double recordingActiveTime: 0
     property double capsLockActiveTime: 0
     property string manualCenterId: ""
 
@@ -244,7 +247,7 @@ Item {
             }
         }
 
-        // 4. Camera active
+        // 4. Camera privacy activity
         if (root.cameraActive) {
             list.push({
                 id: "camera",
@@ -253,7 +256,16 @@ Item {
             })
         }
 
-        // 5. CapsLock active
+        // 5. Screen recording (e.g. OBS PipeWire/portal capture)
+        if (root.recordingActive) {
+            list.push({
+                id: "recording",
+                type: "recording",
+                time: root.recordingActiveTime || 0
+            })
+        }
+
+        // 6. CapsLock active
         if (root.capsLockActive) {
             list.push({
                 id: "capslock",
@@ -274,15 +286,17 @@ Item {
             return { center: { type: "idle" }, right: null, left: null }
         }
 
-        // Separate center-eligible activities from satellite-only indicators
-        // Primary center candidates: dropsend, wallpaper, syshud, notif, media
-        // Satellite-only indicators: capslock, camera
+        // Privacy indicators stay inside the main island at its right corner.
+        // They must not create a detached satellite: one shared dot changes
+        // from green (webcam) to red-orange (screen recording).
         const centerEligible = []
         const satelliteOnly = []
         for (let i = 0; i < candidates.length; i++) {
             const c = candidates[i]
-            if (c.type === "capslock" || c.type === "camera") {
+            if (c.type === "capslock") {
                 satelliteOnly.push(c)
+            } else if (c.type === "camera" || c.type === "recording") {
+                // Rendered by cameraIndicator in the main island, not a slot.
             } else {
                 centerEligible.push(c)
             }
@@ -305,7 +319,9 @@ Item {
             }
         }
 
-        // Add satellite-only candidates to remaining queue
+        // CapsLock remains a detached satellite. Webcam and screen-recording
+        // indicators are deliberately excluded from remaining to prevent a
+        // second camera/recording bubble next to the main island.
         for (let j = 0; j < satelliteOnly.length; j++) {
             remaining.push(satelliteOnly[j])
         }
@@ -331,6 +347,7 @@ Item {
 
     readonly property bool isMediaSatellite: (slotRightType === "media" || slotLeftType === "media")
     readonly property bool isCameraSatellite: (slotRightType === "camera" || slotLeftType === "camera")
+    readonly property bool isRecordingSatellite: (slotRightType === "recording" || slotLeftType === "recording")
     readonly property bool isCapsLockSatellite: (slotRightType === "capslock" || slotLeftType === "capslock")
 
     readonly property int leftExtraWidth: (slotLeftType !== "") ? 40 : 0
@@ -375,6 +392,8 @@ Item {
             root.manualCenterId = "media"
         } else if (item.type === "camera") {
             root.showSysHud("󰄀", "Camera Active", "Webcam in use", Services.Theme.success)
+        } else if (item.type === "recording") {
+            root.showSysHud("●", "Screen Recording", "Screen capture is active", root.recordingColor)
         } else if (item.type === "capslock") {
             // Persistent indicator - no HUD popup
         } else if (item.type === "transfer") {
@@ -476,7 +495,7 @@ Item {
 
     Timer {
         id: cameraPollTimer
-        interval: 4000
+        interval: 1800
         running: true
         repeat: true
         triggeredOnStart: true
@@ -487,34 +506,216 @@ Item {
 
     Process {
         id: cameraProc
-        // Detect an actively running PipeWire video-capture stream rather than
-        // any process that merely has a /dev/video* file open. Browsers may
-        // probe/hold camera devices while idle, which caused false indicators.
+        // Detect direct V4L2 camera clients, active PipeWire camera streams, and actual OBS recording output.
         command: [
             "python3", "-c",
-            "import json, subprocess\n" +
-            "try:\n" +
-            "    raw = subprocess.check_output(['pw-dump'], stderr=subprocess.DEVNULL, timeout=2)\n" +
-            "    objects = json.loads(raw.decode('utf-8', errors='replace'))\n" +
-            "    active = False\n" +
-            "    for obj in objects:\n" +
-            "        if obj.get('type') != 'PipeWire:Interface:Node':\n" +
+            "import glob\n" +
+            "import json\n" +
+            "import os\n" +
+            "import re\n" +
+            "import shutil\n" +
+            "import stat\n" +
+            "import subprocess\n" +
+            "\n" +
+            "result = {'camera': False, 'recording': False, 'reasons': [], 'camera_fd_users': [], 'obs_output_files': [], 'active_video_nodes': [], 'pw_dump_path': '', 'pw_dump_ok': False, 'pw_dump_error': ''}\n" +
+            "\n" +
+            "def is_obs_process(comm, cmdline):\n" +
+            "    comm = (comm or '').strip().lower()\n" +
+            "    cmdline = (cmdline or '').lower()\n" +
+            "    return comm in ('obs', 'obs-studio', 'obs-studio-bin') or 'com.obsproject.studio' in cmdline or re.search(r'(^|[ /])obs(-studio)?([ /]|$)', cmdline) is not None\n" +
+            "\n" +
+            "def process_snapshot():\n" +
+            "    \"\"\"Find direct V4L2 clients and active OBS output files.\"\"\"\n" +
+            "    obs_pids = set()\n" +
+            "    camera_users = []\n" +
+            "    recording_files = []\n" +
+            "    ignored_video_fd_owners = {\n" +
+            "        'pipewire', 'wireplumber', 'systemd', 'systemd-udevd', 'udevd',\n" +
+            "        'xdg-desktop-portal', 'xdg-desktop-portal-wlr', 'xdg-desktop-portal-gtk',\n" +
+            "        'pipewire-media-session'\n" +
+            "    }\n" +
+            "    video_file_exts = ('.mkv', '.mp4', '.mov', '.flv', '.ts', '.avi', '.webm', '.m4v', '.mpeg', '.mpg')\n" +
+            "    try:\n" +
+            "        proc_entries = os.listdir('/proc')\n" +
+            "    except Exception:\n" +
+            "        return camera_users, recording_files\n" +
+            "    own_uid = os.getuid()\n" +
+            "    for pid in proc_entries:\n" +
+            "        if not pid.isdigit():\n" +
             "            continue\n" +
-            "        info = obj.get('info') or {}\n" +
-            "        props = info.get('props') or {}\n" +
-            "        media_class = str(props.get('media.class', ''))\n" +
-            "        state = str(info.get('state', '')).lower()\n" +
-            "        if media_class.startswith('Stream/Input/Video') and state == 'running':\n" +
-            "            active = True\n" +
+            "        proc_dir = '/proc/' + pid\n" +
+            "        try:\n" +
+            "            if os.stat(proc_dir).st_uid != own_uid:\n" +
+            "                continue\n" +
+            "            with open(proc_dir + '/comm', 'r', errors='ignore') as f:\n" +
+            "                comm = f.read().strip()\n" +
+            "            try:\n" +
+            "                with open(proc_dir + '/cmdline', 'rb') as f:\n" +
+            "                    cmdline = f.read().replace(b'\\x00', b' ').decode('utf-8', errors='ignore')\n" +
+            "            except Exception:\n" +
+            "                cmdline = ''\n" +
+            "        except Exception:\n" +
+            "            continue\n" +
+            "\n" +
+            "        is_obs = is_obs_process(comm, cmdline)\n" +
+            "        if is_obs:\n" +
+            "            obs_pids.add(pid)\n" +
+            "        comm_lower = comm.lower()\n" +
+            "        if comm_lower in ignored_video_fd_owners and not is_obs:\n" +
+            "            continue\n" +
+            "\n" +
+            "        fd_dir = proc_dir + '/fd'\n" +
+            "        try:\n" +
+            "            fds = os.listdir(fd_dir)\n" +
+            "        except Exception:\n" +
+            "            continue\n" +
+            "        for fd in fds:\n" +
+            "            fd_path = fd_dir + '/' + fd\n" +
+            "            try:\n" +
+            "                target = os.readlink(fd_path)\n" +
+            "            except Exception:\n" +
+            "                continue\n" +
+            "            target_plain = target.removesuffix(' (deleted)')\n" +
+            "            if re.fullmatch(r'/dev/video[0-9]+', target_plain) and comm_lower not in ignored_video_fd_owners:\n" +
+            "                camera_users.append({'pid': int(pid), 'comm': comm[:80], 'device': target_plain})\n" +
+            "            if not is_obs:\n" +
+            "                continue\n" +
+            "            ext = os.path.splitext(target_plain)[1].lower()\n" +
+            "            if ext not in video_file_exts:\n" +
+            "                continue\n" +
+            "            try:\n" +
+            "                fd_stat = os.stat(fd_path)\n" +
+            "                if not stat.S_ISREG(fd_stat.st_mode):\n" +
+            "                    continue\n" +
+            "                flags = None\n" +
+            "                with open(proc_dir + '/fdinfo/' + fd, 'r', errors='ignore') as f:\n" +
+            "                    for line in f:\n" +
+            "                        if line.startswith('flags:'):\n" +
+            "                            flags = int(line.split(':', 1)[1].strip(), 8)\n" +
+            "                            break\n" +
+            "                if flags is not None and (flags & os.O_ACCMODE) == os.O_RDONLY:\n" +
+            "                    continue\n" +
+            "                recording_files.append({'pid': int(pid), 'file': target_plain})\n" +
+            "            except Exception:\n" +
+            "                continue\n" +
+            "    return camera_users, recording_files\n" +
+            "\n" +
+            "camera_fd_users, obs_output_files = process_snapshot()\n" +
+            "result['camera_fd_users'] = camera_fd_users\n" +
+            "result['obs_output_files'] = obs_output_files\n" +
+            "if camera_fd_users:\n" +
+            "    result['camera'] = True\n" +
+            "    result['reasons'].append('active_v4l2_fd')\n" +
+            "if obs_output_files:\n" +
+            "    result['recording'] = True\n" +
+            "    result['reasons'].append('obs_output_file_open')\n" +
+            "\n" +
+            "# PipeWire covers portal-based capture and devices consumed by PipeWire clients.\n" +
+            "pw_dump = shutil.which('pw-dump')\n" +
+            "if not pw_dump:\n" +
+            "    for candidate in ('/run/current-system/sw/bin/pw-dump', '/usr/bin/pw-dump'):\n" +
+            "        if os.path.isfile(candidate) and os.access(candidate, os.X_OK):\n" +
+            "            pw_dump = candidate\n" +
             "            break\n" +
-            "    print('1' if active else '0')\n" +
-            "except Exception:\n" +
-            "    print('0')"
+            "if pw_dump:\n" +
+            "    result['pw_dump_path'] = pw_dump\n" +
+            "    try:\n" +
+            "        raw = subprocess.check_output([pw_dump], stderr=subprocess.DEVNULL, timeout=2)\n" +
+            "        objects = json.loads(raw.decode('utf-8', errors='replace'))\n" +
+            "        result['pw_dump_ok'] = True\n" +
+            "        screen_hints = (\n" +
+            "            'screen capture', 'screen-capture', 'screencast', 'screen cast',\n" +
+            "            'desktop capture', 'desktop-capture', 'window capture', 'window-capture',\n" +
+            "            'monitor capture', 'monitor-capture', 'display capture', 'display-capture',\n" +
+            "            'pipewire-screen-capture', 'portal.screen', 'screen recording', 'screen-recording'\n" +
+            "        )\n" +
+            "        camera_hints = ('camera', 'webcam', 'web cam', 'v4l2', 'uvc', 'video4linux', 'integrated camera')\n" +
+            "        known_browser_hints = ('firefox', 'chromium', 'chrome', 'helium', 'brave', 'vivaldi', 'zen-browser')\n" +
+            "        for obj in objects:\n" +
+            "            if obj.get('type') != 'PipeWire:Interface:Node':\n" +
+            "                continue\n" +
+            "            info = obj.get('info') or {}\n" +
+            "            props = info.get('props') or obj.get('props') or {}\n" +
+            "            state = str(info.get('state', '')).lower()\n" +
+            "            if state != 'running':\n" +
+            "                continue\n" +
+            "            media_class = str(props.get('media.class', '')).lower()\n" +
+            "            role = str(props.get('media.role', '')).lower()\n" +
+            "            detail_keys = (\n" +
+            "                'node.name', 'node.description', 'node.nick', 'media.name', 'media.title',\n" +
+            "                'media.comment', 'media.category', 'media.role', 'media.filename',\n" +
+            "                'device.description', 'device.product.name', 'device.nick', 'api.v4l2.path'\n" +
+            "            )\n" +
+            "            details = ' '.join(str(props.get(k, '')) for k in detail_keys).lower()\n" +
+            "            app_keys = (\n" +
+            "                'application.name', 'application.id', 'application.process.binary',\n" +
+            "                'portal.app_id', 'pipewire.access.portal.app_id', 'stream.name'\n" +
+            "            )\n" +
+            "            app_identity = ' '.join(str(props.get(k, '')) for k in app_keys).lower()\n" +
+            "            all_text = details + ' ' + app_identity\n" +
+            "            is_video_related = ('video' in media_class) or ('video' in role)\n" +
+            "            if is_video_related:\n" +
+            "                result['active_video_nodes'].append({\n" +
+            "                    'state': state, 'class': media_class, 'role': role,\n" +
+            "                    'node': str(props.get('node.name', '') or props.get('node.description', ''))[:120],\n" +
+            "                    'app': str(props.get('application.name', '') or props.get('application.process.binary', ''))[:120]\n" +
+            "                })\n" +
+            "            is_screen = role in ('screen', 'screencast', 'screen-capture') or any(h in all_text for h in screen_hints)\n" +
+            "            is_obs = ('obs' in app_identity) or ('obs' in details)\n" +
+            "            is_stream_input = media_class.startswith('stream/input/video')\n" +
+            "            is_camera_source = media_class.startswith(('video/source', 'device/video'))\n" +
+            "            has_camera_hint = role == 'camera' or any(h in all_text for h in camera_hints)\n" +
+            "            if is_video_related and is_screen:\n" +
+            "                # For OBS, a screen source can be active during preview without recording.\n" +
+            "                # Only the writable output-file check above marks actual OBS recording.\n" +
+            "                if not is_obs:\n" +
+            "                    result['recording'] = True\n" +
+            "                    if 'pipewire_screen_node' not in result['reasons']:\n" +
+            "                        result['reasons'].append('pipewire_screen_node')\n" +
+            "                continue\n" +
+            "            if is_camera_source and not is_screen:\n" +
+            "                result['camera'] = True\n" +
+            "                if 'running_pipewire_camera_source' not in result['reasons']:\n" +
+            "                    result['reasons'].append('running_pipewire_camera_source')\n" +
+            "            elif is_stream_input:\n" +
+            "                if has_camera_hint:\n" +
+            "                    result['camera'] = True\n" +
+            "                    if 'camera_metadata' not in result['reasons']:\n" +
+            "                        result['reasons'].append('camera_metadata')\n" +
+            "                elif is_obs:\n" +
+            "                    # OBS can expose an active screen-capture video stream too.\n" +
+            "                    # Its actual recording state is determined by the writable output file\n" +
+            "                    # above unless the PipeWire node explicitly identifies a screen.\n" +
+            "                    pass\n" +
+            "                elif any(h in app_identity for h in known_browser_hints):\n" +
+            "                    # Browser webcam tests often expose no camera name on the client stream;\n" +
+            "                    # direct /dev/video access is checked independently above as well.\n" +
+            "                    result['camera'] = True\n" +
+            "                    if 'browser_video_input' not in result['reasons']:\n" +
+            "                        result['reasons'].append('browser_video_input')\n" +
+            "                elif not is_screen:\n" +
+            "                    # An active generic video input is a camera stream unless metadata\n" +
+            "                    # explicitly marks it as a screen/desktop capture.\n" +
+            "                    result['camera'] = True\n" +
+            "                    if 'generic_video_input' not in result['reasons']:\n" +
+            "                        result['reasons'].append('generic_video_input')\n" +
+            "    except Exception as e:\n" +
+            "        # Keep process-FD detections even if PipeWire's dump is unavailable.\n" +
+            "        result['pw_dump_error'] = type(e).__name__ + ': ' + str(e)[:180]\n" +
+            "\n" +
+            "print(json.dumps(result))\n"
         ]
         stdout: SplitParser {
             onRead: data => {
-                const isActive = data.trim() === "1"
-                if (root.cameraActive !== isActive) root.cameraActive = isActive
+                try {
+                    const status = JSON.parse(data.trim())
+                    const hasCamera = status.camera === true
+                    const isRecording = status.recording === true
+                    if (root.cameraActive !== hasCamera) root.cameraActive = hasCamera
+                    if (root.recordingActive !== isRecording) root.recordingActive = isRecording
+                } catch (e) {
+                    // Keep the last valid state if a partial process output arrives.
+                }
             }
         }
     }
@@ -586,6 +787,10 @@ Item {
 
     onCameraActiveChanged: {
         if (cameraActive) cameraActiveTime = Date.now()
+    }
+
+    onRecordingActiveChanged: {
+        if (recordingActive) recordingActiveTime = Date.now()
     }
 
     onCapsLockActiveChanged: {
@@ -1604,30 +1809,42 @@ Item {
 
 
 
-        // ==================== Camera Privacy Indicator (Right Edge when not detached) ====================
+        // ==================== Privacy / Recording Dot (Main Island Corner) ====================
         Item {
             id: cameraIndicator
+            // Webcam and screen recording share the same corner position and transition.
+            readonly property bool privacyActivity: root.cameraActive || root.recordingActive
+            readonly property bool shouldShow: !root.lockBlocked && privacyActivity
             anchors.right: island.right
             anchors.rightMargin: 10
             anchors.verticalCenter: island.verticalCenter
             implicitWidth: 14
             implicitHeight: 14
-            z: 2
-            visible: (root.cameraActive && root.showCollapsedText && !root.isCameraSatellite) || opacity > 0
-            opacity: (root.cameraActive && root.showCollapsedText && !root.isCameraSatellite) ? 1 : 0
+            z: 4
+            visible: shouldShow || opacity > 0.01
+            opacity: shouldShow ? 1.0 : 0.0
+            scale: shouldShow ? 1.0 : 0.72
 
-            Behavior on opacity { NumberAnimation { duration: 350; easing.type: Easing.OutQuad } }
+            Behavior on opacity {
+                NumberAnimation { duration: 240; easing.type: Easing.OutCubic }
+            }
+            Behavior on scale {
+                NumberAnimation { duration: cameraIndicator.shouldShow ? 300 : 180; easing.type: Easing.OutCubic }
+            }
 
-            // Blinking Green Privacy Dot
             Rectangle {
+                id: privacyActivityDot
                 anchors.centerIn: parent
                 implicitWidth: 8
                 implicitHeight: 8
                 radius: 4
-                color: Services.Theme.success
+                color: root.recordingActive ? root.recordingColor : Services.Theme.success
+                Behavior on color {
+                    ColorAnimation { duration: 220; easing.type: Easing.OutCubic }
+                }
 
                 SequentialAnimation on opacity {
-                    running: root.cameraActive
+                    running: cameraIndicator.privacyActivity && cameraIndicator.visible
                     loops: Animation.Infinite
                     NumberAnimation { from: 1.0; to: 0.25; duration: 700; easing.type: Easing.InOutSine }
                     NumberAnimation { from: 0.25; to: 1.0; duration: 700; easing.type: Easing.InOutSine }
@@ -1643,9 +1860,13 @@ Item {
             implicitHeight: 16
             z: 3
 
-            readonly property bool activeState: !root.expanded && !root.autoExpanded && (
-                !root.mediaPlaying || root.mediaCollapsedReady || root.mediaStopping
-            )
+            readonly property bool privacyOnly: root.slot0Activity === "idle" &&
+                (root.cameraActive || root.recordingActive) && !root.notifActive &&
+                !root.mediaPlaying && !root.mediaStopping
+            readonly property bool activeState: !root.expanded && !root.autoExpanded &&
+                !privacyOnly && (
+                    !root.mediaPlaying || root.mediaCollapsedReady || root.mediaStopping
+                )
             visible: activeState || opacity > 0.01
             opacity: activeState ? 1 : 0
             scale: activeState ? 1.0 : 0.4
@@ -1674,30 +1895,14 @@ Item {
                 },
                 State {
                     name: "IDLE_CENTER"
-                    when: root.lockBlocked || (
-                        root.expanded ||
-                        root.autoExpanded ||
-                        (!root.mediaPlaying && !root.mediaStopping && !root.notifActive && !root.cameraActive) ||
+                    when: root.lockBlocked || root.expanded || root.autoExpanded ||
+                        root.slot0Activity === "idle" ||
                         (root.mediaPlaying && !root.mediaCollapsedReady)
-                    )
                     AnchorChanges {
                         target: statusIconContainer
                         anchors.horizontalCenter: island.horizontalCenter
                         anchors.left: undefined
                         anchors.right: undefined
-                    }
-                },
-                State {
-                    name: "CAMERA_RIGHT"
-                    when: !root.lockBlocked && !root.expanded && !root.autoExpanded && (!root.showCollapsedText && !root.mediaStopping && root.cameraActive)
-                    AnchorChanges {
-                        target: statusIconContainer
-                        anchors.horizontalCenter: undefined
-                        anchors.left: undefined
-                        anchors.right: island.right
-                    }
-                    PropertyChanges {
-                        statusIconContainer.anchors.rightMargin: 12
                     }
                 }
             ]
@@ -1732,7 +1937,8 @@ Item {
                     if (root.expanded || root.autoExpanded) return Services.Theme.textDisabled
                     if (root.mediaPlaying && !root.mediaCollapsedReady) return Services.Theme.textDisabled
                     if (root.mediaPlaying || root.mediaStopping) return Services.Theme.success
-                    if (root.cameraActive) return Services.Theme.success
+                    if (root.slot0Activity === "idle" && root.recordingActive && !root.isRecordingSatellite) return root.recordingColor
+                    if (root.slot0Activity === "idle" && root.cameraActive && !root.isCameraSatellite) return Services.Theme.success
                     return Services.Theme.textDisabled
                 }
                 scale: textScale
@@ -1754,13 +1960,7 @@ Item {
                     NumberAnimation { target: statusIconTxt; property: "textScale"; to: 1.0; duration: 220; easing.type: Easing.OutQuad }
                 }
 
-                // Green Blinking when camera active and no music text
-                SequentialAnimation on opacity {
-                    running: root.cameraActive && !root.showCollapsedText && !root.expanded && !root.autoExpanded
-                    loops: Animation.Infinite
-                    NumberAnimation { from: 1.0; to: 0.25; duration: 700; easing.type: Easing.InOutSine }
-                    NumberAnimation { from: 0.25; to: 1.0; duration: 700; easing.type: Easing.InOutSine }
-                }
+                // Privacy activity is represented by the blinking dot in the main island's corner.
 
                 Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
@@ -1796,7 +1996,7 @@ Item {
             barColor: Services.Theme.success
             isPlaying: root.mediaPlaying
             active: visible
-            readonly property bool activeState: !root.lockBlocked && root.mediaPlaying && !root.expanded && !root.autoExpanded && root.mediaCollapsedReady && !root.notifActive
+            readonly property bool activeState: !root.lockBlocked && root.mediaPlaying && !root.expanded && !root.autoExpanded && root.mediaCollapsedReady && !root.notifActive && !cameraIndicator.privacyActivity
             visible: activeState || opacity > 0.01
             opacity: activeState ? 1.0 : 0.0
             scale: activeState ? 1.0 : 0.3
@@ -1838,6 +2038,9 @@ Item {
 
             property string displayedText: ""
             property bool useSlotA: true
+            // The outgoing slot direction is captured for each transition so
+            // a subsequent metadata signal cannot change a running animation.
+            property int pushOutY: -18
             readonly property real currentSlotImplicitWidth: useSlotA ? slotA.implicitWidth : slotB.implicitWidth
             readonly property alias collapsedText: slotA
 
@@ -1846,47 +2049,69 @@ Item {
                 slotA.text = targetText
                 slotA.y = 0
                 slotA.opacity = 1.0
+                slotB.y = 18
                 slotB.opacity = 0.0
                 useSlotA = true
+            }
+
+            // Stop any in-flight crossfade and restore exactly one visible
+            // slot. Browser MPRIS providers can emit several metadata signals
+            // for one track change; overlapping slot animations made the old
+            // and new titles render over each other.
+            function settleTrackSlots() {
+                slotPushAnimA.stop()
+                slotPushAnimB.stop()
+                if (useSlotA) {
+                    slotA.y = 0
+                    slotA.opacity = 1.0
+                    slotB.y = 18
+                    slotB.opacity = 0.0
+                } else {
+                    slotB.y = 0
+                    slotB.opacity = 1.0
+                    slotA.y = 18
+                    slotA.opacity = 0.0
+                }
             }
 
             function updateTrackPush(newTitle, isNext) {
                 if (!newTitle || newTitle === displayedText) return
 
+                // The previous transition's destination is represented by
+                // useSlotA. Snap to it before assigning the next destination.
+                settleTrackSlots()
+
                 if (!activeState || opacity <= 0.5 || root.expanded || root.autoExpanded) {
-                    slotPushAnimA.stop()
-                    slotPushAnimB.stop()
                     displayedText = newTitle
-                    if (useSlotA) {
+                    if (useSlotA)
                         slotA.text = newTitle
-                        slotA.y = 0
-                        slotA.opacity = 1.0
-                        slotB.opacity = 0.0
-                    } else {
+                    else
                         slotB.text = newTitle
-                        slotB.y = 0
-                        slotB.opacity = 1.0
-                        slotA.opacity = 0.0
-                    }
+                    settleTrackSlots()
                     return
                 }
 
                 displayedText = newTitle
-                const offset = isNext ? 18 : -18
+                pushOutY = isNext ? -18 : 18
+                const incomingY = -pushOutY
 
                 if (useSlotA) {
                     slotB.text = newTitle
-                    slotB.y = offset
+                    slotB.y = incomingY
                     slotB.opacity = 0.0
-                    slotPushAnimB.restart()
                     useSlotA = false
+                    slotPushAnimB.restart()
                 } else {
                     slotA.text = newTitle
-                    slotA.y = offset
+                    slotA.y = incomingY
                     slotA.opacity = 0.0
-                    slotPushAnimA.restart()
                     useSlotA = true
+                    slotPushAnimA.restart()
                 }
+            }
+
+            onActiveStateChanged: {
+                if (!activeState) settleTrackSlots()
             }
 
             onTargetTextChanged: {
@@ -1900,7 +2125,7 @@ Item {
                 NumberAnimation {
                     target: slotA
                     property: "y"
-                    to: root.isNextTrack ? -18 : 18
+                    to: collapsedTextContainer.pushOutY
                     duration: 220
                     easing.type: Easing.InQuad
                 }
@@ -1933,7 +2158,7 @@ Item {
                 NumberAnimation {
                     target: slotB
                     property: "y"
-                    to: root.isNextTrack ? -18 : 18
+                    to: collapsedTextContainer.pushOutY
                     duration: 220
                     easing.type: Easing.InQuad
                 }
@@ -4660,6 +4885,23 @@ Item {
                 }
             }
 
+            // ── Content: Screen Recording Indicator ──
+            Text {
+                anchors.centerIn: parent
+                text: "●"
+                font.family: Services.Theme.fontSymbols
+                font.pixelSize: 12
+                color: root.recordingColor
+                visible: rightSatDot.activity === "recording"
+
+                SequentialAnimation on opacity {
+                    running: rightSatDot.activity === "recording" && rightSatDot.visible
+                    loops: Animation.Infinite
+                    NumberAnimation { from: 1.0; to: 0.25; duration: 650; easing.type: Easing.InOutSine }
+                    NumberAnimation { from: 0.25; to: 1.0; duration: 650; easing.type: Easing.InOutSine }
+                }
+            }
+
             // ── Content: CapsLock Indicator ──
             Text {
                 anchors.centerIn: parent
@@ -5065,6 +5307,23 @@ Item {
 
                 SequentialAnimation on opacity {
                     running: leftSatDot.activity === "camera" && leftSatDot.visible
+                    loops: Animation.Infinite
+                    NumberAnimation { from: 1.0; to: 0.25; duration: 650; easing.type: Easing.InOutSine }
+                    NumberAnimation { from: 0.25; to: 1.0; duration: 650; easing.type: Easing.InOutSine }
+                }
+            }
+
+            // ── Content: Screen Recording Indicator ──
+            Text {
+                anchors.centerIn: parent
+                text: "●"
+                font.family: Services.Theme.fontSymbols
+                font.pixelSize: 12
+                color: root.recordingColor
+                visible: leftSatDot.activity === "recording"
+
+                SequentialAnimation on opacity {
+                    running: leftSatDot.activity === "recording" && leftSatDot.visible
                     loops: Animation.Infinite
                     NumberAnimation { from: 1.0; to: 0.25; duration: 650; easing.type: Easing.InOutSine }
                     NumberAnimation { from: 0.25; to: 1.0; duration: 650; easing.type: Easing.InOutSine }

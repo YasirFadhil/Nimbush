@@ -175,8 +175,10 @@ Item {
     property var lastAudioSink: null
     property bool lastAudioMuted: false
 
-    // Camera Active State & Monitoring
+    // Camera and screen-recording activity state.
     property bool cameraActive: false
+    property bool recordingActive: false
+    readonly property color recordingColor: "#ff5b36"
 
     // CapsLock Active State & Monitoring
     property bool capsLockActive: false
@@ -185,6 +187,7 @@ Item {
     property double mediaActiveTime: 0
     property double sysHudActiveTime: 0
     property double cameraActiveTime: 0
+    property double recordingActiveTime: 0
     property double capsLockActiveTime: 0
     property string manualCenterId: ""
 
@@ -244,7 +247,7 @@ Item {
             }
         }
 
-        // 4. Camera active
+        // 4. Camera privacy activity
         if (root.cameraActive) {
             list.push({
                 id: "camera",
@@ -253,7 +256,16 @@ Item {
             })
         }
 
-        // 5. CapsLock active
+        // 5. Screen recording (e.g. OBS PipeWire/portal capture)
+        if (root.recordingActive) {
+            list.push({
+                id: "recording",
+                type: "recording",
+                time: root.recordingActiveTime || 0
+            })
+        }
+
+        // 6. CapsLock active
         if (root.capsLockActive) {
             list.push({
                 id: "capslock",
@@ -274,15 +286,17 @@ Item {
             return { center: { type: "idle" }, right: null, left: null }
         }
 
-        // Separate center-eligible activities from satellite-only indicators
-        // Primary center candidates: dropsend, wallpaper, syshud, notif, media
-        // Satellite-only indicators: capslock, camera
+        // Privacy indicators stay inside the main island at its right corner.
+        // They must not create a detached satellite: one shared dot changes
+        // from green (webcam) to red-orange (screen recording).
         const centerEligible = []
         const satelliteOnly = []
         for (let i = 0; i < candidates.length; i++) {
             const c = candidates[i]
-            if (c.type === "capslock" || c.type === "camera") {
+            if (c.type === "capslock") {
                 satelliteOnly.push(c)
+            } else if (c.type === "camera" || c.type === "recording") {
+                // Rendered by cameraIndicator in the main island, not a slot.
             } else {
                 centerEligible.push(c)
             }
@@ -305,7 +319,9 @@ Item {
             }
         }
 
-        // Add satellite-only candidates to remaining queue
+        // CapsLock remains a detached satellite. Webcam and screen-recording
+        // indicators are deliberately excluded from remaining to prevent a
+        // second camera/recording bubble next to the main island.
         for (let j = 0; j < satelliteOnly.length; j++) {
             remaining.push(satelliteOnly[j])
         }
@@ -331,6 +347,7 @@ Item {
 
     readonly property bool isMediaSatellite: (slotRightType === "media" || slotLeftType === "media")
     readonly property bool isCameraSatellite: (slotRightType === "camera" || slotLeftType === "camera")
+    readonly property bool isRecordingSatellite: (slotRightType === "recording" || slotLeftType === "recording")
     readonly property bool isCapsLockSatellite: (slotRightType === "capslock" || slotLeftType === "capslock")
 
     readonly property int leftExtraWidth: (slotLeftType !== "") ? 40 : 0
@@ -375,6 +392,8 @@ Item {
             root.manualCenterId = "media"
         } else if (item.type === "camera") {
             root.showSysHud("󰄀", "Camera Active", "Webcam in use", Services.Theme.success)
+        } else if (item.type === "recording") {
+            root.showSysHud("●", "Screen Recording", "Screen capture is active", root.recordingColor)
         } else if (item.type === "capslock") {
             // Persistent indicator - no HUD popup
         } else if (item.type === "transfer") {
@@ -476,7 +495,7 @@ Item {
 
     Timer {
         id: cameraPollTimer
-        interval: 4000
+        interval: 1800
         running: true
         repeat: true
         triggeredOnStart: true
@@ -487,15 +506,73 @@ Item {
 
     Process {
         id: cameraProc
-        command: ["sh", "-c", "ls /dev/video* >/dev/null 2>&1 || { echo 0; exit 0; }; pids=$(fuser /dev/video* 2>/dev/null); [ -z \"$pids\" ] && { echo 0; exit 0; }; active=0; for p in $pids; do cmd=$(ps -p \"$p\" -o args= 2>/dev/null); case \"$cmd\" in *faceid-helper*|*wireplumber*|*pipewire*|*systemd-udevd*|*udevd*) ;; *) active=1; break ;; esac; done; echo $active"]
+        // Detect active webcam use and screen recording separately. Some webcam
+        // drivers expose a Video/Source node instead of a Stream/Input/Video node.
+        command: [
+            "python3", "-c",
+            "import json, subprocess\n" +
+            "result = {'camera': False, 'recording': False}\n" +
+            "try:\n" +
+            "    raw = subprocess.check_output(['pw-dump'], stderr=subprocess.DEVNULL, timeout=2)\n" +
+            "    objects = json.loads(raw.decode('utf-8', errors='replace'))\n" +
+            "    screen_hints = ('screencast', 'screen capture', 'screen-capture', 'desktop capture', 'desktop-capture', 'window capture', 'window-capture', 'monitor capture', 'monitor-capture', 'display capture', 'display-capture', 'pipewire-screen-capture', 'screen recording', 'screen-recording', 'obs screen')\n" +
+            "    camera_hints = ('camera', 'webcam', 'web cam', 'v4l2', 'uvc', 'integrated camera', 'video capture', 'video-capture')\n" +
+            "    strong_camera_hints = ('camera', 'webcam', 'web cam', 'v4l2', 'uvc', 'integrated camera')\n" +
+            "    for obj in objects:\n" +
+            "        if obj.get('type') != 'PipeWire:Interface:Node':\n" +
+            "            continue\n" +
+            "        info = obj.get('info') or {}\n" +
+            "        props = info.get('props') or {}\n" +
+            "        media_class = str(props.get('media.class', '')).lower()\n" +
+            "        state = str(info.get('state', '')).lower()\n" +
+            "        if state != 'running':\n" +
+            "            continue\n" +
+            "        role = str(props.get('media.role', '')).lower()\n" +
+            "        detail_keys = ('node.name', 'node.description', 'media.name', 'media.title', 'media.comment', 'media.category', 'media.role', 'media.filename', 'device.description', 'device.product.name')\n" +
+            "        details = ' '.join(str(props.get(k, '')) for k in detail_keys).lower()\n" +
+            "        app_keys = ('application.name', 'application.id', 'application.process.binary', 'portal.app_id', 'pipewire.access.portal.app_id')\n" +
+            "        app_identity = ' '.join(str(props.get(k, '')) for k in app_keys).lower()\n" +
+            "        is_screen = role == 'screen' or any(h in details for h in screen_hints) or any(h in app_identity for h in screen_hints)\n" +
+            "        is_obs = 'obs' in app_identity or 'obs' in details\n" +
+            "        is_stream_input = media_class.startswith('stream/input/video')\n" +
+            "        is_camera_source = media_class.startswith('video/source') or media_class.startswith('device/video')\n" +
+            "        has_camera_hint = any(h in details for h in camera_hints)\n" +
+            "        has_strong_camera_hint = role == 'camera' or any(h in details for h in strong_camera_hints)\n" +
+            "        if is_screen:\n" +
+            "            result['recording'] = True\n" +
+            "        elif is_stream_input:\n" +
+            "            # Explicit camera metadata wins over the application's identity,\n" +
+            "            # so OBS can still show the webcam privacy dot when using a camera source.\n" +
+            "            if has_strong_camera_hint:\n" +
+            "                result['camera'] = True\n" +
+            "            elif is_obs:\n" +
+            "                result['recording'] = True\n" +
+            "            elif has_camera_hint:\n" +
+            "                result['camera'] = True\n" +
+            "            else:\n" +
+            "                # Unknown active video input is treated conservatively as camera use.\n" +
+            "                result['camera'] = True\n" +
+            "        elif is_camera_source and has_strong_camera_hint:\n" +
+            "            # Some V4L2/libcamera nodes expose activity on the source itself.\n" +
+            "            result['camera'] = True\n" +
+            "    print(json.dumps(result))\n" +
+            "except Exception:\n" +
+            "    print(json.dumps({'camera': False, 'recording': False}))"
+        ]
         stdout: SplitParser {
             onRead: data => {
-                const isActive = data.trim() === "1"
-                root.cameraActive = isActive
+                try {
+                    const status = JSON.parse(data.trim())
+                    const hasCamera = status.camera === true
+                    const isRecording = status.recording === true
+                    if (root.cameraActive !== hasCamera) root.cameraActive = hasCamera
+                    if (root.recordingActive !== isRecording) root.recordingActive = isRecording
+                } catch (e) {
+                    // Keep the last valid state if a partial process output arrives.
+                }
             }
         }
     }
-
     Timer {
         id: capsLockPollTimer
         interval: 1200
@@ -566,6 +643,10 @@ Item {
         if (cameraActive) cameraActiveTime = Date.now()
     }
 
+    onRecordingActiveChanged: {
+        if (recordingActive) recordingActiveTime = Date.now()
+    }
+
     onCapsLockActiveChanged: {
         if (capsLockActive) capsLockActiveTime = Date.now()
     }
@@ -617,6 +698,7 @@ Item {
     }
 
     Component.onCompleted: {
+        root.syncMediaMetadataNow()
         root.lastAudioSink = Services.Audio.sink
         if (Services.Audio.sink) {
             root.lastAudioMuted = Services.Audio.muted
@@ -916,6 +998,72 @@ Item {
     readonly property bool mediaPlaying: activePlayer !== null && activePlayer.isPlaying
     readonly property bool hasMedia: activePlayer !== null && (activePlayer.trackTitle !== "" || mediaPlaying)
 
+    // Track metadata from browser MPRIS providers can arrive in several signals.
+    // Keep the currently displayed metadata stable until the burst has settled.
+    // Keep the cached track fields in one object so they change atomically.
+    // Separate assignments can briefly combine the new title with the old artist.
+    property var stableMedia: ({ title: "", artist: "", identity: "", player: null })
+    readonly property string stableTrackTitle: String(stableMedia.title || "")
+    readonly property string stableTrackArtist: String(stableMedia.artist || "")
+    readonly property string stableTrackIdentity: String(stableMedia.identity || "")
+    property bool mediaPeekPending: false
+    property double blankTrackTitleSince: 0
+
+    function scheduleMediaMetadataSync(requestPeek) {
+        if (requestPeek === true) root.mediaPeekPending = true
+        mediaMetadataSettleTimer.restart()
+    }
+
+    function syncMediaMetadataNow() {
+        const player = root.activePlayer
+        root.stableMedia = {
+            title: String(player?.trackTitle || "").trim(),
+            artist: String(player?.trackArtist || "").trim(),
+            identity: String(player?.identity || "").trim(),
+            player: player
+        }
+    }
+
+    Timer {
+        id: mediaMetadataSettleTimer
+        interval: 350
+        repeat: false
+        onTriggered: {
+            const player = root.activePlayer
+            const previous = root.stableMedia || {}
+            const samePlayer = player === previous.player
+            const title = String(player?.trackTitle || "").trim()
+            const artist = String(player?.trackArtist || "").trim()
+            const identity = String(player?.identity || "").trim()
+
+            // Allow a short metadata grace period when the same browser player
+            // clears the title between tracks. Never keep stale metadata forever.
+            if (samePlayer && root.mediaPlaying && title === "" && root.stableTrackTitle !== "") {
+                if (root.blankTrackTitleSince === 0) root.blankTrackTitleSince = Date.now()
+                if (Date.now() - root.blankTrackTitleSince < 1200) {
+                    mediaMetadataSettleTimer.restart()
+                    return
+                }
+            } else {
+                root.blankTrackTitleSince = 0
+            }
+
+            root.blankTrackTitleSince = 0
+            const requestPeek = root.mediaPeekPending
+            root.mediaPeekPending = false
+            root.stableMedia = {
+                title: title,
+                artist: artist,
+                identity: identity,
+                player: player
+            }
+
+            if (requestPeek && root.mediaPlaying && root.hudReady && root.notifCount === 0 && !root.pinned && !root.lockBlocked) {
+                root.triggerMediaPeek(false)
+            }
+        }
+    }
+
     readonly property bool hasExpandContent: ((slot0Activity !== "idle") || wallpaperMode || dropSendMode || isDropSending)
     readonly property bool expanded: !lockBlocked && hasExpandContent && (pinned || autoExpanded || (slot0Activity === "notif") || (slot0Activity === "syshud") || wallpaperMode || dropSendMode || isDropSending)
     readonly property bool isMediaPeek: !lockBlocked && autoExpanded && !pinned && (slot0Activity === "media") && !wallpaperMode && !dropSendMode && !isDropSending && hasMedia
@@ -971,8 +1119,8 @@ Item {
 
     readonly property string currentMediaText: {
         if (!activePlayer) return ""
-        const title = activePlayer.trackTitle || ""
-        const artist = activePlayer.trackArtist || ""
+        const title = root.stableTrackTitle
+        const artist = root.stableTrackArtist
         if (title !== "" && artist !== "") return title + " • " + artist
         return title || artist || "Playing"
     }
@@ -987,7 +1135,7 @@ Item {
         if (root.wallpaperMode || root.dropSendMode || root.isDropSending) return
         if (!root.mediaPlaying) return
 
-        const curKey = (root.activePlayer?.identity || "") + "::" + (root.activePlayer?.trackTitle || "") + "::" + (root.activePlayer?.trackArtist || "")
+        const curKey = (root.stableTrackIdentity || root.activePlayer?.identity || "") + "::" + (root.stableTrackTitle || "") + "::" + (root.stableTrackArtist || "")
         if (!force && curKey === root.lastPeekKey && root.autoExpanded) {
             autoCollapseTimer.restart()
             return
@@ -1015,9 +1163,9 @@ Item {
     onMediaPlayingChanged: {
         if (mediaPlaying) {
             mediaActiveTime = Date.now()
+            root.scheduleMediaMetadataSync(true)
             if (root.hudReady && root.notifCount === 0 && !root.pinned && !root.lockBlocked) {
                 root.mediaCollapsedReady = false
-                root.triggerMediaPeek(true)
             } else {
                 root.mediaCollapsedReady = true
             }
@@ -1030,6 +1178,8 @@ Item {
                 lastTrackText = currentMediaText
             }
         } else {
+            mediaMetadataSettleTimer.stop()
+            root.mediaPeekPending = false
             root.lastPeekKey = ""
             if (root.hudReady && !root.notifActive && !root.lockBlocked) {
                 root.triggerMediaStop()
@@ -1043,9 +1193,6 @@ Item {
             mediaActiveTime = Date.now()
             lastTrackText = currentMediaText
             root.restartGlobalMarquee()
-            if (root.hudReady && root.notifCount === 0 && !root.pinned && !root.lockBlocked) {
-                root.triggerMediaPeek(false)
-            }
         }
     }
     onExpandedChanged: {
@@ -1059,8 +1206,8 @@ Item {
     function restartGlobalMarquee() {
         globalMediaMarqueeAnim.stop()
         globalMediaMarqueeRatio = 0.0
-        const tLen = (root.activePlayer?.trackTitle || "").length
-        const aLen = (root.activePlayer?.trackArtist || "").length
+        const tLen = (root.stableTrackTitle || "").length
+        const aLen = (root.stableTrackArtist || "").length
         const maxLen = Math.max(tLen, aLen, (root.currentMediaText || "").length)
         const approxOverflow = Math.max(40, (maxLen * 7.5) - 130)
         globalMediaMarqueeDuration = Math.max(3000, Math.min(8500, approxOverflow * 35))
@@ -1291,73 +1438,26 @@ Item {
 
     Connections {
         target: Services.Mpris
-        function onActivePlayerChanged() {
-            root.restartGlobalMarquee()
-            if (root.hudReady && Services.Mpris.activePlayer && (Services.Mpris.activePlayer.isPlaying ?? false) && root.notifCount === 0 && !root.pinned) {
-                root.triggerMediaPeek(true)
-            }
-        }
-        function onPlaybackStarted(player) {
-            if (root.hudReady && root.notifCount === 0 && !root.pinned) {
-                root.triggerMediaPeek(true)
-            }
-        }
-        function onTrackChanged(player) {
-            root.restartGlobalMarquee()
-            if (collapsedTextContainer) {
-                collapsedTextContainer.updateTrackPush(collapsedTextContainer.targetText, root.isNextTrack)
-            }
-            if (root.hudReady && root.notifCount === 0 && !root.pinned) {
-                root.triggerMediaPeek(false)
-            }
-        }
+        ignoreUnknownSignals: true
+        function onActivePlayerChanged() { root.scheduleMediaMetadataSync(true) }
+        function onPlaybackStarted(player) { root.scheduleMediaMetadataSync(true) }
     }
 
     Connections {
         target: root.activePlayer
         ignoreUnknownSignals: true
         function onIsPlayingChanged() {
-            if (root.hudReady && root.activePlayer && (root.activePlayer.isPlaying ?? false) && root.notifCount === 0 && !root.pinned) {
-                root.triggerMediaPeek(true)
+            if (root.activePlayer && (root.activePlayer.isPlaying ?? false)) {
+                root.scheduleMediaMetadataSync(true)
             }
         }
-        function onTrackTitleChanged() {
-            root.restartGlobalMarquee()
-            if (collapsedTextContainer) {
-                collapsedTextContainer.updateTrackPush(collapsedTextContainer.targetText, root.isNextTrack)
-            }
-            if (root.hudReady && root.activePlayer && (root.activePlayer.isPlaying ?? false) && root.notifCount === 0 && !root.pinned) {
-                root.triggerMediaPeek(false)
-            }
-        }
-        function onTrackArtistChanged() {
-            root.restartGlobalMarquee()
-            if (root.hudReady && root.activePlayer && (root.activePlayer.isPlaying ?? false) && root.notifCount === 0 && !root.pinned) {
-                root.triggerMediaPeek(false)
-            }
-        }
-        function onTrackArtUrlChanged() {
-            if (root.hudReady && root.activePlayer && (root.activePlayer.isPlaying ?? false) && root.notifCount === 0 && !root.pinned) {
-                root.triggerMediaPeek(false)
-            }
-        }
-        function onTrackChanged() {
-            root.restartGlobalMarquee()
-            if (collapsedTextContainer) {
-                collapsedTextContainer.updateTrackPush(collapsedTextContainer.targetText, root.isNextTrack)
-            }
-            if (root.hudReady && root.activePlayer && (root.activePlayer.isPlaying ?? false) && root.notifCount === 0 && !root.pinned) {
-                root.triggerMediaPeek(false)
-            }
-        }
-        function onMetadataChanged() {
-            root.restartGlobalMarquee()
-            if (root.hudReady && root.activePlayer && (root.activePlayer.isPlaying ?? false) && root.notifCount === 0 && !root.pinned) {
-                root.triggerMediaPeek(false)
-            }
-        }
+        function onTrackTitleChanged() { root.scheduleMediaMetadataSync(true) }
+        function onTrackArtistChanged() { root.scheduleMediaMetadataSync(true) }
+        function onTrackChanged() { root.scheduleMediaMetadataSync(true) }
+        function onPostTrackChanged() { root.scheduleMediaMetadataSync(true) }
+        function onMetadataChanged() { root.scheduleMediaMetadataSync(true) }
+        function onTrackArtUrlChanged() { root.scheduleMediaMetadataSync(false) }
     }
-
     // Click outside area to collapse expanded island
     MouseArea {
         id: outsideMouseArea
@@ -1563,30 +1663,31 @@ Item {
 
 
 
-        // ==================== Camera Privacy Indicator (Right Edge when not detached) ====================
+        // ==================== Privacy / Recording Dot (Main Island Corner) ====================
         Item {
             id: cameraIndicator
+            readonly property bool privacyActivity: root.cameraActive || root.recordingActive
+            readonly property bool shouldShow: !root.lockBlocked && privacyActivity
             anchors.right: island.right
             anchors.rightMargin: 10
             anchors.verticalCenter: island.verticalCenter
             implicitWidth: 14
             implicitHeight: 14
-            z: 2
-            visible: (root.cameraActive && root.showCollapsedText && !root.isCameraSatellite) || opacity > 0
-            opacity: (root.cameraActive && root.showCollapsedText && !root.isCameraSatellite) ? 1 : 0
+            z: 4
+            visible: shouldShow || opacity > 0.01
+            opacity: shouldShow ? 1 : 0
 
-            Behavior on opacity { NumberAnimation { duration: 350; easing.type: Easing.OutQuad } }
+            Behavior on opacity { NumberAnimation { duration: 220; easing.type: Easing.OutQuad } }
 
-            // Blinking Green Privacy Dot
             Rectangle {
                 anchors.centerIn: parent
                 implicitWidth: 8
                 implicitHeight: 8
                 radius: 4
-                color: Services.Theme.success
+                color: root.recordingActive ? root.recordingColor : Services.Theme.success
 
                 SequentialAnimation on opacity {
-                    running: root.cameraActive
+                    running: cameraIndicator.privacyActivity && cameraIndicator.visible
                     loops: Animation.Infinite
                     NumberAnimation { from: 1.0; to: 0.25; duration: 700; easing.type: Easing.InOutSine }
                     NumberAnimation { from: 0.25; to: 1.0; duration: 700; easing.type: Easing.InOutSine }
@@ -1602,9 +1703,13 @@ Item {
             implicitHeight: 16
             z: 3
 
-            readonly property bool activeState: !root.expanded && !root.autoExpanded && (
-                !root.mediaPlaying || root.mediaCollapsedReady || root.mediaStopping
-            )
+            readonly property bool privacyOnly: root.slot0Activity === "idle" &&
+                (root.cameraActive || root.recordingActive) && !root.notifActive &&
+                !root.mediaPlaying && !root.mediaStopping
+            readonly property bool activeState: !root.expanded && !root.autoExpanded &&
+                !privacyOnly && (
+                    !root.mediaPlaying || root.mediaCollapsedReady || root.mediaStopping
+                )
             visible: activeState || opacity > 0.01
             opacity: activeState ? 1 : 0
             scale: activeState ? 1.0 : 0.4
@@ -1633,30 +1738,14 @@ Item {
                 },
                 State {
                     name: "IDLE_CENTER"
-                    when: root.lockBlocked || (
-                        root.expanded ||
-                        root.autoExpanded ||
-                        (!root.mediaPlaying && !root.mediaStopping && !root.notifActive && !root.cameraActive) ||
+                    when: root.lockBlocked || root.expanded || root.autoExpanded ||
+                        root.slot0Activity === "idle" ||
                         (root.mediaPlaying && !root.mediaCollapsedReady)
-                    )
                     AnchorChanges {
                         target: statusIconContainer
                         anchors.horizontalCenter: island.horizontalCenter
                         anchors.left: undefined
                         anchors.right: undefined
-                    }
-                },
-                State {
-                    name: "CAMERA_RIGHT"
-                    when: !root.lockBlocked && !root.expanded && !root.autoExpanded && (!root.showCollapsedText && !root.mediaStopping && root.cameraActive)
-                    AnchorChanges {
-                        target: statusIconContainer
-                        anchors.horizontalCenter: undefined
-                        anchors.left: undefined
-                        anchors.right: island.right
-                    }
-                    PropertyChanges {
-                        statusIconContainer.anchors.rightMargin: 12
                     }
                 }
             ]
@@ -1691,7 +1780,8 @@ Item {
                     if (root.expanded || root.autoExpanded) return Services.Theme.textDisabled
                     if (root.mediaPlaying && !root.mediaCollapsedReady) return Services.Theme.textDisabled
                     if (root.mediaPlaying || root.mediaStopping) return Services.Theme.success
-                    if (root.cameraActive) return Services.Theme.success
+                    if (root.slot0Activity === "idle" && root.recordingActive && !root.isRecordingSatellite) return root.recordingColor
+                    if (root.slot0Activity === "idle" && root.cameraActive && !root.isCameraSatellite) return Services.Theme.success
                     return Services.Theme.textDisabled
                 }
                 scale: textScale
@@ -1713,13 +1803,7 @@ Item {
                     NumberAnimation { target: statusIconTxt; property: "textScale"; to: 1.0; duration: 220; easing.type: Easing.OutQuad }
                 }
 
-                // Green Blinking when camera active and no music text
-                SequentialAnimation on opacity {
-                    running: root.cameraActive && !root.showCollapsedText && !root.expanded && !root.autoExpanded
-                    loops: Animation.Infinite
-                    NumberAnimation { from: 1.0; to: 0.25; duration: 700; easing.type: Easing.InOutSine }
-                    NumberAnimation { from: 0.25; to: 1.0; duration: 700; easing.type: Easing.InOutSine }
-                }
+                // Privacy activity is represented by the blinking dot in the main island's corner.
 
                 Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
@@ -1755,7 +1839,7 @@ Item {
             barColor: Services.Theme.success
             isPlaying: root.mediaPlaying
             active: visible
-            readonly property bool activeState: !root.lockBlocked && root.mediaPlaying && !root.expanded && !root.autoExpanded && root.mediaCollapsedReady && !root.notifActive
+            readonly property bool activeState: !root.lockBlocked && root.mediaPlaying && !root.expanded && !root.autoExpanded && root.mediaCollapsedReady && !root.notifActive && !cameraIndicator.privacyActivity
             visible: activeState || opacity > 0.01
             opacity: activeState ? 1.0 : 0.0
             scale: activeState ? 1.0 : 0.3
@@ -1797,6 +1881,9 @@ Item {
 
             property string displayedText: ""
             property bool useSlotA: true
+            // The outgoing slot direction is captured for each transition so
+            // a subsequent metadata signal cannot change a running animation.
+            property int pushOutY: -18
             readonly property real currentSlotImplicitWidth: useSlotA ? slotA.implicitWidth : slotB.implicitWidth
             readonly property alias collapsedText: slotA
 
@@ -1805,47 +1892,69 @@ Item {
                 slotA.text = targetText
                 slotA.y = 0
                 slotA.opacity = 1.0
+                slotB.y = 18
                 slotB.opacity = 0.0
                 useSlotA = true
+            }
+
+            // Stop any in-flight crossfade and restore exactly one visible
+            // slot. Browser MPRIS providers can emit several metadata signals
+            // for one track change; overlapping slot animations made the old
+            // and new titles render over each other.
+            function settleTrackSlots() {
+                slotPushAnimA.stop()
+                slotPushAnimB.stop()
+                if (useSlotA) {
+                    slotA.y = 0
+                    slotA.opacity = 1.0
+                    slotB.y = 18
+                    slotB.opacity = 0.0
+                } else {
+                    slotB.y = 0
+                    slotB.opacity = 1.0
+                    slotA.y = 18
+                    slotA.opacity = 0.0
+                }
             }
 
             function updateTrackPush(newTitle, isNext) {
                 if (!newTitle || newTitle === displayedText) return
 
+                // The previous transition's destination is represented by
+                // useSlotA. Snap to it before assigning the next destination.
+                settleTrackSlots()
+
                 if (!activeState || opacity <= 0.5 || root.expanded || root.autoExpanded) {
-                    slotPushAnimA.stop()
-                    slotPushAnimB.stop()
                     displayedText = newTitle
-                    if (useSlotA) {
+                    if (useSlotA)
                         slotA.text = newTitle
-                        slotA.y = 0
-                        slotA.opacity = 1.0
-                        slotB.opacity = 0.0
-                    } else {
+                    else
                         slotB.text = newTitle
-                        slotB.y = 0
-                        slotB.opacity = 1.0
-                        slotA.opacity = 0.0
-                    }
+                    settleTrackSlots()
                     return
                 }
 
                 displayedText = newTitle
-                const offset = isNext ? 18 : -18
+                pushOutY = isNext ? -18 : 18
+                const incomingY = -pushOutY
 
                 if (useSlotA) {
                     slotB.text = newTitle
-                    slotB.y = offset
+                    slotB.y = incomingY
                     slotB.opacity = 0.0
-                    slotPushAnimB.restart()
                     useSlotA = false
+                    slotPushAnimB.restart()
                 } else {
                     slotA.text = newTitle
-                    slotA.y = offset
+                    slotA.y = incomingY
                     slotA.opacity = 0.0
-                    slotPushAnimA.restart()
                     useSlotA = true
+                    slotPushAnimA.restart()
                 }
+            }
+
+            onActiveStateChanged: {
+                if (!activeState) settleTrackSlots()
             }
 
             onTargetTextChanged: {
@@ -1859,7 +1968,7 @@ Item {
                 NumberAnimation {
                     target: slotA
                     property: "y"
-                    to: root.isNextTrack ? -18 : 18
+                    to: collapsedTextContainer.pushOutY
                     duration: 220
                     easing.type: Easing.InQuad
                 }
@@ -1892,7 +2001,7 @@ Item {
                 NumberAnimation {
                     target: slotB
                     property: "y"
-                    to: root.isNextTrack ? -18 : 18
+                    to: collapsedTextContainer.pushOutY
                     duration: 220
                     easing.type: Easing.InQuad
                 }
@@ -2678,8 +2787,8 @@ Item {
                     spacing: root.expanded ? (root.isMediaPeek ? 1 : 2) : 0
                     Behavior on spacing { NumberAnimation { duration: 220 } }
 
-                    readonly property string fullTitle: root.activePlayer ? (root.activePlayer.trackTitle || "Playing") : "Playing"
-                    readonly property string fullArtist: root.activePlayer ? (root.activePlayer.trackArtist || root.activePlayer.identity || "Now Playing") : "Now Playing"
+                    readonly property string fullTitle: root.activePlayer ? (root.stableTrackTitle || "Playing") : "Playing"
+                    readonly property string fullArtist: root.activePlayer ? (root.stableTrackArtist || root.stableTrackIdentity || "Now Playing") : "Now Playing"
 
                     onFullArtistChanged: {
                         if (!mediaTextSwitchAnim.running) {
@@ -4619,6 +4728,23 @@ Item {
                 }
             }
 
+            // ── Content: Screen Recording Indicator ──
+            Text {
+                anchors.centerIn: parent
+                text: "●"
+                font.family: Services.Theme.fontSymbols
+                font.pixelSize: 12
+                color: root.recordingColor
+                visible: rightSatDot.activity === "recording"
+
+                SequentialAnimation on opacity {
+                    running: rightSatDot.activity === "recording" && rightSatDot.visible
+                    loops: Animation.Infinite
+                    NumberAnimation { from: 1.0; to: 0.25; duration: 650; easing.type: Easing.InOutSine }
+                    NumberAnimation { from: 0.25; to: 1.0; duration: 650; easing.type: Easing.InOutSine }
+                }
+            }
+
             // ── Content: CapsLock Indicator ──
             Text {
                 anchors.centerIn: parent
@@ -5024,6 +5150,23 @@ Item {
 
                 SequentialAnimation on opacity {
                     running: leftSatDot.activity === "camera" && leftSatDot.visible
+                    loops: Animation.Infinite
+                    NumberAnimation { from: 1.0; to: 0.25; duration: 650; easing.type: Easing.InOutSine }
+                    NumberAnimation { from: 0.25; to: 1.0; duration: 650; easing.type: Easing.InOutSine }
+                }
+            }
+
+            // ── Content: Screen Recording Indicator ──
+            Text {
+                anchors.centerIn: parent
+                text: "●"
+                font.family: Services.Theme.fontSymbols
+                font.pixelSize: 12
+                color: root.recordingColor
+                visible: leftSatDot.activity === "recording"
+
+                SequentialAnimation on opacity {
+                    running: leftSatDot.activity === "recording" && leftSatDot.visible
                     loops: Animation.Infinite
                     NumberAnimation { from: 1.0; to: 0.25; duration: 650; easing.type: Easing.InOutSine }
                     NumberAnimation { from: 0.25; to: 1.0; duration: 650; easing.type: Easing.InOutSine }
