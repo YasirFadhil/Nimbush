@@ -569,7 +569,7 @@ Singleton {
         if (!item) return
         item.isLaunching = true
         if (item.app && typeof item.app.execute === "function") {
-            item.app.execute()
+            Services.Applications.launch(item.app)
             return
         }
         const targetId = (item.desktopId || "").replace(/\.desktop$/, '')

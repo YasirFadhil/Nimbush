@@ -303,7 +303,7 @@ PanelWindow {
             hide()
         } else if (item.kind === "app" && item.entry && typeof item.entry.execute === "function") {
             hide()
-            item.entry.execute()
+            Services.Applications.launch(item.entry)
         }
     }
 
@@ -513,7 +513,7 @@ PanelWindow {
                             launcherWindow.closeContextMenu()
                             launcherWindow.hide()
                             if (app && typeof app.execute === "function") {
-                                app.execute()
+                                Services.Applications.launch(app)
                             }
                         }
                     }
@@ -599,7 +599,7 @@ PanelWindow {
                                 launcherWindow.closeContextMenu()
                                 launcherWindow.hide()
                                 if (typeof modelData.execute === "function") {
-                                    modelData.execute()
+                                    Services.Applications.launch(modelData)
                                 }
                             }
                         }

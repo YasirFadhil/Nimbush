@@ -286,19 +286,28 @@ Item {
             return { center: { type: "idle" }, right: null, left: null }
         }
 
-        // Privacy indicators stay inside the main island at its right corner.
-        // They must not create a detached satellite: one shared dot changes
-        // from green (webcam) to red-orange (screen recording).
+        // Privacy indicators use the main island while it is otherwise idle.
+        // If another activity owns the main island, move privacy activity to
+        // satellites so it stays visible without competing with that content.
         const centerEligible = []
         const satelliteOnly = []
+        const privacyCandidates = []
         for (let i = 0; i < candidates.length; i++) {
             const c = candidates[i]
             if (c.type === "capslock") {
                 satelliteOnly.push(c)
             } else if (c.type === "camera" || c.type === "recording") {
-                // Rendered by cameraIndicator in the main island, not a slot.
+                privacyCandidates.push(c)
             } else {
                 centerEligible.push(c)
+            }
+        }
+
+        // With no primary content, cameraIndicator renders privacy dots inside
+        // the island. Otherwise, reserve satellite slots for them.
+        if (centerEligible.length > 0) {
+            for (let i = 0; i < privacyCandidates.length; i++) {
+                satelliteOnly.push(privacyCandidates[i])
             }
         }
 
@@ -319,15 +328,20 @@ Item {
             }
         }
 
-        // CapsLock remains a detached satellite. Webcam and screen-recording
-        // indicators are deliberately excluded from remaining to prevent a
-        // second camera/recording bubble next to the main island.
+        // CapsLock always remains detached. Privacy candidates arrive here
+        // only while another activity occupies the main island.
         for (let j = 0; j < satelliteOnly.length; j++) {
             remaining.push(satelliteOnly[j])
         }
 
-        // Sort remaining candidates by time descending (newest first)
-        remaining.sort((a, b) => (b.time || 0) - (a.time || 0))
+        // Privacy indicators have priority: camera/recording must not be
+        // displaced by an older media or CapsLock satellite.
+        remaining.sort((a, b) => {
+            const aPrivacy = (a.type === "camera" || a.type === "recording") ? 1 : 0
+            const bPrivacy = (b.type === "camera" || b.type === "recording") ? 1 : 0
+            if (aPrivacy !== bPrivacy) return bPrivacy - aPrivacy
+            return (b.time || 0) - (a.time || 0)
+        })
 
         // "sebelum baru ke kanan"
         const rightItem = remaining.length > 0 ? remaining[0] : null
@@ -506,7 +520,9 @@ Item {
 
     Process {
         id: cameraProc
-        // Detect direct V4L2 camera clients, active PipeWire camera streams, and actual OBS recording output.
+        // Camera use and screen recording deliberately use separate evidence.
+        // A PipeWire screen node can also mean a video call or a screen share;
+        // it is not, by itself, a recording.
         command: [
             "python3", "-c",
             "import glob\n" +
@@ -519,14 +535,17 @@ Item {
             "\n" +
             "result = {'camera': False, 'recording': False, 'reasons': [], 'camera_fd_users': [], 'obs_output_files': [], 'active_video_nodes': [], 'pw_dump_path': '', 'pw_dump_ok': False, 'pw_dump_error': ''}\n" +
             "\n" +
-            "def is_obs_process(comm, cmdline):\n" +
+            "def is_recorder_process(comm, cmdline):\n" +
             "    comm = (comm or '').strip().lower()\n" +
             "    cmdline = (cmdline or '').lower()\n" +
-            "    return comm in ('obs', 'obs-studio', 'obs-studio-bin') or 'com.obsproject.studio' in cmdline or re.search(r'(^|[ /])obs(-studio)?([ /]|$)', cmdline) is not None\n" +
+            "    names = ('obs', 'obs-studio', 'obs-studio-bin', 'wf-recorder', 'gpu-screen-recorder', 'kooha', 'peek', 'kazam', 'vokoscreen', 'simplescreenrecorder')\n" +
+            "    if comm in names or 'com.obsproject.studio' in cmdline:\n" +
+            "        return True\n" +
+            "    # ffmpeg is only a recorder when explicitly capturing a display.\n" +
+            "    return comm == 'ffmpeg' and any(h in cmdline for h in ('x11grab', 'pipewire', 'kmsgrab', 'wayland'))\n" +
             "\n" +
             "def process_snapshot():\n" +
-            "    \"\"\"Find direct V4L2 clients and active OBS output files.\"\"\"\n" +
-            "    obs_pids = set()\n" +
+            "    \"\"\"Find direct V4L2 clients and writable output from known recorders.\"\"\"\n" +
             "    camera_users = []\n" +
             "    recording_files = []\n" +
             "    ignored_video_fd_owners = {\n" +
@@ -557,11 +576,9 @@ Item {
             "        except Exception:\n" +
             "            continue\n" +
             "\n" +
-            "        is_obs = is_obs_process(comm, cmdline)\n" +
-            "        if is_obs:\n" +
-            "            obs_pids.add(pid)\n" +
+            "        is_recorder = is_recorder_process(comm, cmdline)\n" +
             "        comm_lower = comm.lower()\n" +
-            "        if comm_lower in ignored_video_fd_owners and not is_obs:\n" +
+            "        if comm_lower in ignored_video_fd_owners and not is_recorder:\n" +
             "            continue\n" +
             "\n" +
             "        fd_dir = proc_dir + '/fd'\n" +
@@ -578,7 +595,7 @@ Item {
             "            target_plain = target.removesuffix(' (deleted)')\n" +
             "            if re.fullmatch(r'/dev/video[0-9]+', target_plain) and comm_lower not in ignored_video_fd_owners:\n" +
             "                camera_users.append({'pid': int(pid), 'comm': comm[:80], 'device': target_plain})\n" +
-            "            if not is_obs:\n" +
+            "            if not is_recorder:\n" +
             "                continue\n" +
             "            ext = os.path.splitext(target_plain)[1].lower()\n" +
             "            if ext not in video_file_exts:\n" +
@@ -608,7 +625,7 @@ Item {
             "    result['reasons'].append('active_v4l2_fd')\n" +
             "if obs_output_files:\n" +
             "    result['recording'] = True\n" +
-            "    result['reasons'].append('obs_output_file_open')\n" +
+            "    result['reasons'].append('recorder_output_file_open')\n" +
             "\n" +
             "# PipeWire covers portal-based capture and devices consumed by PipeWire clients.\n" +
             "pw_dump = shutil.which('pw-dump')\n" +
@@ -661,17 +678,13 @@ Item {
             "                    'app': str(props.get('application.name', '') or props.get('application.process.binary', ''))[:120]\n" +
             "                })\n" +
             "            is_screen = role in ('screen', 'screencast', 'screen-capture') or any(h in all_text for h in screen_hints)\n" +
-            "            is_obs = ('obs' in app_identity) or ('obs' in details)\n" +
+            "            is_recorder = any(h in app_identity for h in ('obs', 'wf-recorder', 'gpu-screen-recorder', 'kooha', 'peek', 'kazam', 'vokoscreen', 'simplescreenrecorder'))\n" +
             "            is_stream_input = media_class.startswith('stream/input/video')\n" +
             "            is_camera_source = media_class.startswith(('video/source', 'device/video'))\n" +
             "            has_camera_hint = role == 'camera' or any(h in all_text for h in camera_hints)\n" +
             "            if is_video_related and is_screen:\n" +
-            "                # For OBS, a screen source can be active during preview without recording.\n" +
-            "                # Only the writable output-file check above marks actual OBS recording.\n" +
-            "                if not is_obs:\n" +
-            "                    result['recording'] = True\n" +
-            "                    if 'pipewire_screen_node' not in result['reasons']:\n" +
-            "                        result['reasons'].append('pipewire_screen_node')\n" +
+            "                # A portal/meeting screen stream is sharing, not evidence of recording.\n" +
+            "                # Recording is set only by a known recorder's writable output above.\n" +
             "                continue\n" +
             "            if is_camera_source and not is_screen:\n" +
             "                result['camera'] = True\n" +
@@ -682,10 +695,9 @@ Item {
             "                    result['camera'] = True\n" +
             "                    if 'camera_metadata' not in result['reasons']:\n" +
             "                        result['reasons'].append('camera_metadata')\n" +
-            "                elif is_obs:\n" +
-            "                    # OBS can expose an active screen-capture video stream too.\n" +
-            "                    # Its actual recording state is determined by the writable output file\n" +
-            "                    # above unless the PipeWire node explicitly identifies a screen.\n" +
+            "                elif is_recorder:\n" +
+            "                    # A recorder preview/input is not proof that it is recording.\n" +
+            "                    # Its writable output file is checked independently above.\n" +
             "                    pass\n" +
             "                elif any(h in app_identity for h in known_browser_hints):\n" +
             "                    # Browser webcam tests often expose no camera name on the client stream;\n" +
@@ -693,12 +705,6 @@ Item {
             "                    result['camera'] = True\n" +
             "                    if 'browser_video_input' not in result['reasons']:\n" +
             "                        result['reasons'].append('browser_video_input')\n" +
-            "                elif not is_screen:\n" +
-            "                    # An active generic video input is a camera stream unless metadata\n" +
-            "                    # explicitly marks it as a screen/desktop capture.\n" +
-            "                    result['camera'] = True\n" +
-            "                    if 'generic_video_input' not in result['reasons']:\n" +
-            "                        result['reasons'].append('generic_video_input')\n" +
             "    except Exception as e:\n" +
             "        # Keep process-FD detections even if PipeWire's dump is unavailable.\n" +
             "        result['pw_dump_error'] = type(e).__name__ + ': ' + str(e)[:180]\n" +
@@ -1809,45 +1815,144 @@ Item {
 
 
 
-        // ==================== Privacy / Recording Dot (Main Island Corner) ====================
+        // ==================== Privacy / Recording Indicators (Main Island Corner) ====================
         Item {
             id: cameraIndicator
-            // Webcam and screen recording share the same corner position and transition.
-            readonly property bool privacyActivity: root.cameraActive || root.recordingActive
+            // Do not collapse these into one dot: both can be active at once and
+            // each colour is a distinct privacy/status signal.
+            readonly property bool privacyActivity: (root.cameraActive && !root.isCameraSatellite) ||
+                (root.recordingActive && !root.isRecordingSatellite)
             readonly property bool shouldShow: !root.lockBlocked && privacyActivity
-            anchors.right: island.right
-            anchors.rightMargin: 10
+            // Keep the final active dot alive until it has travelled back to
+            // the idle position. Without this, the source state becomes false
+            // first and the dot disappears before its return animation starts.
+            property bool returningToIdle: false
+            property bool cameraWasActive: false
+            property bool recordingWasActive: false
+            readonly property bool cameraDotVisible: root.cameraActive || (returningToIdle && cameraWasActive)
+            readonly property bool recordingDotVisible: root.recordingActive || (returningToIdle && recordingWasActive)
             anchors.verticalCenter: island.verticalCenter
-            implicitWidth: 14
+            implicitWidth: indicatorRow.implicitWidth
             implicitHeight: 14
+            width: indicatorRow.width
+            // Travel between the idle dot's centre position and the privacy
+            // position instead of appearing directly at the right edge.
+            x: shouldShow ? island.width - width - 10 : (island.width - width) / 2
             z: 4
-            visible: shouldShow || opacity > 0.01
-            opacity: shouldShow ? 1.0 : 0.0
-            scale: shouldShow ? 1.0 : 0.72
+            visible: shouldShow || returningToIdle || opacity > 0.01
+            opacity: (shouldShow || returningToIdle) ? 1.0 : 0.0
+            scale: (shouldShow || returningToIdle) ? 1.0 : 0.72
+
+            onShouldShowChanged: {
+                if (shouldShow) {
+                    returnToIdleTimer.stop()
+                    returningToIdle = false
+                } else if (!root.cameraActive && !root.recordingActive) {
+                    returningToIdle = true
+                    returnToIdleTimer.restart()
+                }
+            }
+
+            Connections {
+                target: root
+
+                function onCameraActiveChanged() {
+                    if (root.cameraActive) {
+                        cameraIndicator.cameraWasActive = true
+                    } else if (root.recordingActive) {
+                        // Camera ended while recording continues: do not bring
+                        // the old camera dot back when recording later ends.
+                        cameraIndicator.cameraWasActive = false
+                    }
+                }
+
+                function onRecordingActiveChanged() {
+                    if (root.recordingActive) {
+                        cameraIndicator.recordingWasActive = true
+                    } else if (root.cameraActive) {
+                        // Recording ended while camera continues.
+                        cameraIndicator.recordingWasActive = false
+                    }
+                }
+            }
+
+            Timer {
+                id: returnToIdleTimer
+                interval: 390
+                repeat: false
+                onTriggered: {
+                    cameraIndicator.returningToIdle = false
+                    cameraIndicator.cameraWasActive = false
+                    cameraIndicator.recordingWasActive = false
+                }
+            }
 
             Behavior on opacity {
-                NumberAnimation { duration: 240; easing.type: Easing.OutCubic }
+                NumberAnimation { duration: 380; easing.type: Easing.InOutCubic }
             }
             Behavior on scale {
                 NumberAnimation { duration: cameraIndicator.shouldShow ? 300 : 180; easing.type: Easing.OutCubic }
             }
+            Behavior on width {
+                NumberAnimation { duration: 380; easing.type: Easing.InOutCubic }
+            }
+            Behavior on x {
+                NumberAnimation { duration: 380; easing.type: Easing.InOutCubic }
+            }
 
-            Rectangle {
-                id: privacyActivityDot
+            Row {
+                id: indicatorRow
                 anchors.centerIn: parent
-                implicitWidth: 8
-                implicitHeight: 8
-                radius: 4
-                color: root.recordingActive ? root.recordingColor : Services.Theme.success
-                Behavior on color {
-                    ColorAnimation { duration: 220; easing.type: Easing.OutCubic }
+                width: implicitWidth
+                height: implicitHeight
+                // Keep the gap itself animated, so a single dot recentres
+                // smoothly when the other privacy activity ends.
+                spacing: (cameraIndicator.cameraDotVisible && cameraIndicator.recordingDotVisible) ? 4 : 0
+
+                Behavior on spacing {
+                    NumberAnimation { duration: 200; easing.type: Easing.OutCubic }
                 }
 
-                SequentialAnimation on opacity {
-                    running: cameraIndicator.privacyActivity && cameraIndicator.visible
-                    loops: Animation.Infinite
-                    NumberAnimation { from: 1.0; to: 0.25; duration: 700; easing.type: Easing.InOutSine }
-                    NumberAnimation { from: 0.25; to: 1.0; duration: 700; easing.type: Easing.InOutSine }
+                Rectangle {
+                    width: cameraIndicator.cameraDotVisible ? 8 : 0
+                    height: 8
+                    radius: 4
+                    color: Services.Theme.success
+
+                    Behavior on width {
+                        NumberAnimation { duration: 240; easing.type: Easing.OutBack; easing.overshoot: 0.8 }
+                    }
+                    Behavior on x {
+                        NumberAnimation { duration: 260; easing.type: Easing.OutCubic }
+                    }
+
+                    SequentialAnimation on opacity {
+                        running: cameraIndicator.cameraDotVisible && cameraIndicator.visible
+                        loops: Animation.Infinite
+                        NumberAnimation { from: 1.0; to: 0.25; duration: 700; easing.type: Easing.InOutSine }
+                        NumberAnimation { from: 0.25; to: 1.0; duration: 700; easing.type: Easing.InOutSine }
+                    }
+                }
+
+                Rectangle {
+                    width: cameraIndicator.recordingDotVisible ? 8 : 0
+                    height: 8
+                    radius: 4
+                    color: root.recordingColor
+
+                    Behavior on width {
+                        NumberAnimation { duration: 240; easing.type: Easing.OutBack; easing.overshoot: 0.8 }
+                    }
+                    Behavior on x {
+                        NumberAnimation { duration: 260; easing.type: Easing.OutCubic }
+                    }
+
+                    SequentialAnimation on opacity {
+                        running: cameraIndicator.recordingDotVisible && cameraIndicator.visible
+                        loops: Animation.Infinite
+                        NumberAnimation { from: 1.0; to: 0.25; duration: 700; easing.type: Easing.InOutSine }
+                        NumberAnimation { from: 0.25; to: 1.0; duration: 700; easing.type: Easing.InOutSine }
+                    }
                 }
             }
         }
@@ -1861,7 +1966,7 @@ Item {
             z: 3
 
             readonly property bool privacyOnly: root.slot0Activity === "idle" &&
-                (root.cameraActive || root.recordingActive) && !root.notifActive &&
+                (root.cameraActive || root.recordingActive || cameraIndicator.returningToIdle) && !root.notifActive &&
                 !root.mediaPlaying && !root.mediaStopping
             readonly property bool activeState: !root.expanded && !root.autoExpanded &&
                 !privacyOnly && (
@@ -2013,7 +2118,7 @@ Item {
             anchors.leftMargin: 6
             anchors.verticalCenter: island.verticalCenter
             // Lock width bounded to collapsed dimension to prevent stretching while expanding
-            width: Math.max(40, (root.expanded ? root.calculatedCollapsedWidth : island.width) - 12 - 16 - 6 - (mediaVisualizer.visible ? 34 : (cameraIndicator.visible ? 24 : 12)))
+            width: Math.max(40, (root.expanded ? root.calculatedCollapsedWidth : island.width) - 12 - 16 - 6 - (mediaVisualizer.visible ? 34 : (cameraIndicator.visible ? 34 : 12)))
             height: 16
             z: 3
 
