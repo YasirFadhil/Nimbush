@@ -552,12 +552,14 @@ Item {
             "\n" +
             "def is_recorder_process(comm, cmdline):\n" +
             "    comm = (comm or '').strip().lower()\n" +
+            "    clean_comm = comm.lstrip('.').removesuffix('-wrapped')\n" +
             "    cmdline = (cmdline or '').lower()\n" +
-            "    names = ('obs', 'obs-studio', 'obs-studio-bin', 'wf-recorder', 'gpu-screen-recorder', 'kooha', 'peek', 'kazam', 'vokoscreen', 'simplescreenrecorder')\n" +
-            "    if comm in names or 'com.obsproject.studio' in cmdline:\n" +
+            "    names = ('obs', 'obs-studio', 'obs-studio-bin', 'wf-recorder', 'wl-screenrec', 'gpu-screen-recorder', 'kooha', 'peek', 'kazam', 'vokoscreen', 'vokoscreenng', 'simplescreenrecorder', 'blue-recorder', 'green-recorder', 'recordmydesktop')\n" +
+            "    if clean_comm in names or any(n == clean_comm or n in comm for n in names) or 'com.obsproject.studio' in cmdline:\n" +
             "        return True\n" +
-            "    # ffmpeg is only a recorder when explicitly capturing a display.\n" +
-            "    return comm == 'ffmpeg' and any(h in cmdline for h in ('x11grab', 'pipewire', 'kmsgrab', 'wayland'))\n" +
+            "    if any(f'/{n}' in cmdline or f' {n}' in cmdline or cmdline.endswith(n) for n in names):\n" +
+            "        return True\n" +
+            "    return clean_comm == 'ffmpeg' and any(h in cmdline for h in ('x11grab', 'pipewire', 'kmsgrab', 'wayland'))\n" +
             "\n" +
             "def process_snapshot():\n" +
             "    \"\"\"Find direct V4L2 clients and writable output from known recorders.\"\"\"\n" +
@@ -655,6 +657,13 @@ Item {
             "        raw = subprocess.check_output([pw_dump], stderr=subprocess.DEVNULL, timeout=2)\n" +
             "        objects = json.loads(raw.decode('utf-8', errors='replace'))\n" +
             "        result['pw_dump_ok'] = True\n" +
+            "        clients = {}\n" +
+            "        for obj in objects:\n" +
+            "            if obj.get('type') == 'PipeWire:Interface:Client':\n" +
+            "                cid = obj.get('id')\n" +
+            "                cprops = (obj.get('info') or {}).get('props') or obj.get('props') or {}\n" +
+            "                if cid is not None:\n" +
+            "                    clients[cid] = cprops\n" +
             "        screen_hints = (\n" +
             "            'screen capture', 'screen-capture', 'screencast', 'screen cast',\n" +
             "            'desktop capture', 'desktop-capture', 'window capture', 'window-capture',\n" +
@@ -663,6 +672,7 @@ Item {
             "        )\n" +
             "        camera_hints = ('camera', 'webcam', 'web cam', 'v4l2', 'uvc', 'video4linux', 'integrated camera')\n" +
             "        known_browser_hints = ('firefox', 'chromium', 'chrome', 'helium', 'brave', 'vivaldi', 'zen-browser')\n" +
+            "        recorder_hints = ('obs', 'wf-recorder', 'wl-screenrec', 'gpu-screen-recorder', 'kooha', 'peek', 'kazam', 'vokoscreen', 'simplescreenrecorder', 'blue-recorder', 'green-recorder', 'recordmydesktop', 'ffmpeg')\n" +
             "        for obj in objects:\n" +
             "            if obj.get('type') != 'PipeWire:Interface:Node':\n" +
             "                continue\n" +
@@ -673,6 +683,8 @@ Item {
             "                continue\n" +
             "            media_class = str(props.get('media.class', '')).lower()\n" +
             "            role = str(props.get('media.role', '')).lower()\n" +
+            "            client_id = props.get('client.id')\n" +
+            "            cprops = clients.get(client_id, {})\n" +
             "            detail_keys = (\n" +
             "                'node.name', 'node.description', 'node.nick', 'media.name', 'media.title',\n" +
             "                'media.comment', 'media.category', 'media.role', 'media.filename',\n" +
@@ -683,28 +695,34 @@ Item {
             "                'application.name', 'application.id', 'application.process.binary',\n" +
             "                'portal.app_id', 'pipewire.access.portal.app_id', 'stream.name'\n" +
             "            )\n" +
-            "            app_identity = ' '.join(str(props.get(k, '')) for k in app_keys).lower()\n" +
+            "            app_identity = ' '.join(str(props.get(k, '') or cprops.get(k, '')) for k in app_keys).lower()\n" +
             "            all_text = details + ' ' + app_identity\n" +
             "            is_video_related = ('video' in media_class) or ('video' in role)\n" +
             "            if is_video_related:\n" +
             "                result['active_video_nodes'].append({\n" +
             "                    'state': state, 'class': media_class, 'role': role,\n" +
             "                    'node': str(props.get('node.name', '') or props.get('node.description', ''))[:120],\n" +
-            "                    'app': str(props.get('application.name', '') or props.get('application.process.binary', ''))[:120]\n" +
+            "                    'app': str(props.get('application.name', '') or cprops.get('application.name', '') or props.get('application.process.binary', ''))[:120]\n" +
             "                })\n" +
             "            is_screen = role in ('screen', 'screencast', 'screen-capture') or any(h in all_text for h in screen_hints)\n" +
-            "            is_recorder = any(h in app_identity for h in ('obs', 'wf-recorder', 'gpu-screen-recorder', 'kooha', 'peek', 'kazam', 'vokoscreen', 'simplescreenrecorder'))\n" +
+            "            is_obs = 'obs' in app_identity or 'obs' in all_text or 'com.obsproject.studio' in app_identity\n" +
+            "            is_recorder = any(h in all_text or h in app_identity for h in recorder_hints)\n" +
             "            is_stream_input = media_class.startswith('stream/input/video')\n" +
             "            is_camera_source = media_class.startswith(('video/source', 'device/video'))\n" +
             "            has_camera_hint = role == 'camera' or any(h in all_text for h in camera_hints)\n" +
             "            if is_video_related and is_screen:\n" +
             "                # A portal/meeting screen stream is sharing, not evidence of recording.\n" +
-            "                # Recording is set only by a known recorder's writable output above.\n" +
+            "                # A known recorder with an active PipeWire screen stream is\n" +
+            "                # recording even when it writes through a temporary/nameless FD.\n" +
+            "                if is_recorder:\n" +
+            "                    result['recording'] = True\n" +
+            "                    if 'known_recorder_pipewire_screen' not in result['reasons']:\n" +
+            "                        result['reasons'].append('known_recorder_pipewire_screen')\n" +
             "                continue\n" +
-            "            if is_camera_source and not is_screen:\n" +
+            "            if is_camera_source and has_camera_hint and not is_screen:\n" +
             "                result['camera'] = True\n" +
-            "                if 'running_pipewire_camera_source' not in result['reasons']:\n" +
-            "                    result['reasons'].append('running_pipewire_camera_source')\n" +
+            "                if 'identified_pipewire_camera_source' not in result['reasons']:\n" +
+            "                    result['reasons'].append('identified_pipewire_camera_source')\n" +
             "            elif is_stream_input:\n" +
             "                if has_camera_hint:\n" +
             "                    result['camera'] = True\n" +
