@@ -164,6 +164,10 @@ Item {
     readonly property var popupList: Services.Notifications.popupList
     readonly property int notifCount: popupList ? popupList.count : 0
     readonly property bool notifActive: !(Services.Workspaces && Services.Workspaces.isFullscreen) && (notifCount > 0)
+    property int previousNotifCount: 0
+    // Briefly hold a new notification so the privacy dot can begin its
+    // satellite handoff before the notification takes over the main island.
+    property bool privacyNotifHandoffPending: false
 
     // System HUD Alert State (Mute, DnD, Charging, Camera)
     property bool sysHudActive: false
@@ -220,7 +224,7 @@ Item {
         }
 
         // 2. Notifications (each notification in popupList is an independent candidate)
-        if (root.notifActive && root.popupList) {
+        if (root.notifActive && root.popupList && !root.privacyNotifHandoffPending) {
             for (let i = 0; i < root.popupList.count; i++) {
                 const n = root.popupList.get(i)
                 if (n) {
@@ -305,7 +309,7 @@ Item {
 
         // With no primary content, cameraIndicator renders privacy dots inside
         // the island. Otherwise, reserve satellite slots for them.
-        if (centerEligible.length > 0) {
+        if (centerEligible.length > 0 || root.privacyNotifHandoffPending) {
             for (let i = 0; i < privacyCandidates.length; i++) {
                 satelliteOnly.push(privacyCandidates[i])
             }
@@ -363,6 +367,17 @@ Item {
     readonly property bool isCameraSatellite: (slotRightType === "camera" || slotLeftType === "camera")
     readonly property bool isRecordingSatellite: (slotRightType === "recording" || slotLeftType === "recording")
     readonly property bool isCapsLockSatellite: (slotRightType === "capslock" || slotLeftType === "capslock")
+
+    onNotifCountChanged: {
+        const firstNotification = notifCount > 0 && previousNotifCount === 0
+        const privacyWasAlone = !sysHudActive && !mediaPlaying && !mediaStopping &&
+            !wallpaperMode && !dropSendMode && !isDropSending
+        if (firstNotification && privacyWasAlone && (cameraActive || recordingActive)) {
+            privacyNotifHandoffPending = true
+            privacyNotifHandoffTimer.restart()
+        }
+        previousNotifCount = notifCount
+    }
 
     readonly property int leftExtraWidth: (slotLeftType !== "") ? 40 : 0
     readonly property int rightExtraWidth: (slotRightType !== "") ? 40 : 0
@@ -1575,6 +1590,16 @@ Item {
         }
     }
 
+    Timer {
+        id: privacyNotifHandoffTimer
+        // Let camera/recording start its satellite split before the incoming
+        // notification is allowed to occupy the main island. This matches the
+        // 430ms flight plus the final 130ms handoff fade of the privacy dot.
+        interval: 560
+        repeat: false
+        onTriggered: root.privacyNotifHandoffPending = false
+    }
+
     Connections {
         target: Services.Notifications
         function onNewNotification(entry) {
@@ -1630,7 +1655,10 @@ Item {
         z: 2
         anchors.horizontalCenter: parent.horizontalCenter
         y: root.isBottom ? (parent.height - height - 6) : 6
-        clip: true
+        // The privacy dot must be allowed to leave this clipped capsule during
+        // its handoff to a satellite; otherwise it looks stranded inside an
+        // incoming notification while its destination is outside the island.
+        clip: !cameraIndicator.transferringToSatellite
 
         // Direct Reactive Dimensions adapting to content type
         width: root.expanded ? root.calculatedExpandedWidth : root.calculatedCollapsedWidth
@@ -1823,25 +1851,45 @@ Item {
             readonly property bool privacyActivity: (root.cameraActive && !root.isCameraSatellite) ||
                 (root.recordingActive && !root.isRecordingSatellite)
             readonly property bool shouldShow: !root.lockBlocked && privacyActivity
+            readonly property bool privacySatelliteActive: root.isCameraSatellite || root.isRecordingSatellite
+            readonly property bool satelliteLeavesRight: root.slotRightType === "camera" || root.slotRightType === "recording"
+            readonly property bool notificationOwnsIsland: root.slot0Activity === "notif"
+            // Satellite bubbles are 32px wide with an 8px final gap. Aim for
+            // their centre, not their edge, so the coloured dot hands over to
+            // the satellite content without a visible jump.
+            readonly property real satelliteTargetX: satelliteLeavesRight
+                ? island.width + 8 + (32 - width) / 2
+                : -8 - 32 + (32 - width) / 2
             // Keep the final active dot alive until it has travelled back to
             // the idle position. Without this, the source state becomes false
             // first and the dot disappears before its return animation starts.
             property bool returningToIdle: false
+            property bool transferringToSatellite: false
             property bool cameraWasActive: false
             property bool recordingWasActive: false
             readonly property bool cameraDotVisible: root.cameraActive || (returningToIdle && cameraWasActive)
             readonly property bool recordingDotVisible: root.recordingActive || (returningToIdle && recordingWasActive)
+            // Never leave a second privacy dot inside an already occupied
+            // notification island. During the pre-notification handoff, the
+            // transfer dot remains visible; once notification owns the centre,
+            // the satellite is the single source of truth.
+            readonly property bool showMainDot: (!privacySatelliteActive && shouldShow) ||
+                returningToIdle || (transferringToSatellite && !notificationOwnsIsland)
             anchors.verticalCenter: island.verticalCenter
             implicitWidth: indicatorRow.implicitWidth
             implicitHeight: 14
             width: indicatorRow.width
-            // Travel between the idle dot's centre position and the privacy
-            // position instead of appearing directly at the right edge.
-            x: shouldShow ? island.width - width - 10 : (island.width - width) / 2
+            // A privacy dot returns to idle through the centre, but when it
+            // becomes a satellite it continues out through that satellite's
+            // side of the island instead of snapping back to the middle.
+            x: shouldShow ? island.width - width - 10
+                : (privacySatelliteActive
+                    ? satelliteTargetX
+                    : (island.width - width) / 2)
             z: 4
-            visible: shouldShow || returningToIdle || opacity > 0.01
-            opacity: (shouldShow || returningToIdle) ? 1.0 : 0.0
-            scale: (shouldShow || returningToIdle) ? 1.0 : 0.72
+            visible: showMainDot || (!notificationOwnsIsland && opacity > 0.01)
+            opacity: showMainDot ? 1.0 : 0.0
+            scale: showMainDot ? 1.0 : 0.72
 
             onShouldShowChanged: {
                 if (shouldShow) {
@@ -1850,6 +1898,15 @@ Item {
                 } else if (!root.cameraActive && !root.recordingActive) {
                     returningToIdle = true
                     returnToIdleTimer.restart()
+                }
+            }
+
+            onPrivacySatelliteActiveChanged: {
+                if (privacySatelliteActive) {
+                    satelliteTransferTimer.restart()
+                } else {
+                    satelliteTransferTimer.stop()
+                    transferringToSatellite = false
                 }
             }
 
@@ -1887,8 +1944,20 @@ Item {
                 }
             }
 
+            Timer {
+                id: satelliteTransferTimer
+                // Match the satellite's extrusion + content-bloom timeline.
+                // The main dot reaches the bubble before its content takes over.
+                interval: 430
+                repeat: false
+                onTriggered: cameraIndicator.transferringToSatellite = false
+                onRunningChanged: {
+                    if (running) cameraIndicator.transferringToSatellite = true
+                }
+            }
+
             Behavior on opacity {
-                NumberAnimation { duration: 380; easing.type: Easing.InOutCubic }
+                NumberAnimation { duration: cameraIndicator.privacySatelliteActive ? 130 : 380; easing.type: Easing.InOutCubic }
             }
             Behavior on scale {
                 NumberAnimation { duration: cameraIndicator.shouldShow ? 300 : 180; easing.type: Easing.OutCubic }
@@ -1897,7 +1966,7 @@ Item {
                 NumberAnimation { duration: 380; easing.type: Easing.InOutCubic }
             }
             Behavior on x {
-                NumberAnimation { duration: 380; easing.type: Easing.InOutCubic }
+                NumberAnimation { duration: 430; easing.type: Easing.InOutCubic }
             }
 
             Row {
