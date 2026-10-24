@@ -36,27 +36,64 @@ Item {
     property int dropFileCount: 0
     property string dropFileName: ""
     property bool dropStagedChoice: false
-    readonly property bool isDropSending: Services.DeviceShare ? (Services.DeviceShare.transferState === "sending" || Services.DeviceShare.transferState === "success") : false
+    // True when a KDE Connect transfer is genuinely in-flight or confirmed.
+    readonly property bool isDropSending: Services.DeviceShare
+        ? (Services.DeviceShare.transferBackend !== "localsend"
+            && (Services.DeviceShare.transferState === "sending" || Services.DeviceShare.transferState === "success"))
+        : false
+
+    // True for the entire sharing workflow: chooser, LocalSend preparing/handoff, and real transfers.
+    // Use this flag to keep the island expanded and to gate satellite/demand/timer logic.
+    readonly property bool dropWorkflowActive: Services.DeviceShare
+        ? (root.dropSendMode || Services.DeviceShare.transferState === "preparing"
+            || Services.DeviceShare.transferState === "handoff"
+            || Services.DeviceShare.transferState === "sending"
+            || Services.DeviceShare.transferState === "success"
+            || Services.DeviceShare.transferState === "error")
+        : root.dropSendMode
+
+    // LocalSend-specific: preparing or handed off but not a real tracked transfer
+    readonly property bool isLocalSendHandoff: Services.DeviceShare
+        ? (Services.DeviceShare.transferBackend === "localsend"
+            && (Services.DeviceShare.transferState === "preparing"
+                || Services.DeviceShare.transferState === "handoff"
+                // Defensive fallback: older service revisions briefly called
+                // these states "sending" / "success" even though no transfer was tracked.
+                || Services.DeviceShare.transferState === "sending"
+                || Services.DeviceShare.transferState === "success"))
+        : false
+
+    // Only the destination chooser is pointer-dismissable. A real transfer or
+    // LocalSend handoff owns its feedback state and must not be interrupted.
+    function dismissDropChooser() {
+        if (!root.showDropChooser) return
+        root.dropSendMode = false
+        root.dropStagedChoice = false
+        root.dropHoverTarget = ""
+        root.dropUrls = []
+        root.dropPreviewUrl = ""
+        root.dropFileCount = 0
+        root.dropFileName = ""
+    }
 
     Timer {
         id: dropExitDebounceTimer
-        interval: 650
+        interval: 180
         repeat: false
         onTriggered: {
-            if (!root.isDropSending && !islandDropArea.containsDrag && !kdeDropTarget.containsDrag && !localDropTarget.containsDrag && !root.dropStagedChoice) {
-                root.dropSendMode = false
-                root.dropHoverTarget = ""
+            if (root.showDropChooser && !dropHubHoverHandler.hovered) {
+                root.dismissDropChooser()
             }
         }
     }
 
     Timer {
         id: dropStagedAutoCollapseTimer
-        interval: 12000
+        interval: 3500
         repeat: false
         onTriggered: {
-            if (root.dropStagedChoice && !root.isDropSending) {
-                root.collapse()
+            if (root.showDropChooser && root.dropStagedChoice && !dropHubHoverHandler.hovered) {
+                root.dismissDropChooser()
             }
         }
     }
@@ -203,16 +240,22 @@ Item {
     readonly property var allSortedCandidates: {
         const list = []
 
-        // Modal overrides
-        if (root.dropSendMode || root.isDropSending) {
-            return [{ id: "dropsend", type: "dropsend", time: 9999999999999 }]
-        }
-        if (root.wallpaperMode) {
-            return [{ id: "wallpaper", type: "wallpaper", time: 9999999999999 }]
+        // Modal overrides: add dropsend/wallpaper as the center candidate but
+        // continue building the rest of the list so that camera and recording
+        // can still reach a satellite slot while a modal panel is shown.
+        if (root.dropWorkflowActive) {
+            list.push({ id: "dropsend", type: "dropsend", time: 9999999999999 })
+        } else if (root.wallpaperMode) {
+            list.push({ id: "wallpaper", type: "wallpaper", time: 9999999999999 })
         }
 
-        // 1. SysHUD (volume, brightness, mute, etc.)
-        if (root.sysHudActive) {
+        // In modal modes only allow privacy candidates (camera/recording) into
+        // the satellite, not notifications, media, or system HUD that could
+        // produce unintended extra satellites while the panel is open.
+        const modalActive = root.dropWorkflowActive || root.wallpaperMode
+
+        // 1. SysHUD (volume, brightness, mute, etc.) — only when not in a modal
+        if (root.sysHudActive && !modalActive) {
             list.push({
                 id: "syshud",
                 type: "syshud",
@@ -223,8 +266,11 @@ Item {
             })
         }
 
-        // 2. Notifications (each notification in popupList is an independent candidate)
-        if (root.notifActive && root.popupList && !root.privacyNotifHandoffPending) {
+        // 2. Notifications — only when not in a modal
+        // Modal panels retain the center slot, while incoming notifications
+        // are immediately eligible for a satellite slot instead of being hidden.
+        // Outside modal modes, preserve the short privacy-dot handoff delay.
+        if (root.notifActive && root.popupList && (modalActive || !root.privacyNotifHandoffPending)) {
             for (let i = 0; i < root.popupList.count; i++) {
                 const n = root.popupList.get(i)
                 if (n) {
@@ -240,8 +286,8 @@ Item {
             }
         }
 
-        // 3. Media playback
-        if ((root.mediaPlaying && !root.mediaStopping) || (root.mediaStopping && !root.mediaIconTransformed)) {
+        // 3. Media playback — only when not in a modal
+        if (!modalActive && ((root.mediaPlaying && !root.mediaStopping) || (root.mediaStopping && !root.mediaIconTransformed))) {
             if (!Services.OverlayManager.isLocked) {
                 list.push({
                     id: "media",
@@ -251,7 +297,7 @@ Item {
             }
         }
 
-        // 4. Camera privacy activity
+        // 4. Camera privacy activity — always included, satellite during modals
         if (root.cameraActive) {
             list.push({
                 id: "camera",
@@ -260,7 +306,7 @@ Item {
             })
         }
 
-        // 5. Screen recording (e.g. OBS PipeWire/portal capture)
+        // 5. Screen recording — always included, satellite during modals
         if (root.recordingActive) {
             list.push({
                 id: "recording",
@@ -269,8 +315,8 @@ Item {
             })
         }
 
-        // 6. CapsLock active
-        if (root.capsLockActive) {
+        // 6. CapsLock active — only when not in a modal
+        if (root.capsLockActive && !modalActive) {
             list.push({
                 id: "capslock",
                 type: "capslock",
@@ -320,7 +366,8 @@ Item {
 
         if (centerEligible.length > 0) {
             let centerIdx = 0
-            if (root.manualCenterId !== "") {
+            const modalOwnsCenter = root.dropWorkflowActive || root.wallpaperMode
+            if (!modalOwnsCenter && root.manualCenterId !== "") {
                 const foundIdx = centerEligible.findIndex(c => c.id === root.manualCenterId)
                 if (foundIdx !== -1) {
                     centerIdx = foundIdx
@@ -371,7 +418,7 @@ Item {
     onNotifCountChanged: {
         const firstNotification = notifCount > 0 && previousNotifCount === 0
         const privacyWasAlone = !sysHudActive && !mediaPlaying && !mediaStopping &&
-            !wallpaperMode && !dropSendMode && !isDropSending
+            !wallpaperMode && !dropWorkflowActive
         if (firstNotification && privacyWasAlone && (cameraActive || recordingActive)) {
             privacyNotifHandoffPending = true
             privacyNotifHandoffTimer.restart()
@@ -415,6 +462,7 @@ Item {
     function handleSatelliteClick(item) {
         if (!item) return
         if (item.type === "notif") {
+            if (root.dropWorkflowActive || root.wallpaperMode) return
             root.manualCenterId = item.id
             notifTimer.restart()
         } else if (item.type === "media") {
@@ -1249,9 +1297,9 @@ Item {
         }
     }
 
-    readonly property bool hasExpandContent: ((slot0Activity !== "idle") || wallpaperMode || dropSendMode || isDropSending)
-    readonly property bool expanded: !lockBlocked && hasExpandContent && (pinned || autoExpanded || (slot0Activity === "notif") || (slot0Activity === "syshud") || wallpaperMode || dropSendMode || isDropSending)
-    readonly property bool isMediaPeek: !lockBlocked && autoExpanded && !pinned && (slot0Activity === "media") && !wallpaperMode && !dropSendMode && !isDropSending && hasMedia
+    readonly property bool hasExpandContent: ((slot0Activity !== "idle") || wallpaperMode || dropWorkflowActive)
+    readonly property bool expanded: !lockBlocked && hasExpandContent && (pinned || autoExpanded || (slot0Activity === "notif") || (slot0Activity === "syshud") || wallpaperMode || dropWorkflowActive)
+    readonly property bool isMediaPeek: !lockBlocked && autoExpanded && !pinned && (slot0Activity === "media") && !wallpaperMode && !dropWorkflowActive && hasMedia
 
     property int autoExpandDuration: 3000
     property int notifDuration: 5000
@@ -1317,7 +1365,7 @@ Item {
         if (root.lockBlocked || Services.OverlayManager.isLocked) return
         if (root.pinned) return
         if (root.notifActive && root.notifCount > 0) return
-        if (root.wallpaperMode || root.dropSendMode || root.isDropSending) return
+        if (root.wallpaperMode || root.dropWorkflowActive) return
         if (!root.mediaPlaying) return
 
         const curKey = (root.stableTrackIdentity || root.activePlayer?.identity || "") + "::" + (root.stableTrackTitle || "") + "::" + (root.stableTrackArtist || "")
@@ -1438,10 +1486,25 @@ Item {
     property int collapsedWidth: 140
     property int collapsedHeight: 32
 
+    // ── Adaptive sharing panel dimensions (per stage) ──
+    // chooser: two destination cards — compact but both fit comfortably
+    // preparing/handoff: single-row status strip (no destination cards needed)
+    // transfer (KDE Connect): thumbnail 44px + margins 12px each side = 68px min
+    // success/error: reuse transfer height unless content overflows
+    readonly property string dropTransferState: Services.DeviceShare ? Services.DeviceShare.transferState : "idle"
+    readonly property bool showDropChooser: root.dropSendMode && !root.showDropTransfer && !root.isLocalSendHandoff
+    readonly property bool showDropTransfer: Services.DeviceShare
+        ? (dropTransferState === "error" || (Services.DeviceShare.transferBackend !== "localsend"
+            && (dropTransferState === "sending" || dropTransferState === "success")))
+        : root.isDropSending
+    readonly property bool showDropHandoff: root.isLocalSendHandoff
+
     readonly property int calculatedExpandedWidth: {
         if (slot0Activity === "notif") return replyMode ? 390 : 360
-        if (dropSendMode) return 500
-        if (isDropSending) return 400
+        if (showDropChooser) return 440
+        if (showDropHandoff) return 360
+        if (showDropTransfer) return 360
+        if (dropWorkflowActive) return 360
         if (wallpaperMode) return 480
         if (slot0Activity === "syshud") return 280
         if (isMediaPeek) return 295
@@ -1457,8 +1520,10 @@ Item {
             if (hasNotifActions) h += 32
             return h
         }
-        if (dropSendMode) return 148
-        if (isDropSending) return 64
+        if (showDropChooser) return 120
+        if (showDropHandoff) return 80
+        if (showDropTransfer) return 76
+        if (dropWorkflowActive) return 76
         if (wallpaperMode) return 120
         if (slot0Activity === "syshud") return 54
         if (isMediaPeek) return 54
@@ -1467,18 +1532,19 @@ Item {
     }
 
     // ── Bar layout negotiation ────────────────────────────────────
-    // Lebar yang di-"klaim" island dari bar, sudah termasuk kompensasi overshoot animasi.
+    // Lebar yang di-"klaim" island dari bar, sudah termasuk ruang satellite.
+    // Easing is now OutCubic (settles exactly at target) so overshootAllowance
+    // is kept small — just a safety buffer for rounding.
     readonly property real reservedWidth: {
         const base = expanded ? calculatedExpandedWidth : calculatedCollapsedWidth
         return base + satelliteExtraWidth + (expanded ? overshootAllowance : 0)
     }
 
-    // Behavior on width memakai Easing.OutBack, yang MELAMPAUI nilai target sebelum settle.
-    readonly property real overshootAllowance: 28
+    readonly property real overshootAllowance: 8
 
     readonly property string demand: {
         if (!expanded) return "idle"
-        if (dropSendMode || isDropSending || wallpaperMode) return "greedy"
+        if (dropWorkflowActive || wallpaperMode) return "greedy"
         if (isMediaPeek) return "peek"
         return "normal"
     }
@@ -1535,6 +1601,7 @@ Item {
             replyMode = false
             sysHudActive = false
             sysHudTimer.stop()
+            manualCenterId = ""
             wallpaperMode = true
             if (Services.Wallpaper && Services.Wallpaper.currentWallpaper) {
                 const cur = Services.Wallpaper.currentWallpaper
@@ -1621,7 +1688,8 @@ Item {
     Connections {
         target: Services.Notifications
         function onNewNotification(entry) {
-            root.wallpaperMode = false
+            // Keep modal panels open. allSortedCandidates routes the notification
+            // to a satellite while wallpaper or the sharing chooser owns center.
             root.sysHudActive = false
             sysHudTimer.stop()
             root.manualCenterId = ""
@@ -1785,25 +1853,26 @@ Item {
             }
         }
 
-        // Seamless, Continuous Fluid Morphing (Zero delay, zero hitching, pure iOS ease - synchronized with Lockscreen)
+        // Seamless, Continuous Fluid Morphing
+        // Using OutCubic for width/height so the shape settles exactly at the target
+        // without overshoot bouncing. Subtle elasticity is kept in satellite/bridge
+        // animations only — not in every property simultaneously.
         Behavior on width {
             NumberAnimation {
-                duration: root.lockBlocked ? 240 : (root.expanded ? 360 : 380)
-                easing.type: root.lockBlocked ? Easing.InOutCubic : Easing.OutBack
-                easing.overshoot: root.expanded ? 1.35 : 1.45
+                duration: root.lockBlocked ? 240 : (root.expanded ? 300 : 260)
+                easing.type: Easing.OutCubic
             }
         }
         Behavior on height {
             NumberAnimation {
-                duration: 340
-                easing.type: Easing.OutBack
-                easing.overshoot: root.expanded ? 1.35 : 1.45
+                duration: root.lockBlocked ? 240 : (root.expanded ? 300 : 260)
+                easing.type: Easing.OutCubic
             }
         }
         Behavior on radius {
             enabled: !island.isCapsuleShape || root.notifActive
             NumberAnimation {
-                duration: 320
+                duration: root.expanded ? 280 : 240
                 easing.type: Easing.OutCubic
             }
         }
@@ -1824,8 +1893,8 @@ Item {
             id: islandMouseArea
             anchors.fill: parent
             z: 0
-            enabled: root.hasExpandContent && !root.dropSendMode && !root.isDropSending
-            cursorShape: (root.hasExpandContent && !root.dropSendMode && !root.isDropSending) ? Qt.PointingHandCursor : Qt.ArrowCursor
+            enabled: root.hasExpandContent && !root.dropWorkflowActive
+            cursorShape: (root.hasExpandContent && !root.dropWorkflowActive) ? Qt.PointingHandCursor : Qt.ArrowCursor
             onClicked: root.togglePin()
         }
 
@@ -1837,6 +1906,8 @@ Item {
             onEntered: (drag) => {
                 dropExitDebounceTimer.stop()
                 root.extractDropDetails(drag.urls)
+                root.dropStagedChoice = false
+                root.manualCenterId = ""
                 root.dropSendMode = true
             }
             onPositionChanged: (drag) => {
@@ -1859,7 +1930,20 @@ Item {
             }
         }
 
-
+        // Observe the complete expanded island, not only the inner content box.
+        // Leaving the island dismisses the temporary destination chooser.
+        HoverHandler {
+            id: dropHubHoverHandler
+            enabled: root.showDropChooser
+            onHoveredChanged: {
+                if (hovered) {
+                    dropExitDebounceTimer.stop()
+                    dropStagedAutoCollapseTimer.stop()
+                } else {
+                    dropExitDebounceTimer.restart()
+                }
+            }
+        }
 
         // ==================== Privacy / Recording Indicators (Main Island Corner) ====================
         Item {
@@ -1870,6 +1954,9 @@ Item {
                 (root.recordingActive && !root.isRecordingSatellite)
             readonly property bool shouldShow: !root.lockBlocked && privacyActivity
             readonly property bool privacySatelliteActive: root.isCameraSatellite || root.isRecordingSatellite
+            // In wide modal panels, the satellites are the source of truth. Do not animate
+            // the combined two-dot row across the whole panel: each satellite has its own icon.
+            readonly property bool modalSatelliteMode: privacySatelliteActive && (root.wallpaperMode || root.dropWorkflowActive)
             readonly property bool satelliteLeavesRight: root.slotRightType === "camera" || root.slotRightType === "recording"
             readonly property bool notificationOwnsIsland: root.slot0Activity === "notif"
             // Satellite bubbles are 32px wide with an 8px final gap. Aim for
@@ -1891,8 +1978,8 @@ Item {
             // notification island. During the pre-notification handoff, the
             // transfer dot remains visible; once notification owns the centre,
             // the satellite is the single source of truth.
-            readonly property bool showMainDot: (!privacySatelliteActive && shouldShow) ||
-                returningToIdle || (transferringToSatellite && !notificationOwnsIsland)
+            readonly property bool showMainDot: !modalSatelliteMode && ((!privacySatelliteActive && shouldShow) ||
+                returningToIdle || (transferringToSatellite && !notificationOwnsIsland))
             anchors.verticalCenter: island.verticalCenter
             implicitWidth: indicatorRow.implicitWidth
             implicitHeight: 14
@@ -1964,9 +2051,10 @@ Item {
 
             Timer {
                 id: satelliteTransferTimer
-                // Match the satellite's extrusion + content-bloom timeline.
-                // The main dot reaches the bubble before its content takes over.
-                interval: 430
+                // Match the full satellite detach timeline:
+                //   Phase 1 extrusion: 200ms + longest Phase 2 branch: 320ms = 520ms.
+                // Keep clipping disabled until the satellite's icon has completed its bloom.
+                interval: 520
                 repeat: false
                 onTriggered: cameraIndicator.transferringToSatellite = false
                 onRunningChanged: {
@@ -2007,7 +2095,7 @@ Item {
                     color: Services.Theme.success
 
                     Behavior on width {
-                        NumberAnimation { duration: 240; easing.type: Easing.OutBack; easing.overshoot: 0.8 }
+                        NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
                     }
                     Behavior on x {
                         NumberAnimation { duration: 260; easing.type: Easing.OutCubic }
@@ -2028,7 +2116,7 @@ Item {
                     color: root.recordingColor
 
                     Behavior on width {
-                        NumberAnimation { duration: 240; easing.type: Easing.OutBack; easing.overshoot: 0.8 }
+                        NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
                     }
                     Behavior on x {
                         NumberAnimation { duration: 260; easing.type: Easing.OutCubic }
@@ -2416,7 +2504,7 @@ Item {
             anchors.fill: parent
             anchors.margins: 10
             spacing: 4
-            readonly property bool activeState: !Services.OverlayManager.isLocked && root.expanded && (root.slot0Activity === "notif") && !root.dropSendMode && !root.isDropSending
+            readonly property bool activeState: !Services.OverlayManager.isLocked && root.expanded && (root.slot0Activity === "notif") && !root.dropWorkflowActive
             visible: activeState || opacity > 0.01
             opacity: activeState ? 1 : 0
             scale: activeState ? 1.0 : 0.7
@@ -2788,7 +2876,7 @@ Item {
             anchors.fill: parent
             anchors.margins: 10
             spacing: 10
-            readonly property bool activeState: (root.sysHudTitle.includes("Caps Lock") || root.sysHudTitle.includes("Welcome") || !Services.OverlayManager.isLocked) && root.expanded && (root.slot0Activity === "syshud") && !root.wallpaperMode && !root.dropSendMode && !root.isDropSending
+            readonly property bool activeState: (root.sysHudTitle.includes("Caps Lock") || root.sysHudTitle.includes("Welcome") || !Services.OverlayManager.isLocked) && root.expanded && (root.slot0Activity === "syshud") && !root.wallpaperMode && !root.dropWorkflowActive
             visible: activeState || opacity > 0.01
             opacity: activeState ? 1 : 0
             scale: activeState ? 1.0 : 0.7
@@ -2957,7 +3045,7 @@ Item {
             spacing: root.isMediaPeek ? 0 : 6
             Behavior on spacing { NumberAnimation { duration: 260; easing.type: Easing.OutCubic } }
 
-            readonly property bool activeState: !Services.OverlayManager.isLocked && root.expanded && (root.slot0Activity === "media") && !root.wallpaperMode && !root.dropSendMode && !root.isDropSending
+            readonly property bool activeState: !Services.OverlayManager.isLocked && root.expanded && (root.slot0Activity === "media") && !root.wallpaperMode && !root.dropWorkflowActive
             visible: activeState || opacity > 0.01
             opacity: activeState ? 1 : 0
             scale: activeState ? 1.0 : (root.isMediaPeek ? 0.96 : 0.78)
@@ -3721,7 +3809,7 @@ Item {
             anchors.fill: parent
             anchors.margins: 10
             spacing: 6
-            readonly property bool activeState: !Services.OverlayManager.isLocked && root.expanded && !root.notifActive && root.wallpaperMode && !root.dropSendMode && !root.isDropSending
+            readonly property bool activeState: !Services.OverlayManager.isLocked && root.expanded && root.wallpaperMode && !root.dropWorkflowActive
             visible: activeState || opacity > 0.01
             opacity: activeState ? 1 : 0
             scale: activeState ? 1.0 : 0.75
@@ -4082,7 +4170,7 @@ Item {
             id: dropSendHubContainer
             anchors.fill: parent
             anchors.margins: 12
-            readonly property bool activeState: !Services.OverlayManager.isLocked && root.expanded && !root.notifActive && !root.wallpaperMode && (root.dropSendMode || root.isDropSending)
+            readonly property bool activeState: !Services.OverlayManager.isLocked && root.expanded && !root.wallpaperMode && root.dropWorkflowActive
             visible: activeState || opacity > 0.01
             opacity: activeState ? 1 : 0
             scale: activeState ? 1.0 : 0.94
@@ -4093,240 +4181,200 @@ Item {
             Behavior on opacity { NumberAnimation { duration: 260; easing.type: Easing.OutQuad } }
             Behavior on scale   { NumberAnimation { duration: 320; easing.type: Easing.OutCubic } }
 
-            // ─── Sub-View 1: Active Drag & Drop Targets / Choice ───
+            // ─── Sub-View 1: Compact destination chooser ───
             ColumnLayout {
+                id: dropChooserView
                 anchors.fill: parent
-                spacing: 8
-                visible: !root.isDropSending
+                spacing: 6
+                visible: root.showDropChooser
+                enabled: visible
 
-                // ── Header Row ──
+                // Header
                 RowLayout {
                     Layout.fillWidth: true
-                    Layout.preferredHeight: 24
-                    spacing: 8
+                    Layout.preferredHeight: 22
+                    spacing: 7
 
-                    // Animated Transfer / Radar Icon (Borderless)
                     Rectangle {
-                        Layout.preferredWidth: 24
-                        Layout.preferredHeight: 24
-                        radius: 12
-                        color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.16)
-
+                        Layout.preferredWidth: 22
+                        Layout.preferredHeight: 22
+                        radius: 7
+                        color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.17)
                         Text {
                             anchors.centerIn: parent
                             text: "󰄶"
                             font.family: Services.Theme.fontSymbols
-                            font.pixelSize: 13
+                            font.pixelSize: 12
                             color: Services.Theme.accent
-                        }
-
-                        SequentialAnimation on scale {
-                            running: dropSendHubContainer.activeState && !root.isDropSending
-                            loops: Animation.Infinite
-                            NumberAnimation { to: 1.08; duration: 900; easing.type: Easing.InOutSine }
-                            NumberAnimation { to: 1.0;  duration: 900; easing.type: Easing.InOutSine }
                         }
                     }
 
                     Text {
-                        text: root.dropStagedChoice ? "Select Destination" : "Drop here to Send"
+                        text: root.dropStagedChoice ? "Choose destination" : "Drop to share"
                         color: Services.Theme.textPrimary
-                        font.pixelSize: Services.Theme.fontSizeSm
+                        font.pixelSize: 11
                         font.bold: true
                     }
 
-                    // File Count Badge (Borderless)
                     Rectangle {
                         visible: root.dropFileCount > 0
                         Layout.preferredHeight: 18
                         implicitWidth: fileCountText.implicitWidth + 12
                         radius: 9
-                        color: Qt.rgba(255, 255, 255, 0.07)
-
+                        color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.15)
                         Text {
                             id: fileCountText
                             anchors.centerIn: parent
-                            text: root.dropFileCount + (root.dropFileCount > 1 ? " files" : " file")
+                            text: root.dropFileCount + (root.dropFileCount === 1 ? " file" : " files")
                             color: Services.Theme.accent
-                            font.pixelSize: 10
+                            font.pixelSize: 9
                             font.bold: true
                         }
                     }
 
                     Item { Layout.fillWidth: true }
 
-                    // Image Thumbnail Preview (Borderless)
-                    RowLayout {
-                        visible: root.dropPreviewUrl !== ""
-                        spacing: 6
-                        Rectangle {
-                            Layout.preferredWidth: 22
-                            Layout.preferredHeight: 22
-                            radius: 6
-                            color: Qt.rgba(255, 255, 255, 0.08)
-                            clip: true
-
-                            Image {
-                                anchors.fill: parent
-                                source: root.dropPreviewUrl
-                                fillMode: Image.PreserveAspectCrop
-                                asynchronous: true
-                                cache: true
-                            }
-                        }
-
-                        Text {
-                            text: root.dropFileName
-                            color: Services.Theme.textSecondary
-                            font.pixelSize: 10
-                            Layout.maximumWidth: 120
-                            elide: Text.ElideMiddle
-                        }
+                    Text {
+                        Layout.maximumWidth: 118
+                        visible: root.dropFileName !== ""
+                        text: root.dropFileName
+                        color: Services.Theme.textSecondary
+                        font.pixelSize: 10
+                        elide: Text.ElideMiddle
                     }
 
-                    // Cancel / Close Button (Borderless)
                     Rectangle {
                         Layout.preferredWidth: 22
                         Layout.preferredHeight: 22
                         radius: 11
                         color: closeDropMouse.containsMouse ? Qt.rgba(239 / 255, 68 / 255, 68 / 255, 0.2) : Qt.rgba(255, 255, 255, 0.06)
-
-                        Behavior on color { ColorAnimation { duration: 150 } }
-
                         Text {
                             anchors.centerIn: parent
-                            text: "✕"
-                            font.pixelSize: 10
-                            color: closeDropMouse.containsMouse ? "#ef4444" : Services.Theme.textDisabled
+                            text: "×"
+                            color: closeDropMouse.containsMouse ? "#ef4444" : Services.Theme.textSecondary
+                            font.pixelSize: 15
                         }
-
                         MouseArea {
                             id: closeDropMouse
                             anchors.fill: parent
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
-                            onClicked: root.collapse()
+                            onClicked: root.dismissDropChooser()
                         }
                     }
                 }
 
-                // ── Drop Target Cards Row (Borderless) ──
+                // Destination cards: each card is a single target. The action
+                // affordance sits inline at the end rather than in a separate
+                // button row that makes the panel feel tall and fragmented.
                 RowLayout {
                     Layout.fillWidth: true
                     Layout.fillHeight: true
-                    spacing: 10
+                    spacing: 8
 
-                    // ── Card 1: KDE Connect ──
                     Rectangle {
                         id: kdeCard
                         Layout.fillWidth: true
                         Layout.fillHeight: true
                         radius: 12
+                        clip: true
                         readonly property bool isHovered: root.dropHoverTarget === "kde" || kdeCardMouse.containsMouse
                         readonly property var dev: Services.DeviceShare ? Services.DeviceShare.defaultDevice : null
                         readonly property bool hasDev: Services.DeviceShare ? Services.DeviceShare.hasKdeDevice : false
 
                         color: isHovered
-                            ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.18)
-                            : Qt.rgba(255, 255, 255, 0.05)
-                        scale: isHovered ? 1.02 : 1.0
+                            ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.13)
+                            : Qt.rgba(255, 255, 255, 0.045)
+                        border.width: isHovered ? 1 : 0
+                        border.color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.48)
+                        Behavior on color { ColorAnimation { duration: 150 } }
+                        Behavior on border.width { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
 
-                        Behavior on scale { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
-                        Behavior on color { ColorAnimation { duration: 200 } }
-
-                        ColumnLayout {
+                        RowLayout {
                             anchors.fill: parent
-                            anchors.margins: 12
+                            anchors.margins: 9
                             spacing: 8
 
-                            // Top Info Row: Icon + Title + Status
-                            RowLayout {
-                                Layout.fillWidth: true
-                                spacing: 10
-
-                                Rectangle {
-                                    Layout.preferredWidth: 36
-                                    Layout.preferredHeight: 36
-                                    radius: 18
-                                    color: kdeCard.isHovered
-                                        ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.3)
-                                        : Qt.rgba(255, 255, 255, 0.07)
-
-                                    Behavior on color { ColorAnimation { duration: 200 } }
-
-                                    Text {
-                                        anchors.centerIn: parent
-                                        text: "󰄡"
-                                        font.family: Services.Theme.fontSymbols
-                                        font.pixelSize: 18
-                                        color: kdeCard.hasDev ? Services.Theme.accent : Services.Theme.textDisabled
-                                    }
-                                }
-
-                                ColumnLayout {
-                                    Layout.fillWidth: true
-                                    spacing: 1
-
-                                    RowLayout {
-                                        spacing: 5
-                                        Rectangle {
-                                            Layout.preferredWidth: 6
-                                            Layout.preferredHeight: 6
-                                            radius: 3
-                                            color: kdeCard.hasDev ? "#22c55e" : "#eab308"
-                                        }
-                                        Text {
-                                            text: "KDE Connect"
-                                            font.bold: true
-                                            font.pixelSize: 12
-                                            color: Services.Theme.textPrimary
-                                        }
-                                    }
-
-                                    Text {
-                                        Layout.fillWidth: true
-                                        text: kdeCard.hasDev ? (kdeCard.dev ? kdeCard.dev.name : "Connected Device") : "No paired device"
-                                        color: kdeCard.hasDev ? Services.Theme.textSecondary : Services.Theme.textDisabled
-                                        font.pixelSize: 11
-                                        elide: Text.ElideRight
-                                    }
+                            Rectangle {
+                                Layout.preferredWidth: 32
+                                Layout.preferredHeight: 32
+                                radius: 10
+                                color: kdeCard.isHovered
+                                    ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.2)
+                                    : Qt.rgba(255, 255, 255, 0.065)
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: "󰄡"
+                                    font.family: Services.Theme.fontSymbols
+                                    font.pixelSize: 17
+                                    color: kdeCard.hasDev ? Services.Theme.accent : Services.Theme.textDisabled
                                 }
                             }
 
-                            // Bottom Action Pill (Borderless)
-                            Rectangle {
+                            ColumnLayout {
                                 Layout.fillWidth: true
-                                Layout.preferredHeight: 26
-                                radius: 7
-                                color: kdeCard.isHovered
-                                    ? Services.Theme.accent
-                                    : (kdeCardMouse.containsMouse ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.2) : Qt.rgba(255, 255, 255, 0.06))
-
-                                Behavior on color { ColorAnimation { duration: 180 } }
+                                spacing: 2
 
                                 RowLayout {
-                                    anchors.centerIn: parent
+                                    Layout.fillWidth: true
                                     spacing: 5
-                                    Text {
-                                        text: kdeCard.isHovered ? "󰄶" : "󰄡"
-                                        font.family: Services.Theme.fontSymbols
-                                        font.pixelSize: 11
-                                        color: kdeCard.isHovered ? Services.Theme.bgOnAccent : Services.Theme.accent
+                                    Rectangle {
+                                        Layout.preferredWidth: 6
+                                        Layout.preferredHeight: 6
+                                        radius: 3
+                                        color: kdeCard.hasDev ? "#22c55e" : "#eab308"
                                     }
                                     Text {
-                                        text: kdeCard.isHovered ? "Release to Send" : (root.dropStagedChoice ? ("Send to " + (kdeCard.dev ? kdeCard.dev.name : "Device")) : "Drop to Send")
-                                        font.pixelSize: 10
+                                        Layout.fillWidth: true
+                                        text: "KDE Connect"
                                         font.bold: true
-                                        color: kdeCard.isHovered ? Services.Theme.bgOnAccent : Services.Theme.textPrimary
+                                        font.pixelSize: 11
+                                        color: Services.Theme.textPrimary
+                                        elide: Text.ElideRight
                                     }
+                                }
+
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: kdeCard.hasDev ? (kdeCard.dev ? kdeCard.dev.name : "Connected device") : "No paired device"
+                                    color: kdeCard.hasDev ? Services.Theme.textSecondary : Services.Theme.textDisabled
+                                    font.pixelSize: 10
+                                    elide: Text.ElideRight
+                                }
+
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: !kdeCard.hasDev
+                                        ? "Pair a device first"
+                                        : (root.dropHoverTarget === "kde"
+                                            ? "Release to send"
+                                            : (root.dropStagedChoice ? "Send file" : "Drop file here"))
+                                    color: kdeCard.isHovered ? Services.Theme.accent : Services.Theme.textSecondary
+                                    font.pixelSize: 9
+                                    font.bold: root.dropStagedChoice || root.dropHoverTarget === "kde"
+                                    elide: Text.ElideRight
+                                }
+                            }
+
+                            Rectangle {
+                                Layout.preferredWidth: 24
+                                Layout.preferredHeight: 24
+                                radius: 12
+                                color: kdeCard.isHovered ? Services.Theme.accent : Qt.rgba(255, 255, 255, 0.07)
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: "›"
+                                    color: kdeCard.isHovered ? Services.Theme.bgOnAccent : Services.Theme.textSecondary
+                                    font.pixelSize: 18
+                                    font.bold: true
                                 }
                             }
                         }
 
-                        // Child DropArea for KDE Connect
                         DropArea {
                             id: kdeDropTarget
                             anchors.fill: parent
+                            enabled: kdeCard.hasDev
                             onEntered: (drag) => {
                                 dropExitDebounceTimer.stop()
                                 root.dropHoverTarget = "kde"
@@ -4335,7 +4383,7 @@ Item {
                                 dropExitDebounceTimer.stop()
                                 root.dropHoverTarget = "kde"
                             }
-                            onExited: () => {
+                            onExited: {
                                 if (root.dropHoverTarget === "kde") root.dropHoverTarget = ""
                                 dropExitDebounceTimer.restart()
                             }
@@ -4349,124 +4397,107 @@ Item {
                             id: kdeCardMouse
                             anchors.fill: parent
                             hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
+                            cursorShape: kdeCard.hasDev ? Qt.PointingHandCursor : Qt.ArrowCursor
                             onClicked: {
-                                if (root.dropUrls && root.dropUrls.length > 0) {
+                                if (kdeCard.hasDev && root.dropStagedChoice && root.dropUrls && root.dropUrls.length > 0)
                                     root.handleDropOnKde(root.dropUrls)
-                                }
                             }
                         }
                     }
 
-                    // ── Card 2: LocalSend ──
                     Rectangle {
                         id: localCard
                         Layout.fillWidth: true
                         Layout.fillHeight: true
                         radius: 12
+                        clip: true
                         readonly property bool isHovered: root.dropHoverTarget === "local" || localCardMouse.containsMouse
+                        readonly property bool localSendAvailable: Services.DeviceShare ? Services.DeviceShare.hasLocalSend : true
 
                         color: isHovered
-                            ? Qt.rgba(56 / 255, 189 / 255, 248 / 255, 0.18)
-                            : Qt.rgba(255, 255, 255, 0.05)
-                        scale: isHovered ? 1.02 : 1.0
+                            ? Qt.rgba(56 / 255, 189 / 255, 248 / 255, 0.13)
+                            : Qt.rgba(255, 255, 255, 0.045)
+                        border.width: isHovered ? 1 : 0
+                        border.color: Qt.rgba(56 / 255, 189 / 255, 248 / 255, 0.48)
+                        opacity: localCard.localSendAvailable ? 1.0 : 0.65
+                        Behavior on color { ColorAnimation { duration: 150 } }
+                        Behavior on border.width { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
 
-                        Behavior on scale { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
-                        Behavior on color { ColorAnimation { duration: 200 } }
-
-                        ColumnLayout {
+                        RowLayout {
                             anchors.fill: parent
-                            anchors.margins: 12
+                            anchors.margins: 9
                             spacing: 8
 
-                            // Top Info Row: Icon + Title + Status
-                            RowLayout {
-                                Layout.fillWidth: true
-                                spacing: 10
-
-                                Rectangle {
-                                    Layout.preferredWidth: 36
-                                    Layout.preferredHeight: 36
-                                    radius: 18
-                                    color: localCard.isHovered
-                                        ? Qt.rgba(56 / 255, 189 / 255, 248 / 255, 0.3)
-                                        : Qt.rgba(255, 255, 255, 0.07)
-
-                                    Behavior on color { ColorAnimation { duration: 200 } }
-
-                                    Text {
-                                        anchors.centerIn: parent
-                                        text: "󰅠"
-                                        font.family: Services.Theme.fontSymbols
-                                        font.pixelSize: 18
-                                        color: "#38bdf8"
-                                    }
-                                }
-
-                                ColumnLayout {
-                                    Layout.fillWidth: true
-                                    spacing: 1
-
-                                    RowLayout {
-                                        spacing: 5
-                                        Rectangle {
-                                            Layout.preferredWidth: 6
-                                            Layout.preferredHeight: 6
-                                            radius: 3
-                                            color: "#38bdf8"
-                                        }
-                                        Text {
-                                            text: "LocalSend"
-                                            font.bold: true
-                                            font.pixelSize: 12
-                                            color: Services.Theme.textPrimary
-                                        }
-                                    }
-
-                                    Text {
-                                        Layout.fillWidth: true
-                                        text: "Nearby Devices (LAN)"
-                                        color: Services.Theme.textSecondary
-                                        font.pixelSize: 11
-                                        elide: Text.ElideRight
-                                    }
+                            Rectangle {
+                                Layout.preferredWidth: 32
+                                Layout.preferredHeight: 32
+                                radius: 10
+                                color: localCard.isHovered
+                                    ? Qt.rgba(56 / 255, 189 / 255, 248 / 255, 0.2)
+                                    : Qt.rgba(255, 255, 255, 0.065)
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: "󰅠"
+                                    font.family: Services.Theme.fontSymbols
+                                    font.pixelSize: 17
+                                    color: "#38bdf8"
                                 }
                             }
 
-                            // Bottom Action Pill (Borderless)
-                            Rectangle {
+                            ColumnLayout {
                                 Layout.fillWidth: true
-                                Layout.preferredHeight: 26
-                                radius: 7
-                                color: localCard.isHovered
-                                    ? "#38bdf8"
-                                    : (localCardMouse.containsMouse ? Qt.rgba(56 / 255, 189 / 255, 248 / 255, 0.2) : Qt.rgba(255, 255, 255, 0.06))
+                                spacing: 2
 
-                                Behavior on color { ColorAnimation { duration: 180 } }
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: "LocalSend"
+                                    font.bold: true
+                                    font.pixelSize: 11
+                                    color: Services.Theme.textPrimary
+                                    elide: Text.ElideRight
+                                }
 
-                                RowLayout {
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: localCard.localSendAvailable ? "Nearby devices · LAN" : "LocalSend not found"
+                                    color: Services.Theme.textSecondary
+                                    font.pixelSize: 10
+                                    elide: Text.ElideRight
+                                }
+
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: !localCard.localSendAvailable
+                                        ? "Unavailable"
+                                        : (root.dropHoverTarget === "local"
+                                            ? "Release to send"
+                                            : (root.dropStagedChoice ? "Open LocalSend" : "Drop file here"))
+                                    color: localCard.isHovered ? "#38bdf8" : Services.Theme.textSecondary
+                                    font.pixelSize: 9
+                                    font.bold: root.dropStagedChoice || root.dropHoverTarget === "local"
+                                    elide: Text.ElideRight
+                                }
+                            }
+
+                            Rectangle {
+                                Layout.preferredWidth: 24
+                                Layout.preferredHeight: 24
+                                radius: 12
+                                color: localCard.isHovered ? "#38bdf8" : Qt.rgba(255, 255, 255, 0.07)
+                                Text {
                                     anchors.centerIn: parent
-                                    spacing: 5
-                                    Text {
-                                        text: localCard.isHovered ? "󰄶" : "󰅠"
-                                        font.family: Services.Theme.fontSymbols
-                                        font.pixelSize: 11
-                                        color: localCard.isHovered ? "#000000" : "#38bdf8"
-                                    }
-                                    Text {
-                                        text: localCard.isHovered ? "Release to Send" : (root.dropStagedChoice ? "Open in LocalSend" : "Drop to Send")
-                                        font.pixelSize: 10
-                                        font.bold: true
-                                        color: localCard.isHovered ? "#000000" : Services.Theme.textPrimary
-                                    }
+                                    text: "›"
+                                    color: localCard.isHovered ? "#06131b" : Services.Theme.textSecondary
+                                    font.pixelSize: 18
+                                    font.bold: true
                                 }
                             }
                         }
 
-                        // Child DropArea for LocalSend
                         DropArea {
                             id: localDropTarget
                             anchors.fill: parent
+                            enabled: localCard.localSendAvailable
                             onEntered: (drag) => {
                                 dropExitDebounceTimer.stop()
                                 root.dropHoverTarget = "local"
@@ -4475,7 +4506,7 @@ Item {
                                 dropExitDebounceTimer.stop()
                                 root.dropHoverTarget = "local"
                             }
-                            onExited: () => {
+                            onExited: {
                                 if (root.dropHoverTarget === "local") root.dropHoverTarget = ""
                                 dropExitDebounceTimer.restart()
                             }
@@ -4489,27 +4520,120 @@ Item {
                             id: localCardMouse
                             anchors.fill: parent
                             hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
+                            cursorShape: localCard.localSendAvailable ? Qt.PointingHandCursor : Qt.ArrowCursor
                             onClicked: {
-                                if (root.dropUrls && root.dropUrls.length > 0) {
+                                if (localCard.localSendAvailable && root.dropStagedChoice && root.dropUrls && root.dropUrls.length > 0)
                                     root.handleDropOnLocalSend(root.dropUrls)
-                                }
                             }
                         }
                     }
                 }
             }
 
-            // ─── Sub-View 2: Sending / Success Transfer Feedback ───
+            // ─── Sub-View 2: LocalSend Handoff (preparing / handoff) ───
+            // Shows an honest status strip — no progress bar, no false success claim.
+            RowLayout {
+                id: localSendHandoffView
+                anchors.fill: parent
+                spacing: 12
+                visible: root.showDropHandoff
+
+                readonly property string previewUrl: (Services.DeviceShare && Services.DeviceShare.transferPreviewUrl !== "") ? Services.DeviceShare.transferPreviewUrl : root.dropPreviewUrl
+                readonly property bool hasPreview: previewUrl !== ""
+                readonly property bool isPreparing: Services.DeviceShare && (
+                    Services.DeviceShare.transferState === "preparing" ||
+                    (Services.DeviceShare.transferBackend === "localsend" && Services.DeviceShare.transferState === "sending"))
+
+                // Left icon / thumbnail
+                Rectangle {
+                    implicitWidth: 44
+                    implicitHeight: 44
+                    radius: 10
+                    color: Services.Theme.surfaceVariant
+                    clip: true
+                    Layout.alignment: Qt.AlignVCenter
+
+                    Image {
+                        anchors.fill: parent
+                        visible: localSendHandoffView.hasPreview
+                        source: localSendHandoffView.previewUrl
+                        fillMode: Image.PreserveAspectCrop
+                        asynchronous: true
+                        cache: true
+                    }
+
+                    Text {
+                        anchors.centerIn: parent
+                        visible: !localSendHandoffView.hasPreview
+                        text: "󰅠"
+                        font.family: Services.Theme.fontSymbols
+                        font.pixelSize: 22
+                        color: "#38bdf8"
+                    }
+                }
+
+                // Center: status text
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 3
+                    Layout.alignment: Qt.AlignVCenter
+
+                    Text {
+                        text: localSendHandoffView.isPreparing ? "Preparing LocalSend\u2026" : "Continue in LocalSend"
+                        font.bold: true
+                        font.pixelSize: 12
+                        color: Services.Theme.textPrimary
+                        elide: Text.ElideRight
+                        Layout.fillWidth: true
+                    }
+
+                    Text {
+                        text: localSendHandoffView.isPreparing
+                            ? "Opening the app\u2026"
+                            : "Complete the transfer in the LocalSend window"
+                        font.pixelSize: 10
+                        color: Services.Theme.textSecondary
+                        elide: Text.ElideRight
+                        Layout.fillWidth: true
+                    }
+                }
+
+                // Right: spinner while preparing, checkmark-open while handoff
+                Rectangle {
+                    implicitWidth: 30
+                    implicitHeight: 30
+                    radius: 15
+                    Layout.alignment: Qt.AlignVCenter
+                    color: Qt.rgba(56 / 255, 189 / 255, 248 / 255, 0.15)
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: localSendHandoffView.isPreparing ? "󰑖" : "󰄶"
+                        font.family: Services.Theme.fontSymbols
+                        font.pixelSize: 15
+                        color: "#38bdf8"
+                    }
+
+                    SequentialAnimation on rotation {
+                        running: localSendHandoffView.isPreparing && localSendHandoffView.visible
+                        loops: Animation.Infinite
+                        NumberAnimation { from: 0; to: 360; duration: 1000; easing.type: Easing.Linear }
+                    }
+                }
+            }
+
+            // ─── Sub-View 3: KDE Connect Transfer Feedback ───
+            // Only shown for real tracked transfers (KDE Connect sending/success/error).
             RowLayout {
                 id: transferFeedback
                 anchors.fill: parent
                 spacing: 12
-                visible: root.isDropSending
+                visible: root.showDropTransfer
 
                 readonly property string previewUrl: (Services.DeviceShare && Services.DeviceShare.transferPreviewUrl !== "") ? Services.DeviceShare.transferPreviewUrl : root.dropPreviewUrl
                 readonly property bool hasPreview: previewUrl !== ""
                 readonly property bool isSuccess: Services.DeviceShare && Services.DeviceShare.transferState === "success"
+                readonly property bool isError: Services.DeviceShare && Services.DeviceShare.transferState === "error"
                 readonly property string targetDevice: Services.DeviceShare ? Services.DeviceShare.transferTargetName : (root.dropFileName || "Device")
 
                 // Left Thumbnail / Icon Squircle
@@ -4535,11 +4659,11 @@ Item {
                     Text {
                         anchors.centerIn: parent
                         visible: !transferFeedback.hasPreview
-                        text: transferFeedback.isSuccess ? "󰄬" : "󰄶"
+                        text: transferFeedback.isError ? "󰅚" : (transferFeedback.isSuccess ? "󰄬" : "󰄶")
                         font.family: Services.Theme.fontSymbols
                         font.pixelSize: 22
                         font.bold: true
-                        color: transferFeedback.isSuccess ? Services.Theme.success : Services.Theme.accent
+                        color: transferFeedback.isError ? Services.Theme.danger : (transferFeedback.isSuccess ? Services.Theme.success : Services.Theme.accent)
                     }
 
                     // Corner Mini Badge
@@ -4550,13 +4674,13 @@ Item {
                         width: 14
                         height: 14
                         radius: 7
-                        color: transferFeedback.isSuccess ? Services.Theme.success : Services.Theme.accent
+                        color: transferFeedback.isError ? Services.Theme.danger : (transferFeedback.isSuccess ? Services.Theme.success : Services.Theme.accent)
                         visible: transferFeedback.hasPreview
 
                         Text {
                             anchors.centerIn: parent
-                            text: transferFeedback.isSuccess ? "✓" : "󰄶"
-                            font.family: transferFeedback.isSuccess ? Services.Theme.fontPrimary : Services.Theme.fontSymbols
+                            text: transferFeedback.isError ? "!" : (transferFeedback.isSuccess ? "✓" : "󰄶")
+                            font.family: (transferFeedback.isError || transferFeedback.isSuccess) ? Services.Theme.fontPrimary : Services.Theme.fontSymbols
                             font.pixelSize: 8
                             font.bold: true
                             color: "#ffffff"
@@ -4576,9 +4700,11 @@ Item {
                         spacing: 6
 
                         Text {
-                            text: transferFeedback.isSuccess
-                                ? ("Sent to " + transferFeedback.targetDevice)
-                                : ("Sending to " + transferFeedback.targetDevice + "...")
+                            text: transferFeedback.isError
+                                ? ("Couldn't send to " + transferFeedback.targetDevice)
+                                : (transferFeedback.isSuccess
+                                    ? ("Sent to " + transferFeedback.targetDevice)
+                                    : ("Sending to " + transferFeedback.targetDevice + "..."))
                             font.bold: true
                             font.pixelSize: 12
                             color: Services.Theme.textPrimary
@@ -4655,9 +4781,11 @@ Item {
                     // Subtitle: File name or transfer message
                     Text {
                         Layout.fillWidth: true
-                        text: transferFeedback.isSuccess
-                            ? (root.dropFileName !== "" ? root.dropFileName : (Services.DeviceShare ? Services.DeviceShare.transferMessage : "Transfer completed"))
-                            : (Services.DeviceShare ? Services.DeviceShare.transferMessage : "Transfer in progress")
+                        text: transferFeedback.isError
+                            ? (Services.DeviceShare && Services.DeviceShare.transferMessage !== "" ? Services.DeviceShare.transferMessage : "Transfer failed")
+                            : (transferFeedback.isSuccess
+                                ? (root.dropFileName !== "" ? root.dropFileName : (Services.DeviceShare ? Services.DeviceShare.transferMessage : "Transfer completed"))
+                                : (Services.DeviceShare ? Services.DeviceShare.transferMessage : "Transfer in progress"))
                         font.pixelSize: 10
                         color: Services.Theme.textSecondary
                         elide: Text.ElideRight
@@ -4670,18 +4798,20 @@ Item {
                     implicitHeight: 30
                     radius: 15
                     Layout.alignment: Qt.AlignVCenter
-                    color: transferFeedback.isSuccess
-                        ? Qt.rgba(34 / 255, 197 / 255, 94 / 255, 0.18)
-                        : Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.15)
+                    color: transferFeedback.isError
+                        ? Qt.rgba(239 / 255, 68 / 255, 68 / 255, 0.16)
+                        : (transferFeedback.isSuccess
+                            ? Qt.rgba(34 / 255, 197 / 255, 94 / 255, 0.18)
+                            : Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.15))
 
                     Behavior on color { ColorAnimation { duration: 200 } }
 
                     Text {
                         anchors.centerIn: parent
-                        text: transferFeedback.isSuccess ? "󰄬" : "󰄶"
+                        text: transferFeedback.isError ? "󰅚" : (transferFeedback.isSuccess ? "󰄬" : "󰄶")
                         font.family: Services.Theme.fontSymbols
                         font.pixelSize: 15
-                        color: transferFeedback.isSuccess ? Services.Theme.success : Services.Theme.accent
+                        color: transferFeedback.isError ? Services.Theme.danger : (transferFeedback.isSuccess ? Services.Theme.success : Services.Theme.accent)
                     }
 
                     SequentialAnimation on scale {

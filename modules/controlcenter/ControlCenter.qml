@@ -215,6 +215,9 @@ PanelWindow {
             border.width: 1
             clip: true
 
+            // Keep the top-right corner anchored while the panel scales in.
+            // This panel is right-aligned, so center-origin scaling makes that corner drift.
+            transformOrigin: Item.TopRight
             opacity: Services.OverlayManager.controlCenterVisible ? 1.0 : 0.0
             scale: Services.OverlayManager.controlCenterVisible ? 1.0 : 0.96
             transform: Translate {
@@ -222,7 +225,7 @@ PanelWindow {
                 Behavior on y { NumberAnimation { duration: 280; easing.type: Easing.OutCubic } }
             }
             Behavior on opacity { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
-            Behavior on scale   { NumberAnimation { duration: 280; easing.type: Easing.OutBack } }
+            Behavior on scale   { NumberAnimation { duration: 240; easing.type: Easing.OutCubic } }
 
             MouseArea { anchors.fill: parent; onClicked: {} }
 
@@ -239,157 +242,178 @@ PanelWindow {
                 visible: opacity > 0.01
                 Behavior on opacity { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
 
-                // Header with title & Power quick action
-                RowLayout {
+                // Header: keep the title and action group geometrically independent
+                // from the Wi-Fi/Bluetooth tile layout below.
+                Item {
+                    id: controlCenterHeader
                     Layout.fillWidth: true
-                    spacing: 8
+                    Layout.preferredHeight: 26
+                    Layout.minimumHeight: 26
+                    Layout.maximumHeight: 26
+                    implicitHeight: 26
 
                     Text {
                         text: "Control Center"
+                        anchors.left: parent.left
+                        anchors.verticalCenter: parent.verticalCenter
                         color: Services.Theme.textPrimary
                         font.bold: true
                         font.pixelSize: 15
                     }
 
-                    Item { Layout.fillWidth: true }
+                    // Fixed-size action group positioned against the panel's fixed width,
+                    // independent of the header item's layout recalculations during tile morphing.
+                    Row {
+                        id: headerActions
+                        // Fixed geometry: children and their text metrics must not
+                        // resize/reposition this group while Wi-Fi/BT layouts morph.
+                        width: 160
+                        height: 26
+                        // Anchor by the panel's fixed geometry, not the layout item's
+                        // right edge. The layout width can be recalculated while Wi-Fi/BT
+                        // morph, which otherwise makes this entire group jitter sideways.
+                        x: panel.width - 32 - width
+                        anchors.verticalCenter: parent.verticalCenter
+                        spacing: 8
 
-                    // Battery Info Badge (Moved to top near power menu)
-                    Rectangle {
-                        implicitHeight: 24
-                        implicitWidth: headerBatLayout.implicitWidth + 14
-                        radius: 12
-                        color: Services.Theme.surfaceVariant
-                        border.color: Services.Theme.border
-                        border.width: 1
+                        // Battery Info Badge
+                        Rectangle {
+                            id: headerBatteryBadge
+                            width: 58
+                            height: 24
+                            radius: 12
+                            color: Services.Theme.surfaceVariant
+                            border.color: Services.Theme.border
+                            border.width: 1
 
-                        RowLayout {
-                            id: headerBatLayout
-                            anchors.centerIn: parent
-                            spacing: 4
+                            RowLayout {
+                                id: headerBatLayout
+                                anchors.centerIn: parent
+                                spacing: 4
+
+                                Text {
+                                    id: headerBatIcon
+                                    text: Services.Icons.powerIcon(Services.Power.charging, Services.Power.percentage * 100)
+                                    font.family: Services.Theme.fontSymbols
+                                    font.pixelSize: 12
+                                    color: Services.Power.charging ? Services.Theme.success : (Services.Power.isLow ? "#ff4444" : (Services.Power.isWarning ? "#e06c75" : (Services.PowerProfile.saverEnabled ? "#ff9800" : Services.Theme.textPrimary)))
+                                    Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+
+                                    SequentialAnimation {
+                                        running: Services.Power.isLow
+                                        loops: Animation.Infinite
+                                        NumberAnimation { target: headerBatIcon; property: "opacity"; to: 0.2; duration: 500; easing.type: Easing.InOutQuad }
+                                        NumberAnimation { target: headerBatIcon; property: "opacity"; to: 1.0; duration: 500; easing.type: Easing.InOutQuad }
+                                    }
+                                }
+                                Text {
+                                    text: Math.round(Services.Power.percentage * 100) + "%"
+                                    font.family: Services.Theme.fontMono
+                                    font.pixelSize: 10
+                                    font.bold: true
+                                    color: Services.Power.isLow ? "#ff4444" : (Services.Power.isWarning ? "#e06c75" : (Services.PowerProfile.saverEnabled ? "#ff9800" : Services.Theme.textSecondary))
+                                    Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                                }
+                            }
+                        }
+
+                        // Shell Update Icon Button
+                        Rectangle {
+                            width: 26; height: 26; radius: 13
+                            color: updateBtnMouse.containsMouse
+                                   ? Services.Theme.surfaceVariant
+                                   : (Services.OverlayManager.updatePanelVisible || Services.ShellUpdate.hasUpdate ? Services.Theme.bgHover : "transparent")
+                            border.color: Services.ShellUpdate.hasUpdate
+                                          ? Services.Theme.accent
+                                          : (Services.OverlayManager.updatePanelVisible ? Services.Theme.border : "transparent")
+                            border.width: (Services.ShellUpdate.hasUpdate || Services.OverlayManager.updatePanelVisible) ? 1 : 0
+                            Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                             Text {
-                                id: headerBatIcon
-                                text: Services.Icons.powerIcon(Services.Power.charging, Services.Power.percentage * 100)
+                                anchors.centerIn: parent
+                                text: Services.Icons.updateIcon(Services.ShellUpdate.isPulling, Services.ShellUpdate.isChecking)
                                 font.family: Services.Theme.fontSymbols
                                 font.pixelSize: 12
-                                color: Services.Power.charging ? Services.Theme.success : (Services.Power.isLow ? "#ff4444" : (Services.Power.isWarning ? "#e06c75" : (Services.PowerProfile.saverEnabled ? "#ff9800" : Services.Theme.textPrimary)))
-                                Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                                color: Services.ShellUpdate.hasUpdate ? Services.Theme.accent : (updateBtnMouse.containsMouse ? Services.Theme.textPrimary : Services.Theme.textSecondary)
+                                rotation: Services.OverlayManager.updatePanelVisible ? 180 : 0
+                                Behavior on rotation { NumberAnimation { duration: 180; easing.type: Easing.OutQuad } }
+                            }
 
-                                SequentialAnimation {
-                                    running: Services.Power.isLow
-                                    loops: Animation.Infinite
-                                    NumberAnimation { target: headerBatIcon; property: "opacity"; to: 0.2; duration: 500; easing.type: Easing.InOutQuad }
-                                    NumberAnimation { target: headerBatIcon; property: "opacity"; to: 1.0; duration: 500; easing.type: Easing.InOutQuad }
+                            Rectangle {
+                                width: 6; height: 6; radius: 3
+                                anchors.top: parent.top
+                                anchors.right: parent.right
+                                anchors.margins: 2
+                                color: Services.Theme.accent
+                                visible: Services.ShellUpdate.hasUpdate
+                            }
+
+                            MouseArea {
+                                id: updateBtnMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: {
+                                    Services.OverlayManager.updatePanelVisible = !Services.OverlayManager.updatePanelVisible
+                                    if (Services.OverlayManager.updatePanelVisible) {
+                                        Services.ShellUpdate.checkUpdates()
+                                        Services.OverlayManager.wifiPanelVisible = false
+                                        Services.OverlayManager.btPanelVisible = false
+                                        Services.OverlayManager.audioPanelVisible = false
+                                    }
                                 }
                             }
-                            Text {
-                                text: Math.round(Services.Power.percentage * 100) + "%"
-                                font.family: Services.Theme.fontMono
-                                font.pixelSize: 10
-                                font.bold: true
-                                color: Services.Power.isLow ? "#ff4444" : (Services.Power.isWarning ? "#e06c75" : (Services.PowerProfile.saverEnabled ? "#ff9800" : Services.Theme.textSecondary))
-                                Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
-                            }
-                        }
-                    }
-
-                    // Shell Update Icon Button (Always visible)
-                    Rectangle {
-                        width: 26; height: 26; radius: 13
-                        color: updateBtnMouse.containsMouse
-                               ? Services.Theme.surfaceVariant
-                               : (Services.OverlayManager.updatePanelVisible || Services.ShellUpdate.hasUpdate ? Services.Theme.bgHover : "transparent")
-                        border.color: Services.ShellUpdate.hasUpdate
-                                      ? Services.Theme.accent
-                                      : (Services.OverlayManager.updatePanelVisible ? Services.Theme.border : "transparent")
-                        border.width: (Services.ShellUpdate.hasUpdate || Services.OverlayManager.updatePanelVisible) ? 1 : 0
-                        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
-
-                        Text {
-                            anchors.centerIn: parent
-                            text: Services.Icons.updateIcon(Services.ShellUpdate.isPulling, Services.ShellUpdate.isChecking)
-                            font.family: Services.Theme.fontSymbols
-                            font.pixelSize: 12
-                            color: Services.ShellUpdate.hasUpdate ? Services.Theme.accent : (updateBtnMouse.containsMouse ? Services.Theme.textPrimary : Services.Theme.textSecondary)
-                            rotation: Services.OverlayManager.updatePanelVisible ? 180 : 0
-                            Behavior on rotation { NumberAnimation { duration: 180; easing.type: Easing.OutQuad } }
                         }
 
-                        // Notification Badge Dot if update available
+                        // Settings Icon Button
                         Rectangle {
-                            width: 6; height: 6; radius: 3
-                            anchors.top: parent.top
-                            anchors.right: parent.right
-                            anchors.margins: 2
-                            color: Services.Theme.accent
-                            visible: Services.ShellUpdate.hasUpdate
-                        }
+                            width: 26; height: 26; radius: 13
+                            color: settingsHover.containsMouse ? Services.Theme.surfaceVariant : "transparent"
+                            Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
-                        MouseArea {
-                            id: updateBtnMouse
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: {
-                                Services.OverlayManager.updatePanelVisible = !Services.OverlayManager.updatePanelVisible
-                                if (Services.OverlayManager.updatePanelVisible) {
-                                    Services.ShellUpdate.checkUpdates()
-                                    Services.OverlayManager.wifiPanelVisible = false
-                                    Services.OverlayManager.btPanelVisible = false
-                                    Services.OverlayManager.audioPanelVisible = false
+                            Text {
+                                anchors.centerIn: parent
+                                text: Services.Icons.settings
+                                font.family: Services.Theme.fontSymbols
+                                font.pixelSize: 12
+                                color: settingsHover.containsMouse ? Services.Theme.accent : Services.Theme.textSecondary
+                            }
+
+                            MouseArea {
+                                id: settingsHover
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: {
+                                    root.close()
+                                    Services.OverlayManager.openSettings()
                                 }
                             }
                         }
-                    }
 
-                    // Settings Icon Button
-                    Rectangle {
-                        width: 26; height: 26; radius: 13
-                        color: settingsHover.containsMouse ? Services.Theme.surfaceVariant : "transparent"
-                        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                        // Power Menu Icon Button
+                        Rectangle {
+                            width: 26; height: 26; radius: 13
+                            color: pwrHover.containsMouse ? Services.Theme.surfaceVariant : "transparent"
+                            Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
-                        Text {
-                            anchors.centerIn: parent
-                            text: Services.Icons.settings
-                            font.family: Services.Theme.fontSymbols
-                            font.pixelSize: 12
-                            color: settingsHover.containsMouse ? Services.Theme.accent : Services.Theme.textSecondary
-                        }
-
-                        MouseArea {
-                            id: settingsHover
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: {
-                                root.close()
-                                Services.OverlayManager.openSettings()
+                            Text {
+                                anchors.centerIn: parent
+                                text: Services.Icons.power
+                                font.family: Services.Theme.fontSymbols
+                                font.pixelSize: 12
+                                color: pwrHover.containsMouse ? Services.Theme.danger : Services.Theme.textSecondary
                             }
-                        }
-                    }
 
-                    // Power Menu Icon Button
-                    Rectangle {
-                        width: 26; height: 26; radius: 13
-                        color: pwrHover.containsMouse ? Services.Theme.surfaceVariant : "transparent"
-                        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
-
-                        Text {
-                            anchors.centerIn: parent
-                            text: Services.Icons.power
-                            font.family: Services.Theme.fontSymbols
-                            font.pixelSize: 12
-                            color: pwrHover.containsMouse ? Services.Theme.danger : Services.Theme.textSecondary
-                        }
-
-                        MouseArea {
-                            id: pwrHover
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: {
-                                root.close()
-                                pwrProc.running = true
+                            MouseArea {
+                                id: pwrHover
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: {
+                                    root.close()
+                                    pwrProc.running = true
+                                }
                             }
                         }
                     }
@@ -400,23 +424,29 @@ PanelWindow {
                     id: morphingTilesRow
                     Layout.fillWidth: true
                     spacing: (Services.OverlayManager.wifiPanelVisible || Services.OverlayManager.btPanelVisible) ? 0 : 10
-                    Behavior on spacing { NumberAnimation { duration: 240; easing.type: Easing.OutCubic } }
+                    Behavior on spacing { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                     // ── Dynamic Island Wi-Fi Card ──
                     Rectangle {
                         id: wifiTile
-                        Layout.fillWidth: !Services.OverlayManager.btPanelVisible
+                        // Keep this item in RowLayout for the entire transition.
+                        // Hiding it when opacity reaches zero would make the layout
+                        // reflow before the width animation has finished.
+                        Layout.fillWidth: false
+                        Layout.minimumWidth: 0
                         Layout.preferredWidth: Services.OverlayManager.btPanelVisible ? 0 : (Services.OverlayManager.wifiPanelVisible ? 324 : 157)
                         Layout.preferredHeight: Services.OverlayManager.wifiPanelVisible ? 240 : 72
+                        enabled: !Services.OverlayManager.btPanelVisible
                         radius: Services.Theme.radiusLg
                         color: Services.Wifi.enabled ? Services.Theme.accent : Services.Theme.surfaceVariant
                         clip: true
 
-                        visible: opacity > 0.01
+                        // Do not bind visible to opacity here: Qt Quick Layouts excludes
+                        // invisible items and would snap the remaining tile mid-morph.
                         opacity: Services.OverlayManager.btPanelVisible ? 0 : 1
 
-                        Behavior on Layout.preferredWidth { NumberAnimation { duration: 240; easing.type: Easing.OutCubic } }
-                        Behavior on Layout.preferredHeight { NumberAnimation { duration: 240; easing.type: Easing.OutCubic } }
+                        Behavior on Layout.preferredWidth { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                        Behavior on Layout.preferredHeight { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
                         Behavior on opacity { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
                         Behavior on color { ColorAnimation { duration: 200; easing.type: Easing.OutCubic } }
 
@@ -539,7 +569,7 @@ PanelWindow {
                                             Layout.alignment: Qt.AlignVCenter
                                             color: Services.Wifi.enabled ? Services.Theme.bgOnAccent : Services.Theme.textDisabled
                                             rotation: Services.OverlayManager.wifiPanelVisible ? 180 : 0
-                                            Behavior on rotation { NumberAnimation { duration: 220; easing.type: Easing.OutBack } }
+                                            Behavior on rotation { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
                                         }
                                     }
                                 }
@@ -567,7 +597,7 @@ PanelWindow {
 
                                 Behavior on opacity {
                                     NumberAnimation {
-                                        duration: Services.OverlayManager.wifiPanelVisible ? 200 : 90
+                                        duration: Services.OverlayManager.wifiPanelVisible ? 180 : 160
                                         easing.type: Easing.OutCubic
                                     }
                                 }
@@ -765,18 +795,23 @@ PanelWindow {
                     // ── Dynamic Island Bluetooth Card ──
                     Rectangle {
                         id: btTile
-                        Layout.fillWidth: !Services.OverlayManager.wifiPanelVisible
+                        // Mirror the Wi-Fi tile: width is controlled only by the
+                        // animated preferred width, never by fill-width redistribution.
+                        Layout.fillWidth: false
+                        Layout.minimumWidth: 0
                         Layout.preferredWidth: Services.OverlayManager.wifiPanelVisible ? 0 : (Services.OverlayManager.btPanelVisible ? 324 : 157)
                         Layout.preferredHeight: Services.OverlayManager.btPanelVisible ? 240 : 72
+                        enabled: !Services.OverlayManager.wifiPanelVisible
                         radius: Services.Theme.radiusLg
                         color: Services.Bluetooth.enabled ? Services.Theme.accent : Services.Theme.surfaceVariant
                         clip: true
 
-                        visible: opacity > 0.01
+                        // Remain in the layout while collapsing; opacity alone hides
+                        // the inactive tile visually without triggering a layout snap.
                         opacity: Services.OverlayManager.wifiPanelVisible ? 0 : 1
 
-                        Behavior on Layout.preferredWidth { NumberAnimation { duration: 240; easing.type: Easing.OutCubic } }
-                        Behavior on Layout.preferredHeight { NumberAnimation { duration: 240; easing.type: Easing.OutCubic } }
+                        Behavior on Layout.preferredWidth { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                        Behavior on Layout.preferredHeight { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
                         Behavior on opacity { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
                         Behavior on color { ColorAnimation { duration: 200; easing.type: Easing.OutCubic } }
 
@@ -910,7 +945,7 @@ PanelWindow {
                                             Layout.alignment: Qt.AlignVCenter
                                             color: Services.Bluetooth.enabled ? Services.Theme.bgOnAccent : Services.Theme.textDisabled
                                             rotation: Services.OverlayManager.btPanelVisible ? 180 : 0
-                                            Behavior on rotation { NumberAnimation { duration: 220; easing.type: Easing.OutBack } }
+                                            Behavior on rotation { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
                                         }
                                     }
                                 }
@@ -938,7 +973,7 @@ PanelWindow {
 
                                 Behavior on opacity {
                                     NumberAnimation {
-                                        duration: Services.OverlayManager.btPanelVisible ? 200 : 90
+                                        duration: Services.OverlayManager.btPanelVisible ? 180 : 160
                                         easing.type: Easing.OutCubic
                                     }
                                 }
@@ -1188,8 +1223,8 @@ PanelWindow {
                     opacity: (Services.OverlayManager.wifiPanelVisible || Services.OverlayManager.btPanelVisible) ? 0 : 1
                     clip: true
 
-                    Behavior on Layout.preferredHeight { NumberAnimation { duration: 240; easing.type: Easing.OutCubic } }
-                    Behavior on opacity { NumberAnimation { duration: (Services.OverlayManager.wifiPanelVisible || Services.OverlayManager.btPanelVisible) ? 140 : 200; easing.type: Easing.OutCubic } }
+                    Behavior on Layout.preferredHeight { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                    Behavior on opacity { NumberAnimation { duration: (Services.OverlayManager.wifiPanelVisible || Services.OverlayManager.btPanelVisible) ? 180 : 200; easing.type: Easing.OutCubic } }
 
                     ColumnLayout {
                         anchors.fill: parent

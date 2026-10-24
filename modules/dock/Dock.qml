@@ -320,6 +320,74 @@ Variants {
                 border.width: 1
             }
 
+
+            // ── Lightweight Liquid Glass Surface ───────────────────
+            Item {
+                id: dockGlassHighlight
+                anchors.fill: parent
+                z: 0
+
+                // Top reflection: brighter at the upper edge.
+                Rectangle {
+                    anchors.fill: parent
+                    radius: dockContainer.radius
+                    clip: true
+                    color: "transparent"
+
+                    gradient: Gradient {
+                        GradientStop {
+                            position: 0.0
+                            color: Services.Theme.isDark
+                                ? Qt.rgba(1, 1, 1, root.isHovered ? 0.20 : 0.14)
+                                : Qt.rgba(1, 1, 1, root.isHovered ? 0.52 : 0.38)
+                        }
+                        GradientStop {
+                            position: 0.28
+                            color: Services.Theme.isDark
+                                ? Qt.rgba(1, 1, 1, 0.065)
+                                : Qt.rgba(1, 1, 1, 0.18)
+                        }
+                        GradientStop {
+                            position: 0.62
+                            color: "transparent"
+                        }
+                        GradientStop {
+                            position: 1.0
+                            color: Services.Theme.isDark
+                                ? Qt.rgba(0, 0, 0, 0.20)
+                                : Qt.rgba(0, 0, 0, 0.075)
+                        }
+                    }
+                }
+
+                // Soft lower inner shade.
+                Rectangle {
+                    anchors {
+                        bottom: parent.bottom
+                        left: parent.left
+                        right: parent.right
+                        margins: 2
+                    }
+                    height: Math.max(5, parent.height * 0.16)
+                    radius: dockContainer.radius - 2
+                    color: "transparent"
+
+                    gradient: Gradient {
+                        GradientStop {
+                            position: 0.0
+                            color: "transparent"
+                        }
+                        GradientStop {
+                            position: 1.0
+                            color: Services.Theme.isDark
+                                ? Qt.rgba(0.08, 0.08, 0.12, 0.32)
+                                : Qt.rgba(0.96, 0.96, 0.98, 0.38)
+                        }
+                    }
+                }
+            }
+
+
             // ── Unified Dock Tracker MouseArea ───────────────────────────────
             // Strictly 0 margins when idle so hover only triggers when cursor physically touches the dock pill.
             // When already hovered, expands slightly upward so cursor can hover lifted icons.
@@ -372,6 +440,7 @@ Variants {
             // ── Items Layout ─────────────────────────────────────────────────
             Grid {
                 id: itemsLayout
+                z: 1
                 anchors.centerIn: parent
                 anchors.alignWhenCentered: false
                 spacing: root.itemSpacing
