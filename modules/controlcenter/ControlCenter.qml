@@ -420,22 +420,29 @@ PanelWindow {
                 }
 
                 // ── Dynamic Island Morphing Control Tiles Row ──
-                RowLayout {
+                // Use an explicit geometry container rather than RowLayout. Animating
+                // Layout.preferredWidth on two sibling cards makes Qt Quick Layouts
+                // redistribute their geometry during every frame, which can look like
+                // the expanded Bluetooth card is pulsing or wobbling.
+                Item {
                     id: morphingTilesRow
                     Layout.fillWidth: true
-                    spacing: (Services.OverlayManager.wifiPanelVisible || Services.OverlayManager.btPanelVisible) ? 0 : 10
-                    Behavior on spacing { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                    Layout.preferredHeight: (Services.OverlayManager.wifiPanelVisible || Services.OverlayManager.btPanelVisible) ? 240 : 72
+                    Layout.minimumHeight: 72
+                    Layout.maximumHeight: 240
+                    implicitHeight: 72
+                    clip: false
+                    Behavior on Layout.preferredHeight { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                     // ── Dynamic Island Wi-Fi Card ──
                     Rectangle {
                         id: wifiTile
-                        // Keep this item in RowLayout for the entire transition.
-                        // Hiding it when opacity reaches zero would make the layout
-                        // reflow before the width animation has finished.
-                        Layout.fillWidth: false
-                        Layout.minimumWidth: 0
-                        Layout.preferredWidth: Services.OverlayManager.btPanelVisible ? 0 : (Services.OverlayManager.wifiPanelVisible ? 324 : 157)
-                        Layout.preferredHeight: Services.OverlayManager.wifiPanelVisible ? 240 : 72
+                        // Explicit geometry keeps the card's right edge and the
+                        // sibling card's movement deterministic throughout the morph.
+                        x: 0
+                        y: 0
+                        width: Services.OverlayManager.btPanelVisible ? 0 : (Services.OverlayManager.wifiPanelVisible ? parent.width : (parent.width - 10) / 2)
+                        height: parent.height
                         enabled: !Services.OverlayManager.btPanelVisible
                         radius: Services.Theme.radiusLg
                         color: Services.Wifi.enabled ? Services.Theme.accent : Services.Theme.surfaceVariant
@@ -445,8 +452,7 @@ PanelWindow {
                         // invisible items and would snap the remaining tile mid-morph.
                         opacity: Services.OverlayManager.btPanelVisible ? 0 : 1
 
-                        Behavior on Layout.preferredWidth { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
-                        Behavior on Layout.preferredHeight { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                        Behavior on width { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
                         Behavior on opacity { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
                         Behavior on color { ColorAnimation { duration: 200; easing.type: Easing.OutCubic } }
 
@@ -795,12 +801,12 @@ PanelWindow {
                     // ── Dynamic Island Bluetooth Card ──
                     Rectangle {
                         id: btTile
-                        // Mirror the Wi-Fi tile: width is controlled only by the
-                        // animated preferred width, never by fill-width redistribution.
-                        Layout.fillWidth: false
-                        Layout.minimumWidth: 0
-                        Layout.preferredWidth: Services.OverlayManager.wifiPanelVisible ? 0 : (Services.OverlayManager.btPanelVisible ? 324 : 157)
-                        Layout.preferredHeight: Services.OverlayManager.btPanelVisible ? 240 : 72
+                        // Anchor the Bluetooth card's right edge to the fixed row edge.
+                        // Its x and width animate independently of Qt Quick Layouts.
+                        x: Services.OverlayManager.wifiPanelVisible ? parent.width : (Services.OverlayManager.btPanelVisible ? 0 : (parent.width + 10) / 2)
+                        y: 0
+                        width: Services.OverlayManager.wifiPanelVisible ? 0 : (Services.OverlayManager.btPanelVisible ? parent.width : (parent.width - 10) / 2)
+                        height: parent.height
                         enabled: !Services.OverlayManager.wifiPanelVisible
                         radius: Services.Theme.radiusLg
                         color: Services.Bluetooth.enabled ? Services.Theme.accent : Services.Theme.surfaceVariant
@@ -810,8 +816,8 @@ PanelWindow {
                         // the inactive tile visually without triggering a layout snap.
                         opacity: Services.OverlayManager.wifiPanelVisible ? 0 : 1
 
-                        Behavior on Layout.preferredWidth { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
-                        Behavior on Layout.preferredHeight { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                        Behavior on x { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                        Behavior on width { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
                         Behavior on opacity { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
                         Behavior on color { ColorAnimation { duration: 200; easing.type: Easing.OutCubic } }
 

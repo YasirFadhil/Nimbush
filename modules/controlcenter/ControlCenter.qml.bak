@@ -261,15 +261,18 @@ PanelWindow {
                         font.pixelSize: 15
                     }
 
-                    // Fixed-size action group; anchored right so RowLayout reflows
-                    // caused by tile morphing cannot push these controls around.
+                    // Fixed-size action group positioned against the panel's fixed width,
+                    // independent of the header item's layout recalculations during tile morphing.
                     Row {
                         id: headerActions
                         // Fixed geometry: children and their text metrics must not
                         // resize/reposition this group while Wi-Fi/BT layouts morph.
                         width: 160
                         height: 26
-                        anchors.right: parent.right
+                        // Anchor by the panel's fixed geometry, not the layout item's
+                        // right edge. The layout width can be recalculated while Wi-Fi/BT
+                        // morph, which otherwise makes this entire group jitter sideways.
+                        x: panel.width - 32 - width
                         anchors.verticalCenter: parent.verticalCenter
                         spacing: 8
 
