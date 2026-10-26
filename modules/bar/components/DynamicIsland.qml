@@ -1,4 +1,6 @@
 // DynamicIsland.qml
+pragma ComponentBehavior: Bound
+
 import QtQuick
 import QtQuick.Layouts
 import QtQuick.Effects
@@ -34,27 +36,64 @@ Item {
     property int dropFileCount: 0
     property string dropFileName: ""
     property bool dropStagedChoice: false
-    readonly property bool isDropSending: Services.DeviceShare ? (Services.DeviceShare.transferState === "sending" || Services.DeviceShare.transferState === "success") : false
+    // True when a KDE Connect transfer is genuinely in-flight or confirmed.
+    readonly property bool isDropSending: Services.DeviceShare
+        ? (Services.DeviceShare.transferBackend !== "localsend"
+            && (Services.DeviceShare.transferState === "sending" || Services.DeviceShare.transferState === "success"))
+        : false
+
+    // True for the entire sharing workflow: chooser, LocalSend preparing/handoff, and real transfers.
+    // Use this flag to keep the island expanded and to gate satellite/demand/timer logic.
+    readonly property bool dropWorkflowActive: Services.DeviceShare
+        ? (root.dropSendMode || Services.DeviceShare.transferState === "preparing"
+            || Services.DeviceShare.transferState === "handoff"
+            || Services.DeviceShare.transferState === "sending"
+            || Services.DeviceShare.transferState === "success"
+            || Services.DeviceShare.transferState === "error")
+        : root.dropSendMode
+
+    // LocalSend-specific: preparing or handed off but not a real tracked transfer
+    readonly property bool isLocalSendHandoff: Services.DeviceShare
+        ? (Services.DeviceShare.transferBackend === "localsend"
+            && (Services.DeviceShare.transferState === "preparing"
+                || Services.DeviceShare.transferState === "handoff"
+                // Defensive fallback: older service revisions briefly called
+                // these states "sending" / "success" even though no transfer was tracked.
+                || Services.DeviceShare.transferState === "sending"
+                || Services.DeviceShare.transferState === "success"))
+        : false
+
+    // Only the destination chooser is pointer-dismissable. A real transfer or
+    // LocalSend handoff owns its feedback state and must not be interrupted.
+    function dismissDropChooser() {
+        if (!root.showDropChooser) return
+        root.dropSendMode = false
+        root.dropStagedChoice = false
+        root.dropHoverTarget = ""
+        root.dropUrls = []
+        root.dropPreviewUrl = ""
+        root.dropFileCount = 0
+        root.dropFileName = ""
+    }
 
     Timer {
         id: dropExitDebounceTimer
-        interval: 650
+        interval: 180
         repeat: false
         onTriggered: {
-            if (!root.isDropSending && !islandDropArea.containsDrag && !kdeDropTarget.containsDrag && !localDropTarget.containsDrag && !root.dropStagedChoice) {
-                root.dropSendMode = false
-                root.dropHoverTarget = ""
+            if (root.showDropChooser && !dropHubHoverHandler.hovered) {
+                root.dismissDropChooser()
             }
         }
     }
 
     Timer {
         id: dropStagedAutoCollapseTimer
-        interval: 12000
+        interval: 3500
         repeat: false
         onTriggered: {
-            if (root.dropStagedChoice && !root.isDropSending) {
-                root.collapse()
+            if (root.showDropChooser && root.dropStagedChoice && !dropHubHoverHandler.hovered) {
+                root.dismissDropChooser()
             }
         }
     }
@@ -79,7 +118,7 @@ Item {
         if (path.startsWith("file://")) path = path.substring(7)
         try { path = decodeURIComponent(path) } catch (e) {}
         root.dropFileName = path.substring(path.lastIndexOf("/") + 1)
-        
+
         let lower = path.toLowerCase()
         if (lower.endsWith(".png") || lower.endsWith(".jpg") || lower.endsWith(".jpeg") ||
             lower.endsWith(".webp") || lower.endsWith(".gif") || lower.endsWith(".svg") ||
@@ -162,6 +201,10 @@ Item {
     readonly property var popupList: Services.Notifications.popupList
     readonly property int notifCount: popupList ? popupList.count : 0
     readonly property bool notifActive: !(Services.Workspaces && Services.Workspaces.isFullscreen) && (notifCount > 0)
+    property int previousNotifCount: 0
+    // Briefly hold a new notification so the privacy dot can begin its
+    // satellite handoff before the notification takes over the main island.
+    property bool privacyNotifHandoffPending: false
 
     // System HUD Alert State (Mute, DnD, Charging, Camera)
     property bool sysHudActive: false
@@ -173,8 +216,10 @@ Item {
     property var lastAudioSink: null
     property bool lastAudioMuted: false
 
-    // Camera Active State & Monitoring
+    // Camera and screen-recording activity state.
     property bool cameraActive: false
+    property bool recordingActive: false
+    readonly property color recordingColor: "#ff5b36"
 
     // CapsLock Active State & Monitoring
     property bool capsLockActive: false
@@ -183,6 +228,7 @@ Item {
     property double mediaActiveTime: 0
     property double sysHudActiveTime: 0
     property double cameraActiveTime: 0
+    property double recordingActiveTime: 0
     property double capsLockActiveTime: 0
     property string manualCenterId: ""
 
@@ -194,16 +240,22 @@ Item {
     readonly property var allSortedCandidates: {
         const list = []
 
-        // Modal overrides
-        if (root.dropSendMode || root.isDropSending) {
-            return [{ id: "dropsend", type: "dropsend", time: 9999999999999 }]
-        }
-        if (root.wallpaperMode) {
-            return [{ id: "wallpaper", type: "wallpaper", time: 9999999999999 }]
+        // Modal overrides: add dropsend/wallpaper as the center candidate but
+        // continue building the rest of the list so that camera and recording
+        // can still reach a satellite slot while a modal panel is shown.
+        if (root.dropWorkflowActive) {
+            list.push({ id: "dropsend", type: "dropsend", time: 9999999999999 })
+        } else if (root.wallpaperMode) {
+            list.push({ id: "wallpaper", type: "wallpaper", time: 9999999999999 })
         }
 
-        // 1. SysHUD (volume, brightness, mute, etc.)
-        if (root.sysHudActive) {
+        // In modal modes only allow privacy candidates (camera/recording) into
+        // the satellite, not notifications, media, or system HUD that could
+        // produce unintended extra satellites while the panel is open.
+        const modalActive = root.dropWorkflowActive || root.wallpaperMode
+
+        // 1. SysHUD (volume, brightness, mute, etc.) — only when not in a modal
+        if (root.sysHudActive && !modalActive) {
             list.push({
                 id: "syshud",
                 type: "syshud",
@@ -214,8 +266,11 @@ Item {
             })
         }
 
-        // 2. Notifications (each notification in popupList is an independent candidate)
-        if (root.notifActive && root.popupList) {
+        // 2. Notifications — only when not in a modal
+        // Modal panels retain the center slot, while incoming notifications
+        // are immediately eligible for a satellite slot instead of being hidden.
+        // Outside modal modes, preserve the short privacy-dot handoff delay.
+        if (root.notifActive && root.popupList && (modalActive || !root.privacyNotifHandoffPending)) {
             for (let i = 0; i < root.popupList.count; i++) {
                 const n = root.popupList.get(i)
                 if (n) {
@@ -231,8 +286,8 @@ Item {
             }
         }
 
-        // 3. Media playback
-        if ((root.mediaPlaying && !root.mediaStopping) || (root.mediaStopping && !root.mediaIconTransformed)) {
+        // 3. Media playback — only when not in a modal
+        if (!modalActive && ((root.mediaPlaying && !root.mediaStopping) || (root.mediaStopping && !root.mediaIconTransformed))) {
             if (!Services.OverlayManager.isLocked) {
                 list.push({
                     id: "media",
@@ -242,7 +297,7 @@ Item {
             }
         }
 
-        // 4. Camera active
+        // 4. Camera privacy activity — always included, satellite during modals
         if (root.cameraActive) {
             list.push({
                 id: "camera",
@@ -251,8 +306,17 @@ Item {
             })
         }
 
-        // 5. CapsLock active
-        if (root.capsLockActive) {
+        // 5. Screen recording — always included, satellite during modals
+        if (root.recordingActive) {
+            list.push({
+                id: "recording",
+                type: "recording",
+                time: root.recordingActiveTime || 0
+            })
+        }
+
+        // 6. CapsLock active — only when not in a modal
+        if (root.capsLockActive && !modalActive) {
             list.push({
                 id: "capslock",
                 type: "capslock",
@@ -272,17 +336,28 @@ Item {
             return { center: { type: "idle" }, right: null, left: null }
         }
 
-        // Separate center-eligible activities from satellite-only indicators
-        // Primary center candidates: dropsend, wallpaper, syshud, notif, media
-        // Satellite-only indicators: capslock, camera
+        // Privacy indicators use the main island while it is otherwise idle.
+        // If another activity owns the main island, move privacy activity to
+        // satellites so it stays visible without competing with that content.
         const centerEligible = []
         const satelliteOnly = []
+        const privacyCandidates = []
         for (let i = 0; i < candidates.length; i++) {
             const c = candidates[i]
-            if (c.type === "capslock" || c.type === "camera") {
+            if (c.type === "capslock") {
                 satelliteOnly.push(c)
+            } else if (c.type === "camera" || c.type === "recording") {
+                privacyCandidates.push(c)
             } else {
                 centerEligible.push(c)
+            }
+        }
+
+        // With no primary content, cameraIndicator renders privacy dots inside
+        // the island. Otherwise, reserve satellite slots for them.
+        if (centerEligible.length > 0 || root.privacyNotifHandoffPending) {
+            for (let i = 0; i < privacyCandidates.length; i++) {
+                satelliteOnly.push(privacyCandidates[i])
             }
         }
 
@@ -291,7 +366,8 @@ Item {
 
         if (centerEligible.length > 0) {
             let centerIdx = 0
-            if (root.manualCenterId !== "") {
+            const modalOwnsCenter = root.dropWorkflowActive || root.wallpaperMode
+            if (!modalOwnsCenter && root.manualCenterId !== "") {
                 const foundIdx = centerEligible.findIndex(c => c.id === root.manualCenterId)
                 if (foundIdx !== -1) {
                     centerIdx = foundIdx
@@ -303,13 +379,20 @@ Item {
             }
         }
 
-        // Add satellite-only candidates to remaining queue
+        // CapsLock always remains detached. Privacy candidates arrive here
+        // only while another activity occupies the main island.
         for (let j = 0; j < satelliteOnly.length; j++) {
             remaining.push(satelliteOnly[j])
         }
 
-        // Sort remaining candidates by time descending (newest first)
-        remaining.sort((a, b) => (b.time || 0) - (a.time || 0))
+        // Privacy indicators have priority: camera/recording must not be
+        // displaced by an older media or CapsLock satellite.
+        remaining.sort((a, b) => {
+            const aPrivacy = (a.type === "camera" || a.type === "recording") ? 1 : 0
+            const bPrivacy = (b.type === "camera" || b.type === "recording") ? 1 : 0
+            if (aPrivacy !== bPrivacy) return bPrivacy - aPrivacy
+            return (b.time || 0) - (a.time || 0)
+        })
 
         // "sebelum baru ke kanan"
         const rightItem = remaining.length > 0 ? remaining[0] : null
@@ -329,7 +412,19 @@ Item {
 
     readonly property bool isMediaSatellite: (slotRightType === "media" || slotLeftType === "media")
     readonly property bool isCameraSatellite: (slotRightType === "camera" || slotLeftType === "camera")
+    readonly property bool isRecordingSatellite: (slotRightType === "recording" || slotLeftType === "recording")
     readonly property bool isCapsLockSatellite: (slotRightType === "capslock" || slotLeftType === "capslock")
+
+    onNotifCountChanged: {
+        const firstNotification = notifCount > 0 && previousNotifCount === 0
+        const privacyWasAlone = !sysHudActive && !mediaPlaying && !mediaStopping &&
+            !wallpaperMode && !dropWorkflowActive
+        if (firstNotification && privacyWasAlone && (cameraActive || recordingActive)) {
+            privacyNotifHandoffPending = true
+            privacyNotifHandoffTimer.restart()
+        }
+        previousNotifCount = notifCount
+    }
 
     readonly property int leftExtraWidth: (slotLeftType !== "") ? 40 : 0
     readonly property int rightExtraWidth: (slotRightType !== "") ? 40 : 0
@@ -367,12 +462,15 @@ Item {
     function handleSatelliteClick(item) {
         if (!item) return
         if (item.type === "notif") {
+            if (root.dropWorkflowActive || root.wallpaperMode) return
             root.manualCenterId = item.id
             notifTimer.restart()
         } else if (item.type === "media") {
             root.manualCenterId = "media"
         } else if (item.type === "camera") {
             root.showSysHud("󰄀", "Camera Active", "Webcam in use", Services.Theme.success)
+        } else if (item.type === "recording") {
+            root.showSysHud("●", "Screen Recording", "Screen capture is active", root.recordingColor)
         } else if (item.type === "capslock") {
             // Persistent indicator - no HUD popup
         } else if (item.type === "transfer") {
@@ -474,7 +572,7 @@ Item {
 
     Timer {
         id: cameraPollTimer
-        interval: 4000
+        interval: 1800
         running: true
         repeat: true
         triggeredOnStart: true
@@ -485,15 +583,229 @@ Item {
 
     Process {
         id: cameraProc
-        command: ["sh", "-c", "ls /dev/video* >/dev/null 2>&1 || { echo 0; exit 0; }; pids=$(fuser /dev/video* 2>/dev/null); [ -z \"$pids\" ] && { echo 0; exit 0; }; active=0; for p in $pids; do cmd=$(ps -p \"$p\" -o args= 2>/dev/null); case \"$cmd\" in *faceid-helper*|*wireplumber*|*pipewire*|*systemd-udevd*|*udevd*) ;; *) active=1; break ;; esac; done; echo $active"]
+        // Camera use and screen recording deliberately use separate evidence.
+        // A PipeWire screen node can also mean a video call or a screen share;
+        // it is not, by itself, a recording.
+        command: [
+            "python3", "-c",
+            "import glob\n" +
+            "import json\n" +
+            "import os\n" +
+            "import re\n" +
+            "import shutil\n" +
+            "import stat\n" +
+            "import subprocess\n" +
+            "\n" +
+            "result = {'camera': False, 'recording': False, 'reasons': [], 'camera_fd_users': [], 'obs_output_files': [], 'active_video_nodes': [], 'pw_dump_path': '', 'pw_dump_ok': False, 'pw_dump_error': ''}\n" +
+            "\n" +
+            "def is_recorder_process(comm, cmdline):\n" +
+            "    comm = (comm or '').strip().lower()\n" +
+            "    clean_comm = comm.lstrip('.').removesuffix('-wrapped')\n" +
+            "    cmdline = (cmdline or '').lower()\n" +
+            "    names = ('obs', 'obs-studio', 'obs-studio-bin', 'wf-recorder', 'wl-screenrec', 'gpu-screen-recorder', 'kooha', 'peek', 'kazam', 'vokoscreen', 'vokoscreenng', 'simplescreenrecorder', 'blue-recorder', 'green-recorder', 'recordmydesktop')\n" +
+            "    if clean_comm in names or any(n == clean_comm or n in comm for n in names) or 'com.obsproject.studio' in cmdline:\n" +
+            "        return True\n" +
+            "    if any(f'/{n}' in cmdline or f' {n}' in cmdline or cmdline.endswith(n) for n in names):\n" +
+            "        return True\n" +
+            "    return clean_comm == 'ffmpeg' and any(h in cmdline for h in ('x11grab', 'pipewire', 'kmsgrab', 'wayland'))\n" +
+            "\n" +
+            "def process_snapshot():\n" +
+            "    \"\"\"Find direct V4L2 clients and writable output from known recorders.\"\"\"\n" +
+            "    camera_users = []\n" +
+            "    recording_files = []\n" +
+            "    ignored_video_fd_owners = {\n" +
+            "        'pipewire', 'wireplumber', 'systemd', 'systemd-udevd', 'udevd',\n" +
+            "        'xdg-desktop-portal', 'xdg-desktop-portal-wlr', 'xdg-desktop-portal-gtk',\n" +
+            "        'pipewire-media-session'\n" +
+            "    }\n" +
+            "    video_file_exts = ('.mkv', '.mp4', '.mov', '.flv', '.ts', '.avi', '.webm', '.m4v', '.mpeg', '.mpg')\n" +
+            "    try:\n" +
+            "        proc_entries = os.listdir('/proc')\n" +
+            "    except Exception:\n" +
+            "        return camera_users, recording_files\n" +
+            "    own_uid = os.getuid()\n" +
+            "    for pid in proc_entries:\n" +
+            "        if not pid.isdigit():\n" +
+            "            continue\n" +
+            "        proc_dir = '/proc/' + pid\n" +
+            "        try:\n" +
+            "            if os.stat(proc_dir).st_uid != own_uid:\n" +
+            "                continue\n" +
+            "            with open(proc_dir + '/comm', 'r', errors='ignore') as f:\n" +
+            "                comm = f.read().strip()\n" +
+            "            try:\n" +
+            "                with open(proc_dir + '/cmdline', 'rb') as f:\n" +
+            "                    cmdline = f.read().replace(b'\\x00', b' ').decode('utf-8', errors='ignore')\n" +
+            "            except Exception:\n" +
+            "                cmdline = ''\n" +
+            "        except Exception:\n" +
+            "            continue\n" +
+            "\n" +
+            "        is_recorder = is_recorder_process(comm, cmdline)\n" +
+            "        comm_lower = comm.lower()\n" +
+            "        if comm_lower in ignored_video_fd_owners and not is_recorder:\n" +
+            "            continue\n" +
+            "\n" +
+            "        fd_dir = proc_dir + '/fd'\n" +
+            "        try:\n" +
+            "            fds = os.listdir(fd_dir)\n" +
+            "        except Exception:\n" +
+            "            continue\n" +
+            "        for fd in fds:\n" +
+            "            fd_path = fd_dir + '/' + fd\n" +
+            "            try:\n" +
+            "                target = os.readlink(fd_path)\n" +
+            "            except Exception:\n" +
+            "                continue\n" +
+            "            target_plain = target.removesuffix(' (deleted)')\n" +
+            "            if re.fullmatch(r'/dev/video[0-9]+', target_plain) and comm_lower not in ignored_video_fd_owners:\n" +
+            "                camera_users.append({'pid': int(pid), 'comm': comm[:80], 'device': target_plain})\n" +
+            "            if not is_recorder:\n" +
+            "                continue\n" +
+            "            ext = os.path.splitext(target_plain)[1].lower()\n" +
+            "            if ext not in video_file_exts:\n" +
+            "                continue\n" +
+            "            try:\n" +
+            "                fd_stat = os.stat(fd_path)\n" +
+            "                if not stat.S_ISREG(fd_stat.st_mode):\n" +
+            "                    continue\n" +
+            "                flags = None\n" +
+            "                with open(proc_dir + '/fdinfo/' + fd, 'r', errors='ignore') as f:\n" +
+            "                    for line in f:\n" +
+            "                        if line.startswith('flags:'):\n" +
+            "                            flags = int(line.split(':', 1)[1].strip(), 8)\n" +
+            "                            break\n" +
+            "                if flags is not None and (flags & os.O_ACCMODE) == os.O_RDONLY:\n" +
+            "                    continue\n" +
+            "                recording_files.append({'pid': int(pid), 'file': target_plain})\n" +
+            "            except Exception:\n" +
+            "                continue\n" +
+            "    return camera_users, recording_files\n" +
+            "\n" +
+            "camera_fd_users, obs_output_files = process_snapshot()\n" +
+            "result['camera_fd_users'] = camera_fd_users\n" +
+            "result['obs_output_files'] = obs_output_files\n" +
+            "if camera_fd_users:\n" +
+            "    result['camera'] = True\n" +
+            "    result['reasons'].append('active_v4l2_fd')\n" +
+            "if obs_output_files:\n" +
+            "    result['recording'] = True\n" +
+            "    result['reasons'].append('recorder_output_file_open')\n" +
+            "\n" +
+            "# PipeWire covers portal-based capture and devices consumed by PipeWire clients.\n" +
+            "pw_dump = shutil.which('pw-dump')\n" +
+            "if not pw_dump:\n" +
+            "    for candidate in ('/run/current-system/sw/bin/pw-dump', '/usr/bin/pw-dump'):\n" +
+            "        if os.path.isfile(candidate) and os.access(candidate, os.X_OK):\n" +
+            "            pw_dump = candidate\n" +
+            "            break\n" +
+            "if pw_dump:\n" +
+            "    result['pw_dump_path'] = pw_dump\n" +
+            "    try:\n" +
+            "        raw = subprocess.check_output([pw_dump], stderr=subprocess.DEVNULL, timeout=2)\n" +
+            "        objects = json.loads(raw.decode('utf-8', errors='replace'))\n" +
+            "        result['pw_dump_ok'] = True\n" +
+            "        clients = {}\n" +
+            "        for obj in objects:\n" +
+            "            if obj.get('type') == 'PipeWire:Interface:Client':\n" +
+            "                cid = obj.get('id')\n" +
+            "                cprops = (obj.get('info') or {}).get('props') or obj.get('props') or {}\n" +
+            "                if cid is not None:\n" +
+            "                    clients[cid] = cprops\n" +
+            "        screen_hints = (\n" +
+            "            'screen capture', 'screen-capture', 'screencast', 'screen cast',\n" +
+            "            'desktop capture', 'desktop-capture', 'window capture', 'window-capture',\n" +
+            "            'monitor capture', 'monitor-capture', 'display capture', 'display-capture',\n" +
+            "            'pipewire-screen-capture', 'portal.screen', 'screen recording', 'screen-recording'\n" +
+            "        )\n" +
+            "        camera_hints = ('camera', 'webcam', 'web cam', 'v4l2', 'uvc', 'video4linux', 'integrated camera')\n" +
+            "        known_browser_hints = ('firefox', 'chromium', 'chrome', 'helium', 'brave', 'vivaldi', 'zen-browser')\n" +
+            "        recorder_hints = ('obs', 'wf-recorder', 'wl-screenrec', 'gpu-screen-recorder', 'kooha', 'peek', 'kazam', 'vokoscreen', 'simplescreenrecorder', 'blue-recorder', 'green-recorder', 'recordmydesktop', 'ffmpeg')\n" +
+            "        for obj in objects:\n" +
+            "            if obj.get('type') != 'PipeWire:Interface:Node':\n" +
+            "                continue\n" +
+            "            info = obj.get('info') or {}\n" +
+            "            props = info.get('props') or obj.get('props') or {}\n" +
+            "            state = str(info.get('state', '')).lower()\n" +
+            "            if state != 'running':\n" +
+            "                continue\n" +
+            "            media_class = str(props.get('media.class', '')).lower()\n" +
+            "            role = str(props.get('media.role', '')).lower()\n" +
+            "            client_id = props.get('client.id')\n" +
+            "            cprops = clients.get(client_id, {})\n" +
+            "            detail_keys = (\n" +
+            "                'node.name', 'node.description', 'node.nick', 'media.name', 'media.title',\n" +
+            "                'media.comment', 'media.category', 'media.role', 'media.filename',\n" +
+            "                'device.description', 'device.product.name', 'device.nick', 'api.v4l2.path'\n" +
+            "            )\n" +
+            "            details = ' '.join(str(props.get(k, '')) for k in detail_keys).lower()\n" +
+            "            app_keys = (\n" +
+            "                'application.name', 'application.id', 'application.process.binary',\n" +
+            "                'portal.app_id', 'pipewire.access.portal.app_id', 'stream.name'\n" +
+            "            )\n" +
+            "            app_identity = ' '.join(str(props.get(k, '') or cprops.get(k, '')) for k in app_keys).lower()\n" +
+            "            all_text = details + ' ' + app_identity\n" +
+            "            is_video_related = ('video' in media_class) or ('video' in role)\n" +
+            "            if is_video_related:\n" +
+            "                result['active_video_nodes'].append({\n" +
+            "                    'state': state, 'class': media_class, 'role': role,\n" +
+            "                    'node': str(props.get('node.name', '') or props.get('node.description', ''))[:120],\n" +
+            "                    'app': str(props.get('application.name', '') or cprops.get('application.name', '') or props.get('application.process.binary', ''))[:120]\n" +
+            "                })\n" +
+            "            is_screen = role in ('screen', 'screencast', 'screen-capture') or any(h in all_text for h in screen_hints)\n" +
+            "            is_obs = 'obs' in app_identity or 'obs' in all_text or 'com.obsproject.studio' in app_identity\n" +
+            "            is_recorder = any(h in all_text or h in app_identity for h in recorder_hints)\n" +
+            "            is_stream_input = media_class.startswith('stream/input/video')\n" +
+            "            is_camera_source = media_class.startswith(('video/source', 'device/video'))\n" +
+            "            has_camera_hint = role == 'camera' or any(h in all_text for h in camera_hints)\n" +
+            "            if is_video_related and is_screen:\n" +
+            "                # A portal/meeting screen stream is sharing, not evidence of recording.\n" +
+            "                # A known recorder with an active PipeWire screen stream is\n" +
+            "                # recording even when it writes through a temporary/nameless FD.\n" +
+            "                if is_recorder:\n" +
+            "                    result['recording'] = True\n" +
+            "                    if 'known_recorder_pipewire_screen' not in result['reasons']:\n" +
+            "                        result['reasons'].append('known_recorder_pipewire_screen')\n" +
+            "                continue\n" +
+            "            if is_camera_source and has_camera_hint and not is_screen:\n" +
+            "                result['camera'] = True\n" +
+            "                if 'identified_pipewire_camera_source' not in result['reasons']:\n" +
+            "                    result['reasons'].append('identified_pipewire_camera_source')\n" +
+            "            elif is_stream_input:\n" +
+            "                if has_camera_hint:\n" +
+            "                    result['camera'] = True\n" +
+            "                    if 'camera_metadata' not in result['reasons']:\n" +
+            "                        result['reasons'].append('camera_metadata')\n" +
+            "                elif is_recorder:\n" +
+            "                    # A recorder preview/input is not proof that it is recording.\n" +
+            "                    # Its writable output file is checked independently above.\n" +
+            "                    pass\n" +
+            "                elif any(h in app_identity for h in known_browser_hints):\n" +
+            "                    # Browser webcam tests often expose no camera name on the client stream;\n" +
+            "                    # direct /dev/video access is checked independently above as well.\n" +
+            "                    result['camera'] = True\n" +
+            "                    if 'browser_video_input' not in result['reasons']:\n" +
+            "                        result['reasons'].append('browser_video_input')\n" +
+            "    except Exception as e:\n" +
+            "        # Keep process-FD detections even if PipeWire's dump is unavailable.\n" +
+            "        result['pw_dump_error'] = type(e).__name__ + ': ' + str(e)[:180]\n" +
+            "\n" +
+            "print(json.dumps(result))\n"
+        ]
         stdout: SplitParser {
             onRead: data => {
-                const isActive = data.trim() === "1"
-                root.cameraActive = isActive
+                try {
+                    const status = JSON.parse(data.trim())
+                    const hasCamera = status.camera === true
+                    const isRecording = status.recording === true
+                    if (root.cameraActive !== hasCamera) root.cameraActive = hasCamera
+                    if (root.recordingActive !== isRecording) root.recordingActive = isRecording
+                } catch (e) {
+                    // Keep the last valid state if a partial process output arrives.
+                }
             }
         }
     }
-
     Timer {
         id: capsLockPollTimer
         interval: 1200
@@ -564,6 +876,10 @@ Item {
         if (cameraActive) cameraActiveTime = Date.now()
     }
 
+    onRecordingActiveChanged: {
+        if (recordingActive) recordingActiveTime = Date.now()
+    }
+
     onCapsLockActiveChanged: {
         if (capsLockActive) capsLockActiveTime = Date.now()
     }
@@ -615,6 +931,7 @@ Item {
     }
 
     Component.onCompleted: {
+        root.syncMediaMetadataNow()
         root.lastAudioSink = Services.Audio.sink
         if (Services.Audio.sink) {
             root.lastAudioMuted = Services.Audio.muted
@@ -914,9 +1231,75 @@ Item {
     readonly property bool mediaPlaying: activePlayer !== null && activePlayer.isPlaying
     readonly property bool hasMedia: activePlayer !== null && (activePlayer.trackTitle !== "" || mediaPlaying)
 
-    readonly property bool hasExpandContent: ((slot0Activity !== "idle") || wallpaperMode || dropSendMode || isDropSending)
-    readonly property bool expanded: !lockBlocked && hasExpandContent && (pinned || autoExpanded || (slot0Activity === "notif") || (slot0Activity === "syshud") || wallpaperMode || dropSendMode || isDropSending)
-    readonly property bool isMediaPeek: !lockBlocked && autoExpanded && !pinned && (slot0Activity === "media") && !wallpaperMode && !dropSendMode && !isDropSending && hasMedia
+    // Track metadata from browser MPRIS providers can arrive in several signals.
+    // Keep the currently displayed metadata stable until the burst has settled.
+    // Keep the cached track fields in one object so they change atomically.
+    // Separate assignments can briefly combine the new title with the old artist.
+    property var stableMedia: ({ title: "", artist: "", identity: "", player: null })
+    readonly property string stableTrackTitle: String(stableMedia.title || "")
+    readonly property string stableTrackArtist: String(stableMedia.artist || "")
+    readonly property string stableTrackIdentity: String(stableMedia.identity || "")
+    property bool mediaPeekPending: false
+    property double blankTrackTitleSince: 0
+
+    function scheduleMediaMetadataSync(requestPeek) {
+        if (requestPeek === true) root.mediaPeekPending = true
+        mediaMetadataSettleTimer.restart()
+    }
+
+    function syncMediaMetadataNow() {
+        const player = root.activePlayer
+        root.stableMedia = {
+            title: String(player?.trackTitle || "").trim(),
+            artist: String(player?.trackArtist || "").trim(),
+            identity: String(player?.identity || "").trim(),
+            player: player
+        }
+    }
+
+    Timer {
+        id: mediaMetadataSettleTimer
+        interval: 350
+        repeat: false
+        onTriggered: {
+            const player = root.activePlayer
+            const previous = root.stableMedia || {}
+            const samePlayer = player === previous.player
+            const title = String(player?.trackTitle || "").trim()
+            const artist = String(player?.trackArtist || "").trim()
+            const identity = String(player?.identity || "").trim()
+
+            // Allow a short metadata grace period when the same browser player
+            // clears the title between tracks. Never keep stale metadata forever.
+            if (samePlayer && root.mediaPlaying && title === "" && root.stableTrackTitle !== "") {
+                if (root.blankTrackTitleSince === 0) root.blankTrackTitleSince = Date.now()
+                if (Date.now() - root.blankTrackTitleSince < 1200) {
+                    mediaMetadataSettleTimer.restart()
+                    return
+                }
+            } else {
+                root.blankTrackTitleSince = 0
+            }
+
+            root.blankTrackTitleSince = 0
+            const requestPeek = root.mediaPeekPending
+            root.mediaPeekPending = false
+            root.stableMedia = {
+                title: title,
+                artist: artist,
+                identity: identity,
+                player: player
+            }
+
+            if (requestPeek && root.mediaPlaying && root.hudReady && root.notifCount === 0 && !root.pinned && !root.lockBlocked) {
+                root.triggerMediaPeek(false)
+            }
+        }
+    }
+
+    readonly property bool hasExpandContent: ((slot0Activity !== "idle") || wallpaperMode || dropWorkflowActive)
+    readonly property bool expanded: !lockBlocked && hasExpandContent && (pinned || autoExpanded || (slot0Activity === "notif") || (slot0Activity === "syshud") || wallpaperMode || dropWorkflowActive)
+    readonly property bool isMediaPeek: !lockBlocked && autoExpanded && !pinned && (slot0Activity === "media") && !wallpaperMode && !dropWorkflowActive && hasMedia
 
     property int autoExpandDuration: 3000
     property int notifDuration: 5000
@@ -969,8 +1352,8 @@ Item {
 
     readonly property string currentMediaText: {
         if (!activePlayer) return ""
-        const title = activePlayer.trackTitle || ""
-        const artist = activePlayer.trackArtist || ""
+        const title = root.stableTrackTitle
+        const artist = root.stableTrackArtist
         if (title !== "" && artist !== "") return title + " • " + artist
         return title || artist || "Playing"
     }
@@ -982,10 +1365,10 @@ Item {
         if (root.lockBlocked || Services.OverlayManager.isLocked) return
         if (root.pinned) return
         if (root.notifActive && root.notifCount > 0) return
-        if (root.wallpaperMode || root.dropSendMode || root.isDropSending) return
+        if (root.wallpaperMode || root.dropWorkflowActive) return
         if (!root.mediaPlaying) return
 
-        const curKey = (root.activePlayer?.identity || "") + "::" + (root.activePlayer?.trackTitle || "") + "::" + (root.activePlayer?.trackArtist || "")
+        const curKey = (root.stableTrackIdentity || root.activePlayer?.identity || "") + "::" + (root.stableTrackTitle || "") + "::" + (root.stableTrackArtist || "")
         if (!force && curKey === root.lastPeekKey && root.autoExpanded) {
             autoCollapseTimer.restart()
             return
@@ -1013,9 +1396,9 @@ Item {
     onMediaPlayingChanged: {
         if (mediaPlaying) {
             mediaActiveTime = Date.now()
+            root.scheduleMediaMetadataSync(true)
             if (root.hudReady && root.notifCount === 0 && !root.pinned && !root.lockBlocked) {
                 root.mediaCollapsedReady = false
-                root.triggerMediaPeek(true)
             } else {
                 root.mediaCollapsedReady = true
             }
@@ -1028,6 +1411,8 @@ Item {
                 lastTrackText = currentMediaText
             }
         } else {
+            mediaMetadataSettleTimer.stop()
+            root.mediaPeekPending = false
             root.lastPeekKey = ""
             if (root.hudReady && !root.notifActive && !root.lockBlocked) {
                 root.triggerMediaStop()
@@ -1041,9 +1426,6 @@ Item {
             mediaActiveTime = Date.now()
             lastTrackText = currentMediaText
             root.restartGlobalMarquee()
-            if (root.hudReady && root.notifCount === 0 && !root.pinned && !root.lockBlocked) {
-                root.triggerMediaPeek(false)
-            }
         }
     }
     onExpandedChanged: {
@@ -1057,8 +1439,8 @@ Item {
     function restartGlobalMarquee() {
         globalMediaMarqueeAnim.stop()
         globalMediaMarqueeRatio = 0.0
-        const tLen = (root.activePlayer?.trackTitle || "").length
-        const aLen = (root.activePlayer?.trackArtist || "").length
+        const tLen = (root.stableTrackTitle || "").length
+        const aLen = (root.stableTrackArtist || "").length
         const maxLen = Math.max(tLen, aLen, (root.currentMediaText || "").length)
         const approxOverflow = Math.max(40, (maxLen * 7.5) - 130)
         globalMediaMarqueeDuration = Math.max(3000, Math.min(8500, approxOverflow * 35))
@@ -1104,10 +1486,25 @@ Item {
     property int collapsedWidth: 140
     property int collapsedHeight: 32
 
+    // ── Adaptive sharing panel dimensions (per stage) ──
+    // chooser: two destination cards — compact but both fit comfortably
+    // preparing/handoff: single-row status strip (no destination cards needed)
+    // transfer (KDE Connect): thumbnail 44px + margins 12px each side = 68px min
+    // success/error: reuse transfer height unless content overflows
+    readonly property string dropTransferState: Services.DeviceShare ? Services.DeviceShare.transferState : "idle"
+    readonly property bool showDropChooser: root.dropSendMode && !root.showDropTransfer && !root.isLocalSendHandoff
+    readonly property bool showDropTransfer: Services.DeviceShare
+        ? (dropTransferState === "error" || (Services.DeviceShare.transferBackend !== "localsend"
+            && (dropTransferState === "sending" || dropTransferState === "success")))
+        : root.isDropSending
+    readonly property bool showDropHandoff: root.isLocalSendHandoff
+
     readonly property int calculatedExpandedWidth: {
         if (slot0Activity === "notif") return replyMode ? 390 : 360
-        if (dropSendMode) return 500
-        if (isDropSending) return 400
+        if (showDropChooser) return 440
+        if (showDropHandoff) return 360
+        if (showDropTransfer) return 360
+        if (dropWorkflowActive) return 360
         if (wallpaperMode) return 480
         if (slot0Activity === "syshud") return 280
         if (isMediaPeek) return 295
@@ -1123,8 +1520,10 @@ Item {
             if (hasNotifActions) h += 32
             return h
         }
-        if (dropSendMode) return 148
-        if (isDropSending) return 64
+        if (showDropChooser) return 120
+        if (showDropHandoff) return 80
+        if (showDropTransfer) return 76
+        if (dropWorkflowActive) return 76
         if (wallpaperMode) return 120
         if (slot0Activity === "syshud") return 54
         if (isMediaPeek) return 54
@@ -1133,18 +1532,19 @@ Item {
     }
 
     // ── Bar layout negotiation ────────────────────────────────────
-    // Lebar yang di-"klaim" island dari bar, sudah termasuk kompensasi overshoot animasi.
+    // Lebar yang di-"klaim" island dari bar, sudah termasuk ruang satellite.
+    // Easing is now OutCubic (settles exactly at target) so overshootAllowance
+    // is kept small — just a safety buffer for rounding.
     readonly property real reservedWidth: {
         const base = expanded ? calculatedExpandedWidth : calculatedCollapsedWidth
         return base + satelliteExtraWidth + (expanded ? overshootAllowance : 0)
     }
 
-    // Behavior on width memakai Easing.OutBack, yang MELAMPAUI nilai target sebelum settle.
-    readonly property real overshootAllowance: 28
+    readonly property real overshootAllowance: 8
 
     readonly property string demand: {
         if (!expanded) return "idle"
-        if (dropSendMode || isDropSending || wallpaperMode) return "greedy"
+        if (dropWorkflowActive || wallpaperMode) return "greedy"
         if (isMediaPeek) return "peek"
         return "normal"
     }
@@ -1201,6 +1601,7 @@ Item {
             replyMode = false
             sysHudActive = false
             sysHudTimer.stop()
+            manualCenterId = ""
             wallpaperMode = true
             if (Services.Wallpaper && Services.Wallpaper.currentWallpaper) {
                 const cur = Services.Wallpaper.currentWallpaper
@@ -1274,10 +1675,21 @@ Item {
         }
     }
 
+    Timer {
+        id: privacyNotifHandoffTimer
+        // Let camera/recording start its satellite split before the incoming
+        // notification is allowed to occupy the main island. This matches the
+        // 430ms flight plus the final 130ms handoff fade of the privacy dot.
+        interval: 560
+        repeat: false
+        onTriggered: root.privacyNotifHandoffPending = false
+    }
+
     Connections {
         target: Services.Notifications
         function onNewNotification(entry) {
-            root.wallpaperMode = false
+            // Keep modal panels open. allSortedCandidates routes the notification
+            // to a satellite while wallpaper or the sharing chooser owns center.
             root.sysHudActive = false
             sysHudTimer.stop()
             root.manualCenterId = ""
@@ -1289,73 +1701,26 @@ Item {
 
     Connections {
         target: Services.Mpris
-        function onActivePlayerChanged() {
-            root.restartGlobalMarquee()
-            if (root.hudReady && Services.Mpris.activePlayer && (Services.Mpris.activePlayer.isPlaying ?? false) && root.notifCount === 0 && !root.pinned) {
-                root.triggerMediaPeek(true)
-            }
-        }
-        function onPlaybackStarted(player) {
-            if (root.hudReady && root.notifCount === 0 && !root.pinned) {
-                root.triggerMediaPeek(true)
-            }
-        }
-        function onTrackChanged(player) {
-            root.restartGlobalMarquee()
-            if (collapsedTextContainer) {
-                collapsedTextContainer.updateTrackPush(collapsedTextContainer.targetText, root.isNextTrack)
-            }
-            if (root.hudReady && root.notifCount === 0 && !root.pinned) {
-                root.triggerMediaPeek(false)
-            }
-        }
+        ignoreUnknownSignals: true
+        function onActivePlayerChanged() { root.scheduleMediaMetadataSync(true) }
+        function onPlaybackStarted(player) { root.scheduleMediaMetadataSync(true) }
     }
 
     Connections {
         target: root.activePlayer
         ignoreUnknownSignals: true
         function onIsPlayingChanged() {
-            if (root.hudReady && root.activePlayer && (root.activePlayer.isPlaying ?? false) && root.notifCount === 0 && !root.pinned) {
-                root.triggerMediaPeek(true)
+            if (root.activePlayer && (root.activePlayer.isPlaying ?? false)) {
+                root.scheduleMediaMetadataSync(true)
             }
         }
-        function onTrackTitleChanged() {
-            root.restartGlobalMarquee()
-            if (collapsedTextContainer) {
-                collapsedTextContainer.updateTrackPush(collapsedTextContainer.targetText, root.isNextTrack)
-            }
-            if (root.hudReady && root.activePlayer && (root.activePlayer.isPlaying ?? false) && root.notifCount === 0 && !root.pinned) {
-                root.triggerMediaPeek(false)
-            }
-        }
-        function onTrackArtistChanged() {
-            root.restartGlobalMarquee()
-            if (root.hudReady && root.activePlayer && (root.activePlayer.isPlaying ?? false) && root.notifCount === 0 && !root.pinned) {
-                root.triggerMediaPeek(false)
-            }
-        }
-        function onTrackArtUrlChanged() {
-            if (root.hudReady && root.activePlayer && (root.activePlayer.isPlaying ?? false) && root.notifCount === 0 && !root.pinned) {
-                root.triggerMediaPeek(false)
-            }
-        }
-        function onTrackChanged() {
-            root.restartGlobalMarquee()
-            if (collapsedTextContainer) {
-                collapsedTextContainer.updateTrackPush(collapsedTextContainer.targetText, root.isNextTrack)
-            }
-            if (root.hudReady && root.activePlayer && (root.activePlayer.isPlaying ?? false) && root.notifCount === 0 && !root.pinned) {
-                root.triggerMediaPeek(false)
-            }
-        }
-        function onMetadataChanged() {
-            root.restartGlobalMarquee()
-            if (root.hudReady && root.activePlayer && (root.activePlayer.isPlaying ?? false) && root.notifCount === 0 && !root.pinned) {
-                root.triggerMediaPeek(false)
-            }
-        }
+        function onTrackTitleChanged() { root.scheduleMediaMetadataSync(true) }
+        function onTrackArtistChanged() { root.scheduleMediaMetadataSync(true) }
+        function onTrackChanged() { root.scheduleMediaMetadataSync(true) }
+        function onPostTrackChanged() { root.scheduleMediaMetadataSync(true) }
+        function onMetadataChanged() { root.scheduleMediaMetadataSync(true) }
+        function onTrackArtUrlChanged() { root.scheduleMediaMetadataSync(false) }
     }
-
     // Click outside area to collapse expanded island
     MouseArea {
         id: outsideMouseArea
@@ -1376,7 +1741,10 @@ Item {
         z: 2
         anchors.horizontalCenter: parent.horizontalCenter
         y: root.isBottom ? (parent.height - height - 6) : 6
-        clip: true
+        // The privacy dot must be allowed to leave this clipped capsule during
+        // its handoff to a satellite; otherwise it looks stranded inside an
+        // incoming notification while its destination is outside the island.
+        clip: !cameraIndicator.transferringToSatellite
 
         // Direct Reactive Dimensions adapting to content type
         width: root.expanded ? root.calculatedExpandedWidth : root.calculatedCollapsedWidth
@@ -1485,25 +1853,26 @@ Item {
             }
         }
 
-        // Seamless, Continuous Fluid Morphing (Zero delay, zero hitching, pure iOS ease - synchronized with Lockscreen)
+        // Seamless, Continuous Fluid Morphing
+        // Using OutCubic for width/height so the shape settles exactly at the target
+        // without overshoot bouncing. Subtle elasticity is kept in satellite/bridge
+        // animations only — not in every property simultaneously.
         Behavior on width {
             NumberAnimation {
-                duration: root.lockBlocked ? 240 : (root.expanded ? 360 : 380)
-                easing.type: root.lockBlocked ? Easing.InOutCubic : Easing.OutBack
-                easing.overshoot: root.expanded ? 1.35 : 1.45
+                duration: root.lockBlocked ? 240 : (root.expanded ? 300 : 260)
+                easing.type: Easing.OutCubic
             }
         }
         Behavior on height {
             NumberAnimation {
-                duration: 340
-                easing.type: Easing.OutBack
-                easing.overshoot: root.expanded ? 1.35 : 1.45
+                duration: root.lockBlocked ? 240 : (root.expanded ? 300 : 260)
+                easing.type: Easing.OutCubic
             }
         }
         Behavior on radius {
             enabled: !island.isCapsuleShape || root.notifActive
             NumberAnimation {
-                duration: 320
+                duration: root.expanded ? 280 : 240
                 easing.type: Easing.OutCubic
             }
         }
@@ -1524,8 +1893,8 @@ Item {
             id: islandMouseArea
             anchors.fill: parent
             z: 0
-            enabled: root.hasExpandContent && !root.dropSendMode && !root.isDropSending
-            cursorShape: (root.hasExpandContent && !root.dropSendMode && !root.isDropSending) ? Qt.PointingHandCursor : Qt.ArrowCursor
+            enabled: root.hasExpandContent && !root.dropWorkflowActive
+            cursorShape: (root.hasExpandContent && !root.dropWorkflowActive) ? Qt.PointingHandCursor : Qt.ArrowCursor
             onClicked: root.togglePin()
         }
 
@@ -1537,6 +1906,8 @@ Item {
             onEntered: (drag) => {
                 dropExitDebounceTimer.stop()
                 root.extractDropDetails(drag.urls)
+                root.dropStagedChoice = false
+                root.manualCenterId = ""
                 root.dropSendMode = true
             }
             onPositionChanged: (drag) => {
@@ -1559,35 +1930,204 @@ Item {
             }
         }
 
+        // Observe the complete expanded island, not only the inner content box.
+        // Leaving the island dismisses the temporary destination chooser.
+        HoverHandler {
+            id: dropHubHoverHandler
+            enabled: root.showDropChooser
+            onHoveredChanged: {
+                if (hovered) {
+                    dropExitDebounceTimer.stop()
+                    dropStagedAutoCollapseTimer.stop()
+                } else {
+                    dropExitDebounceTimer.restart()
+                }
+            }
+        }
 
-
-        // ==================== Camera Privacy Indicator (Right Edge when not detached) ====================
+        // ==================== Privacy / Recording Indicators (Main Island Corner) ====================
         Item {
             id: cameraIndicator
-            anchors.right: island.right
-            anchors.rightMargin: 10
+            // Do not collapse these into one dot: both can be active at once and
+            // each colour is a distinct privacy/status signal.
+            readonly property bool privacyActivity: (root.cameraActive && !root.isCameraSatellite) ||
+                (root.recordingActive && !root.isRecordingSatellite)
+            readonly property bool shouldShow: !root.lockBlocked && privacyActivity
+            readonly property bool privacySatelliteActive: root.isCameraSatellite || root.isRecordingSatellite
+            // In wide modal panels, the satellites are the source of truth. Do not animate
+            // the combined two-dot row across the whole panel: each satellite has its own icon.
+            readonly property bool modalSatelliteMode: privacySatelliteActive && (root.wallpaperMode || root.dropWorkflowActive)
+            readonly property bool satelliteLeavesRight: root.slotRightType === "camera" || root.slotRightType === "recording"
+            readonly property bool notificationOwnsIsland: root.slot0Activity === "notif"
+            // Satellite bubbles are 32px wide with an 8px final gap. Aim for
+            // their centre, not their edge, so the coloured dot hands over to
+            // the satellite content without a visible jump.
+            readonly property real satelliteTargetX: satelliteLeavesRight
+                ? island.width + 8 + (32 - width) / 2
+                : -8 - 32 + (32 - width) / 2
+            // Keep the final active dot alive until it has travelled back to
+            // the idle position. Without this, the source state becomes false
+            // first and the dot disappears before its return animation starts.
+            property bool returningToIdle: false
+            property bool transferringToSatellite: false
+            property bool cameraWasActive: false
+            property bool recordingWasActive: false
+            readonly property bool cameraDotVisible: root.cameraActive || (returningToIdle && cameraWasActive)
+            readonly property bool recordingDotVisible: root.recordingActive || (returningToIdle && recordingWasActive)
+            // Never leave a second privacy dot inside an already occupied
+            // notification island. During the pre-notification handoff, the
+            // transfer dot remains visible; once notification owns the centre,
+            // the satellite is the single source of truth.
+            readonly property bool showMainDot: !modalSatelliteMode && ((!privacySatelliteActive && shouldShow) ||
+                returningToIdle || (transferringToSatellite && !notificationOwnsIsland))
             anchors.verticalCenter: island.verticalCenter
-            implicitWidth: 14
+            implicitWidth: indicatorRow.implicitWidth
             implicitHeight: 14
-            z: 2
-            visible: (root.cameraActive && root.showCollapsedText && !root.isCameraSatellite) || opacity > 0
-            opacity: (root.cameraActive && root.showCollapsedText && !root.isCameraSatellite) ? 1 : 0
+            width: indicatorRow.width
+            // A privacy dot returns to idle through the centre, but when it
+            // becomes a satellite it continues out through that satellite's
+            // side of the island instead of snapping back to the middle.
+            x: shouldShow ? island.width - width - 10
+                : (privacySatelliteActive
+                    ? satelliteTargetX
+                    : (island.width - width) / 2)
+            z: 4
+            visible: showMainDot || (!notificationOwnsIsland && opacity > 0.01)
+            opacity: showMainDot ? 1.0 : 0.0
+            scale: showMainDot ? 1.0 : 0.72
 
-            Behavior on opacity { NumberAnimation { duration: 350; easing.type: Easing.OutQuad } }
+            onShouldShowChanged: {
+                if (shouldShow) {
+                    returnToIdleTimer.stop()
+                    returningToIdle = false
+                } else if (!root.cameraActive && !root.recordingActive) {
+                    returningToIdle = true
+                    returnToIdleTimer.restart()
+                }
+            }
 
-            // Blinking Green Privacy Dot
-            Rectangle {
+            onPrivacySatelliteActiveChanged: {
+                if (privacySatelliteActive) {
+                    satelliteTransferTimer.restart()
+                } else {
+                    satelliteTransferTimer.stop()
+                    transferringToSatellite = false
+                }
+            }
+
+            Connections {
+                target: root
+
+                function onCameraActiveChanged() {
+                    if (root.cameraActive) {
+                        cameraIndicator.cameraWasActive = true
+                    } else if (root.recordingActive) {
+                        // Camera ended while recording continues: do not bring
+                        // the old camera dot back when recording later ends.
+                        cameraIndicator.cameraWasActive = false
+                    }
+                }
+
+                function onRecordingActiveChanged() {
+                    if (root.recordingActive) {
+                        cameraIndicator.recordingWasActive = true
+                    } else if (root.cameraActive) {
+                        // Recording ended while camera continues.
+                        cameraIndicator.recordingWasActive = false
+                    }
+                }
+            }
+
+            Timer {
+                id: returnToIdleTimer
+                interval: 390
+                repeat: false
+                onTriggered: {
+                    cameraIndicator.returningToIdle = false
+                    cameraIndicator.cameraWasActive = false
+                    cameraIndicator.recordingWasActive = false
+                }
+            }
+
+            Timer {
+                id: satelliteTransferTimer
+                // Match the full satellite detach timeline:
+                //   Phase 1 extrusion: 200ms + longest Phase 2 branch: 320ms = 520ms.
+                // Keep clipping disabled until the satellite's icon has completed its bloom.
+                interval: 520
+                repeat: false
+                onTriggered: cameraIndicator.transferringToSatellite = false
+                onRunningChanged: {
+                    if (running) cameraIndicator.transferringToSatellite = true
+                }
+            }
+
+            Behavior on opacity {
+                NumberAnimation { duration: cameraIndicator.privacySatelliteActive ? 130 : 380; easing.type: Easing.InOutCubic }
+            }
+            Behavior on scale {
+                NumberAnimation { duration: cameraIndicator.shouldShow ? 300 : 180; easing.type: Easing.OutCubic }
+            }
+            Behavior on width {
+                NumberAnimation { duration: 380; easing.type: Easing.InOutCubic }
+            }
+            Behavior on x {
+                NumberAnimation { duration: 430; easing.type: Easing.InOutCubic }
+            }
+
+            Row {
+                id: indicatorRow
                 anchors.centerIn: parent
-                implicitWidth: 8
-                implicitHeight: 8
-                radius: 4
-                color: Services.Theme.success
+                width: implicitWidth
+                height: implicitHeight
+                // Keep the gap itself animated, so a single dot recentres
+                // smoothly when the other privacy activity ends.
+                spacing: (cameraIndicator.cameraDotVisible && cameraIndicator.recordingDotVisible) ? 4 : 0
 
-                SequentialAnimation on opacity {
-                    running: root.cameraActive
-                    loops: Animation.Infinite
-                    NumberAnimation { from: 1.0; to: 0.25; duration: 700; easing.type: Easing.InOutSine }
-                    NumberAnimation { from: 0.25; to: 1.0; duration: 700; easing.type: Easing.InOutSine }
+                Behavior on spacing {
+                    NumberAnimation { duration: 200; easing.type: Easing.OutCubic }
+                }
+
+                Rectangle {
+                    width: cameraIndicator.cameraDotVisible ? 8 : 0
+                    height: 8
+                    radius: 4
+                    color: Services.Theme.success
+
+                    Behavior on width {
+                        NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
+                    }
+                    Behavior on x {
+                        NumberAnimation { duration: 260; easing.type: Easing.OutCubic }
+                    }
+
+                    SequentialAnimation on opacity {
+                        running: cameraIndicator.cameraDotVisible && cameraIndicator.visible
+                        loops: Animation.Infinite
+                        NumberAnimation { from: 1.0; to: 0.25; duration: 700; easing.type: Easing.InOutSine }
+                        NumberAnimation { from: 0.25; to: 1.0; duration: 700; easing.type: Easing.InOutSine }
+                    }
+                }
+
+                Rectangle {
+                    width: cameraIndicator.recordingDotVisible ? 8 : 0
+                    height: 8
+                    radius: 4
+                    color: root.recordingColor
+
+                    Behavior on width {
+                        NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
+                    }
+                    Behavior on x {
+                        NumberAnimation { duration: 260; easing.type: Easing.OutCubic }
+                    }
+
+                    SequentialAnimation on opacity {
+                        running: cameraIndicator.recordingDotVisible && cameraIndicator.visible
+                        loops: Animation.Infinite
+                        NumberAnimation { from: 1.0; to: 0.25; duration: 700; easing.type: Easing.InOutSine }
+                        NumberAnimation { from: 0.25; to: 1.0; duration: 700; easing.type: Easing.InOutSine }
+                    }
                 }
             }
         }
@@ -1600,9 +2140,13 @@ Item {
             implicitHeight: 16
             z: 3
 
-            readonly property bool activeState: !root.expanded && !root.autoExpanded && (
-                !root.mediaPlaying || root.mediaCollapsedReady || root.mediaStopping
-            )
+            readonly property bool privacyOnly: root.slot0Activity === "idle" &&
+                (root.cameraActive || root.recordingActive || cameraIndicator.returningToIdle) && !root.notifActive &&
+                !root.mediaPlaying && !root.mediaStopping
+            readonly property bool activeState: !root.expanded && !root.autoExpanded &&
+                !privacyOnly && (
+                    !root.mediaPlaying || root.mediaCollapsedReady || root.mediaStopping
+                )
             visible: activeState || opacity > 0.01
             opacity: activeState ? 1 : 0
             scale: activeState ? 1.0 : 0.4
@@ -1626,37 +2170,19 @@ Item {
                         anchors.right: undefined
                     }
                     PropertyChanges {
-                        target: statusIconContainer
-                        anchors.leftMargin: 12
+                        statusIconContainer.anchors.leftMargin: 12
                     }
                 },
                 State {
                     name: "IDLE_CENTER"
-                    when: root.lockBlocked || (
-                        root.expanded ||
-                        root.autoExpanded ||
-                        (!root.mediaPlaying && !root.mediaStopping && !root.notifActive && !root.cameraActive) ||
+                    when: root.lockBlocked || root.expanded || root.autoExpanded ||
+                        root.slot0Activity === "idle" ||
                         (root.mediaPlaying && !root.mediaCollapsedReady)
-                    )
                     AnchorChanges {
                         target: statusIconContainer
                         anchors.horizontalCenter: island.horizontalCenter
                         anchors.left: undefined
                         anchors.right: undefined
-                    }
-                },
-                State {
-                    name: "CAMERA_RIGHT"
-                    when: !root.lockBlocked && !root.expanded && !root.autoExpanded && (!root.showCollapsedText && !root.mediaStopping && root.cameraActive)
-                    AnchorChanges {
-                        target: statusIconContainer
-                        anchors.horizontalCenter: undefined
-                        anchors.left: undefined
-                        anchors.right: island.right
-                    }
-                    PropertyChanges {
-                        target: statusIconContainer
-                        anchors.rightMargin: 12
                     }
                 }
             ]
@@ -1691,7 +2217,8 @@ Item {
                     if (root.expanded || root.autoExpanded) return Services.Theme.textDisabled
                     if (root.mediaPlaying && !root.mediaCollapsedReady) return Services.Theme.textDisabled
                     if (root.mediaPlaying || root.mediaStopping) return Services.Theme.success
-                    if (root.cameraActive) return Services.Theme.success
+                    if (root.slot0Activity === "idle" && root.recordingActive && !root.isRecordingSatellite) return root.recordingColor
+                    if (root.slot0Activity === "idle" && root.cameraActive && !root.isCameraSatellite) return Services.Theme.success
                     return Services.Theme.textDisabled
                 }
                 scale: textScale
@@ -1713,13 +2240,7 @@ Item {
                     NumberAnimation { target: statusIconTxt; property: "textScale"; to: 1.0; duration: 220; easing.type: Easing.OutQuad }
                 }
 
-                // Green Blinking when camera active and no music text
-                SequentialAnimation on opacity {
-                    running: root.cameraActive && !root.showCollapsedText && !root.expanded && !root.autoExpanded
-                    loops: Animation.Infinite
-                    NumberAnimation { from: 1.0; to: 0.25; duration: 700; easing.type: Easing.InOutSine }
-                    NumberAnimation { from: 0.25; to: 1.0; duration: 700; easing.type: Easing.InOutSine }
-                }
+                // Privacy activity is represented by the blinking dot in the main island's corner.
 
                 Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
@@ -1755,7 +2276,7 @@ Item {
             barColor: Services.Theme.success
             isPlaying: root.mediaPlaying
             active: visible
-            readonly property bool activeState: !root.lockBlocked && root.mediaPlaying && !root.expanded && !root.autoExpanded && root.mediaCollapsedReady && !root.notifActive
+            readonly property bool activeState: !root.lockBlocked && root.mediaPlaying && !root.expanded && !root.autoExpanded && root.mediaCollapsedReady && !root.notifActive && !cameraIndicator.privacyActivity
             visible: activeState || opacity > 0.01
             opacity: activeState ? 1.0 : 0.0
             scale: activeState ? 1.0 : 0.3
@@ -1772,7 +2293,7 @@ Item {
             anchors.leftMargin: 6
             anchors.verticalCenter: island.verticalCenter
             // Lock width bounded to collapsed dimension to prevent stretching while expanding
-            width: Math.max(40, (root.expanded ? root.calculatedCollapsedWidth : island.width) - 12 - 16 - 6 - (mediaVisualizer.visible ? 34 : (cameraIndicator.visible ? 24 : 12)))
+            width: Math.max(40, (root.expanded ? root.calculatedCollapsedWidth : island.width) - 12 - 16 - 6 - (mediaVisualizer.visible ? 34 : (cameraIndicator.visible ? 34 : 12)))
             height: 16
             z: 3
 
@@ -1797,6 +2318,9 @@ Item {
 
             property string displayedText: ""
             property bool useSlotA: true
+            // The outgoing slot direction is captured for each transition so
+            // a subsequent metadata signal cannot change a running animation.
+            property int pushOutY: -18
             readonly property real currentSlotImplicitWidth: useSlotA ? slotA.implicitWidth : slotB.implicitWidth
             readonly property alias collapsedText: slotA
 
@@ -1805,47 +2329,69 @@ Item {
                 slotA.text = targetText
                 slotA.y = 0
                 slotA.opacity = 1.0
+                slotB.y = 18
                 slotB.opacity = 0.0
                 useSlotA = true
+            }
+
+            // Stop any in-flight crossfade and restore exactly one visible
+            // slot. Browser MPRIS providers can emit several metadata signals
+            // for one track change; overlapping slot animations made the old
+            // and new titles render over each other.
+            function settleTrackSlots() {
+                slotPushAnimA.stop()
+                slotPushAnimB.stop()
+                if (useSlotA) {
+                    slotA.y = 0
+                    slotA.opacity = 1.0
+                    slotB.y = 18
+                    slotB.opacity = 0.0
+                } else {
+                    slotB.y = 0
+                    slotB.opacity = 1.0
+                    slotA.y = 18
+                    slotA.opacity = 0.0
+                }
             }
 
             function updateTrackPush(newTitle, isNext) {
                 if (!newTitle || newTitle === displayedText) return
 
+                // The previous transition's destination is represented by
+                // useSlotA. Snap to it before assigning the next destination.
+                settleTrackSlots()
+
                 if (!activeState || opacity <= 0.5 || root.expanded || root.autoExpanded) {
-                    slotPushAnimA.stop()
-                    slotPushAnimB.stop()
                     displayedText = newTitle
-                    if (useSlotA) {
+                    if (useSlotA)
                         slotA.text = newTitle
-                        slotA.y = 0
-                        slotA.opacity = 1.0
-                        slotB.opacity = 0.0
-                    } else {
+                    else
                         slotB.text = newTitle
-                        slotB.y = 0
-                        slotB.opacity = 1.0
-                        slotA.opacity = 0.0
-                    }
+                    settleTrackSlots()
                     return
                 }
 
                 displayedText = newTitle
-                const offset = isNext ? 18 : -18
+                pushOutY = isNext ? -18 : 18
+                const incomingY = -pushOutY
 
                 if (useSlotA) {
                     slotB.text = newTitle
-                    slotB.y = offset
+                    slotB.y = incomingY
                     slotB.opacity = 0.0
-                    slotPushAnimB.restart()
                     useSlotA = false
+                    slotPushAnimB.restart()
                 } else {
                     slotA.text = newTitle
-                    slotA.y = offset
+                    slotA.y = incomingY
                     slotA.opacity = 0.0
-                    slotPushAnimA.restart()
                     useSlotA = true
+                    slotPushAnimA.restart()
                 }
+            }
+
+            onActiveStateChanged: {
+                if (!activeState) settleTrackSlots()
             }
 
             onTargetTextChanged: {
@@ -1859,7 +2405,7 @@ Item {
                 NumberAnimation {
                     target: slotA
                     property: "y"
-                    to: root.isNextTrack ? -18 : 18
+                    to: collapsedTextContainer.pushOutY
                     duration: 220
                     easing.type: Easing.InQuad
                 }
@@ -1892,7 +2438,7 @@ Item {
                 NumberAnimation {
                     target: slotB
                     property: "y"
-                    to: root.isNextTrack ? -18 : 18
+                    to: collapsedTextContainer.pushOutY
                     duration: 220
                     easing.type: Easing.InQuad
                 }
@@ -1958,7 +2504,7 @@ Item {
             anchors.fill: parent
             anchors.margins: 10
             spacing: 4
-            readonly property bool activeState: !Services.OverlayManager.isLocked && root.expanded && (root.slot0Activity === "notif") && !root.dropSendMode && !root.isDropSending
+            readonly property bool activeState: !Services.OverlayManager.isLocked && root.expanded && (root.slot0Activity === "notif") && !root.dropWorkflowActive
             visible: activeState || opacity > 0.01
             opacity: activeState ? 1 : 0
             scale: activeState ? 1.0 : 0.7
@@ -2330,7 +2876,7 @@ Item {
             anchors.fill: parent
             anchors.margins: 10
             spacing: 10
-            readonly property bool activeState: (root.sysHudTitle.includes("Caps Lock") || root.sysHudTitle.includes("Welcome") || !Services.OverlayManager.isLocked) && root.expanded && (root.slot0Activity === "syshud") && !root.wallpaperMode && !root.dropSendMode && !root.isDropSending
+            readonly property bool activeState: (root.sysHudTitle.includes("Caps Lock") || root.sysHudTitle.includes("Welcome") || !Services.OverlayManager.isLocked) && root.expanded && (root.slot0Activity === "syshud") && !root.wallpaperMode && !root.dropWorkflowActive
             visible: activeState || opacity > 0.01
             opacity: activeState ? 1 : 0
             scale: activeState ? 1.0 : 0.7
@@ -2499,7 +3045,7 @@ Item {
             spacing: root.isMediaPeek ? 0 : 6
             Behavior on spacing { NumberAnimation { duration: 260; easing.type: Easing.OutCubic } }
 
-            readonly property bool activeState: !Services.OverlayManager.isLocked && root.expanded && (root.slot0Activity === "media") && !root.wallpaperMode && !root.dropSendMode && !root.isDropSending
+            readonly property bool activeState: !Services.OverlayManager.isLocked && root.expanded && (root.slot0Activity === "media") && !root.wallpaperMode && !root.dropWorkflowActive
             visible: activeState || opacity > 0.01
             opacity: activeState ? 1 : 0
             scale: activeState ? 1.0 : (root.isMediaPeek ? 0.96 : 0.78)
@@ -2678,8 +3224,8 @@ Item {
                     spacing: root.expanded ? (root.isMediaPeek ? 1 : 2) : 0
                     Behavior on spacing { NumberAnimation { duration: 220 } }
 
-                    readonly property string fullTitle: root.activePlayer ? (root.activePlayer.trackTitle || "Playing") : "Playing"
-                    readonly property string fullArtist: root.activePlayer ? (root.activePlayer.trackArtist || root.activePlayer.identity || "Now Playing") : "Now Playing"
+                    readonly property string fullTitle: root.activePlayer ? (root.stableTrackTitle || "Playing") : "Playing"
+                    readonly property string fullArtist: root.activePlayer ? (root.stableTrackArtist || root.stableTrackIdentity || "Now Playing") : "Now Playing"
 
                     onFullArtistChanged: {
                         if (!mediaTextSwitchAnim.running) {
@@ -2985,20 +3531,16 @@ Item {
             Item {
                 Layout.fillWidth: true
                 implicitHeight: (!root.isMediaPeek && root.activePlayer !== null) ? 22 : 0
+                Layout.topMargin: (root.expanded && !root.isMediaPeek) ? 0 : 8
                 visible: (!root.isMediaPeek && root.activePlayer !== null) || opacity > 0.01
                 opacity: !root.isMediaPeek ? 1.0 : 0.0
                 clip: true
                 Behavior on implicitHeight { NumberAnimation { duration: 260; easing.type: Easing.OutCubic } }
                 Behavior on opacity        { NumberAnimation { duration: 220; easing.type: Easing.OutQuad } }
-
-                transform: Translate {
-                    id: progressRowTranslate
-                    y: (root.expanded && !root.isMediaPeek) ? 0 : 8
-                    Behavior on y {
-                        SequentialAnimation {
-                            PauseAnimation { duration: 50 }
-                            NumberAnimation { duration: 240; easing.type: Easing.OutCubic }
-                        }
+                Behavior on Layout.topMargin {
+                    SequentialAnimation {
+                        PauseAnimation { duration: 50 }
+                        NumberAnimation { duration: 240; easing.type: Easing.OutCubic }
                     }
                 }
 
@@ -3052,20 +3594,16 @@ Item {
             RowLayout {
                 Layout.fillWidth: true
                 implicitHeight: (!root.isMediaPeek && root.activePlayer !== null) ? 30 : 0
+                Layout.topMargin: (root.expanded && !root.isMediaPeek) ? 0 : 8
                 visible: (!root.isMediaPeek && root.activePlayer !== null) || opacity > 0.01
                 opacity: !root.isMediaPeek ? 1.0 : 0.0
                 clip: true
                 Behavior on implicitHeight { NumberAnimation { duration: 260; easing.type: Easing.OutCubic } }
                 Behavior on opacity        { NumberAnimation { duration: 220; easing.type: Easing.OutQuad } }
-
-                transform: Translate {
-                    id: controlsRowTranslate
-                    y: (root.expanded && !root.isMediaPeek) ? 0 : 8
-                    Behavior on y {
-                        SequentialAnimation {
-                            PauseAnimation { duration: 75 }
-                            NumberAnimation { duration: 260; easing.type: Easing.OutCubic }
-                        }
+                Behavior on Layout.topMargin {
+                    SequentialAnimation {
+                        PauseAnimation { duration: 75 }
+                        NumberAnimation { duration: 260; easing.type: Easing.OutCubic }
                     }
                 }
 
@@ -3271,7 +3809,7 @@ Item {
             anchors.fill: parent
             anchors.margins: 10
             spacing: 6
-            readonly property bool activeState: !Services.OverlayManager.isLocked && root.expanded && !root.notifActive && root.wallpaperMode && !root.dropSendMode && !root.isDropSending
+            readonly property bool activeState: !Services.OverlayManager.isLocked && root.expanded && root.wallpaperMode && !root.dropWorkflowActive
             visible: activeState || opacity > 0.01
             opacity: activeState ? 1 : 0
             scale: activeState ? 1.0 : 0.75
@@ -3306,7 +3844,9 @@ Item {
 
                 // Add Custom Button
                 Rectangle {
-                    width: 22; height: 22; radius: 11
+                    Layout.preferredWidth: 22
+                    Layout.preferredHeight: 22
+                    radius: 11
                     color: addBtnMouse.containsMouse ? Services.Theme.bgHover : "transparent"
                     border.color: addBtnMouse.containsMouse ? Services.Theme.borderHighlight : Services.Theme.borderSubtle
                     border.width: 1
@@ -3333,7 +3873,9 @@ Item {
 
                 // Close Button
                 Rectangle {
-                    width: 22; height: 22; radius: 11
+                    Layout.preferredWidth: 22
+                    Layout.preferredHeight: 22
+                    radius: 11
                     color: closeIslandWallMouse.containsMouse ? Qt.rgba(239, 68, 68, 0.2) : "transparent"
 
                     Text {
@@ -3628,7 +4170,7 @@ Item {
             id: dropSendHubContainer
             anchors.fill: parent
             anchors.margins: 12
-            readonly property bool activeState: !Services.OverlayManager.isLocked && root.expanded && !root.notifActive && !root.wallpaperMode && (root.dropSendMode || root.isDropSending)
+            readonly property bool activeState: !Services.OverlayManager.isLocked && root.expanded && !root.wallpaperMode && root.dropWorkflowActive
             visible: activeState || opacity > 0.01
             opacity: activeState ? 1 : 0
             scale: activeState ? 1.0 : 0.94
@@ -3639,230 +4181,200 @@ Item {
             Behavior on opacity { NumberAnimation { duration: 260; easing.type: Easing.OutQuad } }
             Behavior on scale   { NumberAnimation { duration: 320; easing.type: Easing.OutCubic } }
 
-            // ─── Sub-View 1: Active Drag & Drop Targets / Choice ───
+            // ─── Sub-View 1: Compact destination chooser ───
             ColumnLayout {
+                id: dropChooserView
                 anchors.fill: parent
-                spacing: 8
-                visible: !root.isDropSending
+                spacing: 6
+                visible: root.showDropChooser
+                enabled: visible
 
-                // ── Header Row ──
+                // Header
                 RowLayout {
                     Layout.fillWidth: true
-                    Layout.preferredHeight: 24
-                    spacing: 8
+                    Layout.preferredHeight: 22
+                    spacing: 7
 
-                    // Animated Transfer / Radar Icon (Borderless)
                     Rectangle {
-                        width: 24; height: 24; radius: 12
-                        color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.16)
-
+                        Layout.preferredWidth: 22
+                        Layout.preferredHeight: 22
+                        radius: 7
+                        color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.17)
                         Text {
                             anchors.centerIn: parent
                             text: "󰄶"
                             font.family: Services.Theme.fontSymbols
-                            font.pixelSize: 13
+                            font.pixelSize: 12
                             color: Services.Theme.accent
-                        }
-
-                        SequentialAnimation on scale {
-                            running: dropSendHubContainer.activeState && !root.isDropSending
-                            loops: Animation.Infinite
-                            NumberAnimation { to: 1.08; duration: 900; easing.type: Easing.InOutSine }
-                            NumberAnimation { to: 1.0;  duration: 900; easing.type: Easing.InOutSine }
                         }
                     }
 
                     Text {
-                        text: root.dropStagedChoice ? "Select Destination" : "Drop here to Send"
+                        text: root.dropStagedChoice ? "Choose destination" : "Drop to share"
                         color: Services.Theme.textPrimary
-                        font.pixelSize: Services.Theme.fontSizeSm
+                        font.pixelSize: 11
                         font.bold: true
                     }
 
-                    // File Count Badge (Borderless)
                     Rectangle {
                         visible: root.dropFileCount > 0
-                        height: 18
+                        Layout.preferredHeight: 18
                         implicitWidth: fileCountText.implicitWidth + 12
                         radius: 9
-                        color: Qt.rgba(255, 255, 255, 0.07)
-
+                        color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.15)
                         Text {
                             id: fileCountText
                             anchors.centerIn: parent
-                            text: root.dropFileCount + (root.dropFileCount > 1 ? " files" : " file")
+                            text: root.dropFileCount + (root.dropFileCount === 1 ? " file" : " files")
                             color: Services.Theme.accent
-                            font.pixelSize: 10
+                            font.pixelSize: 9
                             font.bold: true
                         }
                     }
 
                     Item { Layout.fillWidth: true }
 
-                    // Image Thumbnail Preview (Borderless)
-                    RowLayout {
-                        visible: root.dropPreviewUrl !== ""
-                        spacing: 6
-                        Rectangle {
-                            width: 22; height: 22; radius: 6
-                            color: Qt.rgba(255, 255, 255, 0.08)
-                            clip: true
-
-                            Image {
-                                anchors.fill: parent
-                                source: root.dropPreviewUrl
-                                fillMode: Image.PreserveAspectCrop
-                                asynchronous: true
-                                cache: true
-                            }
-                        }
-
-                        Text {
-                            text: root.dropFileName
-                            color: Services.Theme.textSecondary
-                            font.pixelSize: 10
-                            Layout.maximumWidth: 120
-                            elide: Text.ElideMiddle
-                        }
+                    Text {
+                        Layout.maximumWidth: 118
+                        visible: root.dropFileName !== ""
+                        text: root.dropFileName
+                        color: Services.Theme.textSecondary
+                        font.pixelSize: 10
+                        elide: Text.ElideMiddle
                     }
 
-                    // Cancel / Close Button (Borderless)
                     Rectangle {
-                        width: 22; height: 22; radius: 11
+                        Layout.preferredWidth: 22
+                        Layout.preferredHeight: 22
+                        radius: 11
                         color: closeDropMouse.containsMouse ? Qt.rgba(239 / 255, 68 / 255, 68 / 255, 0.2) : Qt.rgba(255, 255, 255, 0.06)
-
-                        Behavior on color { ColorAnimation { duration: 150 } }
-
                         Text {
                             anchors.centerIn: parent
-                            text: "✕"
-                            font.pixelSize: 10
-                            color: closeDropMouse.containsMouse ? "#ef4444" : Services.Theme.textDisabled
+                            text: "×"
+                            color: closeDropMouse.containsMouse ? "#ef4444" : Services.Theme.textSecondary
+                            font.pixelSize: 15
                         }
-
                         MouseArea {
                             id: closeDropMouse
                             anchors.fill: parent
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
-                            onClicked: root.collapse()
+                            onClicked: root.dismissDropChooser()
                         }
                     }
                 }
 
-                // ── Drop Target Cards Row (Borderless) ──
+                // Destination cards: each card is a single target. The action
+                // affordance sits inline at the end rather than in a separate
+                // button row that makes the panel feel tall and fragmented.
                 RowLayout {
                     Layout.fillWidth: true
                     Layout.fillHeight: true
-                    spacing: 10
+                    spacing: 8
 
-                    // ── Card 1: KDE Connect ──
                     Rectangle {
                         id: kdeCard
                         Layout.fillWidth: true
                         Layout.fillHeight: true
                         radius: 12
+                        clip: true
                         readonly property bool isHovered: root.dropHoverTarget === "kde" || kdeCardMouse.containsMouse
                         readonly property var dev: Services.DeviceShare ? Services.DeviceShare.defaultDevice : null
                         readonly property bool hasDev: Services.DeviceShare ? Services.DeviceShare.hasKdeDevice : false
 
                         color: isHovered
-                            ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.18)
-                            : Qt.rgba(255, 255, 255, 0.05)
-                        scale: isHovered ? 1.02 : 1.0
+                            ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.13)
+                            : Qt.rgba(255, 255, 255, 0.045)
+                        border.width: isHovered ? 1 : 0
+                        border.color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.48)
+                        Behavior on color { ColorAnimation { duration: 150 } }
+                        Behavior on border.width { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
 
-                        Behavior on scale { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
-                        Behavior on color { ColorAnimation { duration: 200 } }
-
-                        ColumnLayout {
+                        RowLayout {
                             anchors.fill: parent
-                            anchors.margins: 12
+                            anchors.margins: 9
                             spacing: 8
 
-                            // Top Info Row: Icon + Title + Status
-                            RowLayout {
-                                Layout.fillWidth: true
-                                spacing: 10
-
-                                Rectangle {
-                                    width: 36; height: 36; radius: 18
-                                    color: kdeCard.isHovered
-                                        ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.3)
-                                        : Qt.rgba(255, 255, 255, 0.07)
-
-                                    Behavior on color { ColorAnimation { duration: 200 } }
-
-                                    Text {
-                                        anchors.centerIn: parent
-                                        text: "󰄡"
-                                        font.family: Services.Theme.fontSymbols
-                                        font.pixelSize: 18
-                                        color: kdeCard.hasDev ? Services.Theme.accent : Services.Theme.textDisabled
-                                    }
-                                }
-
-                                ColumnLayout {
-                                    Layout.fillWidth: true
-                                    spacing: 1
-
-                                    RowLayout {
-                                        spacing: 5
-                                        Rectangle {
-                                            width: 6; height: 6; radius: 3
-                                            color: kdeCard.hasDev ? "#22c55e" : "#eab308"
-                                        }
-                                        Text {
-                                            text: "KDE Connect"
-                                            font.bold: true
-                                            font.pixelSize: 12
-                                            color: Services.Theme.textPrimary
-                                        }
-                                    }
-
-                                    Text {
-                                        Layout.fillWidth: true
-                                        text: kdeCard.hasDev ? (kdeCard.dev ? kdeCard.dev.name : "Connected Device") : "No paired device"
-                                        color: kdeCard.hasDev ? Services.Theme.textSecondary : Services.Theme.textDisabled
-                                        font.pixelSize: 11
-                                        elide: Text.ElideRight
-                                    }
+                            Rectangle {
+                                Layout.preferredWidth: 32
+                                Layout.preferredHeight: 32
+                                radius: 10
+                                color: kdeCard.isHovered
+                                    ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.2)
+                                    : Qt.rgba(255, 255, 255, 0.065)
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: "󰄡"
+                                    font.family: Services.Theme.fontSymbols
+                                    font.pixelSize: 17
+                                    color: kdeCard.hasDev ? Services.Theme.accent : Services.Theme.textDisabled
                                 }
                             }
 
-                            // Bottom Action Pill (Borderless)
-                            Rectangle {
+                            ColumnLayout {
                                 Layout.fillWidth: true
-                                Layout.preferredHeight: 26
-                                radius: 7
-                                color: kdeCard.isHovered
-                                    ? Services.Theme.accent
-                                    : (kdeCardMouse.containsMouse ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.2) : Qt.rgba(255, 255, 255, 0.06))
-
-                                Behavior on color { ColorAnimation { duration: 180 } }
+                                spacing: 2
 
                                 RowLayout {
-                                    anchors.centerIn: parent
+                                    Layout.fillWidth: true
                                     spacing: 5
-                                    Text {
-                                        text: kdeCard.isHovered ? "󰄶" : "󰄡"
-                                        font.family: Services.Theme.fontSymbols
-                                        font.pixelSize: 11
-                                        color: kdeCard.isHovered ? Services.Theme.bgOnAccent : Services.Theme.accent
+                                    Rectangle {
+                                        Layout.preferredWidth: 6
+                                        Layout.preferredHeight: 6
+                                        radius: 3
+                                        color: kdeCard.hasDev ? "#22c55e" : "#eab308"
                                     }
                                     Text {
-                                        text: kdeCard.isHovered ? "Release to Send" : (root.dropStagedChoice ? ("Send to " + (kdeCard.dev ? kdeCard.dev.name : "Device")) : "Drop to Send")
-                                        font.pixelSize: 10
+                                        Layout.fillWidth: true
+                                        text: "KDE Connect"
                                         font.bold: true
-                                        color: kdeCard.isHovered ? Services.Theme.bgOnAccent : Services.Theme.textPrimary
+                                        font.pixelSize: 11
+                                        color: Services.Theme.textPrimary
+                                        elide: Text.ElideRight
                                     }
+                                }
+
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: kdeCard.hasDev ? (kdeCard.dev ? kdeCard.dev.name : "Connected device") : "No paired device"
+                                    color: kdeCard.hasDev ? Services.Theme.textSecondary : Services.Theme.textDisabled
+                                    font.pixelSize: 10
+                                    elide: Text.ElideRight
+                                }
+
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: !kdeCard.hasDev
+                                        ? "Pair a device first"
+                                        : (root.dropHoverTarget === "kde"
+                                            ? "Release to send"
+                                            : (root.dropStagedChoice ? "Send file" : "Drop file here"))
+                                    color: kdeCard.isHovered ? Services.Theme.accent : Services.Theme.textSecondary
+                                    font.pixelSize: 9
+                                    font.bold: root.dropStagedChoice || root.dropHoverTarget === "kde"
+                                    elide: Text.ElideRight
+                                }
+                            }
+
+                            Rectangle {
+                                Layout.preferredWidth: 24
+                                Layout.preferredHeight: 24
+                                radius: 12
+                                color: kdeCard.isHovered ? Services.Theme.accent : Qt.rgba(255, 255, 255, 0.07)
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: "›"
+                                    color: kdeCard.isHovered ? Services.Theme.bgOnAccent : Services.Theme.textSecondary
+                                    font.pixelSize: 18
+                                    font.bold: true
                                 }
                             }
                         }
 
-                        // Child DropArea for KDE Connect
                         DropArea {
                             id: kdeDropTarget
                             anchors.fill: parent
+                            enabled: kdeCard.hasDev
                             onEntered: (drag) => {
                                 dropExitDebounceTimer.stop()
                                 root.dropHoverTarget = "kde"
@@ -3871,7 +4383,7 @@ Item {
                                 dropExitDebounceTimer.stop()
                                 root.dropHoverTarget = "kde"
                             }
-                            onExited: () => {
+                            onExited: {
                                 if (root.dropHoverTarget === "kde") root.dropHoverTarget = ""
                                 dropExitDebounceTimer.restart()
                             }
@@ -3885,120 +4397,107 @@ Item {
                             id: kdeCardMouse
                             anchors.fill: parent
                             hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
+                            cursorShape: kdeCard.hasDev ? Qt.PointingHandCursor : Qt.ArrowCursor
                             onClicked: {
-                                if (root.dropUrls && root.dropUrls.length > 0) {
+                                if (kdeCard.hasDev && root.dropStagedChoice && root.dropUrls && root.dropUrls.length > 0)
                                     root.handleDropOnKde(root.dropUrls)
-                                }
                             }
                         }
                     }
 
-                    // ── Card 2: LocalSend ──
                     Rectangle {
                         id: localCard
                         Layout.fillWidth: true
                         Layout.fillHeight: true
                         radius: 12
+                        clip: true
                         readonly property bool isHovered: root.dropHoverTarget === "local" || localCardMouse.containsMouse
+                        readonly property bool localSendAvailable: Services.DeviceShare ? Services.DeviceShare.hasLocalSend : true
 
                         color: isHovered
-                            ? Qt.rgba(56 / 255, 189 / 255, 248 / 255, 0.18)
-                            : Qt.rgba(255, 255, 255, 0.05)
-                        scale: isHovered ? 1.02 : 1.0
+                            ? Qt.rgba(56 / 255, 189 / 255, 248 / 255, 0.13)
+                            : Qt.rgba(255, 255, 255, 0.045)
+                        border.width: isHovered ? 1 : 0
+                        border.color: Qt.rgba(56 / 255, 189 / 255, 248 / 255, 0.48)
+                        opacity: localCard.localSendAvailable ? 1.0 : 0.65
+                        Behavior on color { ColorAnimation { duration: 150 } }
+                        Behavior on border.width { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
 
-                        Behavior on scale { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
-                        Behavior on color { ColorAnimation { duration: 200 } }
-
-                        ColumnLayout {
+                        RowLayout {
                             anchors.fill: parent
-                            anchors.margins: 12
+                            anchors.margins: 9
                             spacing: 8
 
-                            // Top Info Row: Icon + Title + Status
-                            RowLayout {
-                                Layout.fillWidth: true
-                                spacing: 10
-
-                                Rectangle {
-                                    width: 36; height: 36; radius: 18
-                                    color: localCard.isHovered
-                                        ? Qt.rgba(56 / 255, 189 / 255, 248 / 255, 0.3)
-                                        : Qt.rgba(255, 255, 255, 0.07)
-
-                                    Behavior on color { ColorAnimation { duration: 200 } }
-
-                                    Text {
-                                        anchors.centerIn: parent
-                                        text: "󰅠"
-                                        font.family: Services.Theme.fontSymbols
-                                        font.pixelSize: 18
-                                        color: "#38bdf8"
-                                    }
-                                }
-
-                                ColumnLayout {
-                                    Layout.fillWidth: true
-                                    spacing: 1
-
-                                    RowLayout {
-                                        spacing: 5
-                                        Rectangle {
-                                            width: 6; height: 6; radius: 3
-                                            color: "#38bdf8"
-                                        }
-                                        Text {
-                                            text: "LocalSend"
-                                            font.bold: true
-                                            font.pixelSize: 12
-                                            color: Services.Theme.textPrimary
-                                        }
-                                    }
-
-                                    Text {
-                                        Layout.fillWidth: true
-                                        text: "Nearby Devices (LAN)"
-                                        color: Services.Theme.textSecondary
-                                        font.pixelSize: 11
-                                        elide: Text.ElideRight
-                                    }
+                            Rectangle {
+                                Layout.preferredWidth: 32
+                                Layout.preferredHeight: 32
+                                radius: 10
+                                color: localCard.isHovered
+                                    ? Qt.rgba(56 / 255, 189 / 255, 248 / 255, 0.2)
+                                    : Qt.rgba(255, 255, 255, 0.065)
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: "󰅠"
+                                    font.family: Services.Theme.fontSymbols
+                                    font.pixelSize: 17
+                                    color: "#38bdf8"
                                 }
                             }
 
-                            // Bottom Action Pill (Borderless)
-                            Rectangle {
+                            ColumnLayout {
                                 Layout.fillWidth: true
-                                Layout.preferredHeight: 26
-                                radius: 7
-                                color: localCard.isHovered
-                                    ? "#38bdf8"
-                                    : (localCardMouse.containsMouse ? Qt.rgba(56 / 255, 189 / 255, 248 / 255, 0.2) : Qt.rgba(255, 255, 255, 0.06))
+                                spacing: 2
 
-                                Behavior on color { ColorAnimation { duration: 180 } }
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: "LocalSend"
+                                    font.bold: true
+                                    font.pixelSize: 11
+                                    color: Services.Theme.textPrimary
+                                    elide: Text.ElideRight
+                                }
 
-                                RowLayout {
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: localCard.localSendAvailable ? "Nearby devices · LAN" : "LocalSend not found"
+                                    color: Services.Theme.textSecondary
+                                    font.pixelSize: 10
+                                    elide: Text.ElideRight
+                                }
+
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: !localCard.localSendAvailable
+                                        ? "Unavailable"
+                                        : (root.dropHoverTarget === "local"
+                                            ? "Release to send"
+                                            : (root.dropStagedChoice ? "Open LocalSend" : "Drop file here"))
+                                    color: localCard.isHovered ? "#38bdf8" : Services.Theme.textSecondary
+                                    font.pixelSize: 9
+                                    font.bold: root.dropStagedChoice || root.dropHoverTarget === "local"
+                                    elide: Text.ElideRight
+                                }
+                            }
+
+                            Rectangle {
+                                Layout.preferredWidth: 24
+                                Layout.preferredHeight: 24
+                                radius: 12
+                                color: localCard.isHovered ? "#38bdf8" : Qt.rgba(255, 255, 255, 0.07)
+                                Text {
                                     anchors.centerIn: parent
-                                    spacing: 5
-                                    Text {
-                                        text: localCard.isHovered ? "󰄶" : "󰅠"
-                                        font.family: Services.Theme.fontSymbols
-                                        font.pixelSize: 11
-                                        color: localCard.isHovered ? "#000000" : "#38bdf8"
-                                    }
-                                    Text {
-                                        text: localCard.isHovered ? "Release to Send" : (root.dropStagedChoice ? "Open in LocalSend" : "Drop to Send")
-                                        font.pixelSize: 10
-                                        font.bold: true
-                                        color: localCard.isHovered ? "#000000" : Services.Theme.textPrimary
-                                    }
+                                    text: "›"
+                                    color: localCard.isHovered ? "#06131b" : Services.Theme.textSecondary
+                                    font.pixelSize: 18
+                                    font.bold: true
                                 }
                             }
                         }
 
-                        // Child DropArea for LocalSend
                         DropArea {
                             id: localDropTarget
                             anchors.fill: parent
+                            enabled: localCard.localSendAvailable
                             onEntered: (drag) => {
                                 dropExitDebounceTimer.stop()
                                 root.dropHoverTarget = "local"
@@ -4007,7 +4506,7 @@ Item {
                                 dropExitDebounceTimer.stop()
                                 root.dropHoverTarget = "local"
                             }
-                            onExited: () => {
+                            onExited: {
                                 if (root.dropHoverTarget === "local") root.dropHoverTarget = ""
                                 dropExitDebounceTimer.restart()
                             }
@@ -4021,26 +4520,120 @@ Item {
                             id: localCardMouse
                             anchors.fill: parent
                             hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
+                            cursorShape: localCard.localSendAvailable ? Qt.PointingHandCursor : Qt.ArrowCursor
                             onClicked: {
-                                if (root.dropUrls && root.dropUrls.length > 0) {
+                                if (localCard.localSendAvailable && root.dropStagedChoice && root.dropUrls && root.dropUrls.length > 0)
                                     root.handleDropOnLocalSend(root.dropUrls)
-                                }
                             }
                         }
                     }
                 }
             }
 
-            // ─── Sub-View 2: Sending / Success Transfer Feedback ───
+            // ─── Sub-View 2: LocalSend Handoff (preparing / handoff) ───
+            // Shows an honest status strip — no progress bar, no false success claim.
             RowLayout {
+                id: localSendHandoffView
                 anchors.fill: parent
                 spacing: 12
-                visible: root.isDropSending
+                visible: root.showDropHandoff
+
+                readonly property string previewUrl: (Services.DeviceShare && Services.DeviceShare.transferPreviewUrl !== "") ? Services.DeviceShare.transferPreviewUrl : root.dropPreviewUrl
+                readonly property bool hasPreview: previewUrl !== ""
+                readonly property bool isPreparing: Services.DeviceShare && (
+                    Services.DeviceShare.transferState === "preparing" ||
+                    (Services.DeviceShare.transferBackend === "localsend" && Services.DeviceShare.transferState === "sending"))
+
+                // Left icon / thumbnail
+                Rectangle {
+                    implicitWidth: 44
+                    implicitHeight: 44
+                    radius: 10
+                    color: Services.Theme.surfaceVariant
+                    clip: true
+                    Layout.alignment: Qt.AlignVCenter
+
+                    Image {
+                        anchors.fill: parent
+                        visible: localSendHandoffView.hasPreview
+                        source: localSendHandoffView.previewUrl
+                        fillMode: Image.PreserveAspectCrop
+                        asynchronous: true
+                        cache: true
+                    }
+
+                    Text {
+                        anchors.centerIn: parent
+                        visible: !localSendHandoffView.hasPreview
+                        text: "󰅠"
+                        font.family: Services.Theme.fontSymbols
+                        font.pixelSize: 22
+                        color: "#38bdf8"
+                    }
+                }
+
+                // Center: status text
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 3
+                    Layout.alignment: Qt.AlignVCenter
+
+                    Text {
+                        text: localSendHandoffView.isPreparing ? "Preparing LocalSend\u2026" : "Continue in LocalSend"
+                        font.bold: true
+                        font.pixelSize: 12
+                        color: Services.Theme.textPrimary
+                        elide: Text.ElideRight
+                        Layout.fillWidth: true
+                    }
+
+                    Text {
+                        text: localSendHandoffView.isPreparing
+                            ? "Opening the app\u2026"
+                            : "Complete the transfer in the LocalSend window"
+                        font.pixelSize: 10
+                        color: Services.Theme.textSecondary
+                        elide: Text.ElideRight
+                        Layout.fillWidth: true
+                    }
+                }
+
+                // Right: spinner while preparing, checkmark-open while handoff
+                Rectangle {
+                    implicitWidth: 30
+                    implicitHeight: 30
+                    radius: 15
+                    Layout.alignment: Qt.AlignVCenter
+                    color: Qt.rgba(56 / 255, 189 / 255, 248 / 255, 0.15)
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: localSendHandoffView.isPreparing ? "󰑖" : "󰄶"
+                        font.family: Services.Theme.fontSymbols
+                        font.pixelSize: 15
+                        color: "#38bdf8"
+                    }
+
+                    SequentialAnimation on rotation {
+                        running: localSendHandoffView.isPreparing && localSendHandoffView.visible
+                        loops: Animation.Infinite
+                        NumberAnimation { from: 0; to: 360; duration: 1000; easing.type: Easing.Linear }
+                    }
+                }
+            }
+
+            // ─── Sub-View 3: KDE Connect Transfer Feedback ───
+            // Only shown for real tracked transfers (KDE Connect sending/success/error).
+            RowLayout {
+                id: transferFeedback
+                anchors.fill: parent
+                spacing: 12
+                visible: root.showDropTransfer
 
                 readonly property string previewUrl: (Services.DeviceShare && Services.DeviceShare.transferPreviewUrl !== "") ? Services.DeviceShare.transferPreviewUrl : root.dropPreviewUrl
                 readonly property bool hasPreview: previewUrl !== ""
                 readonly property bool isSuccess: Services.DeviceShare && Services.DeviceShare.transferState === "success"
+                readonly property bool isError: Services.DeviceShare && Services.DeviceShare.transferState === "error"
                 readonly property string targetDevice: Services.DeviceShare ? Services.DeviceShare.transferTargetName : (root.dropFileName || "Device")
 
                 // Left Thumbnail / Icon Squircle
@@ -4055,8 +4648,8 @@ Item {
                     // Image Preview
                     Image {
                         anchors.fill: parent
-                        visible: parent.parent.hasPreview
-                        source: parent.parent.previewUrl
+                        visible: transferFeedback.hasPreview
+                        source: transferFeedback.previewUrl
                         fillMode: Image.PreserveAspectCrop
                         asynchronous: true
                         cache: true
@@ -4065,12 +4658,12 @@ Item {
                     // Fallback Icon if not an image
                     Text {
                         anchors.centerIn: parent
-                        visible: !parent.parent.hasPreview
-                        text: parent.parent.isSuccess ? "󰄬" : "󰄶"
+                        visible: !transferFeedback.hasPreview
+                        text: transferFeedback.isError ? "󰅚" : (transferFeedback.isSuccess ? "󰄬" : "󰄶")
                         font.family: Services.Theme.fontSymbols
                         font.pixelSize: 22
                         font.bold: true
-                        color: parent.parent.isSuccess ? Services.Theme.success : Services.Theme.accent
+                        color: transferFeedback.isError ? Services.Theme.danger : (transferFeedback.isSuccess ? Services.Theme.success : Services.Theme.accent)
                     }
 
                     // Corner Mini Badge
@@ -4081,13 +4674,13 @@ Item {
                         width: 14
                         height: 14
                         radius: 7
-                        color: parent.parent.isSuccess ? Services.Theme.success : Services.Theme.accent
-                        visible: parent.parent.hasPreview
+                        color: transferFeedback.isError ? Services.Theme.danger : (transferFeedback.isSuccess ? Services.Theme.success : Services.Theme.accent)
+                        visible: transferFeedback.hasPreview
 
                         Text {
                             anchors.centerIn: parent
-                            text: parent.parent.parent.isSuccess ? "✓" : "󰄶"
-                            font.family: parent.parent.parent.isSuccess ? Services.Theme.fontPrimary : Services.Theme.fontSymbols
+                            text: transferFeedback.isError ? "!" : (transferFeedback.isSuccess ? "✓" : "󰄶")
+                            font.family: (transferFeedback.isError || transferFeedback.isSuccess) ? Services.Theme.fontPrimary : Services.Theme.fontSymbols
                             font.pixelSize: 8
                             font.bold: true
                             color: "#ffffff"
@@ -4107,9 +4700,11 @@ Item {
                         spacing: 6
 
                         Text {
-                            text: parent.parent.parent.isSuccess
-                                ? ("Sent to " + parent.parent.parent.targetDevice)
-                                : ("Sending to " + parent.parent.parent.targetDevice + "...")
+                            text: transferFeedback.isError
+                                ? ("Couldn't send to " + transferFeedback.targetDevice)
+                                : (transferFeedback.isSuccess
+                                    ? ("Sent to " + transferFeedback.targetDevice)
+                                    : ("Sending to " + transferFeedback.targetDevice + "..."))
                             font.bold: true
                             font.pixelSize: 12
                             color: Services.Theme.textPrimary
@@ -4119,8 +4714,8 @@ Item {
 
                         // Success "Done" Badge
                         Rectangle {
-                            visible: parent.parent.parent.isSuccess
-                            height: 16
+                            visible: transferFeedback.isSuccess
+                            Layout.preferredHeight: 16
                             implicitWidth: doneText.implicitWidth + 10
                             radius: 8
                             color: Qt.rgba(34 / 255, 197 / 255, 94 / 255, 0.18)
@@ -4140,7 +4735,7 @@ Item {
                     Rectangle {
                         id: progressBarTrack
                         Layout.fillWidth: true
-                        height: 4
+                        Layout.preferredHeight: 4
                         radius: 2
                         color: Qt.rgba(255, 255, 255, 0.08)
                         clip: true
@@ -4151,7 +4746,7 @@ Item {
                             anchors.left: parent.left
                             anchors.top: parent.top
                             anchors.bottom: parent.bottom
-                            width: parent.parent.parent.isSuccess ? parent.width : 0
+                            width: transferFeedback.isSuccess ? parent.width : 0
                             color: Services.Theme.success
                             radius: 2
 
@@ -4163,7 +4758,7 @@ Item {
                         // Indeterminate glowing sweep beam while sending
                         Rectangle {
                             id: progressSendingBeam
-                            visible: root.isDropSending && !parent.parent.parent.isSuccess
+                            visible: root.isDropSending && !transferFeedback.isSuccess
                             width: 140
                             anchors.top: parent.top
                             anchors.bottom: parent.bottom
@@ -4186,9 +4781,11 @@ Item {
                     // Subtitle: File name or transfer message
                     Text {
                         Layout.fillWidth: true
-                        text: parent.parent.parent.isSuccess
-                            ? (root.dropFileName !== "" ? root.dropFileName : (Services.DeviceShare ? Services.DeviceShare.transferMessage : "Transfer completed"))
-                            : (Services.DeviceShare ? Services.DeviceShare.transferMessage : "Transfer in progress")
+                        text: transferFeedback.isError
+                            ? (Services.DeviceShare && Services.DeviceShare.transferMessage !== "" ? Services.DeviceShare.transferMessage : "Transfer failed")
+                            : (transferFeedback.isSuccess
+                                ? (root.dropFileName !== "" ? root.dropFileName : (Services.DeviceShare ? Services.DeviceShare.transferMessage : "Transfer completed"))
+                                : (Services.DeviceShare ? Services.DeviceShare.transferMessage : "Transfer in progress"))
                         font.pixelSize: 10
                         color: Services.Theme.textSecondary
                         elide: Text.ElideRight
@@ -4201,22 +4798,24 @@ Item {
                     implicitHeight: 30
                     radius: 15
                     Layout.alignment: Qt.AlignVCenter
-                    color: parent.isSuccess
-                        ? Qt.rgba(34 / 255, 197 / 255, 94 / 255, 0.18)
-                        : Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.15)
+                    color: transferFeedback.isError
+                        ? Qt.rgba(239 / 255, 68 / 255, 68 / 255, 0.16)
+                        : (transferFeedback.isSuccess
+                            ? Qt.rgba(34 / 255, 197 / 255, 94 / 255, 0.18)
+                            : Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.15))
 
                     Behavior on color { ColorAnimation { duration: 200 } }
 
                     Text {
                         anchors.centerIn: parent
-                        text: parent.parent.isSuccess ? "󰄬" : "󰄶"
+                        text: transferFeedback.isError ? "󰅚" : (transferFeedback.isSuccess ? "󰄬" : "󰄶")
                         font.family: Services.Theme.fontSymbols
                         font.pixelSize: 15
-                        color: parent.parent.isSuccess ? Services.Theme.success : Services.Theme.accent
+                        color: transferFeedback.isError ? Services.Theme.danger : (transferFeedback.isSuccess ? Services.Theme.success : Services.Theme.accent)
                     }
 
                     SequentialAnimation on scale {
-                        running: root.isDropSending && !parent.parent.isSuccess
+                        running: root.isDropSending && !transferFeedback.isSuccess
                         loops: Animation.Infinite
                         NumberAnimation { to: 1.12; duration: 500; easing.type: Easing.InOutQuad }
                         NumberAnimation { to: 1.0; duration: 500; easing.type: Easing.InOutQuad }
@@ -4518,6 +5117,7 @@ Item {
                 Repeater {
                     model: 3
                     Rectangle {
+                        id: rightWaveBar
                         required property int index
                         width: 2.5
                         height: 10
@@ -4529,13 +5129,13 @@ Item {
                             running: rightSatDot.activity === "media" && rightSatDot.visible
                             loops: Animation.Infinite
                             NumberAnimation {
-                                to: index === 0 ? 14 : (index === 1 ? 6 : 12)
-                                duration: index === 0 ? 280 : (index === 1 ? 400 : 340)
+                                to: rightWaveBar.index === 0 ? 14 : (rightWaveBar.index === 1 ? 6 : 12)
+                                duration: rightWaveBar.index === 0 ? 280 : (rightWaveBar.index === 1 ? 400 : 340)
                                 easing.type: Easing.InOutSine
                             }
                             NumberAnimation {
-                                to: index === 0 ? 4 : (index === 1 ? 14 : 4)
-                                duration: index === 0 ? 320 : (index === 1 ? 300 : 380)
+                                to: rightWaveBar.index === 0 ? 4 : (rightWaveBar.index === 1 ? 14 : 4)
+                                duration: rightWaveBar.index === 0 ? 320 : (rightWaveBar.index === 1 ? 300 : 380)
                                 easing.type: Easing.InOutSine
                             }
                         }
@@ -4601,6 +5201,23 @@ Item {
 
                 SequentialAnimation on opacity {
                     running: rightSatDot.activity === "camera" && rightSatDot.visible
+                    loops: Animation.Infinite
+                    NumberAnimation { from: 1.0; to: 0.25; duration: 650; easing.type: Easing.InOutSine }
+                    NumberAnimation { from: 0.25; to: 1.0; duration: 650; easing.type: Easing.InOutSine }
+                }
+            }
+
+            // ── Content: Screen Recording Indicator ──
+            Text {
+                anchors.centerIn: parent
+                text: "●"
+                font.family: Services.Theme.fontSymbols
+                font.pixelSize: 12
+                color: root.recordingColor
+                visible: rightSatDot.activity === "recording"
+
+                SequentialAnimation on opacity {
+                    running: rightSatDot.activity === "recording" && rightSatDot.visible
                     loops: Animation.Infinite
                     NumberAnimation { from: 1.0; to: 0.25; duration: 650; easing.type: Easing.InOutSine }
                     NumberAnimation { from: 0.25; to: 1.0; duration: 650; easing.type: Easing.InOutSine }
@@ -4928,6 +5545,7 @@ Item {
                 Repeater {
                     model: 3
                     Rectangle {
+                        id: leftWaveBar
                         required property int index
                         width: 2.5
                         height: 10
@@ -4939,13 +5557,13 @@ Item {
                             running: leftSatDot.activity === "media" && leftSatDot.visible
                             loops: Animation.Infinite
                             NumberAnimation {
-                                to: index === 0 ? 14 : (index === 1 ? 6 : 12)
-                                duration: index === 0 ? 280 : (index === 1 ? 400 : 340)
+                                to: leftWaveBar.index === 0 ? 14 : (leftWaveBar.index === 1 ? 6 : 12)
+                                duration: leftWaveBar.index === 0 ? 280 : (leftWaveBar.index === 1 ? 400 : 340)
                                 easing.type: Easing.InOutSine
                             }
                             NumberAnimation {
-                                to: index === 0 ? 4 : (index === 1 ? 14 : 4)
-                                duration: index === 0 ? 320 : (index === 1 ? 300 : 380)
+                                to: leftWaveBar.index === 0 ? 4 : (leftWaveBar.index === 1 ? 14 : 4)
+                                duration: leftWaveBar.index === 0 ? 320 : (leftWaveBar.index === 1 ? 300 : 380)
                                 easing.type: Easing.InOutSine
                             }
                         }
@@ -5017,6 +5635,23 @@ Item {
                 }
             }
 
+            // ── Content: Screen Recording Indicator ──
+            Text {
+                anchors.centerIn: parent
+                text: "●"
+                font.family: Services.Theme.fontSymbols
+                font.pixelSize: 12
+                color: root.recordingColor
+                visible: leftSatDot.activity === "recording"
+
+                SequentialAnimation on opacity {
+                    running: leftSatDot.activity === "recording" && leftSatDot.visible
+                    loops: Animation.Infinite
+                    NumberAnimation { from: 1.0; to: 0.25; duration: 650; easing.type: Easing.InOutSine }
+                    NumberAnimation { from: 0.25; to: 1.0; duration: 650; easing.type: Easing.InOutSine }
+                }
+            }
+
             // ── Content: CapsLock Indicator ──
             Text {
                 anchors.centerIn: parent
@@ -5081,7 +5716,3 @@ Item {
     readonly property alias satDot2: leftSatDot
 
 }
-
-
-
-

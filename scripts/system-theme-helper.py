@@ -653,6 +653,35 @@ def get_persisted_icon_theme():
             pass
     return ""
 
+def save_cursor_env(name, size):
+    """Persist cursor theme/size to state/cursor-theme.env so it survives Hyprland relogin."""
+    if not name:
+        return
+    try:
+        state_dir = os.path.join(HOME, ".config/quickshell/state")
+        os.makedirs(state_dir, exist_ok=True)
+        env_file = os.path.join(state_dir, "cursor-theme.env")
+        with open(env_file, "w", encoding="utf-8") as f:
+            f.write(f"XCURSOR_THEME={name}\n")
+            f.write(f"XCURSOR_SIZE={size}\n")
+    except Exception:
+        pass
+
+def get_persisted_cursor():
+    env_file = os.path.join(HOME, ".config/quickshell/state/cursor-theme.env")
+    if os.path.exists(env_file):
+        try:
+            result = {}
+            with open(env_file, "r", encoding="utf-8") as f:
+                for line in f:
+                    if "=" in line:
+                        k, v = line.strip().split("=", 1)
+                        result[k.strip()] = v.strip().strip('"\'')
+            return result.get("XCURSOR_THEME", ""), result.get("XCURSOR_SIZE", "24")
+        except Exception:
+            pass
+    return "", "24"
+
 def get_quickshell_pids():
     pids = []
     out = run_proc(["qs", "list"], timeout=1.5)
@@ -718,6 +747,13 @@ done
 if [ -f "$HOME/.config/quickshell/state/icon-theme.env" ]; then
     source "$HOME/.config/quickshell/state/icon-theme.env" 2>> "{log_file}"
     export QS_ICON_THEME
+fi
+
+if [ -f "$HOME/.config/quickshell/state/cursor-theme.env" ]; then
+    source "$HOME/.config/quickshell/state/cursor-theme.env" 2>> "{log_file}"
+    export XCURSOR_THEME XCURSOR_SIZE
+    # Also push to dbus/systemd environment so Hyprland and portals pick it up
+    dbus-update-activation-environment --systemd XCURSOR_THEME XCURSOR_SIZE 2>/dev/null || true
 fi
 
 sleep 0.3
@@ -811,6 +847,17 @@ def set_cursor(name, size):
     })
     apply_cursor_theme_links(name)
     update_default_cursor_theme(name)
+    # Persist cursor to env file so it survives Hyprland relogin (non-NixOS)
+    save_cursor_env(name, sz)
+    # Also broadcast to systemd/dbus user environment for immediate effect
+    try:
+        run_proc(
+            ["dbus-update-activation-environment", "--systemd",
+             f"XCURSOR_THEME={name}", f"XCURSOR_SIZE={sz}"],
+            timeout=1.0
+        )
+    except Exception:
+        pass
     return {"status": "ok", "cursor_theme": name, "cursor_size": sz}
 
 def ensure_session_portal_ready():

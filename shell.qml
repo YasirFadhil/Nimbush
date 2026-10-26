@@ -54,6 +54,9 @@ ShellRoot {
         active: Services.OverlayManager ? Services.OverlayManager.identifyMonitorsActive : false
         sourceComponent: Variants {
             model: Quickshell.screens
+            // PanelWindow is created by Variants at runtime; qmlls incorrectly
+            // reports it as uncreatable because it is a proxy-backed type.
+            // qmllint disable uncreatable-type
             delegate: PanelWindow {
                 id: idWin
                 required property var modelData
@@ -88,7 +91,9 @@ ShellRoot {
 
                         Rectangle {
                             Layout.alignment: Qt.AlignHCenter
-                            width: 52; height: 52; radius: 26
+                            Layout.preferredWidth: 52
+                            Layout.preferredHeight: 52
+                            radius: 26
                             color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.22)
                             border.color: Services.Theme.accent
                             border.width: 2
@@ -377,5 +382,4 @@ ShellRoot {
         onTriggered: sleepWatcher.running = true
     }
 }
-
 

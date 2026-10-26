@@ -48,6 +48,10 @@ Scope {
     property real unlockSuctionProgress: 0.0
     property bool isUnlockingWithGenie: false
     property real lockTopBarState: 0.0
+    // True from the start of unlock handoff until the lock surface is dismissed.
+    // While true, the lockscreen pill follows lockTopBarState instead of the
+    // desktop bar progress, so it can be absorbed before the desktop bar ejects.
+    property bool lockTopBarAbsorbing: false
     property real lockGenieProgress: 1.0
     property bool isLockingWithGenie: false
 
@@ -140,9 +144,6 @@ Scope {
             root.isLocked = true
             sessionLock.locked = true
             root.isRevealed = true
-            lockTopBarEjectAnim.restart()
-            lockGenieAnim.restart()
-            deviceLockedPeekStartTimer.restart()
             if (typeof pwTextInput !== "undefined" && pwTextInput) {
                 pwTextInput.forceActiveFocus()
             }
@@ -196,6 +197,8 @@ Scope {
             root.isLockingWithGenie = false
             root.lockGenieProgress = 1.0
             root.lockTopBarState = 0.0
+            // Keep absorption latched while the desktop bar re-emerges. The next
+            // open() resets it before the next lock transition.
             if (Services.FaceId) Services.FaceId.resetStatus()
             if (Services.OverlayManager) {
                 Services.OverlayManager.lockVerified = false
@@ -213,9 +216,8 @@ Scope {
         property: "lockTopBarState"
         from: 0.0
         to: 1.0
-        duration: 340
-        easing.type: Easing.OutBack
-        easing.overshoot: 1.25
+        duration: 300
+        easing.type: Easing.OutCubic
     }
 
     SequentialAnimation {
@@ -224,11 +226,10 @@ Scope {
         NumberAnimation {
             target: root
             property: "lockTopBarState"
-            from: 1.0
+            from: root.lockTopBarState
             to: 0.0
-            duration: 200
-            easing.type: Easing.InBack
-            easing.overshoot: 1.15
+            duration: 260
+            easing.type: Easing.InCubic
         }
         ScriptAction {
             script: {
@@ -506,6 +507,7 @@ Scope {
         root.isLockingWithGenie = true
         root.lockGenieProgress = 0.0
         root.lockTopBarState = 0.0
+        root.lockTopBarAbsorbing = false
         if (Services.OverlayManager) {
             Services.OverlayManager.isUnlockingWithGenie = false
             Services.OverlayManager.unlockSuctionProgress = 0.0
@@ -534,6 +536,7 @@ Scope {
         }
         root.isLocked = false
         root.lockTopBarState = 0.0
+        root.lockTopBarAbsorbing = false
         root.isLockingWithGenie = false
         root.lockGenieProgress = 1.0
         if (Services.OverlayManager) {
@@ -549,6 +552,7 @@ Scope {
         if (!isLocked) {
             root.isLocked = false
             root.lockTopBarState = 0.0
+            root.lockTopBarAbsorbing = false
             if (Services.OverlayManager) {
                 Services.OverlayManager.isLockAbsorbing = false
                 Services.OverlayManager.isLocked = false
@@ -629,6 +633,7 @@ Scope {
         root.faceIdCancelledByUser = false
         if (Services.FaceId) Services.FaceId.stopScan()
         if (Services.OverlayManager) Services.OverlayManager.lockVerified = true
+        root.lockTopBarAbsorbing = true
         lockTopBarAbsorbAnim.restart()
     }
 
@@ -754,10 +759,8 @@ Scope {
 
                 if (!sessionLockCommitTimer.running) {
                     if (!root.isRevealed) {
+                        // onIsRevealedChanged owns the lockscreen reveal choreography.
                         root.isRevealed = true
-                        lockTopBarEjectAnim.restart()
-                        lockGenieAnim.restart()
-                        deviceLockedPeekStartTimer.restart()
                     }
                 }
             }
@@ -1367,7 +1370,11 @@ Scope {
                         // barP: 1=desktop bar visible, 0=locked
                         readonly property real barP: Services.OverlayManager ? Services.OverlayManager.barIslandProgress : 0.0
                         // pillProgress: max of both sources — tracks bar absorb AND settled lock state
-                        readonly property real pillProgress: Math.max(root.lockTopBarState, Math.min(1.0, Math.max(0.0, (0.90 - barP) / 0.90)))
+                        readonly property real pillProgress: {
+                            if (root.isLockingWithGenie || root.lockTopBarAbsorbing || root.isUnlockingWithGenie)
+                                return Math.max(0.0, Math.min(1.0, root.lockTopBarState))
+                            return Math.max(root.lockTopBarState, Math.min(1.0, Math.max(0.0, (0.90 - barP) / 0.90)))
+                        }
 
                         transform: [
                             Translate {
@@ -1397,20 +1404,26 @@ Scope {
                             spacing: 8
 
                             // Wi-Fi Status Icon (if enabled)
-                            Text {
-                                visible: Services.Wifi && Services.Wifi.enabled
-                                text: Services.Icons.wifiIcon(Services.Wifi.signalStrength, Services.Wifi.connected, Services.Wifi.enabled)
-                                font.family: Services.Theme.fontSymbols
-                                font.pixelSize: Services.Theme.fontSizeSm
-                                color: (Services.Wifi && Services.Wifi.connected) ? Services.Theme.accent : Services.Theme.textDisabled
+                            Services.WifiSignal {
+                                visible: Services.Wifi
+                                width: 18
+                                height: 18
+                                signalStrength: Services.Wifi.signalStrength
+                                connected: Services.Wifi.connected
+                                wifiEnabled: Services.Wifi.enabled
+                                showDisabledStatus: true
+                                activeColor: (Services.Wifi && Services.Wifi.connected) ? Services.Theme.accent : Services.Theme.textDisabled
+                                inactiveColor: Services.Theme.textSecondary
                             }
 
-                            // Bluetooth Status Icon (if enabled and connected)
+                            // Bluetooth status icon while the adapter is enabled
                             Text {
-                                visible: Services.Bluetooth && Services.Bluetooth.enabled && Services.Bluetooth.hasConnectedDevice
-                                text: Services.Icons.btDeviceIcon(Services.Bluetooth.connectedDeviceIcon, Services.Bluetooth.connectedDeviceName)
+                                visible: Services.Bluetooth && Services.Bluetooth.enabled
+                                text: Services.Bluetooth.hasConnectedDevice
+                                    ? Services.Icons.bluetoothConnect
+                                    : Services.Icons.bluetooth
                                 font.family: Services.Theme.fontSymbols
-                                font.pixelSize: Services.Theme.fontSizeSm
+                                font.pixelSize: Math.round(Services.Theme.fontSizeXl * 1.25)
                                 color: Services.Theme.accent
                             }
 
@@ -1445,66 +1458,6 @@ Scope {
                                 }
                             }
 
-                            // Vertical Separator
-                            Rectangle {
-                                width: 1
-                                height: 12
-                                color: Services.Theme.border
-                                opacity: 0.8
-                            }
-
-                            // Control Center Toggle Glyph (Morphs & Spins 180° into Close Icon)
-                            Item {
-                                width: 14
-                                height: 14
-                                Layout.alignment: Qt.AlignVCenter
-
-                                Item {
-                                    anchors.centerIn: parent
-                                    width: 14
-                                    height: 14
-                                    rotation: root.lockscreenCcOpen ? 180 : 0
-                                    Behavior on rotation {
-                                        NumberAnimation {
-                                            duration: 320
-                                            easing.type: Easing.OutBack
-                                            easing.overshoot: 1.3
-                                        }
-                                    }
-
-                                    // Sliders icon (Morphs out)
-                                    Text {
-                                        anchors.centerIn: parent
-                                        text: Services.Icons.controlcenter
-                                        font.family: Services.Theme.fontSymbols
-                                        font.pixelSize: 13
-                                        font.weight: Font.Bold
-                                        color: (pillMouse.containsMouse || root.lockscreenCcOpen) ? Services.Theme.accent : Services.Theme.textPrimary
-                                        opacity: root.lockscreenCcOpen ? 0.0 : 1.0
-                                        scale: root.lockscreenCcOpen ? 0.4 : 1.0
-                                        rotation: root.lockscreenCcOpen ? -90 : 0
-                                        Behavior on opacity { NumberAnimation { duration: 180 } }
-                                        Behavior on scale { NumberAnimation { duration: 220; easing.type: Easing.OutBack } }
-                                        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
-                                    }
-
-                                    // Close icon (Morphs in)
-                                    Text {
-                                        anchors.centerIn: parent
-                                        text: Services.Icons.close
-                                        font.family: Services.Theme.fontSymbols
-                                        font.pixelSize: 10
-                                        font.weight: Font.Bold
-                                        color: (pillMouse.containsMouse || root.lockscreenCcOpen) ? Services.Theme.accent : Services.Theme.textPrimary
-                                        opacity: root.lockscreenCcOpen ? 1.0 : 0.0
-                                        scale: root.lockscreenCcOpen ? 1.0 : 0.4
-                                        rotation: root.lockscreenCcOpen ? 0 : 90
-                                        Behavior on opacity { NumberAnimation { duration: 180 } }
-                                        Behavior on scale { NumberAnimation { duration: 220; easing.type: Easing.OutBack } }
-                                        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
-                                    }
-                                }
-                            }
                         }
 
                         MouseArea {
@@ -1529,7 +1482,11 @@ Scope {
 
                         readonly property real targetDx: (topBarHeader.width / 2) - (topBarHeader.width - 24 - ((minimalControlRow.implicitWidth > 0 ? minimalControlRow.implicitWidth : minimalControlRow.width) / 2))
                         readonly property real barP: Services.OverlayManager ? Services.OverlayManager.barIslandProgress : 0.0
-                        readonly property real pillProgress: Math.max(root.lockTopBarState, Math.min(1.0, Math.max(0.0, (0.90 - barP) / 0.90)))
+                        readonly property real pillProgress: {
+                            if (root.isLockingWithGenie || root.lockTopBarAbsorbing || root.isUnlockingWithGenie)
+                                return Math.max(0.0, Math.min(1.0, root.lockTopBarState))
+                            return Math.max(root.lockTopBarState, Math.min(1.0, Math.max(0.0, (0.90 - barP) / 0.90)))
+                        }
 
                         transform: [
                             Translate {
@@ -1549,12 +1506,14 @@ Scope {
                         }
 
                         // Wi-Fi
-                        Text {
+                        Services.WifiSignal {
                             visible: Services.Wifi && Services.Wifi.enabled
-                            text: Services.Icons.wifi
-                            font.family: Services.Theme.fontSymbols
-                            font.pixelSize: Services.Theme.fontSizeSm
-                            color: (Services.Wifi && Services.Wifi.connected) ? Services.Theme.accent : Services.Theme.textDisabled
+                            width: 20
+                            height: 20
+                            signalStrength: Services.Wifi.signalStrength
+                            connected: Services.Wifi.connected
+                            wifiEnabled: Services.Wifi.enabled
+                            activeColor: (Services.Wifi && Services.Wifi.connected) ? Services.Theme.accent : Services.Theme.textDisabled
                         }
 
                         // Battery
@@ -1990,29 +1949,6 @@ Scope {
                                     }
                                 }
                             }
-
-                            // Ambient Greeting / Weather Subtitle (for styles other than vertical/radial/cyber)
-                            RowLayout {
-                                visible: (topClockColumn.clockStyle !== "vertical" && topClockColumn.clockStyle !== "radial" && topClockColumn.clockStyle !== "cyber") && (Services.Config ? Services.Config.lockscreenShowWeather : true)
-                                Layout.alignment: Qt.AlignHCenter
-                                spacing: 6
-                                opacity: 0.85
-
-                                Text {
-                                    text: Services.Icons.sun || Services.Icons.sparkle
-                                    font.family: Services.Theme.fontSymbols
-                                    font.pixelSize: 12
-                                    color: Services.Theme.accent
-                                }
-                                Text {
-                                    text: root.greetingStr + ", " + (Services.OsInfo.username || root.username)
-                                    color: Services.Theme.textSecondary
-                                    font.pixelSize: Services.Theme.fontSizeSm
-                                    font.weight: Font.Medium
-                                    style: Text.Outline
-                                    styleColor: Services.Theme.overlayDim
-                                }
-                            }
                         }
 
                         // ── 2. Bottom Profile Picture & Password Input System ────────────────────────
@@ -2029,21 +1965,20 @@ Scope {
                             width: root.isCompact ? Math.min(mainContainer.width - 40, 390) : 300
                             height: 195
 
-                            readonly property string avatarShape: Services.Config ? Services.Config.lockscreenAvatarShape : "circle"
-                            readonly property bool showAvatarRing: Services.Config ? Services.Config.lockscreenAvatarRing : true
+                            readonly property string avatarShape: Services.Config ? Services.Config.lockscreenAvatarShape : "squircle"
+                            readonly property bool showAvatarRing: Services.Config ? Services.Config.lockscreenAvatarRing : false
                             readonly property string inputStyle: root.isMinimal ? "underline" : (Services.Config ? Services.Config.lockscreenInputStyle : "pill")
                             readonly property bool showPasswordBox: root.userRevealedInput || (root.passwordInput.length > 0) || root.isError || root.isAuthenticating || root.isCompact
 
+                            // Avatar size (px) - everything else (ring, container, radii, fallback letter) derives from this
+                            readonly property int avatarSize: 64
+
                             readonly property int avatarRadius: {
-                                if (avatarShape === "circle") return 24
-                                if (avatarShape === "squircle") return 14
-                                return 10
+                                if (avatarShape === "circle") return Math.round(avatarSize / 2)
+                                if (avatarShape === "squircle") return Math.round(avatarSize * 0.29)
+                                return Math.round(avatarSize * 0.21)
                             }
-                            readonly property int ringRadius: {
-                                if (avatarShape === "circle") return 27
-                                if (avatarShape === "squircle") return 17
-                                return 13
-                            }
+                            readonly property int ringRadius: avatarRadius + 3
 
                             opacity: {
                                 if (root.isUnlockingWithGenie) {
@@ -2299,6 +2234,9 @@ Scope {
                                             }
 
                                             onTextChanged: {
+                                                // Hide the box again once the user has erased everything
+                                                if (text.length === 0 && !root.isError && !root.isAuthenticating)
+                                                    root.userRevealedInput = false
                                                 root.passwordInput = text
                                                 if (root.isError) {
                                                     root.isError = false
@@ -2337,21 +2275,21 @@ Scope {
                                 }
                             }
 
-                            // ── 3. User Avatar (Fixed at Y: 72 - 100% IMMUTABLE POSITION) ────────
+                            // ── 3. User Avatar (Fixed at Y: 80 - 100% IMMUTABLE POSITION) ────────
                             Item {
                                 id: avatarBoxContainer
                                 visible: root.isDefault && (Services.Config ? Services.Config.lockscreenShowAvatar : false)
                                 anchors.horizontalCenter: parent.horizontalCenter
-                                y: 72
-                                width: 56
-                                height: 56
+                                y: 80
+                                width: centerAuthCard.avatarSize + 8
+                                height: centerAuthCard.avatarSize + 8
 
                                 // Outer Glow / Focus Ring
                                 Rectangle {
                                     id: outerGlowRing
                                     anchors.centerIn: parent
-                                    width: 54
-                                    height: 54
+                                    width: centerAuthCard.avatarSize + 6
+                                    height: centerAuthCard.avatarSize + 6
                                     color: "transparent"
                                     radius: centerAuthCard.ringRadius
                                     border.width: pwTextInput.activeFocus ? 2 : 1.5
@@ -2382,8 +2320,8 @@ Scope {
                                 Services.AvatarFrame {
                                     id: avatarBox
                                     anchors.centerIn: parent
-                                    width: 48
-                                    height: 48
+                                    width: centerAuthCard.avatarSize
+                                    height: centerAuthCard.avatarSize
                                     source: Services.OsInfo.avatarPath.length > 0 ? Services.OsInfo.avatarPath : ("file://" + (Quickshell.env("HOME") || "/home/" + (Quickshell.env("USER") || "user")) + "/.face")
                                     shapeRadius: centerAuthCard.avatarRadius
                                     backgroundColor: Services.Theme.surfaceVariant
@@ -2394,18 +2332,18 @@ Scope {
                                         return u.charAt(0).toUpperCase()
                                     }
                                     fallbackFontFamily: Services.Theme.fontDisplay
-                                    fallbackFontSize: 20
+                                    fallbackFontSize: Math.round(centerAuthCard.avatarSize * 0.4)
                                     fallbackColor: Services.Theme.accent
                                     Behavior on borderColor { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                                 }
                             }
 
-                            // ── 4. Username Tag (Fixed at Y: 136 - 100% IMMUTABLE POSITION) ──────
+                            // ── 4. Username Tag (Fixed at Y: 156 - 100% IMMUTABLE POSITION) ──────
                             Text {
                                 id: usernameText
                                 visible: root.isDefault && (Services.Config ? Services.Config.lockscreenShowGreeting : false)
                                 anchors.horizontalCenter: parent.horizontalCenter
-                                y: 136
+                                y: 156
                                 horizontalAlignment: Text.AlignHCenter
                                 text: Services.OsInfo.username.length > 0 ? Services.OsInfo.username : root.username
                                 color: Services.Theme.textPrimary
@@ -2416,14 +2354,14 @@ Scope {
                                 styleColor: Services.Theme.overlayDim
                             }
 
-                            // ── 5. Idle Prompt (Fixed at Y: 160 - Fades smoothly without shifting layout) ──
+                            // ── 5. Idle Prompt (Y: 164, or 175 when username tag is shown - Fades smoothly without shifting layout) ──
                             Item {
                                 id: authPrompt
                                 visible: opacity > 0.01
                                 opacity: (!centerAuthCard.showPasswordBox && !root.isCompact) ? 0.85 : 0.0
                                 scale: (!centerAuthCard.showPasswordBox && !root.isCompact) ? 1.0 : 0.82
                                 anchors.horizontalCenter: parent.horizontalCenter
-                                y: 160
+                                y: usernameText.visible ? 175 : 164
                                 width: promptLabel.implicitWidth + 20
                                 height: 20
                                 Behavior on opacity { NumberAnimation { duration: 240; easing.type: Easing.OutCubic } }

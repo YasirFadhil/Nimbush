@@ -12,10 +12,15 @@ Item {
     property var kdeDevices: []
     readonly property var defaultDevice: kdeDevices.length > 0 ? kdeDevices[0] : null
     readonly property bool hasKdeDevice: kdeDevices.length > 0
-    property bool hasLocalSend: true
+    // Availability is unknown until checkLocalSendProc finishes.
+    property bool hasLocalSend: false
+    property string localSendExecutable: ""
 
     // Live Transfer Feedback State
-    property string transferState: "idle" // "idle" | "sending" | "success" | "error"
+    // "idle" | "preparing" | "handoff" | "sending" | "success" | "error"
+    property string transferState: "idle"
+    // "" | "kdeconnect" | "localsend"
+    property string transferBackend: ""
     property string transferTargetName: ""
     property int transferFileCount: 0
     property string transferPreviewUrl: ""
@@ -40,6 +45,7 @@ Item {
         repeat: false
         onTriggered: {
             root.transferState = "idle"
+            root.transferBackend = ""
             root.transferTargetName = ""
             root.transferFileCount = 0
             root.transferPreviewUrl = ""
@@ -68,11 +74,22 @@ Item {
     // ── Process to check LocalSend binary availability ──
     Process {
         id: checkLocalSendProc
-        command: ["sh", "-c", "which localsend_app localsend >/dev/null 2>&1 && echo 1 || echo 0"]
+        // `which A B` can fail if either name is missing. Check candidates
+        // independently and return the first executable that actually exists.
+        command: ["sh", "-c", "command -v localsend_app || command -v localsend || exit 1"]
         running: true
         stdout: SplitParser {
             onRead: data => {
-                root.hasLocalSend = (data.trim() === "1")
+                const executable = data.trim()
+                if (executable.length > 0) {
+                    root.localSendExecutable = executable
+                    root.hasLocalSend = true
+                }
+            }
+        }
+        onExited: (exitCode, exitStatus) => {
+            if (exitCode !== 0 && root.localSendExecutable.length === 0) {
+                root.hasLocalSend = false
             }
         }
     }
@@ -107,7 +124,22 @@ Item {
     Process {
         id: shareLocalSendProc
         onExited: (code, status) => {
-            // LocalSend opened
+            // This process is a short-lived shell wrapper that launches
+            // LocalSend in the background. Its exit status only confirms the
+            // handoff was launched, not that a file transfer completed.
+            if (code === 0) {
+                root.transferState = "handoff"
+                root.transferMessage = "Continue in LocalSend"
+                if (Services.SoundFeedback && Services.SoundFeedback.playDeviceAdded) {
+                    Services.SoundFeedback.playDeviceAdded()
+                }
+                resetStateTimer.interval = 4500
+            } else {
+                root.transferState = "error"
+                root.transferMessage = "Could not open LocalSend"
+                resetStateTimer.interval = 3500
+            }
+            resetStateTimer.restart()
         }
     }
 
@@ -159,7 +191,9 @@ Item {
         const devId = targetDev ? targetDev.id : (deviceId || "")
         const devName = targetDev ? targetDev.name : "Device"
 
+        resetStateTimer.interval = 2600
         root.transferState = "sending"
+        root.transferBackend = "kdeconnect"
         root.transferTargetName = devName
         root.transferFileCount = paths.length
         root.transferPreviewUrl = extractPreview(urls)
@@ -174,24 +208,36 @@ Item {
         const paths = cleanPaths(urls)
         if (paths.length === 0) return false
 
-        root.transferState = "sending"
+        if (!root.hasLocalSend || root.localSendExecutable.length === 0) {
+            root.transferState = "error"
+            root.transferBackend = "localsend"
+            root.transferTargetName = "LocalSend"
+            root.transferFileCount = paths.length
+            root.transferPreviewUrl = extractPreview(urls)
+            root.transferMessage = "LocalSend is not available"
+            resetStateTimer.interval = 3500
+            resetStateTimer.restart()
+            return false
+        }
+
+        resetStateTimer.stop()
+        // Stage 1: preparing — show a truthful handoff state, never fake transfer progress.
+        root.transferState = "preparing"
+        root.transferBackend = "localsend"
         root.transferTargetName = "LocalSend"
         root.transferFileCount = paths.length
         root.transferPreviewUrl = extractPreview(urls)
-        root.transferMessage = "Opening in LocalSend..."
+        root.transferMessage = "Preparing LocalSend…"
 
-        shareLocalSendProc.command = ["localsend_app"].concat(paths)
+        // Use the detected executable (localsend_app or localsend). A short-lived
+        // shell launches it detached so its UI process lifetime does not hold the
+        // Dynamic Island in the preparing state until the app is closed.
+        shareLocalSendProc.command = [
+            "sh", "-c",
+            'app="$1"; shift; "$app" "$@" </dev/null >/dev/null 2>&1 &',
+            "sh", root.localSendExecutable
+        ].concat(paths)
         shareLocalSendProc.running = true
-
-        // LocalSend opens its GUI window
-        Qt.callLater(() => {
-            root.transferState = "success"
-            root.transferMessage = "Opened in LocalSend"
-            if (Services.SoundFeedback && Services.SoundFeedback.playDeviceAdded) {
-                Services.SoundFeedback.playDeviceAdded()
-            }
-            resetStateTimer.restart()
-        })
         return true
     }
 

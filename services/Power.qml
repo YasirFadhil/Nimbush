@@ -239,36 +239,11 @@ Singleton {
         }
     }
 
+    
     function updateChargeLimit() {
-        if (!chargeLimitSupported) return
-        if (!Services.Config) return
-        const enabled = Services.Config.batteryChargeLimitEnabled
-        const limit = Services.Config.batteryChargeLimitValue || 80
-        const pct = Math.round(percentage * 100)
-
-        if (!enabled) {
-            if (chargeMode !== "auto" && !chargeSetProc.running) {
-                chargeMode = "auto"
-                chargeSetProc.command = ["python3", chargeHelperScript, "set", "auto"]
-                chargeSetProc.running = true
-            }
-            return
-        }
-
-        if (pct >= limit) {
-            if (chargeMode !== "inhibit-charge" && !chargeSetProc.running) {
-                chargeMode = "inhibit-charge"
-                chargeSetProc.command = ["python3", chargeHelperScript, "set", "inhibit-charge"]
-                chargeSetProc.running = true
-            }
-        } else if (pct <= (limit - 5)) {
-            if (chargeMode !== "auto" && !chargeSetProc.running) {
-                chargeMode = "auto"
-                chargeSetProc.command = ["python3", chargeHelperScript, "set", "auto"]
-                chargeSetProc.running = true
-            }
-        }
+      return
     }
+
 
     function refreshDetails() {
         if (!detailProc.running) detailProc.running = true

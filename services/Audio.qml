@@ -46,6 +46,15 @@ Singleton {
     property var sources: []
     property var streams: []
 
+    // Per-application volume updates are throttled so slider dragging stays smooth
+    // without rebuilding the Repeater model on every pointer movement.
+    property int _pendingStreamIndex: -1
+    property real _pendingStreamVolume: 1.0
+    property bool _streamVolumeNeedsDispatch: false
+    property bool _streamVolumeCommitPending: false
+    property bool _streamVolumeUiDragging: false
+    property bool _refreshAfterStreamCommit: false
+
     // Current (default) sink and source derived from the arrays
     readonly property var currentSink: {
         if (!sinks || sinks.length === 0) return null
@@ -138,8 +147,17 @@ Singleton {
                     const parsed = JSON.parse(data.trim())
                     if (parsed.sinks) root.sinks = parsed.sinks
                     if (parsed.sources) root.sources = parsed.sources
-                    if (parsed.streams) root.streams = parsed.streams
+                    // Do not replace the Repeater model while a stream slider is being dragged.
+                    if (parsed.streams && !root._streamVolumeUiDragging)
+                        root.streams = parsed.streams
                 } catch(e) {}
+            }
+        }
+        onExited: (code, status) => {
+            running = false
+            if (root._refreshAfterStreamCommit) {
+                root._refreshAfterStreamCommit = false
+                root.refreshDevices()
             }
         }
     }
@@ -163,7 +181,30 @@ Singleton {
         property int targetIndex: 0
         property real targetVol: 1.0
         command: ["pactl", "set-sink-input-volume", String(targetIndex), Math.round(targetVol * 100) + "%"]
-        onExited: (code, status) => { running = false; refreshDevices() }
+        onExited: (code, status) => root._onStreamVolumeProcessExited()
+    }
+
+    // Throttle stream volume commands to roughly 16 updates/sec while dragging.
+    // If pactl is still running, the latest requested value is sent when it exits.
+    Timer {
+        id: streamVolumeDispatch
+        interval: 60
+        repeat: false
+        onTriggered: root._dispatchStreamVolume()
+    }
+
+    // Refresh the stream model only after the final drag update has been applied.
+    Timer {
+        id: streamVolumeRefresh
+        interval: 180
+        repeat: false
+        onTriggered: {
+            // If a device snapshot is already running, request one more after it exits.
+            if (getAudioDevicesProc.running)
+                root._refreshAfterStreamCommit = true
+            else
+                root.refreshDevices()
+        }
     }
 
     Process {
@@ -203,20 +244,62 @@ Singleton {
         setSourceProc.running = true
     }
 
-    function setStreamVolume(index, v) {
-        const val = Math.max(0, Math.min(1.5, v))
-        if (root.streams) {
-            const arr = [...root.streams]
-            const item = arr.find(s => s.index === index)
-            if (item) {
-                item.volume = val
-                root.streams = arr
-            }
+    function beginStreamVolumeDrag() {
+        root._streamVolumeUiDragging = true
+        streamVolumeRefresh.stop()
+    }
+
+    function setStreamVolume(index, v, commit = true) {
+        if (index === undefined || index === null || Number(index) < 0)
+            return
+
+        const numericVolume = Number(v)
+        const val = Math.max(0, Math.min(1.5, Number.isFinite(numericVolume) ? numericVolume : 0))
+
+        // Keep only the newest requested value. Never replace root.streams here:
+        // doing so resets the Repeater delegates and breaks mouse dragging.
+        root._pendingStreamIndex = Number(index)
+        root._pendingStreamVolume = val
+        root._streamVolumeNeedsDispatch = true
+        streamVolumeRefresh.stop()
+
+        if (commit) {
+            root._streamVolumeCommitPending = true
+            root._streamVolumeUiDragging = false
         }
-        if (setStreamVolProc.running) setStreamVolProc.running = false
+
+        if (!setStreamVolProc.running && !streamVolumeDispatch.running)
+            streamVolumeDispatch.start()
+    }
+
+    function _dispatchStreamVolume() {
+        if (!root._streamVolumeNeedsDispatch || root._pendingStreamIndex < 0)
+            return
+        if (setStreamVolProc.running)
+            return
+
+        const index = root._pendingStreamIndex
+        const volume = root._pendingStreamVolume
+        root._streamVolumeNeedsDispatch = false
+
         setStreamVolProc.targetIndex = index
-        setStreamVolProc.targetVol = val
+        setStreamVolProc.targetVol = volume
         setStreamVolProc.running = true
+    }
+
+    function _onStreamVolumeProcessExited() {
+        setStreamVolProc.running = false
+
+        if (root._streamVolumeNeedsDispatch) {
+            if (!streamVolumeDispatch.running)
+                streamVolumeDispatch.start()
+            return
+        }
+
+        if (root._streamVolumeCommitPending) {
+            root._streamVolumeCommitPending = false
+            streamVolumeRefresh.restart()
+        }
     }
 
     function toggleStreamMute(index) {

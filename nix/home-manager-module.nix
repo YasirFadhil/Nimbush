@@ -7,6 +7,14 @@ with lib;
 let
   cfg = config.programs.quickshell-shell;
   defaultPackage = if (self.packages ? ${pkgs.system}) then self.packages.${pkgs.system}.default else null;
+  opencvContrib = pkgs.opencv4.override {
+    enableContrib = true;
+    enablePython = true;
+  };
+  faceIdPython = pkgs.python3.withPackages (ps: with ps; [
+    opencvContrib
+    numpy
+  ]);
 
   # Build JSON wallpaper config declaratively
   wallpaperConfig = {
@@ -78,22 +86,13 @@ in
       enableIntegration = mkOption {
         type = types.bool;
         default = true;
-        description = "Automatically inject Quickshell keybindings, autostart, and layer rules into Hyprland if enabled in Home Manager.";
-      };
-
-      useLuaConfig = mkOption {
-        type = types.bool;
-        default = true;
-        description = ''Prefer Hyprland Lua configuration format (hyprland.lua) for Hyprland >= 0.55.
-          Set to false to use the classic conf format (hyprland.conf) for older versions.
-          When true, writes conf/quickshell.lua and companion .lua modular files;
-          when false, writes conf/quickshell.conf and companion .conf modular files.'';
+        description = "Write Quickshell keybindings, autostart, and layer rules into ~/.config/hypr/conf/*.lua (Hyprland >= 0.55, Lua config only).";
       };
 
       writeModularConfig = mkOption {
         type = types.bool;
         default = true;
-        description = "Write standalone modular Quickshell configuration files into ~/.config/hypr/. Format follows useLuaConfig.";
+        description = "Write standalone modular Quickshell configuration files into ~/.config/hypr/.";
       };
 
       writeModularTree = mkOption {
@@ -132,6 +131,8 @@ in
 
   config = mkIf cfg.enable (mkMerge [
     {
+      home.sessionVariables.FACEID_PYTHON = "${faceIdPython}/bin/python";
+
       home.packages = (optional (cfg.package != null) cfg.package)
         ++ (optional cfg.hyprland.enablePackage pkgs.hyprland)
         ++ (optional cfg.niri.enablePackage pkgs.niri)
@@ -144,7 +145,7 @@ in
           cliphist
           wl-clipboard
           wtype
-          power-profiles-daemon
+          tlp
           upower
           socat
           psmisc
@@ -163,6 +164,8 @@ in
           wireplumber
           awww
           swaybg
+          ffmpeg
+          v4l-utils
           (python3.withPackages (ps: with ps; [
             pygobject3
             dbus-python
@@ -186,122 +189,8 @@ in
       };
 
       # Standalone Modular Hyprland Configurations
-      # Classic conf format (for Hyprland < 0.55 or when useLuaConfig = false)
-      xdg.configFile."hypr/conf/quickshell.conf" = mkIf (cfg.hyprland.writeModularConfig && !cfg.hyprland.useLuaConfig) {
-        text = ''
-# ── Quickshell Desktop Environment Integration (Hyprland Classic) ──
-exec-once = qs
-exec-once = wl-paste --type text --watch cliphist store
-exec-once = wl-paste --type image --watch cliphist store
-
-bind = SUPER, SPACE,         exec, qs ipc call launcher toggle
-bind = SUPER SHIFT, W,       exec, qs ipc call wallpaper toggle
-bind = SUPER SHIFT, E,       exec, qs ipc call emoji toggle
-bind = SUPER, V,             exec, qs ipc call clipboard toggle
-bind = SUPER, P,             exec, qs ipc call powermenu toggle
-bind = SUPER ALT, L,         exec, qs ipc call lockscreen toggle
-bind = SUPER, D,             exec, qs ipc call dashboard toggle
-bind = SUPER, N,             exec, qs ipc call notifCenter toggle
-bind = SUPER, C,             exec, qs ipc call controlCenter toggle
-bind = SUPER, B,             exec, qs ipc call battery toggle
-
-layerrule = blur, quickshell:bar
-layerrule = blur, quickshell:launcher
-layerrule = ignorezero, quickshell:launcher
-layerrule = blur, quickshell:wallpaperselector
-layerrule = ignorezero, quickshell:wallpaperselector
-layerrule = blur, quickshell:emojipicker
-layerrule = ignorezero, quickshell:emojipicker
-layerrule = blur, quickshell:clipboard
-layerrule = ignorezero, quickshell:clipboard
-layerrule = blur, quickshell:controlcenter
-layerrule = ignorezero, quickshell:controlcenter
-layerrule = blur, quickshell:notifcenter
-layerrule = ignorezero, quickshell:notifcenter
-layerrule = blur, quickshell:dashboard
-layerrule = ignorezero, quickshell:dashboard
-layerrule = blur, quickshell:calendar
-layerrule = ignorezero, quickshell:calendar
-layerrule = blur, quickshell:hud
-layerrule = ignorezero, quickshell:hud
-layerrule = blur, quickshell:traymenu
-layerrule = ignorezero, quickshell:traymenu
-layerrule = blur, quickshell:trayoverflow
-layerrule = ignorezero, quickshell:trayoverflow
-layerrule = blur, quickshell:settings
-layerrule = ignorezero, quickshell:settings
-layerrule = blur, quickshell:battery
-layerrule = ignorezero, quickshell:battery
-layerrule = blur, quickshell:volume
-layerrule = ignorezero, quickshell:volume
-layerrule = blur, quickshell:welcome
-layerrule = ignorezero, quickshell:welcome
-layerrule = blur, quickshell:powermenu
-layerrule = ignorezero, quickshell:powermenu
-layerrule = blur, quickshell:lockscreen
-layerrule = blur, quickshell:osd
-layerrule = ignorezero, quickshell:osd
-layerrule = blur, quickshell:volumeosd
-layerrule = ignorezero, quickshell:volumeosd
-layerrule = blur, quickshell:brightnessosd
-layerrule = ignorezero, quickshell:brightnessosd
-layerrule = blur, ^quickshell:.*$
-layerrule = ignorezero, ^quickshell:.*$
-'';
-      };
-
-      xdg.configFile."hypr/conf/autostart.conf" = mkIf (cfg.hyprland.writeModularConfig && cfg.hyprland.writeModularTree && !cfg.hyprland.useLuaConfig) {
-        text = ''
-# ── Autostart Daemons & Background Services (Hyprland Classic) ──
-exec-once = systemctl enable --now --user hyprpolkitagent
-exec-once = wl-paste --type text --watch cliphist store
-exec-once = wl-paste --type image --watch cliphist store
-'';
-      };
-
-      xdg.configFile."hypr/conf/keybinds.conf" = mkIf (cfg.hyprland.writeModularConfig && cfg.hyprland.writeModularTree && !cfg.hyprland.useLuaConfig) {
-        text = ''
-# ── Keybindings & Shortcuts (Hyprland Classic) ──
-$mainMod = SUPER
-$terminal = kitty
-$fileManager = nautilus
-
-bind = $mainMod, T, exec, $terminal
-bind = $mainMod, E, exec, $fileManager
-bind = $mainMod, Q, killactive,
-bind = $mainMod ALT, F, togglefloating,
-bind = $mainMod SHIFT, F, fullscreen, 0
-bind = $mainMod, J, togglesplit,
-
-bind = $mainMod, 1, workspace, 1
-bind = $mainMod, 2, workspace, 2
-bind = $mainMod, 3, workspace, 3
-bind = $mainMod, 4, workspace, 4
-bind = $mainMod, 5, workspace, 5
-bind = $mainMod, 6, workspace, 6
-bind = $mainMod, 7, workspace, 7
-bind = $mainMod, 8, workspace, 8
-bind = $mainMod, 9, workspace, 9
-bind = $mainMod, 0, workspace, 10
-
-bind = , PRINT, exec, ~/.config/quickshell/scripts/screenshot.sh full
-bind = SHIFT, PRINT, exec, ~/.config/quickshell/scripts/screenshot.sh region
-bind = $mainMod, PRINT, exec, ~/.config/quickshell/scripts/screenshot.sh window
-'';
-      };
-
-      xdg.configFile."hypr/conf/rules.conf" = mkIf (cfg.hyprland.writeModularConfig && cfg.hyprland.writeModularTree && !cfg.hyprland.useLuaConfig) {
-        text = ''
-# ── Window Rules (Hyprland Classic) ──
-windowrulev2 = suppressevent maximize, class:.*
-windowrulev2 = float, title:^(Picture-in-Picture|Picture in picture)$
-windowrulev2 = pin, title:^(Picture-in-Picture|Picture in picture)$
-windowrulev2 = float, class:^(pavucontrol|nm-connection-editor|blueman-manager|swappy)$
-'';
-      };
-
-      # Lua format (for Hyprland >= 0.55 or when useLuaConfig = true)
-      xdg.configFile."hypr/conf/quickshell.lua" = mkIf (cfg.hyprland.writeModularConfig && cfg.hyprland.useLuaConfig) {
+      # Hyprland Lua config (>= 0.55)
+      xdg.configFile."hypr/conf/quickshell.lua" = mkIf (cfg.hyprland.enableIntegration && cfg.hyprland.writeModularConfig) {
         text = ''
 -- ── Quickshell Desktop Environment Integration (Hyprland Lua) ──
 local mainMod = "SUPER"
@@ -323,28 +212,14 @@ hl.bind(mainMod .. " + N",             hl.dsp.exec_cmd("qs ipc call notifCenter 
 hl.bind(mainMod .. " + C",             hl.dsp.exec_cmd("qs ipc call controlCenter toggle"))
 hl.bind(mainMod .. " + B",             hl.dsp.exec_cmd("qs ipc call battery toggle"))
 
-hl.layer_rule({ match = { namespace = "quickshell:bar" },               blur = true })
-hl.layer_rule({ match = { namespace = "quickshell:launcher" },          blur = true, ignore_alpha = 0 })
-hl.layer_rule({ match = { namespace = "quickshell:wallpaperselector" }, blur = true, ignore_alpha = 0 })
-hl.layer_rule({ match = { namespace = "quickshell:emojipicker" },       blur = true, ignore_alpha = 0 })
-hl.layer_rule({ match = { namespace = "quickshell:clipboard" },         blur = true, ignore_alpha = 0 })
-hl.layer_rule({ match = { namespace = "quickshell:controlcenter" },     blur = true, ignore_alpha = 0 })
-hl.layer_rule({ match = { namespace = "quickshell:notifcenter" },       blur = true, ignore_alpha = 0 })
-hl.layer_rule({ match = { namespace = "quickshell:dashboard" },         blur = true, ignore_alpha = 0 })
-hl.layer_rule({ match = { namespace = "quickshell:calendar" },          blur = true, ignore_alpha = 0 })
-hl.layer_rule({ match = { namespace = "quickshell:hud" },               blur = true, ignore_alpha = 0 })
-hl.layer_rule({ match = { namespace = "quickshell:traymenu" },          blur = true, ignore_alpha = 0 })
-hl.layer_rule({ match = { namespace = "quickshell:trayoverflow" },      blur = true, ignore_alpha = 0 })
-hl.layer_rule({ match = { namespace = "quickshell:settings" },          blur = true, ignore_alpha = 0 })
-hl.layer_rule({ match = { namespace = "quickshell:battery" },           blur = true, ignore_alpha = 0 })
-hl.layer_rule({ match = { namespace = "quickshell:volume" },            blur = true, ignore_alpha = 0 })
-hl.layer_rule({ match = { namespace = "quickshell:welcome" },           blur = true, ignore_alpha = 0 })
-hl.layer_rule({ match = { namespace = "quickshell:powermenu" },         blur = true, ignore_alpha = 0 })
-hl.layer_rule({ match = { namespace = "^quickshell:.*$" },              blur = true, ignore_alpha = 0 })
+hl.layer_rule({ match = { namespace = "^quickshell:.*$" }, blur = true, ignore_alpha = 0.2 })
+
+-- Override per-namespace (taruh di bawah catch-all), contoh:
+-- hl.layer_rule({ match = { namespace = "quickshell:launcher" }, ignore_alpha = 0.4 })
 '';
       };
 
-      xdg.configFile."hypr/conf/autostart.lua" = mkIf (cfg.hyprland.writeModularConfig && cfg.hyprland.writeModularTree && cfg.hyprland.useLuaConfig) {
+      xdg.configFile."hypr/conf/autostart.lua" = mkIf (cfg.hyprland.enableIntegration && cfg.hyprland.writeModularConfig && cfg.hyprland.writeModularTree) {
         text = ''
 -- ── Autostart Daemons & Background Services (Hyprland Lua) ──
 hl.on("hyprland.start", function ()
@@ -355,7 +230,7 @@ end)
 '';
       };
 
-      xdg.configFile."hypr/conf/keybinds.lua" = mkIf (cfg.hyprland.writeModularConfig && cfg.hyprland.writeModularTree && cfg.hyprland.useLuaConfig) {
+      xdg.configFile."hypr/conf/keybinds.lua" = mkIf (cfg.hyprland.enableIntegration && cfg.hyprland.writeModularConfig && cfg.hyprland.writeModularTree) {
         text = ''
 -- ── Keybindings & Shortcuts (Hyprland Lua) ──
 local mainMod = "SUPER"
@@ -382,7 +257,7 @@ hl.bind(mainMod .. " + print", hl.dsp.exec_cmd("~/.config/quickshell/scripts/scr
 '';
       };
 
-      xdg.configFile."hypr/conf/rules.lua" = mkIf (cfg.hyprland.writeModularConfig && cfg.hyprland.writeModularTree && cfg.hyprland.useLuaConfig) {
+      xdg.configFile."hypr/conf/rules.lua" = mkIf (cfg.hyprland.enableIntegration && cfg.hyprland.writeModularConfig && cfg.hyprland.writeModularTree) {
         text = ''
 -- ── Window & Workspace Rules (Hyprland Lua) ──
 hl.window_rule({
@@ -492,6 +367,7 @@ window-rule {
 
         Service = {
           EnvironmentFile = "-%h/.config/quickshell/state/icon-theme.env";
+          Environment = [ "FACEID_PYTHON=${faceIdPython}/bin/python" ];
           ExecStart = if cfg.package != null
             then "${cfg.package}/bin/quickshell-shell"
             else "${pkgs.quickshell}/bin/qs -c %h/.config/quickshell";
@@ -504,75 +380,6 @@ window-rule {
         };
       };
     }
-
-    # Declarative Hyprland Integration
-    (mkIf (cfg.hyprland.enableIntegration && (cfg.hyprland.enablePackage || (lib.attrByPath [ "wayland" "windowManager" "hyprland" "enable" ] false config))) {
-      wayland.windowManager.hyprland.settings = {
-        exec-once = (optional (!cfg.enableSystemdService) "bash -c 'source ~/.config/quickshell/state/icon-theme.env 2>/dev/null; export QS_ICON_THEME; exec qs -n'") ++ [
-          "wl-paste --type text --watch cliphist store"
-          "wl-paste --type image --watch cliphist store"
-        ];
-        bind = [
-          "SUPER, SPACE, exec, qs ipc call launcher toggle"
-          "SUPER SHIFT, W, exec, qs ipc call wallpaper toggle"
-          "SUPER SHIFT, E, exec, qs ipc call emoji toggle"
-          "SUPER, V, exec, qs ipc call clipboard toggle"
-          "SUPER, P, exec, qs ipc call powermenu toggle"
-          "SUPER ALT, L, exec, qs ipc call lockscreen toggle"
-          "SUPER, D, exec, qs ipc call dashboard toggle"
-          "SUPER, N, exec, qs ipc call notifCenter toggle"
-          "SUPER, C, exec, qs ipc call controlCenter toggle"
-          "SUPER, B, exec, qs ipc call battery toggle"
-          ", PRINT, exec, ~/.config/quickshell/scripts/screenshot.sh full"
-          "SHIFT, PRINT, exec, ~/.config/quickshell/scripts/screenshot.sh region"
-          "SUPER, PRINT, exec, ~/.config/quickshell/scripts/screenshot.sh window"
-        ];
-        layerrule = [
-          "blur, quickshell:bar"
-          "blur, quickshell:launcher"
-          "ignorezero, quickshell:launcher"
-          "blur, quickshell:wallpaperselector"
-          "ignorezero, quickshell:wallpaperselector"
-          "blur, quickshell:emojipicker"
-          "ignorezero, quickshell:emojipicker"
-          "blur, quickshell:clipboard"
-          "ignorezero, quickshell:clipboard"
-          "blur, quickshell:controlcenter"
-          "ignorezero, quickshell:controlcenter"
-          "blur, quickshell:notifcenter"
-          "ignorezero, quickshell:notifcenter"
-          "blur, quickshell:dashboard"
-          "ignorezero, quickshell:dashboard"
-          "blur, quickshell:calendar"
-          "ignorezero, quickshell:calendar"
-          "blur, quickshell:hud"
-          "ignorezero, quickshell:hud"
-          "blur, quickshell:traymenu"
-          "ignorezero, quickshell:traymenu"
-          "blur, quickshell:trayoverflow"
-          "ignorezero, quickshell:trayoverflow"
-          "blur, quickshell:battery"
-          "ignorezero, quickshell:battery"
-          "blur, quickshell:volume"
-          "ignorezero, quickshell:volume"
-          "blur, quickshell:settings"
-          "ignorezero, quickshell:settings"
-          "blur, quickshell:welcome"
-          "ignorezero, quickshell:welcome"
-          "blur, quickshell:powermenu"
-          "ignorezero, quickshell:powermenu"
-          "blur, quickshell:lockscreen"
-          "blur, quickshell:osd"
-          "ignorezero, quickshell:osd"
-          "blur, quickshell:volumeosd"
-          "ignorezero, quickshell:volumeosd"
-          "blur, quickshell:brightnessosd"
-          "ignorezero, quickshell:brightnessosd"
-          "blur, ^quickshell:.*$"
-          "ignorezero, ^quickshell:.*$"
-        ];
-      };
-    })
 
     # Declarative Niri Integration
     (mkIf (cfg.niri.enableIntegration && (cfg.niri.enablePackage || (lib.attrByPath [ "programs" "niri" "enable" ] false config))) {

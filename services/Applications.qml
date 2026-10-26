@@ -14,6 +14,18 @@ Singleton {
     property var _indexedApps: []
     property var _allApps: []
 
+    // Quickshell is started from its config directory. Explicitly set Kitty's
+    // working directory so a terminal opened by the shell still starts at home.
+    function launch(app) {
+        if (!app) return
+        const appId = String(app.id || "").toLowerCase().replace(/\.desktop$/, "")
+        if (appId === "kitty") {
+            Quickshell.execDetached(["kitty", "--directory", Quickshell.env("HOME")])
+            return
+        }
+        if (typeof app.execute === "function") app.execute()
+    }
+
     onAppListChanged: debounceTimer.restart()
     onQueryChanged: updateFiltered()
 

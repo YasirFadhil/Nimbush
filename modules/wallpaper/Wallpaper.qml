@@ -6,6 +6,7 @@ import "../../services" as Services
 Variants {
     model: (Services.Wallpaper && Services.Wallpaper.hasSwww) ? [] : Quickshell.screens
 
+    // qmllint disable uncreatable-type
     delegate: PanelWindow {
         id: wallWin
         required property var modelData

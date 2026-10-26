@@ -54,17 +54,31 @@ Singleton {
         }
         if (isNiri()) {
             switchProc.command = ["niri", "msg", "action", "focus-workspace", String(id)]
+            switchProc.running = true
+            root.activeWorkspaceId = parseInt(id) || root.activeWorkspaceId
+            root.activeWorkspaceName = String(id)
         } else {
-            switchProc.command = ["hyprctl", "dispatch", "workspace", String(id)]
+            // Hyprland 0.55+: dispatch = satu ekspresi Lua, bukan `workspace <id>`.
+            // State TIDAK diset manual; biarkan event socket2 yang update indikator.
+            const n = parseInt(id)
+            const arg = (String(n) === String(id)) ? String(n) : JSON.stringify(String(id))
+            switchProc.command = ["hyprctl", "dispatch", "hl.dsp.focus({ workspace = " + arg + " })"]
+            switchProc.running = true
         }
-        switchProc.running = true
-        root.activeWorkspaceId = parseInt(id) || root.activeWorkspaceId
-        root.activeWorkspaceName = String(id)
     }
 
     Process {
         id: switchProc
         running: false
+        property string out: ""
+        stdout: SplitParser { onRead: d => switchProc.out += d }
+        stderr: SplitParser { onRead: d => switchProc.out += d }
+        onExited: (code) => {
+            const o = switchProc.out.trim()
+            if (code !== 0 || (o.length > 0 && o !== "ok"))
+                console.warn("[Workspaces] switch gagal:", switchProc.command.join(" "), "->", o)
+            switchProc.out = ""
+        }
     }
 
     // Fallback compositor auto-detection process if env variables are not present

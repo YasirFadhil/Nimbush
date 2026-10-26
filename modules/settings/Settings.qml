@@ -62,6 +62,7 @@ FloatingWindow {
     property bool dispShowSnapGuideX: false
     property bool dispShowSnapGuideY: false
     property string dispDockMessage: ""
+    property string faceIdEnrollmentNotice: ""
 
     onDispMonitorsChanged: syncDisplaysLocal(false)
 
@@ -5279,6 +5280,9 @@ FloatingWindow {
                             SettingsSection {
                                 title: "Face ID & Biometrics"
                                 icon: "󰄀"
+                                Component.onCompleted: {
+                                    if (Services.FaceId) Services.FaceId.checkStatus()
+                                }
 
                                 SettingsSwitch {
                                     title: "Face ID Unlock"
@@ -5306,6 +5310,8 @@ FloatingWindow {
                                     title: "Biometric Data"
                                     subtitle: (Services.FaceId && Services.FaceId.isEnrolling)
                                         ? (Services.FaceId.statusMessage || "Enrolling face...")
+                                        : (rootWindow.faceIdEnrollmentNotice.length > 0)
+                                            ? rootWindow.faceIdEnrollmentNotice
                                         : ((Services.FaceId && Services.FaceId.isEnrolled)
                                             ? "Face registered for " + (Services.OsInfo.username || Quickshell.env("USER") || "user")
                                             : "No face registered yet")
@@ -5356,6 +5362,7 @@ FloatingWindow {
                                                 : Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.14)
                                             border.color: Services.Theme.accent
                                             border.width: 1
+                                            opacity: (Services.FaceId && Services.FaceId.canEnroll) ? 1.0 : 0.55
 
                                             Text {
                                                 id: enrollBtnTxt
@@ -5371,8 +5378,15 @@ FloatingWindow {
                                                 anchors.fill: parent
                                                 hoverEnabled: true
                                                 cursorShape: Qt.PointingHandCursor
+                                                enabled: Services.FaceId ? Services.FaceId.isEnabled : true
                                                 onClicked: {
-                                                    if (Services.FaceId) Services.FaceId.startEnroll()
+                                                    rootWindow.faceIdEnrollmentNotice = ""
+                                                    if (Services.FaceId && Services.FaceId.canEnroll) {
+                                                        Services.FaceId.startEnroll()
+                                                    } else if (Services.FaceId) {
+                                                        Services.FaceId.checkStatus()
+                                                        rootWindow.faceIdEnrollmentNotice = Services.FaceId.enrollBlockReason()
+                                                    }
                                                 }
                                             }
                                         }
@@ -5460,6 +5474,16 @@ FloatingWindow {
                                         onSelected: (val) => {
                                             if (Services.Config) Services.Config.setFaceIdCameraDevice(val)
                                         }
+                                    }
+                                }
+
+                                Connections {
+                                    target: Services.FaceId
+                                    function onEnrollSuccess(message) {
+                                        rootWindow.faceIdEnrollmentNotice = message || "Face ID enrolled successfully"
+                                    }
+                                    function onEnrollError(error) {
+                                        rootWindow.faceIdEnrollmentNotice = error || "Enrollment failed"
                                     }
                                 }
                             }
@@ -5683,9 +5707,53 @@ FloatingWindow {
                                 SettingsDivider {}
 
                                 SettingsSwitch {
-                                    title: "Show System Uptime Tag"
-                                    checked: Services.Config ? Services.Config.lockscreenShowUptime : true
-                                    onToggled: (st) => { if (Services.Config) Services.Config.setLockscreenShowUptime(st) }
+                                    title: "Show Profile Avatar"
+                                    subtitle: "Display your profile picture above the password field"
+                                    checked: Services.Config ? Services.Config.lockscreenShowAvatar : true
+                                    onToggled: (st) => { if (Services.Config) Services.Config.setLockscreenShowAvatar(st) }
+                                }
+
+                                SettingsDivider {}
+
+                                SettingsRow {
+                                    title: "Avatar Shape"
+                                    subtitle: "Corner style of the profile picture"
+
+                                    SettingsDropdown {
+                                        currentValue: Services.Config ? Services.Config.lockscreenAvatarShape : "squircle"
+                                        model: [
+                                            { id: "circle",   label: "Circle" },
+                                            { id: "squircle", label: "Squircle" },
+                                            { id: "rounded",  label: "Rounded Square" }
+                                        ]
+                                        onSelected: (val) => { if (Services.Config) Services.Config.setLockscreenAvatarShape(val) }
+                                    }
+                                }
+
+                                SettingsDivider {}
+
+                                SettingsSwitch {
+                                    title: "Avatar Focus Ring"
+                                    subtitle: "Accent ring around the avatar that reacts to typing and Face ID"
+                                    checked: Services.Config ? Services.Config.lockscreenAvatarRing : false
+                                    onToggled: (st) => { if (Services.Config) Services.Config.setLockscreenAvatarRing(st) }
+                                }
+
+                                SettingsDivider {}
+
+                                SettingsSwitch {
+                                    title: "Show Username Under Avatar"
+                                    checked: Services.Config ? Services.Config.lockscreenShowGreeting : false
+                                    onToggled: (st) => { if (Services.Config) Services.Config.setLockscreenShowGreeting(st) }
+                                }
+
+                                SettingsDivider {}
+
+                                SettingsSwitch {
+                                    title: "Show Notifications"
+                                    subtitle: "Display notification cards on the lockscreen"
+                                    checked: Services.Config ? Services.Config.lockscreenShowNotifs : false
+                                    onToggled: (st) => { if (Services.Config) Services.Config.setLockscreenShowNotifs(st) }
                                 }
                             }
 

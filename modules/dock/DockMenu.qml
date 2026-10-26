@@ -334,7 +334,7 @@ PanelWindow {
                         onClicked: {
                             if (Services.DockService) Services.DockService.closeMenu()
                             if (typeof modelData.execute === "function") {
-                                modelData.execute()
+                                Services.Applications.launch(modelData)
                             }
                         }
                     }

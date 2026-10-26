@@ -9,6 +9,7 @@ Variants {
     id: barVariants
     model: (Services.Config && Services.Config.barScreens) ? Services.Config.barScreens : Quickshell.screens
 
+    // qmllint disable uncreatable-type
     delegate: PanelWindow {
         id: root
         required property var modelData
@@ -80,7 +81,7 @@ Variants {
         id: barAbsorbAnim
         target: root
         property: "barTransitionState"
-        from: 1.0
+        from: root.barTransitionState
         to: 0.0
         duration: 240
         easing.type: Easing.InCubic
@@ -90,40 +91,46 @@ Variants {
         id: barEjectAnim
         target: root
         property: "barTransitionState"
-        from: root.barTransitionState
+        from: 0.0
         to: 1.0
-        duration: 380
+        // Run after the lock layer has handed control back to the desktop,
+        // so the whole ejection is visible instead of happening underneath it.
+        duration: 440
         easing.type: Easing.OutBack
-        easing.overshoot: 1.20
+        easing.overshoot: 1.22
     }
 
     Connections {
         target: Services.OverlayManager
+
         function onIsLockAbsorbingChanged() {
-            if (Services.OverlayManager && Services.OverlayManager.isLockAbsorbing) {
-                barEjectAnim.stop()
-                barAbsorbAnim.restart()
-            }
+            if (!Services.OverlayManager || !Services.OverlayManager.isLockAbsorbing) return
+
+            // If the lock begins while the bar is entering, reverse from the
+            // current progress instead of snapping back to a fully open bar.
+            barEjectAnim.stop()
+            barAbsorbAnim.stop()
+            barAbsorbAnim.from = root.barTransitionState
+            barAbsorbAnim.restart()
         }
+
         function onIsLockedChanged() {
             if (!Services.OverlayManager) return
+
             if (!Services.OverlayManager.isLocked) {
-                // Desktop layer unlocked — begin eject immediately so bar
-                // is already rising while lockscreen is still dissolving
-                barEjectAnim.from = root.barTransitionState
+                // Wait until the lock layer has handed off to the desktop.
+                // Then play the complete left/right ejection in the visible
+                // desktop layer, rather than spending most of it behind Genie.
+                barAbsorbAnim.stop()
+                barEjectAnim.stop()
+                root.barTransitionState = 0.0
+                barEjectAnim.from = 0.0
                 barEjectAnim.restart()
             } else if (!Services.OverlayManager.isLockAbsorbing) {
+                // Covers direct lock-state changes that do not run absorption.
+                barEjectAnim.stop()
+                barAbsorbAnim.stop()
                 root.barTransitionState = 0.0
-            }
-        }
-        // ── Early eject: begin re-appearing at 55% suction so desktop bar
-        //    overlaps the tail of the lockscreen dissolve — no dead zone
-        function onUnlockSuctionProgressChanged() {
-            if (!Services.OverlayManager) return
-            const p = Services.OverlayManager.unlockSuctionProgress
-            if (p >= 0.55 && root.barTransitionState < 0.05 && !barEjectAnim.running) {
-                barEjectAnim.from = root.barTransitionState
-                barEjectAnim.restart()
             }
         }
     }
@@ -200,6 +207,8 @@ Variants {
                 color: Services.Theme.borderSubtle
             }
         }
+        
+
 
         // ── Main Bar Content Row ─────────────────────────────────────────────
         Item {
@@ -327,4 +336,3 @@ Variants {
     }
 }
 }
-
