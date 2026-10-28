@@ -1371,7 +1371,7 @@ Scope {
                         readonly property real barP: Services.OverlayManager ? Services.OverlayManager.barIslandProgress : 0.0
                         // pillProgress: max of both sources — tracks bar absorb AND settled lock state
                         readonly property real pillProgress: {
-                            if (root.lockTopBarAbsorbing || root.isUnlockingWithGenie)
+                            if (root.isLockingWithGenie || root.lockTopBarAbsorbing || root.isUnlockingWithGenie)
                                 return Math.max(0.0, Math.min(1.0, root.lockTopBarState))
                             return Math.max(root.lockTopBarState, Math.min(1.0, Math.max(0.0, (0.90 - barP) / 0.90)))
                         }
@@ -1483,7 +1483,7 @@ Scope {
                         readonly property real targetDx: (topBarHeader.width / 2) - (topBarHeader.width - 24 - ((minimalControlRow.implicitWidth > 0 ? minimalControlRow.implicitWidth : minimalControlRow.width) / 2))
                         readonly property real barP: Services.OverlayManager ? Services.OverlayManager.barIslandProgress : 0.0
                         readonly property real pillProgress: {
-                            if (root.lockTopBarAbsorbing || root.isUnlockingWithGenie)
+                            if (root.isLockingWithGenie || root.lockTopBarAbsorbing || root.isUnlockingWithGenie)
                                 return Math.max(0.0, Math.min(1.0, root.lockTopBarState))
                             return Math.max(root.lockTopBarState, Math.min(1.0, Math.max(0.0, (0.90 - barP) / 0.90)))
                         }
@@ -1646,19 +1646,69 @@ Scope {
                                 styleColor: Services.Theme.overlayDim
                             }
 
-                            // Style 1: Hero Clock (Single horizontal huge display)
-                            Text {
+                            // Style 1: Hero Clock with a restrained Liquid Glass finish.
+                            // Keep the original glyph rendering underneath; only add a smooth,
+                            // opaque cool-white reflection masked to the same text shape.
+                            Item {
+                                id: heroClockGlass
                                 visible: topClockColumn.clockStyle === "hero"
                                 Layout.alignment: Qt.AlignHCenter
-                                horizontalAlignment: Text.AlignHCenter
-                                text: root.timeStr
-                                color: Services.Theme.white
-                                font.pixelSize: 94
-                                font.weight: Font.Bold
-                                font.letterSpacing: -1.0
-                                font.family: Services.Theme.fontDisplay
-                                style: Text.Outline
-                                styleColor: Services.Theme.overlayDim
+                                implicitWidth: heroClockBase.implicitWidth
+                                implicitHeight: heroClockBase.implicitHeight
+
+                                Text {
+                                    id: heroClockBase
+                                    text: root.timeStr
+                                    color: Services.Theme.white
+                                    font.pixelSize: 98
+                                    font.weight: Font.Bold
+                                    font.letterSpacing: -1.0
+                                    font.family: Services.Theme.fontDisplay
+                                    style: Text.Outline
+                                    styleColor: Services.Theme.overlayDim
+                                }
+
+                                // The mask must keep its own texture but stay out of the final scene.
+                                Text {
+                                    id: heroClockGlassMask
+                                    anchors.fill: heroClockBase
+                                    text: root.timeStr
+                                    color: "white"
+                                    font.pixelSize: heroClockBase.font.pixelSize
+                                    font.weight: heroClockBase.font.weight
+                                    font.letterSpacing: heroClockBase.font.letterSpacing
+                                    font.family: heroClockBase.font.family
+                                    visible: false
+                                    layer.enabled: true
+                                    layer.smooth: true
+                                }
+
+                                // One continuous, low-contrast reflection. Avoid multiple bright bands,
+                                // which made the previous version look striped and translucent.
+                                Rectangle {
+                                    id: heroClockGlassGradient
+                                    anchors.fill: parent
+                                    visible: false
+                                    layer.enabled: true
+                                    gradient: Gradient {
+                                        GradientStop { position: 0.00; color: "#FFFFFF" }
+                                        GradientStop { position: 0.18; color: "#F9FBFF" }
+                                        GradientStop { position: 0.58; color: "#EDF4FF" }
+                                        GradientStop { position: 1.00; color: "#DCE9FA" }
+                                    }
+                                }
+
+                                MultiEffect {
+                                    anchors.fill: parent
+                                    source: heroClockGlassGradient
+                                    maskEnabled: true
+                                    maskSource: heroClockGlassMask
+                                    maskThresholdMin: 0.0
+                                    maskThresholdMax: 1.0
+                                    maskSpreadAtMax: 0.15
+                                    autoPaddingEnabled: false
+                                    opacity: 0.48
+                                }
                             }
 
                             // Style 2: Modern Stacked Clock (Bold Hour on top, Clean Minute below)

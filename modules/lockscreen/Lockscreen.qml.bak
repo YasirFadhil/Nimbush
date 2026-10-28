@@ -48,6 +48,10 @@ Scope {
     property real unlockSuctionProgress: 0.0
     property bool isUnlockingWithGenie: false
     property real lockTopBarState: 0.0
+    // True from the start of unlock handoff until the lock surface is dismissed.
+    // While true, the lockscreen pill follows lockTopBarState instead of the
+    // desktop bar progress, so it can be absorbed before the desktop bar ejects.
+    property bool lockTopBarAbsorbing: false
     property real lockGenieProgress: 1.0
     property bool isLockingWithGenie: false
 
@@ -140,9 +144,6 @@ Scope {
             root.isLocked = true
             sessionLock.locked = true
             root.isRevealed = true
-            lockTopBarEjectAnim.restart()
-            lockGenieAnim.restart()
-            deviceLockedPeekStartTimer.restart()
             if (typeof pwTextInput !== "undefined" && pwTextInput) {
                 pwTextInput.forceActiveFocus()
             }
@@ -196,6 +197,8 @@ Scope {
             root.isLockingWithGenie = false
             root.lockGenieProgress = 1.0
             root.lockTopBarState = 0.0
+            // Keep absorption latched while the desktop bar re-emerges. The next
+            // open() resets it before the next lock transition.
             if (Services.FaceId) Services.FaceId.resetStatus()
             if (Services.OverlayManager) {
                 Services.OverlayManager.lockVerified = false
@@ -213,9 +216,8 @@ Scope {
         property: "lockTopBarState"
         from: 0.0
         to: 1.0
-        duration: 340
-        easing.type: Easing.OutBack
-        easing.overshoot: 1.25
+        duration: 300
+        easing.type: Easing.OutCubic
     }
 
     SequentialAnimation {
@@ -224,11 +226,10 @@ Scope {
         NumberAnimation {
             target: root
             property: "lockTopBarState"
-            from: 1.0
+            from: root.lockTopBarState
             to: 0.0
-            duration: 200
-            easing.type: Easing.InBack
-            easing.overshoot: 1.15
+            duration: 260
+            easing.type: Easing.InCubic
         }
         ScriptAction {
             script: {
@@ -506,6 +507,7 @@ Scope {
         root.isLockingWithGenie = true
         root.lockGenieProgress = 0.0
         root.lockTopBarState = 0.0
+        root.lockTopBarAbsorbing = false
         if (Services.OverlayManager) {
             Services.OverlayManager.isUnlockingWithGenie = false
             Services.OverlayManager.unlockSuctionProgress = 0.0
@@ -534,6 +536,7 @@ Scope {
         }
         root.isLocked = false
         root.lockTopBarState = 0.0
+        root.lockTopBarAbsorbing = false
         root.isLockingWithGenie = false
         root.lockGenieProgress = 1.0
         if (Services.OverlayManager) {
@@ -549,6 +552,7 @@ Scope {
         if (!isLocked) {
             root.isLocked = false
             root.lockTopBarState = 0.0
+            root.lockTopBarAbsorbing = false
             if (Services.OverlayManager) {
                 Services.OverlayManager.isLockAbsorbing = false
                 Services.OverlayManager.isLocked = false
@@ -629,6 +633,7 @@ Scope {
         root.faceIdCancelledByUser = false
         if (Services.FaceId) Services.FaceId.stopScan()
         if (Services.OverlayManager) Services.OverlayManager.lockVerified = true
+        root.lockTopBarAbsorbing = true
         lockTopBarAbsorbAnim.restart()
     }
 
@@ -754,10 +759,8 @@ Scope {
 
                 if (!sessionLockCommitTimer.running) {
                     if (!root.isRevealed) {
+                        // onIsRevealedChanged owns the lockscreen reveal choreography.
                         root.isRevealed = true
-                        lockTopBarEjectAnim.restart()
-                        lockGenieAnim.restart()
-                        deviceLockedPeekStartTimer.restart()
                     }
                 }
             }
@@ -1367,7 +1370,11 @@ Scope {
                         // barP: 1=desktop bar visible, 0=locked
                         readonly property real barP: Services.OverlayManager ? Services.OverlayManager.barIslandProgress : 0.0
                         // pillProgress: max of both sources — tracks bar absorb AND settled lock state
-                        readonly property real pillProgress: Math.max(root.lockTopBarState, Math.min(1.0, Math.max(0.0, (0.90 - barP) / 0.90)))
+                        readonly property real pillProgress: {
+                            if (root.isLockingWithGenie || root.lockTopBarAbsorbing || root.isUnlockingWithGenie)
+                                return Math.max(0.0, Math.min(1.0, root.lockTopBarState))
+                            return Math.max(root.lockTopBarState, Math.min(1.0, Math.max(0.0, (0.90 - barP) / 0.90)))
+                        }
 
                         transform: [
                             Translate {
@@ -1475,7 +1482,11 @@ Scope {
 
                         readonly property real targetDx: (topBarHeader.width / 2) - (topBarHeader.width - 24 - ((minimalControlRow.implicitWidth > 0 ? minimalControlRow.implicitWidth : minimalControlRow.width) / 2))
                         readonly property real barP: Services.OverlayManager ? Services.OverlayManager.barIslandProgress : 0.0
-                        readonly property real pillProgress: Math.max(root.lockTopBarState, Math.min(1.0, Math.max(0.0, (0.90 - barP) / 0.90)))
+                        readonly property real pillProgress: {
+                            if (root.isLockingWithGenie || root.lockTopBarAbsorbing || root.isUnlockingWithGenie)
+                                return Math.max(0.0, Math.min(1.0, root.lockTopBarState))
+                            return Math.max(root.lockTopBarState, Math.min(1.0, Math.max(0.0, (0.90 - barP) / 0.90)))
+                        }
 
                         transform: [
                             Translate {
