@@ -231,7 +231,6 @@ Item {
                     waveColor: card.t.accent
                     trackColor: card.t.surfaceVariant
                     lineWidth: 3.0
-                    maxAmplitude: 3.0
                     position: card.player?.position ?? 0
                     duration: card.player?.length ?? 0
                     onSeekRequested: (ratio) => {

@@ -4405,7 +4405,6 @@ Item {
                             waveColor: Services.Theme.accent
                             trackColor: Services.Theme.surfaceVariant
                             lineWidth: 2.4
-                            maxAmplitude: 2.2
                             position: root.activePlayer?.position ?? 0
                             duration: root.activePlayer?.length ?? 0
                             opacity: root.mediaVolHudOpen ? 0.0 : 1.0

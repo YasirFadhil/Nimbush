@@ -73,116 +73,6 @@ PanelWindow {
         Keys.onEscapePressed: root.close()
     }
 
-    // Modern Capsule Slider (Height 38px, filled track, icon inside)
-    component ControlSlider: Rectangle {
-        id: sliderRoot
-        property string icon: ""
-        property real value: 0
-        signal moved(real newValue)
-
-        Layout.fillWidth: true
-        implicitHeight: 38
-        radius: Services.Theme.radiusMd
-        color: sliderMouse.containsMouse ? Services.Theme.bgHover : Services.Theme.surfaceVariant
-        border.color: sliderMouse.containsMouse ? Services.Theme.borderHighlight : "transparent"
-        border.width: 1
-        clip: true
-
-        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
-        Behavior on border.color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
-
-        // Active track fill
-        Rectangle {
-            id: fillBar
-            height: parent.height
-            radius: parent.radius
-            color: sliderMouse.containsMouse ? Qt.lighter(Services.Theme.accent, 1.1) : Services.Theme.accent
-            width: Math.max(38, Math.min(parent.width, sliderRoot.value * parent.width))
-            Behavior on width { NumberAnimation { duration: 80 } }
-            Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
-        }
-
-        RowLayout {
-            id: sliderContentRow
-            anchors.fill: parent
-            anchors.leftMargin: 12
-            anchors.rightMargin: 12
-            spacing: 8
-
-            Item {
-                id: sliderIconBox
-                property string icon: sliderRoot.icon
-                property string oldIcon: ""
-                property color iconColor: (fillBar.width > (sliderIconBox.x + sliderContentRow.x + sliderIconBox.width / 2)) ? Services.Theme.bgOnAccent : Services.Theme.textPrimary
-                Behavior on iconColor { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
-
-                implicitWidth: mainIconText.implicitWidth
-                implicitHeight: mainIconText.implicitHeight
-                Layout.alignment: Qt.AlignVCenter
-
-                onIconChanged: {
-                    if (icon !== mainIconText.text) {
-                        oldIcon = mainIconText.text
-                        oldIconText.opacity = 1.0
-                        mainIconText.text = icon
-                        mainIconText.opacity = 0.0
-                        sliderCrossFade.restart()
-                    }
-                }
-
-                Component.onCompleted: mainIconText.text = icon
-
-                Text {
-                    id: oldIconText
-                    anchors.centerIn: parent
-                    text: sliderIconBox.oldIcon
-                    font.family: Services.Theme.fontSymbols
-                    font.pixelSize: 14
-                    color: sliderIconBox.iconColor
-                    opacity: 0.0
-                    visible: opacity > 0
-                }
-
-                Text {
-                    id: mainIconText
-                    anchors.centerIn: parent
-                    font.family: Services.Theme.fontSymbols
-                    font.pixelSize: 14
-                    color: sliderIconBox.iconColor
-                    opacity: 1.0
-                }
-
-                ParallelAnimation {
-                    id: sliderCrossFade
-                    NumberAnimation { target: oldIconText; property: "opacity"; to: 0.0; duration: 220; easing.type: Easing.OutCubic }
-                    NumberAnimation { target: mainIconText; property: "opacity"; to: 1.0; duration: 220; easing.type: Easing.OutCubic }
-                }
-            }
-
-            Item { Layout.fillWidth: true }
-
-            Text {
-                id: percentText
-                text: Math.round(sliderRoot.value * 100) + "%"
-                font.pixelSize: 11
-                font.bold: true
-                color: (fillBar.width > (percentText.x + sliderContentRow.x + percentText.width / 2)) ? Services.Theme.bgOnAccent : Services.Theme.textPrimary
-                Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
-            }
-        }
-
-        MouseArea {
-            id: sliderMouse
-            anchors.fill: parent
-            hoverEnabled: true
-            cursorShape: Qt.PointingHandCursor
-            onPressed: (mouse) => sliderRoot.moved(Math.max(0, Math.min(1, mouse.x / width)))
-            onPositionChanged: (mouse) => {
-                if (pressed) sliderRoot.moved(Math.max(0, Math.min(1, mouse.x / width)))
-            }
-        }
-    }
-
     component ControlCard: Rectangle {
         default property alias content: inner.data
         Layout.fillWidth: true
@@ -208,9 +98,9 @@ PanelWindow {
             anchors.rightMargin: 12
             y: root.isBottom ? (parent.height - height - 12) : 12
             width: 356
-            height: Math.min(530, parent.height - 24)
+            height: Math.min(462, parent.height - 24)
             radius: Services.Theme.radiusMd
-            color: Services.Theme.surface
+            color: Qt.alpha(Services.Theme.surface, 0.94)
             border.color: Services.Theme.border
             border.width: 1
             clip: true
@@ -427,9 +317,9 @@ PanelWindow {
                 Item {
                     id: morphingTilesRow
                     Layout.fillWidth: true
-                    Layout.preferredHeight: (Services.OverlayManager.wifiPanelVisible || Services.OverlayManager.btPanelVisible) ? 240 : 72
+                    Layout.preferredHeight: (Services.OverlayManager.wifiPanelVisible || Services.OverlayManager.btPanelVisible) ? 310 : 72
                     Layout.minimumHeight: 72
-                    Layout.maximumHeight: 240
+                    Layout.maximumHeight: 310
                     implicitHeight: 72
                     clip: false
                     Behavior on Layout.preferredHeight { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
@@ -445,7 +335,9 @@ PanelWindow {
                         height: parent.height
                         enabled: !Services.OverlayManager.btPanelVisible
                         radius: Services.Theme.radiusLg
-                        color: Services.Wifi.enabled ? Services.Theme.accent : Services.Theme.surfaceVariant
+                        color: Services.Wifi.enabled ? Qt.alpha(Services.Theme.accent, 0.2) : Services.Theme.surfaceVariant
+                        border.color: Services.Wifi.enabled ? Qt.alpha(Services.Theme.accent, 0.4) : "transparent"
+                        border.width: 1
                         clip: true
 
                         // Do not bind visible to opacity here: Qt Quick Layouts excludes
@@ -472,9 +364,9 @@ PanelWindow {
                                     Layout.preferredWidth: 32
                                     Layout.preferredHeight: 32
                                     radius: 16
-                                    color: wifiIconMouse.containsMouse
-                                           ? (Services.Wifi.enabled ? "#35000000" : Services.Theme.bgHover)
-                                           : (Services.Wifi.enabled ? "#20000000" : "transparent")
+                                    color: Services.Wifi.enabled
+                                           ? (wifiIconMouse.containsMouse ? Qt.lighter(Services.Theme.accent, 1.1) : Services.Theme.accent)
+                                           : (wifiIconMouse.containsMouse ? Services.Theme.bgHover : Qt.alpha(Services.Theme.textPrimary, 0.08))
                                     scale: wifiIconMouse.pressed ? 0.88 : (wifiIconMouse.containsMouse ? 1.06 : 1.0)
                                     Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                                     Behavior on scale { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
@@ -526,14 +418,14 @@ PanelWindow {
                                                 font.bold: true
                                                 elide: Text.ElideRight
                                                 Layout.fillWidth: true
-                                                color: Services.Wifi.enabled ? Services.Theme.bgOnAccent : Services.Theme.textPrimary
+                                                color: Services.Theme.textPrimary
                                             }
                                             Text {
                                                 text: Services.OverlayManager.wifiPanelVisible
                                                       ? (Services.Wifi.scanning ? "Scanning networks..." : (Services.Wifi.networks.length + " networks found"))
                                                       : (Services.Wifi.enabled ? (Services.Wifi.connected ? ("Connected • " + Services.Wifi.signalStrength + "%") : "On") : "Off")
                                                 font.pixelSize: 10
-                                                color: Services.Wifi.enabled ? Services.Theme.bgOnAccent : Services.Theme.textDisabled
+                                                color: Services.Wifi.enabled ? Services.Theme.textSecondary : Services.Theme.textDisabled
                                                 Layout.fillWidth: true
                                                 elide: Text.ElideRight
                                             }
@@ -546,7 +438,7 @@ PanelWindow {
                                             radius: 13
                                             visible: opacity > 0.01
                                             opacity: Services.OverlayManager.wifiPanelVisible ? 1 : 0
-                                            color: refreshWifiMouse.containsMouse ? "#30000000" : "transparent"
+                                            color: refreshWifiMouse.containsMouse ? Services.Theme.bgHover : "transparent"
                                             scale: refreshWifiMouse.pressed ? 0.88 : (refreshWifiMouse.containsMouse ? 1.08 : 1.0)
                                             Behavior on opacity { NumberAnimation { duration: 160 } }
                                             Behavior on scale { NumberAnimation { duration: 120 } }
@@ -556,7 +448,7 @@ PanelWindow {
                                                 text: Services.Icons.refreshOrSpinIcon(Services.Wifi.scanning)
                                                 font.family: Services.Theme.fontSymbols
                                                 font.pixelSize: 11
-                                                color: Services.Theme.bgDeep
+                                                color: Services.Theme.textSecondary
                                             }
                                             MouseArea {
                                                 id: refreshWifiMouse
@@ -573,7 +465,7 @@ PanelWindow {
                                             font.family: Services.Theme.fontSymbols
                                             font.pixelSize: 9
                                             Layout.alignment: Qt.AlignVCenter
-                                            color: Services.Wifi.enabled ? Services.Theme.bgOnAccent : Services.Theme.textDisabled
+                                            color: Services.Wifi.enabled ? Services.Theme.textSecondary : Services.Theme.textDisabled
                                             rotation: Services.OverlayManager.wifiPanelVisible ? 180 : 0
                                             Behavior on rotation { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
                                         }
@@ -587,7 +479,7 @@ PanelWindow {
                                 opacity: Services.OverlayManager.wifiPanelVisible ? 0.5 : 0
                                 Layout.fillWidth: true
                                 height: 1
-                                color: Services.Wifi.enabled ? "#30000000" : Services.Theme.border
+                                color: Services.Theme.border
                                 Behavior on opacity { NumberAnimation { duration: 160 } }
                             }
 
@@ -617,7 +509,7 @@ PanelWindow {
                                         visible: !Services.Wifi.enabled
                                         text: "Wi-Fi is turned off"
                                         font.pixelSize: 11
-                                        color: Services.Wifi.enabled ? Services.Theme.bgDeep : Services.Theme.textDisabled
+                                        color: Services.Theme.textDisabled
                                         Layout.alignment: Qt.AlignHCenter
                                     }
 
@@ -625,7 +517,7 @@ PanelWindow {
                                         visible: Services.Wifi.enabled && Services.Wifi.networks.length === 0 && !Services.Wifi.scanning
                                         text: "No networks found"
                                         font.pixelSize: 11
-                                        color: Services.Wifi.enabled ? "#333333" : Services.Theme.textDisabled
+                                        color: Services.Theme.textSecondary
                                         Layout.alignment: Qt.AlignHCenter
                                     }
 
@@ -633,7 +525,7 @@ PanelWindow {
                                         visible: Services.Wifi.lastError !== "" || Services.Wifi.statusMessage !== ""
                                         text: Services.Wifi.lastError !== "" ? Services.Wifi.lastError : Services.Wifi.statusMessage
                                         font.pixelSize: 10
-                                        color: Services.Wifi.lastError !== "" ? Services.Theme.danger : "#444444"
+                                        color: Services.Wifi.lastError !== "" ? Services.Theme.danger : Services.Theme.textSecondary
                                         Layout.fillWidth: true
                                         horizontalAlignment: Text.AlignHCenter
                                         elide: Text.ElideRight
@@ -647,9 +539,7 @@ PanelWindow {
                                             Layout.fillWidth: true
                                             implicitHeight: netCol.implicitHeight + 12
                                             radius: Services.Theme.radiusSm
-                                            color: Services.Wifi.enabled
-                                                   ? (netRowArea.containsMouse ? "#25000000" : (netRow.modelData.inUse ? "#35000000" : "transparent"))
-                                                   : (netRowArea.containsMouse ? Services.Theme.bgHover : "transparent")
+                                            color: netRowArea.containsMouse ? Services.Theme.bgHover : (netRow.modelData.inUse ? Qt.alpha(Services.Theme.accent, 0.2) : "transparent")
 
                                             readonly property bool isSaved: Services.Wifi.isSaved(netRow.modelData.ssid)
                                             readonly property bool isPwOpen: root.wifiPasswordTarget === netRow.modelData.ssid
@@ -688,7 +578,7 @@ PanelWindow {
                                                                 text: Services.Icons.wifiLock
                                                                 font.family: Services.Theme.fontSymbols
                                                                 font.pixelSize: 9
-                                                                color: Services.Wifi.enabled ? Qt.rgba(Services.Theme.bgDeep.r, Services.Theme.bgDeep.g, Services.Theme.bgDeep.b, 0.7) : Services.Theme.textDisabled
+                                                                color: Services.Theme.textSecondary
                                                             }
 
                                                             Services.WifiSignal {
@@ -697,13 +587,13 @@ PanelWindow {
                                                                 signalStrength: netRow.modelData.signal || 0
                                                                 connected: true
                                                                 wifiEnabled: true
-                                                                activeColor: root.wifiExpanded ? Services.Theme.accent : Services.Theme.bgDeep
+                                                                activeColor: netRow.modelData.inUse ? Services.Theme.accent : Services.Theme.textSecondary
                                                             }
 
                                                             Text {
                                                                 text: (netRow.modelData.signal || 0) + "%"
                                                                 font.pixelSize: 9
-                                                                color: Services.Wifi.enabled ? Qt.rgba(Services.Theme.bgDeep.r, Services.Theme.bgDeep.g, Services.Theme.bgDeep.b, 0.7) : Services.Theme.textDisabled
+                                                                color: Services.Theme.textSecondary
                                                             }
 
                                                             ColumnLayout {
@@ -718,7 +608,7 @@ PanelWindow {
                                                                         text: netRow.modelData.ssid
                                                                         font.pixelSize: 11
                                                                         font.bold: netRow.modelData.inUse
-                                                                        color: Services.Wifi.enabled ? Services.Theme.bgDeep : Services.Theme.textPrimary
+                                                                        color: Services.Theme.textPrimary
                                                                         Layout.fillWidth: true
                                                                         elide: Text.ElideRight
                                                                     }
@@ -729,7 +619,7 @@ PanelWindow {
                                                                     visible: netRow.modelData.inUse || netRow.isSaved
                                                                     text: netRow.modelData.inUse ? "Connected" : "Saved"
                                                                     font.pixelSize: 9
-                                                                    color: Services.Wifi.enabled ? "#333333" : Services.Theme.textDisabled
+                                                                    color: Services.Theme.textSecondary
                                                                 }
                                                             }
                                                             }
@@ -750,7 +640,7 @@ PanelWindow {
                                                             text: Services.Icons.trash
                                                             font.family: Services.Theme.fontSymbols
                                                             font.pixelSize: 10
-                                                            color: Services.Wifi.enabled ? Services.Theme.bgDeep : Services.Theme.textDisabled
+                                                            color: Services.Theme.textSecondary
                                                         }
                                                         MouseArea {
                                                             id: forgetHover
@@ -772,7 +662,7 @@ PanelWindow {
                                                         Layout.fillWidth: true
                                                         height: 30
                                                         radius: 6
-                                                        color: Services.Wifi.enabled ? "#35000000" : Services.Theme.surfaceVariant
+                                                        color: Services.Theme.surface
 
                                                         TextInput {
                                                             anchors.fill: parent
@@ -780,7 +670,7 @@ PanelWindow {
                                                             text: root.wifiPasswordInput
                                                             echoMode: TextInput.Password
                                                             font.pixelSize: 11
-                                                            color: Services.Wifi.enabled ? Services.Theme.bgDeep : Services.Theme.textPrimary
+                                                            color: Services.Theme.textPrimary
                                                             verticalAlignment: TextInput.AlignVCenter
                                                             onTextChanged: root.wifiPasswordInput = text
                                                             Keys.onReturnPressed: {
@@ -809,7 +699,9 @@ PanelWindow {
                         height: parent.height
                         enabled: !Services.OverlayManager.wifiPanelVisible
                         radius: Services.Theme.radiusLg
-                        color: Services.Bluetooth.enabled ? Services.Theme.accent : Services.Theme.surfaceVariant
+                        color: Services.Bluetooth.enabled ? Qt.alpha(Services.Theme.accent, 0.2) : Services.Theme.surfaceVariant
+                        border.color: Services.Bluetooth.enabled ? Qt.alpha(Services.Theme.accent, 0.4) : "transparent"
+                        border.width: 1
                         clip: true
 
                         // Remain in the layout while collapsing; opacity alone hides
@@ -837,9 +729,9 @@ PanelWindow {
                                     Layout.preferredWidth: 32
                                     Layout.preferredHeight: 32
                                     radius: 16
-                                    color: btIconMouse.containsMouse
-                                           ? (Services.Bluetooth.enabled ? "#35000000" : Services.Theme.bgHover)
-                                           : (Services.Bluetooth.enabled ? "#20000000" : "transparent")
+                                    color: Services.Bluetooth.enabled
+                                           ? (btIconMouse.containsMouse ? Qt.lighter(Services.Theme.accent, 1.1) : Services.Theme.accent)
+                                           : (btIconMouse.containsMouse ? Services.Theme.bgHover : Qt.alpha(Services.Theme.textPrimary, 0.08))
                                     scale: btIconMouse.pressed ? 0.88 : (btIconMouse.containsMouse ? 1.06 : 1.0)
                                     Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                                     Behavior on scale { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
@@ -896,7 +788,7 @@ PanelWindow {
                                                 font.bold: true
                                                 elide: Text.ElideRight
                                                 Layout.fillWidth: true
-                                                color: Services.Bluetooth.enabled ? Services.Theme.bgOnAccent : Services.Theme.textPrimary
+                                                color: Services.Theme.textPrimary
                                             }
                                             Text {
                                                 text: Services.OverlayManager.btPanelVisible
@@ -909,7 +801,7 @@ PanelWindow {
                                                             : "On")
                                                          : "Off")
                                                 font.pixelSize: 10
-                                                color: Services.Bluetooth.enabled ? Services.Theme.bgOnAccent : Services.Theme.textDisabled
+                                                color: Services.Bluetooth.enabled ? Services.Theme.textSecondary : Services.Theme.textDisabled
                                                 Layout.fillWidth: true
                                                 elide: Text.ElideRight
                                             }
@@ -922,7 +814,7 @@ PanelWindow {
                                             radius: 13
                                             visible: opacity > 0.01
                                             opacity: Services.OverlayManager.btPanelVisible ? 1 : 0
-                                            color: refreshBtMouse.containsMouse ? "#30000000" : "transparent"
+                                            color: refreshBtMouse.containsMouse ? Services.Theme.bgHover : "transparent"
                                             scale: refreshBtMouse.pressed ? 0.88 : (refreshBtMouse.containsMouse ? 1.08 : 1.0)
                                             Behavior on opacity { NumberAnimation { duration: 160 } }
                                             Behavior on scale { NumberAnimation { duration: 120 } }
@@ -932,7 +824,7 @@ PanelWindow {
                                                 text: Services.Icons.refreshOrSpinIcon(Services.Bluetooth.refreshing)
                                                 font.family: Services.Theme.fontSymbols
                                                 font.pixelSize: 11
-                                                color: Services.Theme.bgDeep
+                                                color: Services.Theme.textSecondary
                                             }
                                             MouseArea {
                                                 id: refreshBtMouse
@@ -949,7 +841,7 @@ PanelWindow {
                                             font.family: Services.Theme.fontSymbols
                                             font.pixelSize: 9
                                             Layout.alignment: Qt.AlignVCenter
-                                            color: Services.Bluetooth.enabled ? Services.Theme.bgOnAccent : Services.Theme.textDisabled
+                                            color: Services.Bluetooth.enabled ? Services.Theme.textSecondary : Services.Theme.textDisabled
                                             rotation: Services.OverlayManager.btPanelVisible ? 180 : 0
                                             Behavior on rotation { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
                                         }
@@ -963,7 +855,7 @@ PanelWindow {
                                 opacity: Services.OverlayManager.btPanelVisible ? 0.5 : 0
                                 Layout.fillWidth: true
                                 height: 1
-                                color: Services.Bluetooth.enabled ? "#30000000" : Services.Theme.border
+                                color: Services.Theme.border
                                 Behavior on opacity { NumberAnimation { duration: 160 } }
                             }
 
@@ -993,7 +885,7 @@ PanelWindow {
                                         visible: !Services.Bluetooth.enabled
                                         text: "Bluetooth is turned off"
                                         font.pixelSize: 11
-                                        color: Services.Bluetooth.enabled ? Services.Theme.bgDeep : Services.Theme.textDisabled
+                                        color: Services.Theme.textDisabled
                                         Layout.alignment: Qt.AlignHCenter
                                     }
 
@@ -1001,7 +893,7 @@ PanelWindow {
                                         visible: Services.Bluetooth.enabled && Services.Bluetooth.devices.length === 0
                                         text: "No paired devices"
                                         font.pixelSize: 11
-                                        color: Services.Bluetooth.enabled ? "#333333" : Services.Theme.textDisabled
+                                        color: Services.Theme.textSecondary
                                         Layout.alignment: Qt.AlignHCenter
                                     }
 
@@ -1009,7 +901,7 @@ PanelWindow {
                                         visible: Services.Bluetooth.lastError !== "" || Services.Bluetooth.actionMessage !== ""
                                         text: Services.Bluetooth.lastError !== "" ? Services.Bluetooth.lastError : Services.Bluetooth.actionMessage
                                         font.pixelSize: 10
-                                        color: Services.Bluetooth.lastError !== "" ? Services.Theme.danger : "#444444"
+                                        color: Services.Bluetooth.lastError !== "" ? Services.Theme.danger : Services.Theme.textSecondary
                                         Layout.fillWidth: true
                                         horizontalAlignment: Text.AlignHCenter
                                         elide: Text.ElideRight
@@ -1023,9 +915,7 @@ PanelWindow {
                                             Layout.fillWidth: true
                                             implicitHeight: 34
                                             radius: Services.Theme.radiusSm
-                                            color: Services.Bluetooth.enabled
-                                                   ? (btItemArea.containsMouse ? "#25000000" : (btItem.modelData.connected ? "#35000000" : "transparent"))
-                                                   : (btItemArea.containsMouse ? Services.Theme.bgHover : "transparent")
+                                            color: btItemArea.containsMouse ? Services.Theme.bgHover : (btItem.modelData.connected ? Qt.alpha(Services.Theme.accent, 0.2) : "transparent")
 
                                             MouseArea {
                                                 id: btItemArea
@@ -1046,14 +936,14 @@ PanelWindow {
                                                         text: Services.Icons.btDeviceIcon(btItem.modelData.icon, btItem.modelData.name)
                                                         font.family: Services.Theme.fontSymbols
                                                         font.pixelSize: 13
-                                                        color: Services.Bluetooth.enabled ? Services.Theme.bgDeep : Services.Theme.textPrimary
+                                                        color: Services.Theme.textPrimary
                                                     }
 
                                                     Text {
                                                         text: btItem.modelData.name || btItem.modelData.mac
                                                         font.pixelSize: 11
                                                         font.bold: btItem.modelData.connected
-                                                        color: Services.Bluetooth.enabled ? Services.Theme.bgDeep : Services.Theme.textPrimary
+                                                        color: Services.Theme.textPrimary
                                                         Layout.fillWidth: true
                                                         elide: Text.ElideRight
                                                     }
@@ -1064,7 +954,7 @@ PanelWindow {
                                                         Layout.preferredHeight: 18
                                                         implicitWidth: devBatRow.implicitWidth + 8
                                                         radius: 9
-                                                        color: Services.Bluetooth.enabled ? "#25000000" : Services.Theme.surfaceVariant
+                                                        color: Qt.alpha(Services.Theme.textPrimary, 0.08)
 
                                                         RowLayout {
                                                             id: devBatRow
@@ -1075,14 +965,14 @@ PanelWindow {
                                                                 text: Services.Icons.btBatteryIcon(btItem.modelData.battery)
                                                                 font.family: Services.Theme.fontSymbols
                                                                 font.pixelSize: 9
-                                                                color: Services.Bluetooth.enabled ? Services.Theme.bgDeep : Services.Theme.textPrimary
+                                                                color: Services.Theme.textPrimary
                                                             }
 
                                                             Text {
                                                                 text: btItem.modelData.battery + "%"
                                                                 font.pixelSize: 9
                                                                 font.bold: true
-                                                                color: Services.Bluetooth.enabled ? Services.Theme.bgDeep : Services.Theme.textPrimary
+                                                                color: Services.Theme.textPrimary
                                                             }
                                                         }
                                                     }
@@ -1091,20 +981,20 @@ PanelWindow {
                                                         text: btItem.modelData.connected ? "Disconnect" : "Connect"
                                                         font.pixelSize: 10
                                                         font.bold: btItem.modelData.connected
-                                                        color: Services.Bluetooth.enabled ? (btItem.modelData.connected ? "#155724" : "#333333") : Services.Theme.textDisabled
+                                                        color: (btItem.modelData.connected ? Services.Theme.accent : Services.Theme.textSecondary)
                                                     }
 
                                                     // Unpair / Forget button
                                                     Rectangle {
                                                         width: 20; height: 20; radius: 10
-                                                        color: unpairBtMouse.containsMouse ? "#40000000" : "transparent"
+                                                        color: unpairBtMouse.containsMouse ? Services.Theme.bgHover : "transparent"
 
                                                         Text {
                                                             anchors.centerIn: parent
                                                             text: "󰆴"
                                                             font.family: Services.Theme.fontSymbols
                                                             font.pixelSize: 10
-                                                            color: unpairBtMouse.containsMouse ? Services.Theme.danger : (Services.Bluetooth.enabled ? "#444444" : Services.Theme.textDisabled)
+                                                            color: unpairBtMouse.containsMouse ? Services.Theme.danger : (Services.Theme.textSecondary)
                                                         }
 
                                                         MouseArea {
@@ -1126,7 +1016,7 @@ PanelWindow {
                                         Layout.fillWidth: true
                                         implicitHeight: 28
                                         radius: Services.Theme.radiusSm
-                                        color: scanBtnArea.containsMouse ? "#30000000" : "#15000000"
+                                        color: scanBtnArea.containsMouse ? Services.Theme.bgHover : Qt.alpha(Services.Theme.textPrimary, 0.08)
                                         Layout.topMargin: 4
 
                                         RowLayout {
@@ -1137,14 +1027,14 @@ PanelWindow {
                                                 text: Services.Icons.refreshOrSpinIcon(Services.Bluetooth.scanning)
                                                 font.family: Services.Theme.fontSymbols
                                                 font.pixelSize: 11
-                                                color: Services.Theme.bgDeep
+                                                color: Services.Theme.textSecondary
                                             }
 
                                             Text {
                                                 text: Services.Bluetooth.scanning ? "Scanning for devices..." : "Scan New Devices"
                                                 font.pixelSize: 10
                                                 font.bold: true
-                                                color: Services.Theme.bgDeep
+                                                color: Services.Theme.textSecondary
                                             }
                                         }
 
@@ -1163,7 +1053,7 @@ PanelWindow {
                                         text: "Available Devices"
                                         font.pixelSize: 10
                                         font.bold: true
-                                        color: Services.Bluetooth.enabled ? "#444444" : Services.Theme.textDisabled
+                                        color: Services.Theme.textSecondary
                                         Layout.topMargin: 4
                                     }
 
@@ -1175,7 +1065,7 @@ PanelWindow {
                                             Layout.fillWidth: true
                                             implicitHeight: 34
                                             radius: Services.Theme.radiusSm
-                                            color: unpItemArea.containsMouse ? "#25000000" : "transparent"
+                                            color: unpItemArea.containsMouse ? Services.Theme.bgHover : "transparent"
 
                                             MouseArea {
                                                 id: unpItemArea
@@ -1193,13 +1083,13 @@ PanelWindow {
                                                         text: Services.Icons.btDeviceIcon("", unpItem.modelData.name)
                                                         font.family: Services.Theme.fontSymbols
                                                         font.pixelSize: 12
-                                                        color: Services.Bluetooth.enabled ? Services.Theme.bgDeep : Services.Theme.textPrimary
+                                                        color: Services.Theme.textPrimary
                                                     }
 
                                                     Text {
                                                         text: unpItem.modelData.name || unpItem.modelData.mac
                                                         font.pixelSize: 11
-                                                        color: Services.Bluetooth.enabled ? Services.Theme.bgDeep : Services.Theme.textPrimary
+                                                        color: Services.Theme.textPrimary
                                                         Layout.fillWidth: true
                                                         elide: Text.ElideRight
                                                     }
@@ -1208,7 +1098,7 @@ PanelWindow {
                                                         text: Services.Bluetooth.pairingMac === unpItem.modelData.mac ? "Pairing..." : "Pair & Connect"
                                                         font.pixelSize: 10
                                                         font.bold: true
-                                                        color: Services.Bluetooth.enabled ? (Services.Bluetooth.pairingMac === unpItem.modelData.mac ? "#1a365d" : "#333333") : Services.Theme.textDisabled
+                                                        color: (Services.Bluetooth.pairingMac === unpItem.modelData.mac ? Services.Theme.accent : Services.Theme.textSecondary)
                                                     }
                                                 }
                                             }
@@ -1224,7 +1114,7 @@ PanelWindow {
                 Item {
                     id: quickActionsAndMediaCol
                     Layout.fillWidth: true
-                    Layout.preferredHeight: (Services.OverlayManager.wifiPanelVisible || Services.OverlayManager.btPanelVisible) ? 0 : 168
+                    Layout.preferredHeight: (Services.OverlayManager.wifiPanelVisible || Services.OverlayManager.btPanelVisible) ? 0 : 306
                     visible: opacity > 0.01
                     opacity: (Services.OverlayManager.wifiPanelVisible || Services.OverlayManager.btPanelVisible) ? 0 : 1
                     clip: true
@@ -1232,24 +1122,124 @@ PanelWindow {
                     Behavior on Layout.preferredHeight { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
                     Behavior on opacity { NumberAnimation { duration: (Services.OverlayManager.wifiPanelVisible || Services.OverlayManager.btPanelVisible) ? 180 : 200; easing.type: Easing.OutCubic } }
 
+                    // Fixed-size content: the container only reveals/clips it while its
+                    // height animates, so fillHeight items (sliders, toggles, media)
+                    // are not squeezed during the Wi-Fi/Bluetooth morph.
                     ColumnLayout {
-                        anchors.fill: parent
+                        anchors.top: parent.top
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        height: 306
                         spacing: 12
 
-                        // Quick Action Icon-Only Square Tiles (Focus, Saver, Theme, Mute)
+                        // Bento row: vertical sliders | 2x2 quick toggles
                         RowLayout {
                             Layout.fillWidth: true
-                            spacing: 8
+                            Layout.preferredHeight: 168
+                            spacing: 10
+
+                            Rectangle {
+                                Layout.fillWidth: true
+                                Layout.fillHeight: true
+                                Layout.preferredWidth: 1
+                                radius: Services.Theme.radiusLg
+                                color: Services.Theme.surfaceVariant
+
+                                ColumnLayout {
+                                    anchors.fill: parent
+                                    anchors.margins: 10
+                                    spacing: 8
+
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        Layout.fillHeight: true
+                                        spacing: 10
+
+                                    Local.VSlider {
+                                        icon: Services.Icons.brightnessIcon(Services.Brightness.percent)
+                                        value: Services.Brightness.percent
+                                        onMoved: (v) => Services.Brightness.setPercent(v)
+                                    }
+                                    Local.VSlider {
+                                        icon: Services.Icons.volumeIcon(Services.Audio.volume, Services.Audio.muted, Services.Audio.isHeadphone, Services.Audio.isTws)
+                                        value: Services.Audio.volume
+                                        onMoved: (v) => Services.Audio.setVolume(v)
+                                    }
+                                    }
+
+                                    // Output device button (opens the audio device sub-panel)
+                                    Rectangle {
+                                        id: outputRow
+                                        Layout.fillWidth: true
+                                        Layout.preferredHeight: 30
+                                        radius: Services.Theme.radiusSm
+                                        color: Qt.alpha(Services.Theme.textPrimary, audioSinkMouse.containsMouse ? 0.13 : 0.08)
+                                        Behavior on color { ColorAnimation { duration: 150; easing.type: Easing.OutCubic } }
+
+                                        RowLayout {
+                                            anchors.fill: parent
+                                            anchors.leftMargin: 9
+                                            anchors.rightMargin: 9
+                                            spacing: 6
+
+                                            Text {
+                                                text: Services.Icons.speaker
+                                                font.family: Services.Theme.fontSymbols
+                                                font.pixelSize: 11
+                                                color: Services.Theme.textSecondary
+                                            }
+                                            Text {
+                                                text: Services.Audio.sinkDescription
+                                                font.pixelSize: 10
+                                                color: Services.Theme.textSecondary
+                                                elide: Text.ElideRight
+                                                Layout.fillWidth: true
+                                            }
+                                            Text {
+                                                text: Services.Icons.chevDown
+                                                font.family: Services.Theme.fontSymbols
+                                                font.pixelSize: 8
+                                                color: Services.Theme.textDisabled
+                                                rotation: Services.OverlayManager.audioPanelVisible ? 180 : -90
+                                                Behavior on rotation { NumberAnimation { duration: 180; easing.type: Easing.OutQuad } }
+                                            }
+                                        }
+
+                                        MouseArea {
+                                            id: audioSinkMouse
+                                            anchors.fill: parent
+                                            hoverEnabled: true
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: {
+                                                Services.OverlayManager.audioPanelVisible = !Services.OverlayManager.audioPanelVisible
+                                                if (Services.OverlayManager.audioPanelVisible) {
+                                                    Services.Audio.refreshAll()
+                                                    Services.OverlayManager.wifiPanelVisible = false
+                                                    Services.OverlayManager.btPanelVisible = false
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            GridLayout {
+                                Layout.fillWidth: true
+                                Layout.fillHeight: true
+                                Layout.preferredWidth: 1
+                                columns: 2
+                                rowSpacing: 8
+                                columnSpacing: 8
 
                             // 1. Focus (DND)
                             Rectangle {
                                 id: dndTile
                                 Layout.fillWidth: true
-                                Layout.preferredHeight: 50
+                                Layout.fillHeight: true
                                 radius: Services.Theme.radiusLg
                                 readonly property bool isActive: Services.Notifications.doNotDisturb
                                 color: isActive
-                                    ? Services.Theme.accent
+                                    ? Qt.alpha(Services.Theme.accent, 0.26)
                                     : (dndMouse.containsMouse ? Services.Theme.bgHover : Services.Theme.surfaceVariant)
                                 border.color: isActive ? Services.Theme.accent : (dndMouse.containsMouse ? Services.Theme.borderHighlight : "transparent")
                                 border.width: 1
@@ -1286,17 +1276,30 @@ PanelWindow {
 
                                 Text {
                                     id: dndIcon
-                                    anchors.centerIn: parent
+                                    anchors.horizontalCenter: parent.horizontalCenter
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    anchors.verticalCenterOffset: -8
                                     text: dndTile.isActive ? Services.Icons.bellSlash : Services.Icons.bell
                                     font.family: Services.Theme.fontSymbols
                                     font.pixelSize: 18
                                     scale: dndTile.isActive ? 1.15 : (dndMouse.containsMouse ? 1.08 : 1.0)
                                     color: dndTile.isActive
-                                        ? Services.Theme.bgOnAccent
+                                        ? Services.Theme.accent
                                         : (dndMouse.containsMouse ? Services.Theme.accent : Services.Theme.textPrimary)
                                     Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                                     Behavior on scale { NumberAnimation { duration: 200; easing.type: Easing.OutBack } }
                                 }
+                                Text {
+                                    anchors.horizontalCenter: parent.horizontalCenter
+                                    anchors.bottom: parent.bottom
+                                    anchors.bottomMargin: 8
+                                    text: "DND"
+                                    font.pixelSize: 10
+                                    font.bold: dndTile.isActive
+                                    color: dndTile.isActive ? Services.Theme.accent : Services.Theme.textSecondary
+                                    Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                                }
+
 
                                 MouseArea {
                                     id: dndMouse
@@ -1317,11 +1320,11 @@ PanelWindow {
                             Rectangle {
                                 id: saverTile
                                 Layout.fillWidth: true
-                                Layout.preferredHeight: 50
+                                Layout.fillHeight: true
                                 radius: Services.Theme.radiusLg
                                 readonly property bool isActive: Services.PowerProfile.saverEnabled
                                 color: isActive
-                                    ? Services.Theme.accent
+                                    ? Qt.alpha(Services.Theme.accent, 0.26)
                                     : (saverMouse.containsMouse ? Services.Theme.bgHover : Services.Theme.surfaceVariant)
                                 border.color: isActive ? Services.Theme.accent : (saverMouse.containsMouse ? Services.Theme.borderHighlight : "transparent")
                                 border.width: 1
@@ -1356,17 +1359,30 @@ PanelWindow {
 
                                 Text {
                                     id: saverIcon
-                                    anchors.centerIn: parent
+                                    anchors.horizontalCenter: parent.horizontalCenter
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    anchors.verticalCenterOffset: -8
                                     text: Services.Icons.tree
                                     font.family: Services.Theme.fontSymbols
                                     font.pixelSize: 18
                                     scale: saverTile.isActive ? 1.15 : (saverMouse.containsMouse ? 1.08 : 1.0)
                                     color: saverTile.isActive
-                                        ? Services.Theme.bgOnAccent
+                                        ? Services.Theme.accent
                                         : (saverMouse.containsMouse ? Services.Theme.accent : Services.Theme.textPrimary)
                                     Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                                     Behavior on scale { NumberAnimation { duration: 200; easing.type: Easing.OutBack } }
                                 }
+                                Text {
+                                    anchors.horizontalCenter: parent.horizontalCenter
+                                    anchors.bottom: parent.bottom
+                                    anchors.bottomMargin: 8
+                                    text: "Saver"
+                                    font.pixelSize: 10
+                                    font.bold: saverTile.isActive
+                                    color: saverTile.isActive ? Services.Theme.accent : Services.Theme.textSecondary
+                                    Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                                }
+
 
                                 MouseArea {
                                     id: saverMouse
@@ -1385,11 +1401,11 @@ PanelWindow {
                             Rectangle {
                                 id: themeTile
                                 Layout.fillWidth: true
-                                Layout.preferredHeight: 50
+                                Layout.fillHeight: true
                                 radius: Services.Theme.radiusLg
                                 readonly property bool isDark: Services.Config ? (Services.Config.themeMode === "dark" || Services.Config.themeMode !== "light") : true
                                 color: isDark
-                                    ? Services.Theme.accent
+                                    ? Qt.alpha(Services.Theme.accent, 0.26)
                                     : (themeMouse.containsMouse ? Services.Theme.bgHover : Services.Theme.surfaceVariant)
                                 border.color: isDark ? Services.Theme.accent : (themeMouse.containsMouse ? Services.Theme.borderHighlight : "transparent")
                                 border.width: 1
@@ -1418,19 +1434,32 @@ PanelWindow {
 
                                 Text {
                                     id: themeIcon
-                                    anchors.centerIn: parent
+                                    anchors.horizontalCenter: parent.horizontalCenter
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    anchors.verticalCenterOffset: -8
                                     text: Services.Icons.contrast
                                     font.family: Services.Theme.fontSymbols
                                     font.pixelSize: 18
                                     scale: themeTile.isDark ? 1.15 : (themeMouse.containsMouse ? 1.08 : 1.0)
                                     rotation: themeTile.isDark ? 0 : 180
                                     color: themeTile.isDark
-                                        ? Services.Theme.bgOnAccent
+                                        ? Services.Theme.accent
                                         : (themeMouse.containsMouse ? Services.Theme.accent : Services.Theme.textPrimary)
                                     Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                                     Behavior on scale { NumberAnimation { duration: 200; easing.type: Easing.OutBack } }
                                     Behavior on rotation { NumberAnimation { duration: 350; easing.type: Easing.OutBack; easing.overshoot: 1.3 } }
                                 }
+                                Text {
+                                    anchors.horizontalCenter: parent.horizontalCenter
+                                    anchors.bottom: parent.bottom
+                                    anchors.bottomMargin: 8
+                                    text: themeTile.isDark ? "Dark" : "Light"
+                                    font.pixelSize: 10
+                                    font.bold: themeTile.isDark
+                                    color: themeTile.isDark ? Services.Theme.accent : Services.Theme.textSecondary
+                                    Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                                }
+
 
                                 MouseArea {
                                     id: themeMouse
@@ -1451,11 +1480,11 @@ PanelWindow {
                             Rectangle {
                                 id: muteTile
                                 Layout.fillWidth: true
-                                Layout.preferredHeight: 50
+                                Layout.fillHeight: true
                                 radius: Services.Theme.radiusLg
                                 readonly property bool isActive: Services.Audio.muted
                                 color: isActive
-                                    ? Services.Theme.accent
+                                    ? Qt.alpha(Services.Theme.accent, 0.26)
                                     : (muteMouse.containsMouse ? Services.Theme.bgHover : Services.Theme.surfaceVariant)
                                 border.color: isActive ? Services.Theme.accent : (muteMouse.containsMouse ? Services.Theme.borderHighlight : "transparent")
                                 border.width: 1
@@ -1490,17 +1519,30 @@ PanelWindow {
 
                                 Text {
                                     id: muteIcon
-                                    anchors.centerIn: parent
+                                    anchors.horizontalCenter: parent.horizontalCenter
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    anchors.verticalCenterOffset: -8
                                     text: muteTile.isActive ? Services.Icons.volMute : Services.Icons.speaker
                                     font.family: Services.Theme.fontSymbols
                                     font.pixelSize: 18
                                     scale: muteTile.isActive ? 1.15 : (muteMouse.containsMouse ? 1.08 : 1.0)
                                     color: muteTile.isActive
-                                        ? Services.Theme.bgOnAccent
+                                        ? Services.Theme.accent
                                         : (muteMouse.containsMouse ? Services.Theme.accent : Services.Theme.textPrimary)
                                     Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                                     Behavior on scale { NumberAnimation { duration: 200; easing.type: Easing.OutBack } }
                                 }
+                                Text {
+                                    anchors.horizontalCenter: parent.horizontalCenter
+                                    anchors.bottom: parent.bottom
+                                    anchors.bottomMargin: 8
+                                    text: muteTile.isActive ? "Muted" : "Mute"
+                                    font.pixelSize: 10
+                                    font.bold: muteTile.isActive
+                                    color: muteTile.isActive ? Services.Theme.accent : Services.Theme.textSecondary
+                                    Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                                }
+
 
                                 MouseArea {
                                     id: muteMouse
@@ -1516,6 +1558,8 @@ PanelWindow {
                                     }
                                 }
                             }
+
+                            }
                         }
 
                         // Media Player Card
@@ -1525,156 +1569,6 @@ PanelWindow {
                     }
                 }
             }
-
-            // ── Bottom Fixed Controls Card & Footer (Hard-locked to panel.bottom) ──
-            ColumnLayout {
-                id: bottomCol
-                anchors {
-                    bottom: parent.bottom
-                    left: parent.left
-                    right: parent.right
-                }
-                anchors.margins: 16
-                spacing: 12
-                opacity: fullPanelOverlay.isOpen ? 0 : 1
-                visible: opacity > 0.01
-                Behavior on opacity { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
-
-                Rectangle {
-                    Layout.fillWidth: true
-                    height: 1
-                    color: Services.Theme.border
-                    opacity: 0.4
-                }
-
-                ControlCard {
-                    RowLayout {
-                        Layout.fillWidth: true
-
-                        Text {
-                            text: "Controls"
-                            font.pixelSize: 11
-                            font.bold: true
-                            color: Services.Theme.textSecondary
-                        }
-
-                        Item { Layout.fillWidth: true }
-
-                        // Audio Output Device Selector Button (Opens sub-panel like WiFi/BT)
-                        Rectangle {
-                            height: 20; radius: 10
-                            color: audioSinkMouse.containsMouse ? Services.Theme.bgHover : "transparent"
-                            implicitWidth: sinkRow.implicitWidth + 12
-                            Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
-
-                            RowLayout {
-                                id: sinkRow
-                                anchors.centerIn: parent
-                                spacing: 4
-
-                                Text {
-                                    text: Services.Icons.headphone
-                                    font.family: Services.Theme.fontSymbols
-                                    font.pixelSize: 9
-                                    color: Services.Theme.textSecondary
-                                }
-                                Text {
-                                    text: Services.Audio.sinkDescription
-                                    font.pixelSize: 10
-                                    color: Services.Theme.textSecondary
-                                    elide: Text.ElideRight
-                                    Layout.maximumWidth: 120
-                                }
-                                Text {
-                                    text: Services.Icons.chevDown
-                                    font.family: Services.Theme.fontSymbols
-                                    font.pixelSize: 8
-                                    color: Services.Theme.textDisabled
-                                    rotation: Services.OverlayManager.audioPanelVisible ? 180 : 0
-                                    Behavior on rotation { NumberAnimation { duration: 180; easing.type: Easing.OutQuad } }
-                                }
-                            }
-
-                            MouseArea {
-                                id: audioSinkMouse
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: {
-                                    Services.OverlayManager.audioPanelVisible = !Services.OverlayManager.audioPanelVisible
-                                    if (Services.OverlayManager.audioPanelVisible) {
-                                        Services.Audio.refreshAll()
-                                        Services.OverlayManager.wifiPanelVisible = false
-                                        Services.OverlayManager.btPanelVisible = false
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    ControlSlider {
-                        icon: Services.Icons.brightnessIcon(Services.Brightness.percent)
-                        value: Services.Brightness.percent
-                        onMoved: (v) => Services.Brightness.setPercent(v)
-                    }
-
-                    ControlSlider {
-                        icon: Services.Icons.volumeIcon(Services.Audio.volume, Services.Audio.muted, Services.Audio.isHeadphone, Services.Audio.isTws)
-                        value: Services.Audio.volume
-                        onMoved: (v) => Services.Audio.setVolume(v)
-                    }
-                }
-
-                // System Status Bar Footer
-                Rectangle {
-                    Layout.fillWidth: true
-                    height: 30
-                    radius: Services.Theme.radiusMd
-                    color: Services.Theme.surfaceVariant
-
-                    RowLayout {
-                        anchors.fill: parent
-                        anchors.leftMargin: 12
-                        anchors.rightMargin: 12
-                        spacing: 8
-
-                        // CPU
-                        RowLayout {
-                            spacing: 4
-                            Text { text: Services.Icons.cpu; font.family: Services.Theme.fontSymbols; font.pixelSize: 10; color: Services.Theme.accent }
-                            Text { text: Math.round(Services.Sysmon.cpuUsage) + "%"; font.pixelSize: 10; font.bold: true; color: Services.Theme.textSecondary }
-                        }
-
-                        Item { Layout.fillWidth: true }
-
-                        // RAM
-                        RowLayout {
-                            spacing: 4
-                            Text { text: Services.Icons.ram; font.family: Services.Theme.fontSymbols; font.pixelSize: 10; color: Services.Theme.accent }
-                            Text { text: Math.round(Services.Sysmon.ramUsage) + "%"; font.pixelSize: 10; font.bold: true; color: Services.Theme.textSecondary }
-                        }
-
-                        Item { Layout.fillWidth: true }
-
-                        // Temp
-                        RowLayout {
-                            spacing: 4
-                            visible: Services.Sysmon.cpuTemp > 0
-                            Text { text: Services.Icons.temp; font.family: Services.Theme.fontSymbols; font.pixelSize: 10; color: Services.Theme.accent }
-                            Text { text: Math.round(Services.Sysmon.cpuTemp) + "°C"; font.pixelSize: 10; font.bold: true; color: Services.Theme.textSecondary }
-                        }
-
-                        Item { Layout.fillWidth: true; visible: Services.Sysmon.cpuTemp > 0 }
-
-                        // Disk
-                        RowLayout {
-                            spacing: 4
-                            Text { text: Services.Icons.disk; font.family: Services.Theme.fontSymbols; font.pixelSize: 10; color: Services.Theme.accent }
-                            Text { text: Math.round(Services.Sysmon.diskUsage) + "%"; font.pixelSize: 10; font.bold: true; color: Services.Theme.textSecondary }
-                        }
-                    }
-                }
-        }
 
             Rectangle {
                 id: fullPanelOverlay
