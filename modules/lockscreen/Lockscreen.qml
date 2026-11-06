@@ -1646,19 +1646,69 @@ Scope {
                                 styleColor: Services.Theme.overlayDim
                             }
 
-                            // Style 1: Hero Clock (Single horizontal huge display)
-                            Text {
+                            // Style 1: Hero Clock with a restrained Liquid Glass finish.
+                            // Keep the original glyph rendering underneath; only add a smooth,
+                            // opaque cool-white reflection masked to the same text shape.
+                            Item {
+                                id: heroClockGlass
                                 visible: topClockColumn.clockStyle === "hero"
                                 Layout.alignment: Qt.AlignHCenter
-                                horizontalAlignment: Text.AlignHCenter
-                                text: root.timeStr
-                                color: Services.Theme.white
-                                font.pixelSize: 94
-                                font.weight: Font.Bold
-                                font.letterSpacing: -1.0
-                                font.family: Services.Theme.fontDisplay
-                                style: Text.Outline
-                                styleColor: Services.Theme.overlayDim
+                                implicitWidth: heroClockBase.implicitWidth
+                                implicitHeight: heroClockBase.implicitHeight
+
+                                Text {
+                                    id: heroClockBase
+                                    text: root.timeStr
+                                    color: Services.Theme.white
+                                    font.pixelSize: 98
+                                    font.weight: Font.Bold
+                                    font.letterSpacing: -1.0
+                                    font.family: Services.Theme.fontDisplay
+                                    style: Text.Outline
+                                    styleColor: Services.Theme.overlayDim
+                                }
+
+                                // The mask must keep its own texture but stay out of the final scene.
+                                Text {
+                                    id: heroClockGlassMask
+                                    anchors.fill: heroClockBase
+                                    text: root.timeStr
+                                    color: "white"
+                                    font.pixelSize: heroClockBase.font.pixelSize
+                                    font.weight: heroClockBase.font.weight
+                                    font.letterSpacing: heroClockBase.font.letterSpacing
+                                    font.family: heroClockBase.font.family
+                                    visible: false
+                                    layer.enabled: true
+                                    layer.smooth: true
+                                }
+
+                                // One continuous, low-contrast reflection. Avoid multiple bright bands,
+                                // which made the previous version look striped and translucent.
+                                Rectangle {
+                                    id: heroClockGlassGradient
+                                    anchors.fill: parent
+                                    visible: false
+                                    layer.enabled: true
+                                    gradient: Gradient {
+                                        GradientStop { position: 0.00; color: "#FFFFFF" }
+                                        GradientStop { position: 0.18; color: "#F9FBFF" }
+                                        GradientStop { position: 0.58; color: "#EDF4FF" }
+                                        GradientStop { position: 1.00; color: "#DCE9FA" }
+                                    }
+                                }
+
+                                MultiEffect {
+                                    anchors.fill: parent
+                                    source: heroClockGlassGradient
+                                    maskEnabled: true
+                                    maskSource: heroClockGlassMask
+                                    maskThresholdMin: 0.0
+                                    maskThresholdMax: 1.0
+                                    maskSpreadAtMax: 0.15
+                                    autoPaddingEnabled: false
+                                    opacity: 0.48
+                                }
                             }
 
                             // Style 2: Modern Stacked Clock (Bold Hour on top, Clean Minute below)
@@ -1969,6 +2019,16 @@ Scope {
                             readonly property bool showAvatarRing: Services.Config ? Services.Config.lockscreenAvatarRing : false
                             readonly property string inputStyle: root.isMinimal ? "underline" : (Services.Config ? Services.Config.lockscreenInputStyle : "pill")
                             readonly property bool showPasswordBox: root.userRevealedInput || (root.passwordInput.length > 0) || root.isError || root.isAuthenticating || root.isCompact
+                            // Keep the idle field compact. Only grow it when the masked text
+                            // reaches the usable width, and cap the expansion at 5%.
+                            readonly property real normalInputWidth: inputStyle === "underline" ? 180 : 190
+                            readonly property real maxInputStretch: normalInputWidth * 0.05
+                            readonly property real inputTextAvailableWidth: normalInputWidth - ((!root.isCompact && inputStyle === "underline") ? 36 : 42)
+                            readonly property real typedInputStretch: pwTextInput.contentWidth > inputTextAvailableWidth
+                                ? Math.min(pwTextInput.contentWidth - inputTextAvailableWidth + 2, maxInputStretch)
+                                : 0
+                            // Offset the text area back toward the capsule's true center, accounting for the leading lock icon.
+                            readonly property real inputTextCenterOffset: (!root.isCompact && inputStyle === "underline") ? 12 : 15
 
                             // Avatar size (px) - everything else (ring, container, radii, fallback letter) derives from this
                             readonly property int avatarSize: 64
@@ -2082,13 +2142,17 @@ Scope {
                                 id: inputContainer
                                 anchors.horizontalCenter: parent.horizontalCenter
                                 y: 20
-                                width: root.isCompact ? (parent.width - 40) : ((centerAuthCard.inputStyle === "underline") ? 240 : 250)
-                                height: (centerAuthCard.inputStyle === "box") ? 42 : 38
+                                width: root.isCompact
+                                    ? (parent.width - 40)
+                                    : (centerAuthCard.normalInputWidth + centerAuthCard.typedInputStretch)
+                                height: (centerAuthCard.inputStyle === "box") ? 38 : 34
                                 radius: {
-                                    if (centerAuthCard.inputStyle === "pill" || root.isCompact) return 19
+                                    if (centerAuthCard.inputStyle === "pill" || root.isCompact) return 17
                                     if (centerAuthCard.inputStyle === "box") return 8
                                     return 0
                                 }
+                                // Prevent text, cursor, or child effects from painting outside the field.
+                                clip: true
                                 color: {
                                     if (!root.isCompact && (centerAuthCard.inputStyle === "underline" || centerAuthCard.inputStyle === "dots")) return "transparent"
                                     if (!root.isCompact && centerAuthCard.inputStyle === "box") return Services.Theme.bgElevated
@@ -2108,6 +2172,7 @@ Scope {
 
                                 Behavior on opacity { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
                                 Behavior on scale { NumberAnimation { duration: 280; easing.type: Easing.OutBack; easing.overshoot: 1.15 } }
+                                Behavior on width { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
                                 Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                                 Behavior on border.color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
@@ -2132,6 +2197,7 @@ Scope {
                                     // Leading Lock / State Icon
                                     Item {
                                         id: lockIconBox
+                                        z: 1
                                         Layout.preferredWidth: 18
                                         Layout.preferredHeight: 18
                                         implicitWidth: 18
@@ -2213,11 +2279,14 @@ Scope {
                                         TextInput {
                                             id: pwTextInput
                                             anchors.fill: parent
+                                            anchors.leftMargin: -centerAuthCard.inputTextCenterOffset
+                                            anchors.rightMargin: centerAuthCard.inputTextCenterOffset
                                             echoMode: root.showPassword ? TextInput.Normal : TextInput.Password
                                             passwordCharacter: "•"
                                             color: Services.Theme.textPrimary
-                                            font.pixelSize: Services.Theme.fontSizeMd
+                                            font.pixelSize: Math.max(12, Services.Theme.fontSizeMd - 2)
                                             font.family: Services.Theme.fontMono
+                                            horizontalAlignment: TextInput.AlignHCenter
                                             verticalAlignment: TextInput.AlignVCenter
                                             clip: true
                                             focus: false
@@ -2254,8 +2323,11 @@ Scope {
 
                                         // Placeholder prompt
                                         Text {
-                                            anchors.left: parent.left
-                                            anchors.verticalCenter: parent.verticalCenter
+                                            anchors.fill: parent
+                                            anchors.leftMargin: -centerAuthCard.inputTextCenterOffset
+                                            anchors.rightMargin: centerAuthCard.inputTextCenterOffset
+                                            horizontalAlignment: Text.AlignHCenter
+                                            verticalAlignment: Text.AlignVCenter
                                             text: {
                                                 if (root.isAuthenticating) return "Authenticating..."
                                                 if ((Services.FaceId && Services.FaceId.status === "success") || root.isFaceVerified) {

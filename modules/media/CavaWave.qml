@@ -20,22 +20,6 @@ Item {
     implicitWidth: isRemote ? (3 * 3.5 + 2 * 3.0) : (barCount * barWidth + Math.max(0, barCount - 1) * barSpacing)
     implicitHeight: maxHeight
 
-    readonly property bool needsCava: root.active && !root.isRemote
-    readonly property bool useCava: (!root.isRemote && Services.Cava && Services.Cava.isAvailable && Services.Cava.hasAudio && (Services.Config ? Services.Config.islandCavaWave : true))
-
-    Component.onCompleted: {
-        if (root.needsCava && Services.Cava) Services.Cava.activeConsumers++
-    }
-    Component.onDestruction: {
-        if (root.needsCava && Services.Cava) Services.Cava.activeConsumers = Math.max(0, Services.Cava.activeConsumers - 1)
-    }
-    onNeedsCavaChanged: {
-        if (Services.Cava) {
-            if (root.needsCava) Services.Cava.activeConsumers++
-            else Services.Cava.activeConsumers = Math.max(0, Services.Cava.activeConsumers - 1)
-        }
-    }
-
     // ── Remote Mode: "Cuma dot dot" indicator (for phone / non-laptop players) ─
     Row {
         id: remoteDotsRow
@@ -69,33 +53,13 @@ Item {
         }
     }
 
-    // ── Local Mode: Animated Equalizer Bars (CAVA / Wave) ─────────────────────
-    // Organic Multi-Harmonic Idle Animation (when local audio is silent/paused)
-    property real idleTick: 0.0
-    NumberAnimation on idleTick {
-        running: root.active && root.isPlaying && !root.useCava && !root.isRemote
-        loops: Animation.Infinite
-        from: 0.0
-        to: Math.PI * 2
-        duration: 1600
-    }
-
-    // Baseline resting heights and peak ceilings per bar (curved natural equalizer arch)
-    readonly property var defaultBaseHeights: [4.0, 7.5, 5.5, 3.5]
-    readonly property var defaultMaxHeights:  [13.0, 16.5, 14.5, 11.5]
-
-    function idleWave(idx) {
-        const t = root.idleTick
-        if (idx === 0) {
-            return (Math.sin(t * 1.3) * 0.5 + Math.cos(t * 0.7) * 0.5 + 1.0) / 2.0
-        } else if (idx === 1) {
-            return (Math.sin(t * 1.8 + 0.8) * 0.6 + Math.cos(t * 1.1) * 0.4 + 1.0) / 2.0
-        } else if (idx === 2) {
-            return (Math.sin(t * 1.5 + 1.9) * 0.5 + Math.cos(t * 0.9 + 0.4) * 0.5 + 1.0) / 2.0
-        } else {
-            return (Math.sin(t * 2.1 + 2.7) * 0.55 + Math.cos(t * 1.4) * 0.45 + 1.0) / 2.0
-        }
-    }
+    // ── Local Mode: fake equalizer (same style as the satellite waveform) ─────
+    // Per-bar loop: rise to upTo over upMs, fall to downTo over downMs.
+    // Bars 0-2 match the satellite; bar 3 is extra for the 4-bar island.
+    readonly property var upTo:   [14, 6, 12, 9]
+    readonly property var upMs:   [280, 400, 340, 360]
+    readonly property var downTo: [4, 14, 4, 13]
+    readonly property var downMs: [320, 300, 380, 330]
 
     Row {
         id: waveBarsRow
@@ -110,35 +74,45 @@ Item {
                 id: barRect
                 required property int index
 
+                readonly property int k: index % root.upTo.length
+
                 width: root.barWidth
+                height: root.minHeight
                 radius: root.barRadius
                 color: root.barColor
                 anchors.verticalCenter: parent.verticalCenter
 
-                readonly property real baseH: (index < root.defaultBaseHeights.length) ? root.defaultBaseHeights[index] : root.minHeight
-                readonly property real maxH:  (index < root.defaultMaxHeights.length)  ? root.defaultMaxHeights[index]  : root.maxHeight
+                SequentialAnimation on height {
+                    id: waveAnim
+                    running: root.active && root.isPlaying && !root.isRemote
+                    loops: Animation.Infinite
 
-                readonly property real targetHeight: {
-                    if (!root.isPlaying) {
-                        return root.minHeight
+                    NumberAnimation {
+                        to: Math.min(root.maxHeight, root.upTo[barRect.k])
+                        duration: root.upMs[barRect.k]
+                        easing.type: Easing.InOutSine
                     }
-                    if (root.useCava) {
-                        const val = Services.Cava.sample(index, root.barCount)
-                        return Math.max(root.minHeight, Math.min(maxH, baseH + val * (maxH - baseH)))
+                    NumberAnimation {
+                        to: Math.max(root.minHeight, root.downTo[barRect.k])
+                        duration: root.downMs[barRect.k]
+                        easing.type: Easing.InOutSine
                     }
-                    const idleFactor = root.idleWave(index)
-                    return Math.max(root.minHeight, Math.min(maxH, baseH + idleFactor * (maxH - baseH)))
+
+                    onRunningChanged: {
+                        if (running) settleAnim.stop()
+                        else settleAnim.start()
+                    }
                 }
 
-                readonly property bool isRising: targetHeight > height
-
-                height: targetHeight
-
-                Behavior on height {
-                    NumberAnimation {
-                        duration: root.useCava ? (barRect.isRising ? 45 : 125) : 110
-                        easing.type: barRect.isRising ? Easing.OutQuad : Easing.OutCubic
-                    }
+                // When playback stops, ease back down to the resting height
+                // instead of freezing mid-wave.
+                NumberAnimation {
+                    id: settleAnim
+                    target: barRect
+                    property: "height"
+                    to: root.minHeight
+                    duration: 150
+                    easing.type: Easing.OutCubic
                 }
 
                 Behavior on color {

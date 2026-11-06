@@ -33,13 +33,59 @@ PanelWindow {
     property real contextMenuY: 0
     readonly property bool isContextMenuOpen: contextMenuApp !== null
 
-    // One searchable list: applications, a web-search action, and matching files.
+    // ── Adaptive geometry ───────────────────────────────────────────────
+    // Width and max height follow the screen; the panel is pinned near the top
+    // (like Spotlight) so the search bar never moves while the list grows/shrinks.
+    readonly property real screenW: launcherWindow.screen ? launcherWindow.screen.width : 1920
+    readonly property real screenH: launcherWindow.screen ? launcherWindow.screen.height : 1080
+    readonly property real panelWidth: Math.round(Math.min(640, Math.max(440, screenW * 0.4)))
+    readonly property real panelTop: Math.round(screenH * 0.18)
+    readonly property real maxPanelHeight: Math.round(Math.min(560, screenH * 0.6))
+    readonly property real searchBarHeight: 58
+    readonly property real stripHeight: 34
+    readonly property real listPadding: 6
+    readonly property real rowSpacing: 3
+
+    // Panel height is computed from the rows themselves (deterministic), not from
+    // ListView.contentHeight, which is only an estimate for unbuilt delegates.
+    readonly property real listContentHeight: contentHeightFor(unifiedResults)
+    readonly property real panelTargetHeight: isExpanded
+        ? Math.max(searchBarHeight + 1 + 96,
+                   Math.min(maxPanelHeight, searchBarHeight + 1 + listContentHeight + listPadding * 2 + stripHeight))
+        : searchBarHeight
+    readonly property real listViewportHeight: Math.max(0, panelTargetHeight - searchBarHeight - 1 - stripHeight)
+
+    // One searchable list: intents, applications, a web-search action, and matching files.
     property var unifiedResults: []
-    property string fileSearchQuery: ""
+    property var fileCandidates: []        // raw fd output (paths) for the latest finished search
+    property bool fileSearching: false
+    property string fileSearchQuery: ""    // query the latest fd run was started for
+    property bool resetSelection: true     // true after the user edits the query
+    property int shownAppCount: 0
+    property int shownFileCount: 0
+    property double lastKeyNav: 0          // keyboard navigation timestamp (blocks hover steals)
+    readonly property int maxApps: 7
+    readonly property int maxFiles: 8
+    readonly property string summaryText: shownAppCount + " apps  ·  " + shownFileCount + " files  ·  web"
+
     property string defaultBrowserDesktopId: ""
     // The provider and the browser handler are independent settings.
     // Change this prefix to change the search engine without hardcoding a browser.
     readonly property string webSearchUrlPrefix: "https://duckduckgo.com/?q="
+
+    // "> command" runs in this terminal. Edit to taste.
+    readonly property var terminalCommand: ["kitty", "--directory", Quickshell.env("HOME"), "--hold"]
+
+    // "yt lofi", "nix firefox", ... → straight to that site's search.
+    readonly property var webShortcuts: ({
+        "yt":   { label: "YouTube",        url: "https://www.youtube.com/results?search_query=" },
+        "gh":   { label: "GitHub",         url: "https://github.com/search?q=" },
+        "nix":  { label: "NixOS Packages", url: "https://search.nixos.org/packages?query=" },
+        "nixo": { label: "NixOS Options",  url: "https://search.nixos.org/options?query=" },
+        "aw":   { label: "ArchWiki",       url: "https://wiki.archlinux.org/index.php?search=" },
+        "w":    { label: "Wikipedia",      url: "https://en.wikipedia.org/w/index.php?search=" },
+        "maps": { label: "Google Maps",    url: "https://www.google.com/maps/search/" }
+    })
 
     function resolveDefaultBrowserEntry(rawId) {
         const id = (rawId || "").trim()
@@ -93,7 +139,7 @@ PanelWindow {
     readonly property string defaultBrowserIcon: defaultBrowserEntry && defaultBrowserEntry.icon
         ? defaultBrowserEntry.icon : "web-browser"
 
-    ListModel { id: fileResults }
+    ListModel { id: rowModel }
 
     Process {
         id: browserLookupProcess
@@ -147,51 +193,91 @@ PanelWindow {
         stdout: StdioCollector {
             id: fileSearchOutput
             onStreamFinished: {
-                // Ignore output from a cancelled search if the query has already changed.
+                // Only accept output that belongs to the query that's still on screen.
                 if (launcherWindow.fileSearchQuery !== launcherWindow.searchQuery) return
-                fileResults.clear()
-                if (launcherWindow.searchQuery.length < 2) {
-                    launcherWindow.refreshUnifiedResults()
-                    return
-                }
                 const lines = fileSearchOutput.text.split("\n")
-                for (let i = 0; i < lines.length && i < 80; i++) {
-                    const path = lines[i].trim()
-                    if (!path) continue
-                    const parts = path.split("/")
-                    fileResults.append({
-                        name: parts[parts.length - 1],
-                        path: path,
-                        description: path,
-                        kind: "file"
-                    })
+                const paths = []
+                for (let i = 0; i < lines.length; i++) {
+                    const p = lines[i].trim()
+                    if (p) paths.push(p)
                 }
-                launcherWindow.refreshUnifiedResults()
+                launcherWindow.fileCandidates = paths
+                launcherWindow.fileSearching = false
+                launcherWindow.scheduleRefresh()
             }
         }
+        onExited: fileFollowUp.restart()
     }
 
     Process { id: openTargetProcess; command: [] }
 
+    Process { id: copyTextProcess; command: [] }
+
     Timer {
         id: fileSearchDebounce
-        interval: 140
+        interval: 90
         repeat: false
         onTriggered: launcherWindow.runFileSearch(launcherWindow.searchQuery)
+    }
+
+    // fd finished: if the user kept typing meanwhile, search again for the latest query.
+    // The short delay lets the previous run's stdout finish delivering first.
+    Timer {
+        id: fileFollowUp
+        interval: 30
+        repeat: false
+        onTriggered: {
+            const q = launcherWindow.searchQuery
+            if (launcherWindow.fileEligible(q) && launcherWindow.fileSearchQuery !== q) {
+                launcherWindow.runFileSearch(q)
+            }
+        }
+    }
+
+    // Smooth keyboard scrolling (we drive contentY ourselves instead of snapping).
+    NumberAnimation {
+        id: scrollAnim
+        target: resultList
+        property: "contentY"
+        duration: 170
+        easing.type: Easing.OutCubic
     }
 
     Connections {
         target: Services.Applications
         ignoreUnknownSignals: true
         function onFilteredAppsChanged() {
-            launcherWindow.refreshUnifiedResults()
+            launcherWindow.scheduleRefresh()
         }
+    }
+
+    // ── Row geometry (single source of truth for list + panel height) ────
+    function rowHeight(kind) {
+        return kind === "section" ? 25 : (kind === "info" ? 32 : 48)
+    }
+
+    function contentHeightFor(items) {
+        let h = 0
+        for (let i = 0; i < items.length; i++) h += rowHeight(items[i].kind)
+        if (items.length > 1) h += rowSpacing * (items.length - 1)
+        return h
+    }
+
+    function yOf(index) {
+        let y = 0
+        for (let i = 0; i < index && i < unifiedResults.length; i++) {
+            y += rowHeight(unifiedResults[i].kind) + rowSpacing
+        }
+        return y
+    }
+
+    function selectableKind(kind) {
+        return kind !== "section" && kind !== "info"
     }
 
     function isSelectable(index) {
         if (index < 0 || index >= unifiedResults.length) return false
-        const kind = unifiedResults[index].kind
-        return kind !== "section" && kind !== "info"
+        return selectableKind(unifiedResults[index].kind)
     }
 
     function firstSelectableIndex() {
@@ -201,8 +287,30 @@ PanelWindow {
         return -1
     }
 
+    // Animate the list so `index` (plus its section header when it's the first
+    // row of a section) is fully inside the viewport.
+    function ensureVisible(index) {
+        if (index < 0 || index >= unifiedResults.length) return
+        const anchorIndex = (index > 0 && unifiedResults[index - 1].kind === "section") ? index - 1 : index
+        const top = yOf(anchorIndex)
+        const bottom = yOf(index) + rowHeight(unifiedResults[index].kind)
+        const viewH = listViewportHeight
+        const minY = -listPadding
+        const maxY = Math.max(minY, contentHeightFor(unifiedResults) + listPadding - viewH)
+
+        let target = scrollAnim.running ? scrollAnim.to : resultList.contentY
+        if (top - target < listPadding) target = top - listPadding
+        else if (bottom - target > viewH - listPadding) target = bottom + listPadding - viewH
+        target = Math.max(minY, Math.min(maxY, target))
+
+        if (!scrollAnim.running && Math.abs(target - resultList.contentY) < 0.5) return
+        scrollAnim.stop()
+        scrollAnim.to = target
+        scrollAnim.start()
+    }
+
     function moveSelection(direction, steps) {
-        if (resultList.count <= 0) return
+        if (unifiedResults.length <= 0) return
         let index = resultList.currentIndex
         for (let step = 0; step < steps; step++) {
             let candidate = index + direction
@@ -213,93 +321,427 @@ PanelWindow {
             index = candidate
         }
         if (isSelectable(index)) {
+            lastKeyNav = Date.now()
             resultList.currentIndex = index
-            resultList.positionViewAtIndex(index, ListView.Contain)
+            ensureVisible(index)
         }
     }
 
-    function refreshUnifiedResults() {
-        const query = searchQuery
-        if (!query) {
-            unifiedResults = []
-            return
-        }
+    // ── Smart intents ────────────────────────────────────────────────────
+    function parseShortcut(q) {
+        const m = /^(\S+)\s+(.+)$/.exec(q)
+        if (!m) return null
+        const id = m[1].toLowerCase()
+        if (!Object.prototype.hasOwnProperty.call(webShortcuts, id)) return null
+        const sc = webShortcuts[id]
+        return { id: id, label: sc.label, rest: m[2].trim(), url: sc.url }
+    }
 
-        const items = []
-        const apps = Services.Applications.filteredApps || []
-
-        items.push({ kind: "section", name: "Applications" })
-        if (apps.length > 0) {
-            for (let i = 0; i < apps.length; i++) {
-                const app = apps[i]
-                items.push({
-                    kind: "app",
-                    name: app.name || app.id || "Application",
-                    description: app.description || app.comment || "Application",
-                    entry: app
-                })
+    // Tiny recursive-descent evaluator: numbers, + - * / ^, unary minus, parentheses.
+    // Never uses eval, so arbitrary text can't run as code.
+    function evalMath(src) {
+        const s = src.replace(/\s+/g, "").replace(/×/g, "*").replace(/÷/g, "/")
+        let pos = 0
+        function peek() { return s.charAt(pos) }
+        function parseExpr() {
+            let v = parseTerm()
+            while (peek() === "+" || peek() === "-") {
+                const op = s.charAt(pos++)
+                const r = parseTerm()
+                v = op === "+" ? v + r : v - r
             }
-        } else {
-            items.push({ kind: "info", name: "No matching applications" })
+            return v
         }
+        function parseTerm() {
+            let v = parsePow()
+            while (peek() === "*" || peek() === "/") {
+                const op = s.charAt(pos++)
+                const r = parsePow()
+                v = op === "*" ? v * r : v / r
+            }
+            return v
+        }
+        function parsePow() {
+            const b = parseUnary()
+            if (peek() === "^") {
+                pos++
+                return Math.pow(b, parsePow())
+            }
+            return b
+        }
+        function parseUnary() {
+            if (peek() === "-") { pos++; return -parseUnary() }
+            if (peek() === "+") { pos++; return parseUnary() }
+            return parsePrimary()
+        }
+        function parsePrimary() {
+            if (peek() === "(") {
+                pos++
+                const v = parseExpr()
+                if (peek() !== ")") throw new Error("paren")
+                pos++
+                return v
+            }
+            const m = /^(\d+(\.\d+)?|\.\d+)/.exec(s.slice(pos))
+            if (!m) throw new Error("num")
+            pos += m[0].length
+            return parseFloat(m[0])
+        }
+        try {
+            const v = parseExpr()
+            if (pos !== s.length) return null
+            return v
+        } catch (e) {
+            return null
+        }
+    }
 
-        items.push({ kind: "section", name: "Web search" })
-        items.push({
-            kind: "web",
+    function calcIntent(q) {
+        let value = null
+        const pct = /^(\d+(?:\.\d+)?)\s*%\s*(?:of|dari)\s*(\d+(?:\.\d+)?)$/i.exec(q)
+        if (pct) {
+            value = parseFloat(pct[1]) / 100 * parseFloat(pct[2])
+        } else {
+            if (!/^[\d\s+\-*/^().×÷]+$/.test(q)) return null
+            if (!/\d/.test(q)) return null
+            if (/^\d{1,4}-\d{1,2}-\d{1,4}$/.test(q)) return null           // looks like a date
+            if (!/[+*/^×÷]/.test(q) && !/\d\s*-\s*[\d(.]/.test(q)) return null   // needs an operator
+            value = evalMath(q)
+        }
+        if (value === null || !isFinite(value)) return null
+        const text = String(Number(value.toPrecision(12)))
+        return {
+            kind: "calc", key: "calc",
+            name: "= " + text,
+            description: q + "  ·  Enter to copy",
+            resultText: text,
+            glyph: "="
+        }
+    }
+
+    function urlIntent(q) {
+        if (/\s/.test(q)) return null
+        let url = ""
+        if (/^https?:\/\/\S+$/i.test(q)) {
+            url = q
+        } else if (/^www\.\S+\.\S+$/i.test(q)
+                   || /^[a-z0-9-]+(\.[a-z0-9-]+)*\.(com|org|net|io|dev|id|app|xyz|edu|gov)(\/\S*)?$/i.test(q)) {
+            url = "https://" + q
+        } else {
+            return null
+        }
+        return {
+            kind: "url", key: "url",
+            name: "Open " + q,
+            description: "Open with " + defaultBrowserName,
+            url: url,
+            browserIcon: defaultBrowserIcon
+        }
+    }
+
+    function genericWebItem(query) {
+        return {
+            kind: "web", key: "web",
             name: 'Search the web for “' + query + '”',
             description: "Open with " + defaultBrowserName,
             query: query,
             browserIcon: defaultBrowserIcon
-        })
+        }
+    }
 
-        items.push({ kind: "section", name: "Files" })
-        if (query.length < 2) {
-            items.push({ kind: "info", name: "Type at least 2 characters to search files" })
-        } else if (fileResults.count > 0) {
-            for (let j = 0; j < fileResults.count; j++) {
-                const file = fileResults.get(j)
-                items.push({
-                    kind: "file",
-                    name: file.name,
-                    path: file.path,
-                    description: file.path
-                })
+    // ── Files ────────────────────────────────────────────────────────────
+    function fileEligible(q) {
+        return q.length >= 2 && !q.startsWith(">") && !parseShortcut(q) && !calcIntent(q) && !urlIntent(q)
+    }
+
+    function fileIconName(path) {
+        const dot = path.lastIndexOf(".")
+        const ext = dot >= 0 ? path.slice(dot + 1).toLowerCase() : ""
+        switch (ext) {
+        case "png": case "jpg": case "jpeg": case "gif": case "webp": case "svg": case "bmp": case "avif":
+            return "image-x-generic"
+        case "mp4": case "mkv": case "webm": case "avi": case "mov":
+            return "video-x-generic"
+        case "mp3": case "flac": case "ogg": case "wav": case "opus": case "m4a":
+            return "audio-x-generic"
+        case "pdf":
+            return "application-pdf"
+        case "zip": case "tar": case "gz": case "xz": case "zst": case "7z": case "rar":
+            return "package-x-generic"
+        case "doc": case "docx": case "odt":
+            return "x-office-document"
+        case "xls": case "xlsx": case "ods": case "csv":
+            return "x-office-spreadsheet"
+        case "ppt": case "pptx": case "odp":
+            return "x-office-presentation"
+        case "sh": case "py": case "js": case "ts": case "qml": case "nix": case "c": case "cpp":
+        case "rs": case "go": case "lua": case "json": case "toml": case "yaml": case "yml":
+            return "text-x-script"
+        default:
+            return "text-x-generic"
+        }
+    }
+
+    function displayDir(path) {
+        const home = Quickshell.env("HOME")
+        const dir = path.slice(0, path.lastIndexOf("/"))
+        return (home && dir.startsWith(home)) ? "~" + dir.slice(home.length) : dir
+    }
+
+    // Re-ranks the last fd output against the *current* query, so results narrow
+    // instantly while the next fd run is still in flight.
+    function rankFiles(query) {
+        const tokens = query.toLowerCase().split(/\s+/).filter(t => t.length > 0)
+        if (tokens.length === 0) return []
+        const home = Quickshell.env("HOME")
+        const scored = []
+
+        for (let i = 0; i < fileCandidates.length; i++) {
+            const path = fileCandidates[i]
+            const lower = path.toLowerCase()
+            const slash = lower.lastIndexOf("/")
+            const name = lower.slice(slash + 1)
+
+            let total = 0
+            let ok = true
+            for (let t = 0; t < tokens.length; t++) {
+                const tok = tokens[t]
+                let s = 0
+                if (name === tok) {
+                    s = 100
+                } else if (name.startsWith(tok)) {
+                    s = 80
+                } else if (name.indexOf(tok) !== -1) {
+                    const at = name.indexOf(tok)
+                    s = /[^a-z0-9]/.test(name.charAt(at - 1)) ? 60 : 45
+                } else if (lower.indexOf(tok) !== -1) {
+                    s = 12                                   // matched only in the folder path
+                }
+                if (s === 0) { ok = false; break }
+                total += s
             }
-        } else {
-            items.push({ kind: "info", name: "No matching files" })
+            if (!ok) continue
+
+            let score = total / tokens.length
+            score -= (lower.split("/").length - 1) * 0.6     // shallower first
+            const rel = (home && path.startsWith(home)) ? path.slice(home.length) : path
+            if (rel.indexOf("/.") !== -1 && tokens[0].charAt(0) !== ".") score -= 15   // hidden stuff last
+            scored.push({ path: path, name: path.slice(slash + 1), score: score })
         }
 
-        unifiedResults = items
-        if (!isSelectable(resultList.currentIndex)) {
-            resultList.currentIndex = firstSelectableIndex()
-        }
+        scored.sort((a, b) => b.score - a.score)
+        return scored.slice(0, maxFiles)
     }
 
     function runFileSearch(query) {
-        fileResults.clear()
-        refreshUnifiedResults()
         if (!query || query.length < 2) return
-        // Pass arguments directly to fd; the search text is never evaluated by a shell.
+        // Never kill a running fd (that races with its output); the follow-up timer
+        // re-runs for the latest query once the current run exits.
+        if (fileSearchProcess.running) return
         fileSearchQuery = query
-        fileSearchProcess.running = false
-        fileSearchProcess.command = ["fd", "--type", "f", "--absolute-path", "--hidden", "--fixed-strings", "--max-results", "80", "--exclude", ".git", "--exclude", ".cache", "--exclude", "node_modules", query, Quickshell.env("HOME")]
+
+        // Tokens become an ordered regex ("foo bar" → foo.*bar), escaped so the text
+        // is never interpreted. Arguments go to fd directly; no shell is involved.
+        const tokens = query.split(/\s+/).filter(t => t.length > 0)
+        const pattern = tokens.map(t => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join(".*")
+        fileSearchProcess.command = [
+            "fd", "--type", "f", "--absolute-path", "--hidden",
+            "--max-results", "200",
+            "--exclude", ".git", "--exclude", ".cache", "--exclude", "node_modules",
+            "--exclude", ".local/share/Trash",
+            "--", pattern, Quickshell.env("HOME")
+        ]
         fileSearchProcess.running = true
     }
 
+    // ── Results ──────────────────────────────────────────────────────────
+    // Any number of triggers in one event-loop turn collapse into ONE rebuild.
+    function scheduleRefresh() {
+        Qt.callLater(refreshUnifiedResults)
+    }
+
+    function handleQueryEdited() {
+        resetSelection = true
+        const q = searchQuery
+        if (fileEligible(q)) {
+            fileSearching = true
+            fileSearchDebounce.restart()
+        } else {
+            fileSearchDebounce.stop()
+            fileSearching = false
+            fileCandidates = []
+        }
+        scheduleRefresh()
+    }
+
+    function refreshUnifiedResults() {
+        const query = searchQuery
+        const prevKey = (!resetSelection && resultList.currentIndex >= 0 && resultList.currentIndex < unifiedResults.length)
+            ? unifiedResults[resultList.currentIndex].key : ""
+
+        const items = []
+        let appCount = 0
+        let fileCount = 0
+
+        if (query) {
+            if (query.startsWith(">")) {
+                const cmd = query.slice(1).trim()
+                items.push({ kind: "section", key: "sec:cmd", name: "Run command" })
+                if (cmd) {
+                    items.push({
+                        kind: "cmd", key: "cmd",
+                        name: "Run “" + cmd + "”",
+                        description: "Opens in the terminal  ·  Enter to run",
+                        command: cmd,
+                        glyph: ">"
+                    })
+                } else {
+                    items.push({ kind: "info", key: "info:cmd", name: "Type a command to run in the terminal" })
+                }
+            } else {
+                const shortcut = parseShortcut(query)
+                if (shortcut) {
+                    items.push({ kind: "section", key: "sec:web", name: "Web search" })
+                    items.push({
+                        kind: "web", key: "web:" + shortcut.id,
+                        name: "Search " + shortcut.label + " for “" + shortcut.rest + "”",
+                        description: "Open with " + defaultBrowserName,
+                        url: shortcut.url + encodeURIComponent(shortcut.rest),
+                        browserIcon: defaultBrowserIcon
+                    })
+                    items.push(genericWebItem(query))
+                } else {
+                    const calc = calcIntent(query)
+                    const url = urlIntent(query)
+                    const quiet = !!(calc || url)
+                    if (calc) items.push(calc)
+                    if (url) items.push(url)
+
+                    const apps = Services.Applications.filteredApps || []
+                    const shown = Math.min(apps.length, maxApps)
+                    if (shown > 0 || !quiet) {
+                        items.push({ kind: "section", key: "sec:apps", name: "Applications" })
+                        if (shown > 0) {
+                            for (let i = 0; i < shown; i++) {
+                                const app = apps[i]
+                                items.push({
+                                    kind: "app",
+                                    key: "app:" + (app.id || app.name),
+                                    name: app.name || app.id || "Application",
+                                    description: app.description || app.comment || "Application",
+                                    entry: app
+                                })
+                            }
+                        } else {
+                            items.push({ kind: "info", key: "info:apps", name: "No matching applications" })
+                        }
+                    }
+                    appCount = shown
+
+                    items.push({ kind: "section", key: "sec:web", name: "Web search" })
+                    items.push(genericWebItem(query))
+
+                    if (!quiet) {
+                        items.push({ kind: "section", key: "sec:files", name: "Files" })
+                        if (query.length < 2) {
+                            items.push({ kind: "info", key: "info:files-short", name: "Type at least 2 characters to search files" })
+                        } else {
+                            const ranked = rankFiles(query)
+                            if (ranked.length > 0) {
+                                for (let j = 0; j < ranked.length; j++) {
+                                    const f = ranked[j]
+                                    items.push({
+                                        kind: "file",
+                                        key: "file:" + f.path,
+                                        name: f.name,
+                                        path: f.path,
+                                        description: displayDir(f.path),
+                                        iconName: fileIconName(f.path)
+                                    })
+                                }
+                                fileCount = ranked.length
+                            } else if (fileSearching) {
+                                items.push({ kind: "info", key: "info:files-searching", name: "Searching files…" })
+                            } else {
+                                items.push({ kind: "info", key: "info:files-none", name: "No matching files" })
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        unifiedResults = items
+        shownAppCount = appCount
+        shownFileCount = fileCount
+        syncRows(items)
+
+        // Keep the same row selected when async results land; jump to the top
+        // result only after the user actually edited the query.
+        let sel = -1
+        if (prevKey) {
+            for (let k = 0; k < items.length; k++) {
+                if (items[k].key === prevKey && selectableKind(items[k].kind)) { sel = k; break }
+            }
+        }
+        if (sel < 0) sel = firstSelectableIndex()
+        resultList.currentIndex = sel
+
+        if (resetSelection) {
+            scrollAnim.stop()
+            resultList.positionViewAtBeginning()
+        }
+        resetSelection = false
+    }
+
+    // Minimal keyed diff into the ListModel so unchanged rows keep their delegate
+    // (no flicker) and real inserts/removals/moves play the ListView transitions.
+    function syncRows(items) {
+        for (let i = 0; i < items.length; i++) {
+            const k = items[i].key
+            if (i < rowModel.count && rowModel.get(i).rowKey === k) continue
+
+            let found = -1
+            for (let j = i + 1; j < rowModel.count; j++) {
+                if (rowModel.get(j).rowKey === k) { found = j; break }
+            }
+            if (found !== -1) {
+                rowModel.remove(i, found - i)
+            } else {
+                rowModel.insert(i, { rowKey: k, kind: items[i].kind })
+            }
+        }
+        if (rowModel.count > items.length) {
+            rowModel.remove(items.length, rowModel.count - items.length)
+        }
+    }
+
+    // ── Actions ──────────────────────────────────────────────────────────
     function openSelectedResult(item) {
         if (!item) return
         if (item.kind === "web") {
-            if (!item.query) return
+            if (!item.url && !item.query) return
             // xdg-open delegates to the desktop's currently configured default browser.
-            // The search provider is configured separately above (DuckDuckGo by default).
-            const url = webSearchUrlPrefix + encodeURIComponent(item.query)
+            const url = item.url || (webSearchUrlPrefix + encodeURIComponent(item.query))
             openTargetProcess.command = ["xdg-open", url]
+            openTargetProcess.running = true
+            hide()
+        } else if (item.kind === "url") {
+            openTargetProcess.command = ["xdg-open", item.url]
             openTargetProcess.running = true
             hide()
         } else if (item.kind === "file") {
             if (!item.path) return
             openTargetProcess.command = ["xdg-open", item.path]
             openTargetProcess.running = true
+            hide()
+        } else if (item.kind === "calc") {
+            copyTextProcess.command = ["sh", "-c", "printf '%s' \"$1\" | wl-copy", "sh", item.resultText]
+            copyTextProcess.running = true
+            hide()
+        } else if (item.kind === "cmd") {
+            if (!item.command) return
+            Quickshell.execDetached(terminalCommand.concat(["sh", "-c", item.command]))
             hide()
         } else if (item.kind === "app" && item.entry && typeof item.entry.execute === "function") {
             hide()
@@ -312,7 +754,7 @@ PanelWindow {
         const menuWidth = 220
         const menuHeight = 180
         contextMenuX = Math.max(10, Math.min(x, panel.width - menuWidth - 10))
-        contextMenuY = Math.max(10, Math.min(y, panel.height - menuHeight - 10))
+        contextMenuY = Math.max(10, Math.min(y, panelTargetHeight - menuHeight - 10))
     }
 
     function closeContextMenu() {
@@ -326,13 +768,12 @@ PanelWindow {
         visible = true
         isOpen = true
         Services.Applications.query = ""
-        fileResults.clear()
+        fileCandidates = []
+        fileSearching = false
+        resetSelection = true
         searchField.text = ""
         searchField.forceActiveFocus()
-        resultList.currentIndex = 0
-        if (resultList.count > 0) {
-            resultList.positionViewAtIndex(0, ListView.Beginning)
-        }
+        scheduleRefresh()
     }
 
     function hide() {
@@ -362,19 +803,25 @@ PanelWindow {
     // ── Panel ─────────────────────────────────────────────────────────
     Rectangle {
         id: panel
-        anchors.centerIn: parent
-        anchors.verticalCenterOffset: launcherWindow.isOpen ? -40 : -20
+        anchors.horizontalCenter: parent.horizontalCenter
+        // Pinned near the top: the search bar stays put while the list grows downward.
+        y: launcherWindow.panelTop + (launcherWindow.isOpen ? 0 : -14)
+        transformOrigin: Item.Top
 
-        Behavior on anchors.verticalCenterOffset {
-            NumberAnimation { duration: 200; easing.type: Easing.OutCubic }
+        Behavior on y {
+            NumberAnimation {
+                duration: launcherWindow.isOpen ? 260 : 140
+                easing.type: launcherWindow.isOpen ? Easing.OutCubic : Easing.InCubic
+            }
         }
 
-        width: 540
-        height: launcherWindow.isExpanded ? 460 : 58
+        width: launcherWindow.panelWidth
+        height: launcherWindow.panelTargetHeight
         clip: true
 
+        // Slightly springy so growth/shrink while typing feels liquid, not mechanical.
         Behavior on height {
-            NumberAnimation { duration: 200; easing.type: Easing.OutCubic }
+            SpringAnimation { spring: 4.2; damping: 0.5; epsilon: 0.5 }
         }
 
         radius: 16
@@ -383,13 +830,20 @@ PanelWindow {
         border.width: 1
 
         opacity: launcherWindow.isOpen ? 1 : 0
-        scale: launcherWindow.isOpen ? 1 : 0.97
+        scale: launcherWindow.isOpen ? 1 : 0.95
 
         Behavior on opacity {
-            NumberAnimation { duration: 160; easing.type: Easing.OutCubic }
+            NumberAnimation {
+                duration: launcherWindow.isOpen ? 180 : 120
+                easing.type: Easing.OutCubic
+            }
         }
         Behavior on scale {
-            NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
+            NumberAnimation {
+                duration: launcherWindow.isOpen ? 280 : 140
+                easing.type: launcherWindow.isOpen ? Easing.OutBack : Easing.InCubic
+                easing.overshoot: 1.15
+            }
         }
         Behavior on border.color {
             ColorAnimation { duration: 200; easing.type: Easing.OutCubic }
@@ -687,25 +1141,10 @@ PanelWindow {
                 rightPadding: 0
 
                 onTextChanged: {
-                    const query = text.trim()
+                    // Setting the query updates Applications.filteredApps synchronously;
+                    // every trigger below is coalesced into a single list rebuild.
                     Services.Applications.query = text
-                    // Invalidate in-flight results immediately while the next query is debounced.
-                    if (query !== launcherWindow.fileSearchQuery) {
-                        launcherWindow.fileSearchQuery = ""
-                        fileResults.clear()
-                    }
-                    if (query.length >= 2) {
-                        fileSearchDebounce.restart()
-                    } else {
-                        fileSearchDebounce.stop()
-                        fileSearchProcess.running = false
-                        fileResults.clear()
-                    }
-                    launcherWindow.refreshUnifiedResults()
-                    resultList.currentIndex = launcherWindow.firstSelectableIndex()
-                    if (resultList.currentIndex >= 0) {
-                        resultList.positionViewAtIndex(resultList.currentIndex, ListView.Beginning)
-                    }
+                    launcherWindow.handleQueryEdited()
                 }
 
                 Keys.onPressed: (event) => {
@@ -718,10 +1157,12 @@ PanelWindow {
                         return
                     }
 
-                    if (event.key === Qt.Key_Down) {
+                    const ctrl = (event.modifiers & Qt.ControlModifier) !== 0
+
+                    if (event.key === Qt.Key_Down || (ctrl && (event.key === Qt.Key_N || event.key === Qt.Key_J))) {
                         launcherWindow.moveSelection(1, 1)
                         event.accepted = true
-                    } else if (event.key === Qt.Key_Up) {
+                    } else if (event.key === Qt.Key_Up || (ctrl && (event.key === Qt.Key_P || event.key === Qt.Key_K))) {
                         launcherWindow.moveSelection(-1, 1)
                         event.accepted = true
                     } else if (event.key === Qt.Key_PageDown) {
@@ -731,7 +1172,7 @@ PanelWindow {
                         launcherWindow.moveSelection(-1, 5)
                         event.accepted = true
                     } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
-                        const selected = resultList.currentItem ? resultList.currentItem.result : null
+                        const selected = launcherWindow.unifiedResults[resultList.currentIndex]
                         if (selected && launcherWindow.isSelectable(resultList.currentIndex)) {
                             launcherWindow.openSelectedResult(selected)
                         }
@@ -813,14 +1254,15 @@ PanelWindow {
         }
 
         // ═════════════════════════════════════════════════════════════════
-        // ── APPLICATIONS LIST VIEW CONTAINER (Fixed Geometry for Smooth GPU Clip)
+        // ── RESULTS LIST (rows are diffed into rowModel; data lives in unifiedResults)
         // ═════════════════════════════════════════════════════════════════
         Item {
             id: resultsContainer
             anchors.top: hairlineDivider.bottom
             anchors.left: parent.left
             anchors.right: parent.right
-            height: 367
+            // Follows the (spring-animated) panel height, so the strip and list stay glued together.
+            height: Math.max(0, panel.height - launcherWindow.searchBarHeight - 1 - launcherWindow.stripHeight)
             visible: launcherWindow.isExpanded || panel.height > 60
             opacity: launcherWindow.isExpanded ? 1 : 0
             Behavior on opacity {
@@ -831,42 +1273,95 @@ PanelWindow {
                 id: resultList
                 anchors.fill: parent
                 clip: true
-                spacing: 3
-                model: launcherWindow.unifiedResults
-                currentIndex: 0
+                spacing: launcherWindow.rowSpacing
+                model: rowModel
+                currentIndex: -1
                 keyNavigationEnabled: false
-                reuseItems: true
-                cacheBuffer: 96
-                topMargin: 6; bottomMargin: 6
+                reuseItems: false
+                cacheBuffer: 200
+                topMargin: launcherWindow.listPadding; bottomMargin: launcherWindow.listPadding
                 leftMargin: 8; rightMargin: 8
                 boundsBehavior: Flickable.StopAtBounds
 
+                // One highlight that glides between rows (same idea as the tab-menu pill)
+                // instead of every row blinking its own background.
+                highlightFollowsCurrentItem: true
+                highlightMoveDuration: 150
+                highlightMoveVelocity: -1
+                highlightResizeDuration: 150
+                highlight: Rectangle {
+                    width: resultList.width - 16
+                    height: resultList.currentItem ? resultList.currentItem.height : 48
+                    radius: 10
+                    color: Services.Theme.surfaceVariant
+                    border.color: Services.Theme.accent
+                    border.width: 1
+                    visible: resultList.currentIndex >= 0
+                }
+
+                // Wheel / touch scrolling takes over from the keyboard scroll animation.
+                onMovementStarted: scrollAnim.stop()
+
+                add: Transition {
+                    ParallelAnimation {
+                        NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 150; easing.type: Easing.OutCubic }
+                        NumberAnimation { property: "scale"; from: 0.97; to: 1; duration: 150; easing.type: Easing.OutCubic }
+                    }
+                }
+                remove: Transition {
+                    NumberAnimation { property: "opacity"; to: 0; duration: 90; easing.type: Easing.OutCubic }
+                }
+                displaced: Transition {
+                    NumberAnimation { properties: "y"; duration: 160; easing.type: Easing.OutCubic }
+                }
+
                 delegate: Rectangle {
                     id: appItem
-                    required property var modelData
+                    // Roles stay valid while a row plays its remove transition.
                     required property int index
-                    readonly property var result: modelData
+                    required property string rowKey
+                    required property string kind
+
+                    // Content comes from unifiedResults, matched by key. When the row is
+                    // leaving (key no longer at this index) the last value is kept, so it
+                    // fades out with its real content instead of going blank.
+                    property var result: null
+                    Binding {
+                        target: appItem
+                        property: "result"
+                        value: launcherWindow.unifiedResults[appItem.index]
+                        when: {
+                            const r = launcherWindow.unifiedResults[appItem.index]
+                            return !!r && r.key === appItem.rowKey
+                        }
+                        restoreMode: Binding.RestoreNone
+                    }
+
                     readonly property var entry: result && result.kind === "app" ? result.entry : result
+                    readonly property bool selectable: launcherWindow.selectableKind(kind)
+                    readonly property bool isCurrent: selectable && index === resultList.currentIndex
+
                     width: resultList.width - 16
-                    height: result && result.kind === "section" ? 25 : (result && result.kind === "info" ? 32 : 48)
-                    radius: result && result.kind === "section" ? 0 : 10
+                    height: launcherWindow.rowHeight(kind)
+                    radius: kind === "section" ? 0 : 10
 
-                    readonly property bool isCurrent: launcherWindow.isSelectable(appItem.index) && appItem.index === resultList.currentIndex
-
-                    color: isCurrent
-                        ? Services.Theme.surfaceVariant
-                        : (hoverArea.containsMouse && launcherWindow.isSelectable(appItem.index) ? Services.Theme.bgHover : "transparent")
-                    border.color: isCurrent ? Services.Theme.accent : "transparent"
-                    border.width: isCurrent ? 1 : 0
+                    // The moving highlight draws the selection; rows only add a hover tint.
+                    color: (selectable && !isCurrent && hoverArea.containsMouse) ? Services.Theme.bgHover : "transparent"
                     Behavior on color { ColorAnimation { duration: 120; easing.type: Easing.OutCubic } }
-                    Behavior on border.color { ColorAnimation { duration: 120; easing.type: Easing.OutCubic } }
+
+                    function hoverSelect() {
+                        if (!appItem.selectable) return
+                        // Keyboard scrolling moves rows under a still mouse; don't let that steal the selection.
+                        if (Date.now() - launcherWindow.lastKeyNav < 250) return
+                        if (resultList.currentIndex !== appItem.index) resultList.currentIndex = appItem.index
+                    }
 
                     RowLayout {
                         anchors.fill: parent
                         anchors.leftMargin: 12
                         anchors.rightMargin: 8
                         spacing: 10
-                        visible: appItem.result && appItem.result.kind === "section"
+                        visible: appItem.kind === "section"
 
                         Text {
                             text: appItem.result ? appItem.result.name.toUpperCase() : ""
@@ -889,7 +1384,7 @@ PanelWindow {
                         anchors.right: parent.right
                         anchors.rightMargin: 12
                         anchors.verticalCenter: parent.verticalCenter
-                        visible: appItem.result && appItem.result.kind === "info"
+                        visible: appItem.kind === "info"
                         text: appItem.result ? appItem.result.name : ""
                         color: Services.Theme.textDisabled
                         font.pixelSize: Services.Theme.fontSizeSm
@@ -900,24 +1395,28 @@ PanelWindow {
                         anchors.fill: parent
                         anchors.leftMargin: 12; anchors.rightMargin: 12
                         spacing: 12
-                        visible: appItem.result && appItem.result.kind !== "section" && appItem.result.kind !== "info"
+                        visible: appItem.selectable
 
-                        // App Icon
+                        // Icon
                         Item {
                             Layout.preferredWidth: 32; Layout.preferredHeight: 32
                             Layout.alignment: Qt.AlignVCenter
 
-                            // Fallback letter if icon cannot be loaded
+                            // Fallback glyph/letter if no icon can be loaded
                             Rectangle {
                                 anchors.fill: parent
                                 radius: 8
-                                color: appItem.index === resultList.currentIndex ? Qt.rgba(255, 255, 255, 0.1) : Qt.rgba(255, 255, 255, 0.05)
+                                color: appItem.isCurrent ? Qt.rgba(1, 1, 1, 0.1) : Qt.rgba(1, 1, 1, 0.05)
                                 visible: !ico.source || ico.status !== Image.Ready || !ico.visible
 
                                 Text {
                                     anchors.centerIn: parent
-                                    text: (appItem.result && appItem.result.name ? appItem.result.name : "?").charAt(0).toUpperCase()
-                                    color: appItem.index === resultList.currentIndex ? Services.Theme.accent : Services.Theme.textDisabled
+                                    text: {
+                                        if (!appItem.result) return "?"
+                                        if (appItem.result.glyph) return appItem.result.glyph
+                                        return (appItem.result.name ? appItem.result.name : "?").charAt(0).toUpperCase()
+                                    }
+                                    color: appItem.isCurrent ? Services.Theme.accent : Services.Theme.textDisabled
                                     font.pixelSize: Services.Theme.fontSizeXl
                                     font.bold: true
                                 }
@@ -928,12 +1427,14 @@ PanelWindow {
                                 anchors.fill: parent
                                 source: {
                                     if (!appItem.result) return ""
-                                    if (appItem.result.kind === "web") {
+                                    const k = appItem.result.kind
+                                    if (k === "web" || k === "url") {
                                         return launcherWindow.iconSourceForDesktopIcon(appItem.result.browserIcon, "web-browser")
                                     }
-                                    if (appItem.result.kind === "file") {
-                                        return Services.SystemTheme ? Services.SystemTheme.getIcon("text-x-generic") : ""
+                                    if (k === "file") {
+                                        return Services.SystemTheme ? Services.SystemTheme.getIcon(appItem.result.iconName || "text-x-generic") : ""
                                     }
+                                    if (k === "calc" || k === "cmd") return ""
                                     const app = appItem.result.entry
                                     if (!app) return ""
                                     if (app.resolvedIcon) return app.resolvedIcon
@@ -950,7 +1451,7 @@ PanelWindow {
                             }
 
                             Rectangle {
-                                visible: appItem.result && appItem.result.kind === "web"
+                                visible: appItem.kind === "web"
                                 width: 15
                                 height: 15
                                 radius: 8
@@ -970,7 +1471,7 @@ PanelWindow {
                             }
                         }
 
-                        // App Name & Description
+                        // Name & Description
                         ColumnLayout {
                             Layout.fillWidth: true
                             Layout.alignment: Qt.AlignVCenter
@@ -990,7 +1491,8 @@ PanelWindow {
                                 text: appItem.result ? (appItem.result.description || "") : ""
                                 color: Services.Theme.textSecondary
                                 font.pixelSize: Services.Theme.fontSizeMd
-                                elide: Text.ElideRight
+                                // Paths are most readable with the middle trimmed, descriptions with the end.
+                                elide: appItem.kind === "file" ? Text.ElideMiddle : Text.ElideRight
                                 Layout.fillWidth: true
                             }
                         }
@@ -1002,13 +1504,10 @@ PanelWindow {
                         hoverEnabled: true
                         acceptedButtons: Qt.LeftButton | Qt.RightButton
                         cursorShape: Qt.PointingHandCursor
-                        onEntered: {
-                            if (launcherWindow.isSelectable(appItem.index) && resultList.currentIndex !== appItem.index) {
-                                resultList.currentIndex = appItem.index
-                            }
-                        }
+                        onEntered: appItem.hoverSelect()
+                        onPositionChanged: appItem.hoverSelect()
                         onClicked: (mouse) => {
-                            if (!launcherWindow.isSelectable(appItem.index)) return
+                            if (!appItem.selectable || !appItem.result) return
                             if (mouse.button === Qt.RightButton) {
                                 if (appItem.result.kind !== "app") return
                                 const pt = mapToItem(panel, mouse.x, mouse.y)
@@ -1020,30 +1519,30 @@ PanelWindow {
                         }
                     }
                 }
+            }
 
-                // Empty state
-                Item {
-                    anchors.fill: parent
-                    visible: resultList.count === 0
+            // Empty state (only visible for the brief moment before the first rows arrive)
+            Item {
+                anchors.fill: parent
+                visible: resultList.count === 0
 
-                    ColumnLayout {
-                        anchors.centerIn: parent
-                        spacing: 6
+                ColumnLayout {
+                    anchors.centerIn: parent
+                    spacing: 6
 
-                        Text {
-                            text: Services.Icons.search
-                            font.family: Services.Theme.fontSymbols
-                            font.pixelSize: Services.Theme.fontSize8xl
-                            color: Services.Theme.textDisabled
-                            Layout.alignment: Qt.AlignHCenter
-                        }
+                    Text {
+                        text: Services.Icons.search
+                        font.family: Services.Theme.fontSymbols
+                        font.pixelSize: Services.Theme.fontSize8xl
+                        color: Services.Theme.textDisabled
+                        Layout.alignment: Qt.AlignHCenter
+                    }
 
-                        Text {
-                            text: "Search applications, files, or the web"
-                            color: Services.Theme.textDisabled
-                            font.pixelSize: Services.Theme.fontSizeXl
-                            Layout.alignment: Qt.AlignHCenter
-                        }
+                    Text {
+                        text: "Search applications, files, or the web"
+                        color: Services.Theme.textDisabled
+                        font.pixelSize: Services.Theme.fontSizeXl
+                        Layout.alignment: Qt.AlignHCenter
                     }
                 }
             }
@@ -1073,10 +1572,7 @@ PanelWindow {
 
                 // App count info
                 Text {
-                    text: {
-                        const appCount = Services.Applications.filteredApps ? Services.Applications.filteredApps.length : 0
-                        return appCount + " apps  ·  Web search  ·  " + fileResults.count + " files"
-                    }
+                    text: launcherWindow.summaryText
                     color: Services.Theme.textDisabled
                     font.pixelSize: Services.Theme.fontSizeSm
                 }
