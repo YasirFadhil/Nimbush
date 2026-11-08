@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Layouts
+import Quickshell.Io
 import Quickshell.Services.SystemTray
 import "../../../services" as Services
 import "." as Components
@@ -13,6 +14,59 @@ RowLayout {
     property real rightMargin: 12
     property real centerReservedWidth: 0
     property string islandDemand: "idle"
+
+    // ── Auto-detect LAN / Ethernet ────────────────────────────────
+    // Baca langsung dari /sys/class/net (tanpa NetworkManager). Event-driven lewat
+    // `ip monitor`, jadi ikon ganti hampir instan pas kabel dicolok/dicabut.
+    property bool ethConnected: false
+    property string ethIface: ""
+    property string ethIp: ""
+    readonly property string ethGlyph: "\udb80\ude00"   // U+F0200 nf-md-ethernet
+
+    Process {
+        id: ethProc
+        command: ["sh", "-c",
+            "for d in /sys/class/net/en* /sys/class/net/eth*; do "
+            + "[ -e \"$d\" ] || continue; n=${d##*/}; "
+            + "if [ \"$(cat $d/operstate 2>/dev/null)\" = up ]; then "
+            + "echo \"$n|$(ip -4 -o addr show dev $n 2>/dev/null | head -1)\"; exit 0; fi; "
+            + "done; echo none"]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                const line = text.trim()
+                if (line === "" || line === "none") {
+                    root.ethConnected = false
+                    root.ethIface = ""
+                    root.ethIp = ""
+                    return
+                }
+                const parts = line.split("|")
+                const f = (parts[1] || "").trim().split(/\s+/)
+                root.ethConnected = true
+                root.ethIface = parts[0]
+                root.ethIp = f.length > 3 ? f[3].split("/")[0] : ""
+            }
+        }
+    }
+    Process {
+        id: ethMonitor
+        command: ["ip", "monitor", "link", "address"]
+        running: true
+        stdout: SplitParser { onRead: ethDebounce.restart() }
+    }
+    Timer {
+        id: ethDebounce
+        interval: 300
+        onTriggered: if (!ethProc.running) ethProc.running = true
+    }
+    // Cek awal + fallback polling kalau `ip monitor` nggak tersedia
+    Timer {
+        interval: 5000
+        repeat: true
+        running: true
+        triggeredOnStart: true
+        onTriggered: if (!ethProc.running) ethProc.running = true
+    }
 
     // ── Konstanta tuning ──────────────────────────────────────────
     readonly property real safetyGap: 20      // jarak napas minimum island↔tray
@@ -534,7 +588,7 @@ RowLayout {
                     spacing: root.isMinimal ? 5 : 8
 
                     Services.WifiSignal {
-                        visible: Services.Wifi
+                        visible: Services.Wifi && !root.ethConnected
                         width: root.isMinimal ? 16 : 18
                         height: root.isMinimal ? 16 : 18
                         signalStrength: Services.Wifi ? Services.Wifi.signalStrength : 0
@@ -545,6 +599,16 @@ RowLayout {
                             ? Services.Theme.accent
                             : Services.Theme.textDisabled
                         inactiveColor: Services.Theme.textSecondary
+                    }
+
+                    // Ikon LAN: gantiin ikon Wi-Fi otomatis selama kabel tercolok
+                    Text {
+                        visible: root.ethConnected
+                        text: root.ethGlyph
+                        font.family: Services.Theme.fontSymbols
+                        font.pixelSize: root.isMinimal ? 16 : 18
+                        color: Services.Theme.accent
+                        Layout.alignment: Qt.AlignVCenter
                     }
 
                     Text {

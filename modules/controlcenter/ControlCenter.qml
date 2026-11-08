@@ -35,6 +35,61 @@ PanelWindow {
     property string wifiPasswordInput: ""
     property bool audioSinkSelectorOpen: false
 
+    // ── Auto-detect LAN / Ethernet ──
+    // Dicek tiap 3 detik selama Control Center kebuka (+ sekali pas dibuka).
+    // Tidak butuh NetworkManager: baca langsung dari /sys/class/net.
+    property bool ethConnected: false   // kabel LAN tercolok & link up
+    property string ethIface: ""
+    property string ethIp: ""           // kosong = link up tapi belum dapat IP (DHCP)
+    readonly property string ethGlyph: "\udb80\ude00"   // U+F0200 nf-md-ethernet, ganti kalau font icon lu beda
+
+    Process {
+        id: ethProc
+        command: ["sh", "-c",
+            "for d in /sys/class/net/en* /sys/class/net/eth*; do "
+            + "[ -e \"$d\" ] || continue; n=${d##*/}; "
+            + "if [ \"$(cat $d/operstate 2>/dev/null)\" = up ]; then "
+            + "echo \"$n|$(ip -4 -o addr show dev $n 2>/dev/null | head -1)\"; exit 0; fi; "
+            + "done; echo none"]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                const line = text.trim()
+                if (line === "" || line === "none") {
+                    root.ethConnected = false
+                    root.ethIface = ""
+                    root.ethIp = ""
+                    return
+                }
+                const parts = line.split("|")
+                const f = (parts[1] || "").trim().split(/\s+/)
+                root.ethConnected = true
+                root.ethIface = parts[0]
+                root.ethIp = f.length > 3 ? f[3].split("/")[0] : ""
+            }
+        }
+    }
+    // Event-driven: `ip monitor` nulis baris tiap ada perubahan link/IP,
+    // lalu di-debounce 300ms biar tile ganti hampir instan pas kabel dicolok/dicabut.
+    Process {
+        id: ethMonitor
+        command: ["ip", "monitor", "link", "address"]
+        running: Services.OverlayManager.controlCenterVisible
+        stdout: SplitParser { onRead: ethDebounce.restart() }
+    }
+    Timer {
+        id: ethDebounce
+        interval: 300
+        onTriggered: if (!ethProc.running) ethProc.running = true
+    }
+    // Fallback polling (jaga-jaga kalau `ip monitor` nggak tersedia)
+    Timer {
+        interval: 3000
+        repeat: true
+        running: Services.OverlayManager.controlCenterVisible
+        triggeredOnStart: true
+        onTriggered: if (!ethProc.running) ethProc.running = true
+    }
+
     Process {
         id: pwrProc
         command: ["quickshell", "ipc", "call", "powermenu", "open"]
@@ -335,8 +390,10 @@ PanelWindow {
                         height: parent.height
                         enabled: !Services.OverlayManager.btPanelVisible
                         radius: Services.Theme.radiusLg
-                        color: Services.Wifi.enabled ? Qt.alpha(Services.Theme.accent, 0.2) : Services.Theme.surfaceVariant
-                        border.color: Services.Wifi.enabled ? Qt.alpha(Services.Theme.accent, 0.4) : "transparent"
+                        // Tile "aktif" kalau Wi-Fi nyala ATAU LAN tercolok
+                        readonly property bool active: Services.Wifi.enabled || root.ethConnected
+                        color: wifiTile.active ? Qt.alpha(Services.Theme.accent, 0.2) : Services.Theme.surfaceVariant
+                        border.color: wifiTile.active ? Qt.alpha(Services.Theme.accent, 0.4) : "transparent"
                         border.width: 1
                         clip: true
 
@@ -364,7 +421,7 @@ PanelWindow {
                                     Layout.preferredWidth: 32
                                     Layout.preferredHeight: 32
                                     radius: 16
-                                    color: Services.Wifi.enabled
+                                    color: wifiTile.active
                                            ? (wifiIconMouse.containsMouse ? Qt.lighter(Services.Theme.accent, 1.1) : Services.Theme.accent)
                                            : (wifiIconMouse.containsMouse ? Services.Theme.bgHover : Qt.alpha(Services.Theme.textPrimary, 0.08))
                                     scale: wifiIconMouse.pressed ? 0.88 : (wifiIconMouse.containsMouse ? 1.06 : 1.0)
@@ -380,6 +437,17 @@ PanelWindow {
                                         connected: Services.Wifi.connected
                                         wifiEnabled: Services.Wifi.enabled
                                         activeColor: Services.Wifi.enabled ? Services.Theme.bgOnAccent : Services.Theme.textPrimary
+                                        visible: !root.ethConnected
+                                    }
+
+                                    // Ikon LAN: muncul otomatis (prioritas) selama kabel tercolok
+                                    Text {
+                                        anchors.centerIn: parent
+                                        visible: root.ethConnected
+                                        text: root.ethGlyph
+                                        font.family: Services.Theme.fontSymbols
+                                        font.pixelSize: 16
+                                        color: Services.Theme.bgOnAccent
                                     }
 
                                     MouseArea {
@@ -413,7 +481,9 @@ PanelWindow {
                                             Text {
                                                 text: Services.OverlayManager.wifiPanelVisible
                                                       ? "Wi-Fi Networks"
-                                                      : (Services.Wifi.enabled ? (Services.Wifi.connected ? Services.Wifi.ssid : "Wi-Fi") : "Wi-Fi")
+                                                      : (root.ethConnected
+                                                         ? "Ethernet"
+                                                         : (Services.Wifi.enabled ? (Services.Wifi.connected ? Services.Wifi.ssid : "Wi-Fi") : "Wi-Fi"))
                                                 font.pixelSize: 12
                                                 font.bold: true
                                                 elide: Text.ElideRight
@@ -423,9 +493,11 @@ PanelWindow {
                                             Text {
                                                 text: Services.OverlayManager.wifiPanelVisible
                                                       ? (Services.Wifi.scanning ? "Scanning networks..." : (Services.Wifi.networks.length + " networks found"))
-                                                      : (Services.Wifi.enabled ? (Services.Wifi.connected ? ("Connected • " + Services.Wifi.signalStrength + "%") : "On") : "Off")
+                                                      : (root.ethConnected
+                                                         ? (root.ethIp !== "" ? "Connected" : "Connecting...")
+                                                         : (Services.Wifi.enabled ? (Services.Wifi.connected ? ("Connected • " + Services.Wifi.signalStrength + "%") : "On") : "Off"))
                                                 font.pixelSize: 10
-                                                color: Services.Wifi.enabled ? Services.Theme.textSecondary : Services.Theme.textDisabled
+                                                color: wifiTile.active ? Services.Theme.textSecondary : Services.Theme.textDisabled
                                                 Layout.fillWidth: true
                                                 elide: Text.ElideRight
                                             }
@@ -504,6 +576,44 @@ PanelWindow {
                                     id: wifiCol
                                     width: parent.width
                                     spacing: 6
+
+                                    Rectangle {
+                                        visible: root.ethConnected
+                                        Layout.fillWidth: true
+                                        implicitHeight: 40
+                                        radius: Services.Theme.radiusSm
+                                        color: Services.Theme.surfaceVariant
+
+                                        RowLayout {
+                                            anchors.fill: parent
+                                            anchors.margins: 8
+                                            spacing: 8
+
+                                            Text {
+                                                text: root.ethGlyph
+                                                font.family: Services.Theme.fontSymbols
+                                                font.pixelSize: 14
+                                                color: Services.Theme.accent
+                                            }
+                                            ColumnLayout {
+                                                Layout.fillWidth: true
+                                                spacing: 0
+                                                Text {
+                                                    text: "Ethernet (" + root.ethIface + ")"
+                                                    font.pixelSize: 11
+                                                    font.bold: true
+                                                    color: Services.Theme.accent
+                                                    elide: Text.ElideRight
+                                                    Layout.fillWidth: true
+                                                }
+                                                Text {
+                                                    text: root.ethIp !== "" ? ("Connected • " + root.ethIp) : "Connecting..."
+                                                    font.pixelSize: 10
+                                                    color: Services.Theme.textSecondary
+                                                }
+                                            }
+                                        }
+                                    }
 
                                     Text {
                                         visible: !Services.Wifi.enabled
@@ -1713,6 +1823,44 @@ PanelWindow {
                                 visible: Services.OverlayManager.wifiPanelVisible
                                 Layout.fillWidth: true
                                 spacing: 8
+
+                                Rectangle {
+                                    visible: root.ethConnected
+                                    Layout.fillWidth: true
+                                    implicitHeight: 40
+                                    radius: Services.Theme.radiusSm
+                                    color: Services.Theme.surfaceVariant
+
+                                    RowLayout {
+                                        anchors.fill: parent
+                                        anchors.margins: 8
+                                        spacing: 8
+
+                                        Text {
+                                            text: root.ethGlyph
+                                            font.family: Services.Theme.fontSymbols
+                                            font.pixelSize: 14
+                                            color: Services.Theme.accent
+                                        }
+                                        ColumnLayout {
+                                            Layout.fillWidth: true
+                                            spacing: 0
+                                            Text {
+                                                text: "Ethernet (" + root.ethIface + ")"
+                                                font.pixelSize: 11
+                                                font.bold: true
+                                                color: Services.Theme.accent
+                                                elide: Text.ElideRight
+                                                Layout.fillWidth: true
+                                            }
+                                            Text {
+                                                text: root.ethIp !== "" ? ("Connected • " + root.ethIp) : "Connecting..."
+                                                font.pixelSize: 10
+                                                color: Services.Theme.textSecondary
+                                            }
+                                        }
+                                    }
+                                }
 
                                 Text {
                                     visible: !Services.Wifi.enabled

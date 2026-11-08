@@ -73,94 +73,6 @@ PanelWindow {
         Keys.onEscapePressed: root.close()
     }
 
-    // Slim slider: icon bubble | thin track with knob | value
-    component ControlSlider: Item {
-        id: sliderRoot
-        property string icon: ""
-        property real value: 0
-        signal moved(real newValue)
-
-        Layout.fillWidth: true
-        implicitHeight: 30
-
-        RowLayout {
-            anchors.fill: parent
-            spacing: 10
-
-            Rectangle {
-                Layout.preferredWidth: 30
-                Layout.preferredHeight: 30
-                radius: 15
-                color: Qt.alpha(Services.Theme.accent, 0.2)
-
-                Text {
-                    anchors.centerIn: parent
-                    text: sliderRoot.icon
-                    font.family: Services.Theme.fontSymbols
-                    font.pixelSize: 13
-                    color: Services.Theme.accent
-                }
-            }
-
-            Item {
-                id: track
-                Layout.fillWidth: true
-                Layout.preferredHeight: 30
-
-                Rectangle {
-                    anchors.verticalCenter: parent.verticalCenter
-                    width: parent.width
-                    height: 6
-                    radius: 3
-                    color: Qt.alpha(Services.Theme.textPrimary, 0.14)
-                }
-
-                Rectangle {
-                    id: trackFill
-                    anchors.verticalCenter: parent.verticalCenter
-                    height: 6
-                    radius: 3
-                    color: Services.Theme.accent
-                    width: Math.max(0, Math.min(1, sliderRoot.value)) * parent.width
-                    Behavior on width { NumberAnimation { duration: 80 } }
-                }
-
-                Rectangle {
-                    id: knob
-                    anchors.verticalCenter: parent.verticalCenter
-                    width: sliderMouse.pressed ? 18 : (sliderMouse.containsMouse ? 16 : 14)
-                    height: width
-                    radius: width / 2
-                    color: Services.Theme.accent
-                    border.color: Services.Theme.surfaceVariant
-                    border.width: 2
-                    x: Math.max(0, Math.min(track.width - width, trackFill.width - width / 2))
-                    Behavior on width { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
-                }
-
-                MouseArea {
-                    id: sliderMouse
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    onPressed: (mouse) => sliderRoot.moved(Math.max(0, Math.min(1, mouse.x / width)))
-                    onPositionChanged: (mouse) => {
-                        if (pressed) sliderRoot.moved(Math.max(0, Math.min(1, mouse.x / width)))
-                    }
-                }
-            }
-
-            Text {
-                Layout.preferredWidth: 34
-                horizontalAlignment: Text.AlignRight
-                text: Math.round(sliderRoot.value * 100) + "%"
-                font.pixelSize: 11
-                font.bold: true
-                color: Services.Theme.textPrimary
-            }
-        }
-    }
-
     component ControlCard: Rectangle {
         default property alias content: inner.data
         Layout.fillWidth: true
@@ -186,7 +98,7 @@ PanelWindow {
             anchors.rightMargin: 12
             y: root.isBottom ? (parent.height - height - 12) : 12
             width: 356
-            height: Math.min(530, parent.height - 24)
+            height: Math.min(462, parent.height - 24)
             radius: Services.Theme.radiusMd
             color: Qt.alpha(Services.Theme.surface, 0.94)
             border.color: Services.Theme.border
@@ -405,9 +317,9 @@ PanelWindow {
                 Item {
                     id: morphingTilesRow
                     Layout.fillWidth: true
-                    Layout.preferredHeight: (Services.OverlayManager.wifiPanelVisible || Services.OverlayManager.btPanelVisible) ? 240 : 72
+                    Layout.preferredHeight: (Services.OverlayManager.wifiPanelVisible || Services.OverlayManager.btPanelVisible) ? 310 : 72
                     Layout.minimumHeight: 72
-                    Layout.maximumHeight: 240
+                    Layout.maximumHeight: 310
                     implicitHeight: 72
                     clip: false
                     Behavior on Layout.preferredHeight { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
@@ -1202,7 +1114,7 @@ PanelWindow {
                 Item {
                     id: quickActionsAndMediaCol
                     Layout.fillWidth: true
-                    Layout.preferredHeight: (Services.OverlayManager.wifiPanelVisible || Services.OverlayManager.btPanelVisible) ? 0 : 214
+                    Layout.preferredHeight: (Services.OverlayManager.wifiPanelVisible || Services.OverlayManager.btPanelVisible) ? 0 : 306
                     visible: opacity > 0.01
                     opacity: (Services.OverlayManager.wifiPanelVisible || Services.OverlayManager.btPanelVisible) ? 0 : 1
                     clip: true
@@ -1210,23 +1122,127 @@ PanelWindow {
                     Behavior on Layout.preferredHeight { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
                     Behavior on opacity { NumberAnimation { duration: (Services.OverlayManager.wifiPanelVisible || Services.OverlayManager.btPanelVisible) ? 180 : 200; easing.type: Easing.OutCubic } }
 
+                    // Fixed-size content: the container only reveals/clips it while its
+                    // height animates, so fillHeight items (sliders, toggles, media)
+                    // are not squeezed during the Wi-Fi/Bluetooth morph.
                     ColumnLayout {
-                        anchors.fill: parent
+                        anchors.top: parent.top
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        height: 306
                         spacing: 12
 
-                        // Quick Action Icon-Only Square Tiles (Focus, Saver, Theme, Mute)
+                        // Bento row: vertical sliders | 2x2 quick toggles
                         RowLayout {
                             Layout.fillWidth: true
-                            spacing: 8
+                            Layout.preferredHeight: 168
+                            spacing: 10
+
+                            Rectangle {
+                                Layout.fillWidth: true
+                                Layout.fillHeight: true
+                                Layout.preferredWidth: 1
+                                radius: Services.Theme.radiusLg
+                                color: Services.Theme.surfaceVariant
+
+                                ColumnLayout {
+                                    anchors.fill: parent
+                                    anchors.margins: 10
+                                    spacing: 8
+
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        Layout.fillHeight: true
+                                        spacing: 10
+
+                                    Local.VSlider {
+                                        icon: Services.Icons.brightnessIcon(Services.Brightness.percent)
+                                        value: Services.Brightness.percent
+                                        onMoved: (v) => Services.Brightness.setPercent(v)
+                                    }
+                                    Local.VSlider {
+                                        icon: Services.Icons.volumeIcon(Services.Audio.volume, Services.Audio.muted, Services.Audio.isHeadphone, Services.Audio.isTws)
+                                        value: Services.Audio.volume
+                                        onMoved: (v) => Services.Audio.setVolume(v)
+                                    }
+                                    }
+
+                                    // Output device button (opens the audio device sub-panel)
+                                    Rectangle {
+                                        id: outputRow
+                                        Layout.fillWidth: true
+                                        Layout.preferredHeight: 30
+                                        radius: Services.Theme.radiusSm
+                                        color: Qt.alpha(Services.Theme.textPrimary, audioSinkMouse.containsMouse ? 0.13 : 0.08)
+                                        Behavior on color { ColorAnimation { duration: 150; easing.type: Easing.OutCubic } }
+
+                                        RowLayout {
+                                            anchors.fill: parent
+                                            anchors.leftMargin: 9
+                                            anchors.rightMargin: 9
+                                            spacing: 6
+
+                                            Text {
+                                                text: Services.Icons.speaker
+                                                font.family: Services.Theme.fontSymbols
+                                                font.pixelSize: 11
+                                                color: Services.Theme.textSecondary
+                                            }
+                                            Text {
+                                                text: Services.Audio.sinkDescription
+                                                font.pixelSize: 10
+                                                color: Services.Theme.textSecondary
+                                                elide: Text.ElideRight
+                                                Layout.fillWidth: true
+                                            }
+                                            Text {
+                                                text: Services.Icons.chevDown
+                                                font.family: Services.Theme.fontSymbols
+                                                font.pixelSize: 8
+                                                color: Services.Theme.textDisabled
+                                                rotation: Services.OverlayManager.audioPanelVisible ? 180 : -90
+                                                Behavior on rotation { NumberAnimation { duration: 180; easing.type: Easing.OutQuad } }
+                                            }
+                                        }
+
+                                        MouseArea {
+                                            id: audioSinkMouse
+                                            anchors.fill: parent
+                                            hoverEnabled: true
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: {
+                                                Services.OverlayManager.audioPanelVisible = !Services.OverlayManager.audioPanelVisible
+                                                if (Services.OverlayManager.audioPanelVisible) {
+                                                    Services.Audio.refreshAll()
+                                                    Services.OverlayManager.wifiPanelVisible = false
+                                                    Services.OverlayManager.btPanelVisible = false
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            GridLayout {
+                                Layout.fillWidth: true
+                                Layout.fillHeight: true
+                                Layout.preferredWidth: 1
+                                columns: 2
+                                rowSpacing: 8
+                                columnSpacing: 8
 
                             // 1. Focus (DND)
                             Rectangle {
                                 id: dndTile
                                 Layout.fillWidth: true
-                                Layout.preferredHeight: 76
+                                Layout.fillHeight: true
                                 radius: Services.Theme.radiusLg
                                 readonly property bool isActive: Services.Notifications.doNotDisturb
-                                color: "transparent"
+                                color: isActive
+                                    ? Qt.alpha(Services.Theme.accent, 0.26)
+                                    : (dndMouse.containsMouse ? Services.Theme.bgHover : Services.Theme.surfaceVariant)
+                                border.color: isActive ? Services.Theme.accent : (dndMouse.containsMouse ? Services.Theme.borderHighlight : "transparent")
+                                border.width: 1
                                 scale: dndMouse.pressed ? 0.93 : 1.0
                                 clip: true
 
@@ -1234,24 +1250,11 @@ PanelWindow {
                                 Behavior on border.color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                                 Behavior on scale { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
 
-                                // State circle: accent-filled when on
-                                Rectangle {
-                                    id: dndTileCircle
-                                    anchors.horizontalCenter: parent.horizontalCenter
-                                    y: 0
-                                    width: 48; height: 48; radius: 24
-                                    color: dndTile.isActive
-                                        ? Services.Theme.accent
-                                        : (dndMouse.containsMouse ? Services.Theme.bgHover : Services.Theme.surfaceVariant)
-                                    Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
-                                }
-
                                 // Active Pulse Wave
                                 Rectangle {
                                     id: dndPulse
-                                    anchors.horizontalCenter: parent.horizontalCenter
-                                    y: 0
-                                    width: 48; height: 48; radius: 24
+                                    anchors.centerIn: parent
+                                    width: 44; height: 44; radius: 22
                                     color: Services.Theme.accent
                                     opacity: 0
                                     scale: 0.4
@@ -1275,13 +1278,13 @@ PanelWindow {
                                     id: dndIcon
                                     anchors.horizontalCenter: parent.horizontalCenter
                                     anchors.verticalCenter: parent.verticalCenter
-                                    anchors.verticalCenterOffset: -14
+                                    anchors.verticalCenterOffset: -8
                                     text: dndTile.isActive ? Services.Icons.bellSlash : Services.Icons.bell
                                     font.family: Services.Theme.fontSymbols
                                     font.pixelSize: 18
                                     scale: dndTile.isActive ? 1.15 : (dndMouse.containsMouse ? 1.08 : 1.0)
                                     color: dndTile.isActive
-                                        ? Services.Theme.bgOnAccent
+                                        ? Services.Theme.accent
                                         : (dndMouse.containsMouse ? Services.Theme.accent : Services.Theme.textPrimary)
                                     Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                                     Behavior on scale { NumberAnimation { duration: 200; easing.type: Easing.OutBack } }
@@ -1289,7 +1292,7 @@ PanelWindow {
                                 Text {
                                     anchors.horizontalCenter: parent.horizontalCenter
                                     anchors.bottom: parent.bottom
-                                    anchors.bottomMargin: 6
+                                    anchors.bottomMargin: 8
                                     text: "DND"
                                     font.pixelSize: 10
                                     font.bold: dndTile.isActive
@@ -1317,10 +1320,14 @@ PanelWindow {
                             Rectangle {
                                 id: saverTile
                                 Layout.fillWidth: true
-                                Layout.preferredHeight: 76
+                                Layout.fillHeight: true
                                 radius: Services.Theme.radiusLg
                                 readonly property bool isActive: Services.PowerProfile.saverEnabled
-                                color: "transparent"
+                                color: isActive
+                                    ? Qt.alpha(Services.Theme.accent, 0.26)
+                                    : (saverMouse.containsMouse ? Services.Theme.bgHover : Services.Theme.surfaceVariant)
+                                border.color: isActive ? Services.Theme.accent : (saverMouse.containsMouse ? Services.Theme.borderHighlight : "transparent")
+                                border.width: 1
                                 scale: saverMouse.pressed ? 0.93 : 1.0
                                 clip: true
 
@@ -1328,24 +1335,11 @@ PanelWindow {
                                 Behavior on border.color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                                 Behavior on scale { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
 
-                                // State circle: accent-filled when on
-                                Rectangle {
-                                    id: saverTileCircle
-                                    anchors.horizontalCenter: parent.horizontalCenter
-                                    y: 0
-                                    width: 48; height: 48; radius: 24
-                                    color: saverTile.isActive
-                                        ? Services.Theme.accent
-                                        : (saverMouse.containsMouse ? Services.Theme.bgHover : Services.Theme.surfaceVariant)
-                                    Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
-                                }
-
                                 // Active Pulse Wave
                                 Rectangle {
                                     id: saverPulse
-                                    anchors.horizontalCenter: parent.horizontalCenter
-                                    y: 0
-                                    width: 48; height: 48; radius: 24
+                                    anchors.centerIn: parent
+                                    width: 44; height: 44; radius: 22
                                     color: Services.Theme.accent
                                     opacity: 0
                                     scale: 0.4
@@ -1367,13 +1361,13 @@ PanelWindow {
                                     id: saverIcon
                                     anchors.horizontalCenter: parent.horizontalCenter
                                     anchors.verticalCenter: parent.verticalCenter
-                                    anchors.verticalCenterOffset: -14
+                                    anchors.verticalCenterOffset: -8
                                     text: Services.Icons.tree
                                     font.family: Services.Theme.fontSymbols
                                     font.pixelSize: 18
                                     scale: saverTile.isActive ? 1.15 : (saverMouse.containsMouse ? 1.08 : 1.0)
                                     color: saverTile.isActive
-                                        ? Services.Theme.bgOnAccent
+                                        ? Services.Theme.accent
                                         : (saverMouse.containsMouse ? Services.Theme.accent : Services.Theme.textPrimary)
                                     Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                                     Behavior on scale { NumberAnimation { duration: 200; easing.type: Easing.OutBack } }
@@ -1381,7 +1375,7 @@ PanelWindow {
                                 Text {
                                     anchors.horizontalCenter: parent.horizontalCenter
                                     anchors.bottom: parent.bottom
-                                    anchors.bottomMargin: 6
+                                    anchors.bottomMargin: 8
                                     text: "Saver"
                                     font.pixelSize: 10
                                     font.bold: saverTile.isActive
@@ -1407,10 +1401,14 @@ PanelWindow {
                             Rectangle {
                                 id: themeTile
                                 Layout.fillWidth: true
-                                Layout.preferredHeight: 76
+                                Layout.fillHeight: true
                                 radius: Services.Theme.radiusLg
                                 readonly property bool isDark: Services.Config ? (Services.Config.themeMode === "dark" || Services.Config.themeMode !== "light") : true
-                                color: "transparent"
+                                color: isDark
+                                    ? Qt.alpha(Services.Theme.accent, 0.26)
+                                    : (themeMouse.containsMouse ? Services.Theme.bgHover : Services.Theme.surfaceVariant)
+                                border.color: isDark ? Services.Theme.accent : (themeMouse.containsMouse ? Services.Theme.borderHighlight : "transparent")
+                                border.width: 1
                                 scale: themeMouse.pressed ? 0.93 : 1.0
                                 clip: true
 
@@ -1418,24 +1416,11 @@ PanelWindow {
                                 Behavior on border.color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                                 Behavior on scale { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
 
-                                // State circle: accent-filled when on
-                                Rectangle {
-                                    id: themeTileCircle
-                                    anchors.horizontalCenter: parent.horizontalCenter
-                                    y: 0
-                                    width: 48; height: 48; radius: 24
-                                    color: themeTile.isDark
-                                        ? Services.Theme.accent
-                                        : (themeMouse.containsMouse ? Services.Theme.bgHover : Services.Theme.surfaceVariant)
-                                    Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
-                                }
-
                                 // Active Pulse Wave
                                 Rectangle {
                                     id: themePulse
-                                    anchors.horizontalCenter: parent.horizontalCenter
-                                    y: 0
-                                    width: 48; height: 48; radius: 24
+                                    anchors.centerIn: parent
+                                    width: 44; height: 44; radius: 22
                                     color: Services.Theme.accent
                                     opacity: 0
                                     scale: 0.4
@@ -1451,14 +1436,14 @@ PanelWindow {
                                     id: themeIcon
                                     anchors.horizontalCenter: parent.horizontalCenter
                                     anchors.verticalCenter: parent.verticalCenter
-                                    anchors.verticalCenterOffset: -14
+                                    anchors.verticalCenterOffset: -8
                                     text: Services.Icons.contrast
                                     font.family: Services.Theme.fontSymbols
                                     font.pixelSize: 18
                                     scale: themeTile.isDark ? 1.15 : (themeMouse.containsMouse ? 1.08 : 1.0)
                                     rotation: themeTile.isDark ? 0 : 180
                                     color: themeTile.isDark
-                                        ? Services.Theme.bgOnAccent
+                                        ? Services.Theme.accent
                                         : (themeMouse.containsMouse ? Services.Theme.accent : Services.Theme.textPrimary)
                                     Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                                     Behavior on scale { NumberAnimation { duration: 200; easing.type: Easing.OutBack } }
@@ -1467,7 +1452,7 @@ PanelWindow {
                                 Text {
                                     anchors.horizontalCenter: parent.horizontalCenter
                                     anchors.bottom: parent.bottom
-                                    anchors.bottomMargin: 6
+                                    anchors.bottomMargin: 8
                                     text: themeTile.isDark ? "Dark" : "Light"
                                     font.pixelSize: 10
                                     font.bold: themeTile.isDark
@@ -1495,10 +1480,14 @@ PanelWindow {
                             Rectangle {
                                 id: muteTile
                                 Layout.fillWidth: true
-                                Layout.preferredHeight: 76
+                                Layout.fillHeight: true
                                 radius: Services.Theme.radiusLg
                                 readonly property bool isActive: Services.Audio.muted
-                                color: "transparent"
+                                color: isActive
+                                    ? Qt.alpha(Services.Theme.accent, 0.26)
+                                    : (muteMouse.containsMouse ? Services.Theme.bgHover : Services.Theme.surfaceVariant)
+                                border.color: isActive ? Services.Theme.accent : (muteMouse.containsMouse ? Services.Theme.borderHighlight : "transparent")
+                                border.width: 1
                                 scale: muteMouse.pressed ? 0.93 : 1.0
                                 clip: true
 
@@ -1506,24 +1495,11 @@ PanelWindow {
                                 Behavior on border.color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                                 Behavior on scale { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
 
-                                // State circle: accent-filled when on
-                                Rectangle {
-                                    id: muteTileCircle
-                                    anchors.horizontalCenter: parent.horizontalCenter
-                                    y: 0
-                                    width: 48; height: 48; radius: 24
-                                    color: muteTile.isActive
-                                        ? Services.Theme.accent
-                                        : (muteMouse.containsMouse ? Services.Theme.bgHover : Services.Theme.surfaceVariant)
-                                    Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
-                                }
-
                                 // Active Pulse Wave
                                 Rectangle {
                                     id: mutePulse
-                                    anchors.horizontalCenter: parent.horizontalCenter
-                                    y: 0
-                                    width: 48; height: 48; radius: 24
+                                    anchors.centerIn: parent
+                                    width: 44; height: 44; radius: 22
                                     color: Services.Theme.accent
                                     opacity: 0
                                     scale: 0.4
@@ -1545,13 +1521,13 @@ PanelWindow {
                                     id: muteIcon
                                     anchors.horizontalCenter: parent.horizontalCenter
                                     anchors.verticalCenter: parent.verticalCenter
-                                    anchors.verticalCenterOffset: -14
+                                    anchors.verticalCenterOffset: -8
                                     text: muteTile.isActive ? Services.Icons.volMute : Services.Icons.speaker
                                     font.family: Services.Theme.fontSymbols
                                     font.pixelSize: 18
                                     scale: muteTile.isActive ? 1.15 : (muteMouse.containsMouse ? 1.08 : 1.0)
                                     color: muteTile.isActive
-                                        ? Services.Theme.bgOnAccent
+                                        ? Services.Theme.accent
                                         : (muteMouse.containsMouse ? Services.Theme.accent : Services.Theme.textPrimary)
                                     Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                                     Behavior on scale { NumberAnimation { duration: 200; easing.type: Easing.OutBack } }
@@ -1559,7 +1535,7 @@ PanelWindow {
                                 Text {
                                     anchors.horizontalCenter: parent.horizontalCenter
                                     anchors.bottom: parent.bottom
-                                    anchors.bottomMargin: 6
+                                    anchors.bottomMargin: 8
                                     text: muteTile.isActive ? "Muted" : "Mute"
                                     font.pixelSize: 10
                                     font.bold: muteTile.isActive
@@ -1582,6 +1558,8 @@ PanelWindow {
                                     }
                                 }
                             }
+
+                            }
                         }
 
                         // Media Player Card
@@ -1591,110 +1569,6 @@ PanelWindow {
                     }
                 }
             }
-
-            // ── Bottom Fixed Controls Card & Footer (Hard-locked to panel.bottom) ──
-            ColumnLayout {
-                id: bottomCol
-                anchors {
-                    bottom: parent.bottom
-                    left: parent.left
-                    right: parent.right
-                }
-                anchors.margins: 16
-                spacing: 12
-                opacity: fullPanelOverlay.isOpen ? 0 : 1
-                visible: opacity > 0.01
-                Behavior on opacity { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
-
-                ControlCard {
-                    ControlSlider {
-                        icon: Services.Icons.brightnessIcon(Services.Brightness.percent)
-                        value: Services.Brightness.percent
-                        onMoved: (v) => Services.Brightness.setPercent(v)
-                    }
-
-                    ControlSlider {
-                        icon: Services.Icons.volumeIcon(Services.Audio.volume, Services.Audio.muted, Services.Audio.isHeadphone, Services.Audio.isTws)
-                        value: Services.Audio.volume
-                        onMoved: (v) => Services.Audio.setVolume(v)
-                    }
-
-                    Rectangle {
-                        Layout.fillWidth: true
-                        Layout.preferredHeight: 1
-                        color: Services.Theme.border
-                        opacity: 0.5
-                    }
-
-                    // Output device row (opens the audio device sub-panel)
-                    Rectangle {
-                        id: outputRow
-                        Layout.fillWidth: true
-                        Layout.preferredHeight: 36
-                        radius: Services.Theme.radiusSm
-                        color: audioSinkMouse.containsMouse ? Qt.alpha(Services.Theme.textPrimary, 0.06) : "transparent"
-                        Behavior on color { ColorAnimation { duration: 150; easing.type: Easing.OutCubic } }
-
-                        RowLayout {
-                            anchors.fill: parent
-                            anchors.leftMargin: 0
-                            anchors.rightMargin: 8
-                            spacing: 10
-
-                            Text {
-                                Layout.preferredWidth: 30
-                                horizontalAlignment: Text.AlignHCenter
-                                text: Services.Icons.speaker
-                                font.family: Services.Theme.fontSymbols
-                                font.pixelSize: 12
-                                color: audioSinkMouse.containsMouse ? Services.Theme.textPrimary : Services.Theme.textSecondary
-                            }
-
-                            ColumnLayout {
-                                Layout.fillWidth: true
-                                spacing: 0
-
-                                Text {
-                                    text: "Output"
-                                    font.pixelSize: 9
-                                    color: Services.Theme.textDisabled
-                                }
-                                Text {
-                                    text: Services.Audio.sinkDescription
-                                    font.pixelSize: 11
-                                    color: audioSinkMouse.containsMouse ? Services.Theme.textPrimary : Services.Theme.textSecondary
-                                    elide: Text.ElideRight
-                                    Layout.fillWidth: true
-                                }
-                            }
-
-                            Text {
-                                text: Services.Icons.chevDown
-                                font.family: Services.Theme.fontSymbols
-                                font.pixelSize: 9
-                                color: Services.Theme.textDisabled
-                                rotation: Services.OverlayManager.audioPanelVisible ? 180 : -90
-                                Behavior on rotation { NumberAnimation { duration: 180; easing.type: Easing.OutQuad } }
-                            }
-                        }
-
-                        MouseArea {
-                            id: audioSinkMouse
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: {
-                                Services.OverlayManager.audioPanelVisible = !Services.OverlayManager.audioPanelVisible
-                                if (Services.OverlayManager.audioPanelVisible) {
-                                    Services.Audio.refreshAll()
-                                    Services.OverlayManager.wifiPanelVisible = false
-                                    Services.OverlayManager.btPanelVisible = false
-                                }
-                            }
-                        }
-                    }
-                }
-        }
 
             Rectangle {
                 id: fullPanelOverlay
