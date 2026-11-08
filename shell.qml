@@ -32,22 +32,11 @@ ShellRoot {
     Notif.Center {}
     Notif.Popup {}
     // Osd.PowerOsd {} // Disabled — charging status is now shown in DynamicIsland
-    Launcher.Launcher  { id: launcherWindow }
-    // Wallpaper is integrated into Dynamic Island in Bar.qml
-    EmojiModule.EmojiPicker { id: emojiPickerWindow }
-    DashboardModule.Dashboard { id: dashboardWindow }
-    Clipboard.ClipboardHistory { id: clipboardWindow }
-    PowerMenu.PowerMenu { id: powerMenu }
     Bar.Bar {}
     DockModule.Dock { id: dockWindow }
     DockModule.DockMenu { id: dockMenuWindow }
     ControlCenter.ControlCenter { id: controlCenter }
-    BatteryModule.Battery { id: batteryWindow }
-    VolumeModule.Volume { id: volumeWindow }
-    SysmonModule.Sysmon { id: sysmonWindow }
-    CalendarModule.Calendar {}
     LockscreenModule.Lockscreen { id: lockscreenWindow }
-    WelcomeModule.Welcome { id: welcomeWindow }
 
     Loader {
         id: identifyLoader
@@ -134,42 +123,437 @@ ShellRoot {
         }
     }
 
+    // ── Lazy-loaded Transient Modules ─────────────────────────────────────────
+
+    // Settings
     Loader {
         id: settingsLoader
         active: false
         sourceComponent: SettingsModule.Settings {
             onVisibleChanged: {
-                if (!visible) settingsLoader.active = false
+                if (!visible) settingsUnloadTimer.restart()
+                else settingsUnloadTimer.stop()
             }
         }
     }
-
+    Timer {
+        id: settingsUnloadTimer
+        interval: 1500
+        repeat: false
+        onTriggered: {
+            if (!settingsWindow.visible) settingsLoader.active = false
+        }
+    }
     QtObject {
         id: settingsWindow
         readonly property bool visible: settingsLoader.active && settingsLoader.item && settingsLoader.item.visible
 
         function show(tabIndex, subTabIndex) {
-            if (!settingsLoader.active) {
-                settingsLoader.active = true
-            }
-            if (settingsLoader.item) {
-                settingsLoader.item.show(tabIndex, subTabIndex)
-            }
+            settingsUnloadTimer.stop()
+            if (!settingsLoader.active) settingsLoader.active = true
+            if (settingsLoader.item) settingsLoader.item.show(tabIndex, subTabIndex)
         }
-
         function hide() {
-            if (settingsLoader.item) {
-                settingsLoader.item.hide()
-            }
-            settingsLoader.active = false
+            if (settingsLoader.item) settingsLoader.item.hide()
         }
-
         function toggle() {
-            if (settingsLoader.active && settingsLoader.item && settingsLoader.item.visible) {
-                hide()
-            } else {
-                show()
+            if (visible) hide()
+            else show()
+        }
+    }
+
+    // App Launcher
+    Loader {
+        id: launcherLoader
+        active: false
+        sourceComponent: Launcher.Launcher {
+            onVisibleChanged: {
+                if (!visible) launcherUnloadTimer.restart()
+                else launcherUnloadTimer.stop()
             }
+        }
+    }
+    Timer {
+        id: launcherUnloadTimer
+        interval: 1500
+        repeat: false
+        onTriggered: {
+            if (!launcherWindow.visible) launcherLoader.active = false
+        }
+    }
+    QtObject {
+        id: launcherWindow
+        readonly property bool visible: launcherLoader.active && launcherLoader.item && launcherLoader.item.visible
+
+        function show() {
+            launcherUnloadTimer.stop()
+            if (!launcherLoader.active) launcherLoader.active = true
+            if (launcherLoader.item) launcherLoader.item.show()
+        }
+        function hide() {
+            if (launcherLoader.item) launcherLoader.item.hide()
+        }
+        function toggle() {
+            if (visible) hide()
+            else show()
+        }
+    }
+
+    // Emoji Picker
+    Loader {
+        id: emojiPickerLoader
+        active: false
+        sourceComponent: EmojiModule.EmojiPicker {
+            onVisibleChanged: {
+                if (!visible) emojiPickerUnloadTimer.restart()
+                else emojiPickerUnloadTimer.stop()
+            }
+        }
+    }
+    Timer {
+        id: emojiPickerUnloadTimer
+        interval: 1500
+        repeat: false
+        onTriggered: {
+            if (!emojiPickerWindow.visible) emojiPickerLoader.active = false
+        }
+    }
+    QtObject {
+        id: emojiPickerWindow
+        readonly property bool visible: emojiPickerLoader.active && emojiPickerLoader.item && emojiPickerLoader.item.visible
+
+        function show() {
+            emojiPickerUnloadTimer.stop()
+            if (!emojiPickerLoader.active) emojiPickerLoader.active = true
+            if (emojiPickerLoader.item) emojiPickerLoader.item.show()
+        }
+        function hide() {
+            if (emojiPickerLoader.item) emojiPickerLoader.item.hide()
+        }
+        function toggle() {
+            if (visible) hide()
+            else show()
+        }
+    }
+
+    // Dashboard
+    Loader {
+        id: dashboardLoader
+        active: false
+        sourceComponent: DashboardModule.Dashboard {
+            onVisibleChanged: {
+                if (!visible) dashboardUnloadTimer.restart()
+                else dashboardUnloadTimer.stop()
+            }
+        }
+    }
+    Timer {
+        id: dashboardUnloadTimer
+        interval: 1500
+        repeat: false
+        onTriggered: {
+            if (!dashboardWindow.visible) dashboardLoader.active = false
+        }
+    }
+    QtObject {
+        id: dashboardWindow
+        readonly property bool visible: dashboardLoader.active && dashboardLoader.item && dashboardLoader.item.visible
+
+        function show() {
+            dashboardUnloadTimer.stop()
+            if (!dashboardLoader.active) dashboardLoader.active = true
+            if (dashboardLoader.item) dashboardLoader.item.show()
+        }
+        function hide() {
+            if (dashboardLoader.item) dashboardLoader.item.hide()
+        }
+        function toggle() {
+            if (visible) hide()
+            else show()
+        }
+    }
+
+    // Clipboard History
+    Loader {
+        id: clipboardLoader
+        active: false
+        sourceComponent: Clipboard.ClipboardHistory {
+            onVisibleChanged: {
+                if (!visible) clipboardUnloadTimer.restart()
+                else clipboardUnloadTimer.stop()
+            }
+        }
+    }
+    Timer {
+        id: clipboardUnloadTimer
+        interval: 1500
+        repeat: false
+        onTriggered: {
+            if (!clipboardWindow.visible) clipboardLoader.active = false
+        }
+    }
+    QtObject {
+        id: clipboardWindow
+        readonly property bool visible: clipboardLoader.active && clipboardLoader.item && clipboardLoader.item.visible
+
+        function show() {
+            clipboardUnloadTimer.stop()
+            if (!clipboardLoader.active) clipboardLoader.active = true
+            if (clipboardLoader.item) clipboardLoader.item.show()
+        }
+        function hide() {
+            if (clipboardLoader.item) clipboardLoader.item.hide()
+        }
+        function toggle() {
+            if (visible) hide()
+            else show()
+        }
+    }
+
+    // Power Menu
+    Loader {
+        id: powerMenuLoader
+        active: false
+        sourceComponent: PowerMenu.PowerMenu {
+            onMenuVisibleChanged: {
+                if (!menuVisible) powerMenuUnloadTimer.restart()
+                else powerMenuUnloadTimer.stop()
+            }
+        }
+    }
+    Timer {
+        id: powerMenuUnloadTimer
+        interval: 1200
+        repeat: false
+        onTriggered: {
+            if (!powerMenu.menuVisible) powerMenuLoader.active = false
+        }
+    }
+    QtObject {
+        id: powerMenu
+        readonly property bool menuVisible: powerMenuLoader.active && powerMenuLoader.item && powerMenuLoader.item.menuVisible
+
+        function open() {
+            powerMenuUnloadTimer.stop()
+            if (!powerMenuLoader.active) powerMenuLoader.active = true
+            if (powerMenuLoader.item) powerMenuLoader.item.open()
+        }
+        function close() {
+            if (powerMenuLoader.item) powerMenuLoader.item.close()
+        }
+        function toggle() {
+            if (menuVisible) close()
+            else open()
+        }
+    }
+
+    // Battery Panel
+    Loader {
+        id: batteryLoader
+        active: false
+        sourceComponent: BatteryModule.Battery {
+            onVisibleChanged: {
+                if (!visible) batteryUnloadTimer.restart()
+                else batteryUnloadTimer.stop()
+            }
+        }
+    }
+    Timer {
+        id: batteryUnloadTimer
+        interval: 1500
+        repeat: false
+        onTriggered: {
+            if (!batteryWindow.visible && !Services.OverlayManager.batteryPanelVisible) batteryLoader.active = false
+        }
+    }
+    Connections {
+        target: Services.OverlayManager
+        function onBatteryPanelVisibleChanged() {
+            if (Services.OverlayManager.batteryPanelVisible) {
+                batteryUnloadTimer.stop()
+                batteryLoader.active = true
+            }
+        }
+    }
+    QtObject {
+        id: batteryWindow
+        readonly property bool visible: batteryLoader.active && batteryLoader.item && batteryLoader.item.visible
+
+        function show() {
+            batteryUnloadTimer.stop()
+            if (!batteryLoader.active) batteryLoader.active = true
+            Services.OverlayManager.batteryPanelVisible = true
+            if (batteryLoader.item) batteryLoader.item.show()
+        }
+        function hide() {
+            Services.OverlayManager.batteryPanelVisible = false
+            if (batteryLoader.item) batteryLoader.item.hide()
+        }
+        function toggle() {
+            if (Services.OverlayManager.batteryPanelVisible || visible) hide()
+            else show()
+        }
+    }
+
+    // Volume Panel
+    Loader {
+        id: volumeLoader
+        active: false
+        sourceComponent: VolumeModule.Volume {
+            onVisibleChanged: {
+                if (!visible) volumeUnloadTimer.restart()
+                else volumeUnloadTimer.stop()
+            }
+        }
+    }
+    Timer {
+        id: volumeUnloadTimer
+        interval: 1500
+        repeat: false
+        onTriggered: {
+            if (!volumeWindow.visible && !Services.OverlayManager.volumePanelVisible) volumeLoader.active = false
+        }
+    }
+    Connections {
+        target: Services.OverlayManager
+        function onVolumePanelVisibleChanged() {
+            if (Services.OverlayManager.volumePanelVisible) {
+                volumeUnloadTimer.stop()
+                volumeLoader.active = true
+            }
+        }
+    }
+    QtObject {
+        id: volumeWindow
+        readonly property bool visible: volumeLoader.active && volumeLoader.item && volumeLoader.item.visible
+
+        function show() {
+            volumeUnloadTimer.stop()
+            if (!volumeLoader.active) volumeLoader.active = true
+            Services.OverlayManager.volumePanelVisible = true
+            if (volumeLoader.item) volumeLoader.item.show()
+        }
+        function hide() {
+            Services.OverlayManager.volumePanelVisible = false
+            if (volumeLoader.item) volumeLoader.item.hide()
+        }
+        function toggle() {
+            if (Services.OverlayManager.volumePanelVisible || visible) hide()
+            else show()
+        }
+    }
+
+    // Sysmon Panel
+    Loader {
+        id: sysmonLoader
+        active: false
+        sourceComponent: SysmonModule.Sysmon {
+            onVisibleChanged: {
+                if (!visible) sysmonUnloadTimer.restart()
+                else sysmonUnloadTimer.stop()
+            }
+        }
+    }
+    Timer {
+        id: sysmonUnloadTimer
+        interval: 1500
+        repeat: false
+        onTriggered: {
+            if (!sysmonWindow.visible && !Services.OverlayManager.sysmonPanelVisible) sysmonLoader.active = false
+        }
+    }
+    Connections {
+        target: Services.OverlayManager
+        function onSysmonPanelVisibleChanged() {
+            if (Services.OverlayManager.sysmonPanelVisible) {
+                sysmonUnloadTimer.stop()
+                sysmonLoader.active = true
+            }
+        }
+    }
+    QtObject {
+        id: sysmonWindow
+        readonly property bool visible: sysmonLoader.active && sysmonLoader.item && sysmonLoader.item.visible
+
+        function show() {
+            sysmonUnloadTimer.stop()
+            if (!sysmonLoader.active) sysmonLoader.active = true
+            Services.OverlayManager.sysmonPanelVisible = true
+            if (sysmonLoader.item) sysmonLoader.item.show()
+        }
+        function hide() {
+            Services.OverlayManager.sysmonPanelVisible = false
+            if (sysmonLoader.item) sysmonLoader.item.hide()
+        }
+        function toggle() {
+            if (Services.OverlayManager.sysmonPanelVisible || visible) hide()
+            else show()
+        }
+    }
+
+    // Calendar Panel
+    Loader {
+        id: calendarLoader
+        active: false
+        sourceComponent: CalendarModule.Calendar {
+            onVisibleChanged: {
+                if (!visible) calendarUnloadTimer.restart()
+                else calendarUnloadTimer.stop()
+            }
+        }
+    }
+    Timer {
+        id: calendarUnloadTimer
+        interval: 1200
+        repeat: false
+        onTriggered: {
+            if (!Services.OverlayManager.calendarVisible) calendarLoader.active = false
+        }
+    }
+    Connections {
+        target: Services.OverlayManager
+        function onCalendarVisibleChanged() {
+            if (Services.OverlayManager.calendarVisible) {
+                calendarUnloadTimer.stop()
+                calendarLoader.active = true
+            }
+        }
+    }
+
+    // Welcome Wizard
+    Loader {
+        id: welcomeLoader
+        active: false
+        sourceComponent: WelcomeModule.Welcome {
+            onVisibleChanged: {
+                if (!visible) welcomeUnloadTimer.restart()
+                else welcomeUnloadTimer.stop()
+            }
+        }
+    }
+    Timer {
+        id: welcomeUnloadTimer
+        interval: 1000
+        repeat: false
+        onTriggered: {
+            if (!welcomeWindow.visible) welcomeLoader.active = false
+        }
+    }
+    QtObject {
+        id: welcomeWindow
+        readonly property bool visible: welcomeLoader.active && welcomeLoader.item && welcomeLoader.item.visible
+
+        function show() {
+            welcomeUnloadTimer.stop()
+            if (!welcomeLoader.active) welcomeLoader.active = true
+            if (welcomeLoader.item) welcomeLoader.item.show()
+        }
+        function hide() {
+            if (welcomeLoader.item) welcomeLoader.item.hide()
+        }
+        function toggle() {
+            if (visible) hide()
+            else show()
         }
     }
 
