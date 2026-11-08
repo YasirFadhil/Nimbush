@@ -955,7 +955,7 @@ Item {
 
     Timer {
         id: cameraPollTimer
-        interval: 1800
+        interval: 3500
         running: true
         repeat: true
         triggeredOnStart: true
@@ -1191,7 +1191,7 @@ Item {
     }
     Timer {
         id: capsLockPollTimer
-        interval: 1200
+        interval: 2500
         running: true
         repeat: true
         triggeredOnStart: true
@@ -1927,8 +1927,9 @@ Item {
 
     SequentialAnimation {
         id: globalMediaMarqueeAnim
-        running: root.mediaPlaying && !root.lockBlocked
+        running: root.mediaPlaying && !root.lockBlocked && (root.showCollapsedText || root.expanded || root.autoExpanded) && (Services.Performance ? Services.Performance.marqueeEnabled : true)
         loops: Animation.Infinite
+        onRunningChanged: if (!running) root.globalMediaMarqueeRatio = 0.0
 
         PauseAnimation { duration: 1800 }
         NumberAnimation {
@@ -2171,14 +2172,6 @@ Item {
             activeNotifIndex = (activeNotifIndex - 1 + notifCount) % notifCount
             notifTimer.restart()
         }
-    }
-
-    Timer {
-        id: mprisRefreshTimer
-        interval: 500
-        running: root.mediaPlaying
-        repeat: true
-        onTriggered: root.activePlayer?.positionChanged?.()
     }
 
     Timer {
@@ -3903,7 +3896,7 @@ Item {
                             transformOrigin: Item.Center
                             rotation: 0
 
-                            readonly property bool shouldSpin: root.mediaPlaying && root.isMediaPeek && !root.mediaTransitionActive && (mediaArtImg.status === Image.Ready)
+                            readonly property bool shouldSpin: root.mediaPlaying && root.isMediaPeek && !root.mediaTransitionActive && (mediaArtImg.status === Image.Ready) && (Services.Performance ? Services.Performance.decorativeMotion : true)
 
                             function startSpinFromCurrentAngle() {
                                 spinAnim.from = mediaArtSpinContainer.rotation

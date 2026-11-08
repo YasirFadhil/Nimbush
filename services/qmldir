@@ -26,6 +26,8 @@ singleton DeviceShare 1.0 DeviceShare.qml
 singleton Cava 1.0 Cava.qml
 singleton DockService 1.0 DockService.qml
 singleton FaceId 1.0 FaceId.qml
+singleton NetworkState 1.0 NetworkState.qml
+singleton Performance 1.0 Performance.qml
 AvatarFrame 1.0 AvatarFrame.qml
 
 

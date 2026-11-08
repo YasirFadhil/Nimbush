@@ -23,7 +23,9 @@ Singleton {
     readonly property bool isLocalPlayer: Services.Mpris ? (Services.Mpris.isLocal ?? true) : true
     readonly property bool isLocked: Services.OverlayManager ? Services.OverlayManager.isLocked : false
     readonly property bool isConfigEnabled: Services.Config ? Services.Config.islandCavaWave : true
-    readonly property bool shouldRun: isAvailable && isConfigEnabled && isMediaPlaying && isLocalPlayer && !isLocked && (activeConsumers > 0)
+    readonly property bool shouldRun: isAvailable && isConfigEnabled && isMediaPlaying && isLocalPlayer && !isLocked && (activeConsumers > 0) && (Services.Performance ? Services.Performance.waveformEnabled : true)
+
+    property int frameSkipCounter: 0
 
     readonly property string configPath: Quickshell.env("HOME") + "/.config/quickshell/assets/cava.conf"
 
@@ -69,6 +71,10 @@ Singleton {
 
     function parseCavaOutput(line) {
         if (!line || line.length === 0) return
+        if (Services.Performance && Services.Performance.highLoad) {
+            root.frameSkipCounter++
+            if (root.frameSkipCounter % 2 !== 0) return // Coalesce to ~17 FPS under high load
+        }
         const parts = line.trim().split(";")
         if (parts.length < root.barCount) return
 

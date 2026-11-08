@@ -238,8 +238,9 @@ PanelWindow {
                                 color: refBtnArea.containsMouse ? Services.Theme.accent : Services.Theme.textSecondary
                                 transformOrigin: Item.Center
                                 RotationAnimation on rotation {
-                                    running: Services.Weather ? Services.Weather.isLoading : false
+                                    running: root.visible && (Services.Weather ? Services.Weather.isLoading : false)
                                     from: 0; to: 360; duration: 1000; loops: Animation.Infinite
+                                    onRunningChanged: if (!running) rotation = 0
                                 }
                             }
 

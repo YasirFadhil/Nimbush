@@ -27,13 +27,6 @@ Rectangle {
         return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0")
     }
 
-    Timer {
-        interval: 500
-        running: card.visible && card.isPlaying
-        repeat: true
-        onTriggered: card.player?.positionChanged?.()
-    }
-
     // ── Idle State (No Media Playing) ──
     RowLayout {
         anchors.fill: parent

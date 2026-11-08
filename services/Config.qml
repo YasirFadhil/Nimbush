@@ -18,6 +18,7 @@ Singleton {
     property string fontMono: "Liga SFMono Nerd Font, monospace"
     property string fontDisplay: "SF Pro Display, Inter, Sans-Serif"
     property real glassOpacity: 0.85              // 0.70 | 0.85 | 0.98
+    property string performanceMode: "auto"       // "auto" | "normal" | "balanced" | "critical"
 
     // ── Matugen Extracted Colors ─────────────────────────────────────────────
     property string matugenDarkPrimary: "#ffb599"
@@ -301,6 +302,7 @@ Singleton {
         if (data.fontMono !== undefined) fontMono = data.fontMono
         if (data.fontDisplay !== undefined) fontDisplay = data.fontDisplay
         if (data.glassOpacity !== undefined) glassOpacity = Number(data.glassOpacity)
+        if (data.performanceMode !== undefined) performanceMode = String(data.performanceMode)
 
         if (data.barPosition !== undefined) barPosition = data.barPosition
         if (data.barStyle !== undefined) barStyle = data.barStyle
@@ -433,6 +435,7 @@ Singleton {
             fontMono: fontMono,
             fontDisplay: fontDisplay,
             glassOpacity: glassOpacity,
+            performanceMode: performanceMode,
 
             lastSettingsTab: lastSettingsTab,
             lastSettingsCompSubTab: lastSettingsCompSubTab,
@@ -980,6 +983,7 @@ Singleton {
     function setFontMono(family) { fontMono = family; saveConfig() }
     function setFontDisplay(family) { fontDisplay = family; saveConfig() }
     function setGlassOpacity(op) { glassOpacity = op; saveConfig() }
+    function setPerformanceMode(mode) { performanceMode = mode; saveConfig() }
 
     // ── Processes ────────────────────────────────────────────────────────────
     Process {

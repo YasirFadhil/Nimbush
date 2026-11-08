@@ -35,60 +35,11 @@ PanelWindow {
     property string wifiPasswordInput: ""
     property bool audioSinkSelectorOpen: false
 
-    // ── Auto-detect LAN / Ethernet ──
-    // Dicek tiap 3 detik selama Control Center kebuka (+ sekali pas dibuka).
-    // Tidak butuh NetworkManager: baca langsung dari /sys/class/net.
-    property bool ethConnected: false   // kabel LAN tercolok & link up
-    property string ethIface: ""
-    property string ethIp: ""           // kosong = link up tapi belum dapat IP (DHCP)
-    readonly property string ethGlyph: "\udb80\ude00"   // U+F0200 nf-md-ethernet, ganti kalau font icon lu beda
-
-    Process {
-        id: ethProc
-        command: ["sh", "-c",
-            "for d in /sys/class/net/en* /sys/class/net/eth*; do "
-            + "[ -e \"$d\" ] || continue; n=${d##*/}; "
-            + "if [ \"$(cat $d/operstate 2>/dev/null)\" = up ]; then "
-            + "echo \"$n|$(ip -4 -o addr show dev $n 2>/dev/null | head -1)\"; exit 0; fi; "
-            + "done; echo none"]
-        stdout: StdioCollector {
-            onStreamFinished: {
-                const line = text.trim()
-                if (line === "" || line === "none") {
-                    root.ethConnected = false
-                    root.ethIface = ""
-                    root.ethIp = ""
-                    return
-                }
-                const parts = line.split("|")
-                const f = (parts[1] || "").trim().split(/\s+/)
-                root.ethConnected = true
-                root.ethIface = parts[0]
-                root.ethIp = f.length > 3 ? f[3].split("/")[0] : ""
-            }
-        }
-    }
-    // Event-driven: `ip monitor` nulis baris tiap ada perubahan link/IP,
-    // lalu di-debounce 300ms biar tile ganti hampir instan pas kabel dicolok/dicabut.
-    Process {
-        id: ethMonitor
-        command: ["ip", "monitor", "link", "address"]
-        running: Services.OverlayManager.controlCenterVisible
-        stdout: SplitParser { onRead: ethDebounce.restart() }
-    }
-    Timer {
-        id: ethDebounce
-        interval: 300
-        onTriggered: if (!ethProc.running) ethProc.running = true
-    }
-    // Fallback polling (jaga-jaga kalau `ip monitor` nggak tersedia)
-    Timer {
-        interval: 3000
-        repeat: true
-        running: Services.OverlayManager.controlCenterVisible
-        triggeredOnStart: true
-        onTriggered: if (!ethProc.running) ethProc.running = true
-    }
+    // ── Auto-detect LAN / Ethernet (via shared NetworkState service) ──
+    readonly property bool ethConnected: Services.NetworkState ? Services.NetworkState.connected : false
+    readonly property string ethIface: Services.NetworkState ? Services.NetworkState.interfaceName : ""
+    readonly property string ethIp: Services.NetworkState ? Services.NetworkState.ipv4Address : ""
+    readonly property string ethGlyph: Services.NetworkState ? Services.NetworkState.glyph : "\udb80\ude00"
 
     Process {
         id: pwrProc
@@ -245,8 +196,9 @@ PanelWindow {
                                     Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                                     SequentialAnimation {
-                                        running: Services.Power.isLow
+                                        running: root.visible && Services.Power.isLow
                                         loops: Animation.Infinite
+                                        onRunningChanged: if (!running) headerBatIcon.opacity = 1.0
                                         NumberAnimation { target: headerBatIcon; property: "opacity"; to: 0.2; duration: 500; easing.type: Easing.InOutQuad }
                                         NumberAnimation { target: headerBatIcon; property: "opacity"; to: 1.0; duration: 500; easing.type: Easing.InOutQuad }
                                     }

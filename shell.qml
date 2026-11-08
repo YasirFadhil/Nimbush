@@ -341,6 +341,26 @@ ShellRoot {
         }
     }
 
+    // ── Performance Governor ─────────────────────────────────────────────────
+    IpcHandler {
+        target: "performance"
+        function getProfile(): string { return Services.Performance ? Services.Performance.profile : "normal" }
+        function getMode(): string { return Services.Performance ? Services.Performance.userMode : "auto" }
+        function setMode(mode: string): void { if (Services.Performance) Services.Performance.setUserMode(mode) }
+        function status(): string {
+            if (!Services.Performance) return "unavailable"
+            return JSON.stringify({
+                profile: Services.Performance.profile,
+                userMode: Services.Performance.userMode,
+                isAutomatic: Services.Performance.isAutomatic,
+                cpuUsage: Services.Sysmon ? Services.Sysmon.cpuUsage : 0,
+                memAvailPct: Services.Sysmon ? Services.Sysmon.memAvailablePct : 100,
+                cpuPsi: Services.Sysmon ? Services.Sysmon.cpuPsi : 0,
+                memPsi: Services.Sysmon ? Services.Sysmon.memPsi : 0
+            })
+        }
+    }
+
     // ── Shell lifecycle / reload ──────────────────────────────────────────────
     Process {
         id: reloadTriggerProc

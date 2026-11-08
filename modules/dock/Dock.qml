@@ -648,7 +648,7 @@ Variants {
                     SequentialAnimation {
                         id: launchBounceAnim
                         loops: Animation.Infinite
-                        running: iconDelegate.isLaunching
+                        running: iconDelegate.isLaunching && (Services.Performance ? Services.Performance.decorativeMotion : true)
 
                         // 1. Leap up
                         NumberAnimation {
