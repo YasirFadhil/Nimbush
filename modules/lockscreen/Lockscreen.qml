@@ -125,14 +125,6 @@ Scope {
     }
 
     Timer {
-        id: lockMprisTimer
-        interval: 500
-        running: root.isLocked && root.isPlaying
-        repeat: true
-        onTriggered: root.player?.positionChanged?.()
-    }
-
-    Timer {
         id: sessionLockCommitTimer
         interval: 400 // pre-warm: 160ms buffer after bar absorb (240ms) before compositor switch
         repeat: false
@@ -895,7 +887,7 @@ Scope {
                     MultiEffect {
                         anchors.fill: parent
                         source: bgImage
-                        blurEnabled: (Services.Config && Services.Config.lockscreenBlur) || false
+                        blurEnabled: ((Services.Config && Services.Config.lockscreenBlur) || false) && (Services.Performance ? Services.Performance.blurEnabled : true)
                         blur: (Services.Config ? Services.Config.lockscreenBlurRadius : 0.40)
                         blurMax: 32
                         opacity: {
@@ -908,7 +900,7 @@ Scope {
                             // Behavior would cause trailing, making opacity lag behind barP at compositor switch.
                             return Math.min(1.0, Math.max(0.0, (0.82 - barP) / 0.82))
                         }
-                        visible: ((Services.Config && Services.Config.lockscreenBlur && (Services.Config.lockscreenBlurRadius > 0)) || false) && (opacity > 0.001)
+                        visible: ((Services.Config && Services.Config.lockscreenBlur && (Services.Config.lockscreenBlurRadius > 0)) || false) && (Services.Performance ? Services.Performance.blurEnabled : true) && (opacity > 0.001)
                     }
 
                     // Smooth Dark Dim / Vignette Overlay — phase-synced to barIslandProgress
@@ -1441,8 +1433,9 @@ Scope {
                                     Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                                     SequentialAnimation {
-                                        running: Services.Power.isLow
+                                        running: root.isLocked && Services.Power.isLow
                                         loops: Animation.Infinite
+                                        onRunningChanged: if (!running) batIconText.opacity = 1.0
                                         NumberAnimation { target: batIconText; property: "opacity"; to: 0.2; duration: 500; easing.type: Easing.InOutQuad }
                                         NumberAnimation { target: batIconText; property: "opacity"; to: 1.0; duration: 500; easing.type: Easing.InOutQuad }
                                     }
@@ -1700,6 +1693,7 @@ Scope {
 
                                 MultiEffect {
                                     anchors.fill: parent
+                                    visible: Services.Performance ? Services.Performance.reflectionEnabled : true
                                     source: heroClockGlassGradient
                                     maskEnabled: true
                                     maskSource: heroClockGlassMask
@@ -2689,8 +2683,9 @@ Scope {
                                             property real overflow: Math.max(0, implicitWidth - marqueeBox.width)
 
                                             SequentialAnimation on x {
-                                                running: marqueeTitle.overflow > 0 && root.isPlaying
+                                                running: root.isLocked && marqueeTitle.overflow > 0 && root.isPlaying
                                                 loops: Animation.Infinite
+                                                onRunningChanged: if (!running) marqueeTitle.x = 0
                                                 PauseAnimation { duration: 1600 }
                                                 NumberAnimation {
                                                     from: 0

@@ -20,6 +20,12 @@ Singleton {
     property string diskDetailStr: (diskUsedStr && diskTotalStr) ? (diskUsedStr + " / " + diskTotalStr) : diskUsedStr
     property string uptimeStr: ""
 
+    // Linux Pressure Stall Information (PSI) & Available Memory
+    property real cpuPsi: 0.0
+    property real memPsi: 0.0
+    property real memAvailablePct: 100.0
+    signal metricsUpdated()
+
     // Real-time Sparkline History (16 samples)
     property var cpuHistory: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
     property var ramHistory: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
@@ -42,7 +48,7 @@ Singleton {
     Timer {
         id: pollTimer
         interval: 2500
-        running: (Services.Config ? Services.Config.showSysmonTray : true) || (Services.OverlayManager ? Services.OverlayManager.sysmonPanelVisible : false)
+        running: (Services.Config ? Services.Config.showSysmonTray : true) || (Services.OverlayManager ? Services.OverlayManager.sysmonPanelVisible : false) || (Services.Performance ? Services.Performance.isAutomatic : true)
         repeat: true
         triggeredOnStart: true
         onTriggered: {
@@ -106,6 +112,17 @@ Singleton {
                     if (parts[8] && parts[8].trim().length > 0) {
                         root.uptimeStr = parts[8].trim()
                     }
+
+                    // Pressure Stall Information (PSI) & MemAvailable
+                    if (parts.length >= 12) {
+                        const cPsi = parseFloat(parts[9])
+                        if (!isNaN(cPsi)) root.cpuPsi = cPsi
+                        const mPsi = parseFloat(parts[10])
+                        if (!isNaN(mPsi)) root.memPsi = mPsi
+                        const maPct = parseFloat(parts[11])
+                        if (!isNaN(maPct)) root.memAvailablePct = maPct
+                    }
+                    root.metricsUpdated()
                 }
             }
         }

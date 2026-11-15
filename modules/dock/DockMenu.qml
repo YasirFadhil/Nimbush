@@ -12,10 +12,29 @@ PanelWindow {
     readonly property var item: Services.DockService ? Services.DockService.contextMenuItem : null
     readonly property string dockPos: Services.Config ? Services.Config.dockPosition : "bottom"
     readonly property int iconSize: Services.Config ? Services.Config.dockIconSize : 48
-    readonly property int dockBarH: iconSize + 16
+    // Must match Dock.qml's dockBarHeight (iconSize + 24)
+    readonly property int dockBarH: iconSize + 24
     readonly property int floatingDist: Services.Config ? Services.Config.dockFloatingDistance : 6
 
-    visible: root.isOpen
+    // Keep the last non-null item so the card doesn't collapse/blank while it fades out
+    property var cachedItem: null
+    onItemChanged: { if (item) cachedItem = item }
+    readonly property var shownItem: item ? item : cachedItem
+
+    // ── macOS Menu Material Tokens ───────────────────────────────────────────
+    // Menus are a bit more opaque than the dock for legibility. Blur comes from the
+    // compositor (layer rule on "quickshell:dockmenu"); keep ignore_alpha below menuFill alpha.
+    readonly property bool dark: Services.Theme.isDark
+    readonly property color menuFill: dark ? Qt.rgba(0.14, 0.14, 0.15, 0.58) : Qt.rgba(1, 1, 1, 0.62)
+    readonly property color menuBorder: dark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.12)
+    readonly property color menuSpecular: dark ? Qt.rgba(1, 1, 1, 0.16) : Qt.rgba(1, 1, 1, 0.70)
+    readonly property color menuDivider: dark ? Qt.rgba(1, 1, 1, 0.12) : Qt.rgba(0, 0, 0, 0.12)
+    readonly property color textPrimary: dark ? Qt.rgba(1, 1, 1, 0.92) : Qt.rgba(0, 0, 0, 0.85)
+    readonly property color textSecondary: dark ? Qt.rgba(1, 1, 1, 0.60) : Qt.rgba(0, 0, 0, 0.55)
+    readonly property color textTertiary: dark ? Qt.rgba(1, 1, 1, 0.40) : Qt.rgba(0, 0, 0, 0.38)
+
+    // Stay mapped while the card is still fading out, otherwise the fade never plays
+    visible: root.isOpen || menuCard.opacity > 0.01
     color: "transparent"
 
     anchors {
@@ -26,7 +45,7 @@ PanelWindow {
     }
 
     WlrLayershell.layer: WlrLayer.Overlay
-    WlrLayershell.namespace: "quickshell:dockmenu"
+    WlrLayershell.namespace: "quickshell:dockmenu" // Hyprland layer rule: blur + ignore_alpha
     WlrLayershell.keyboardFocus: WlrKeyboardFocus.OnDemand
     exclusiveZone: 0
 
@@ -42,7 +61,7 @@ PanelWindow {
     // ── Keyboard Esc Focus Handler ───────────────────────────────────────────
     Item {
         id: escFocus
-        focus: root.visible
+        focus: root.isOpen
         Keys.onEscapePressed: root.close()
         Keys.onPressed: (event) => {
             if (event.key === Qt.Key_Escape) {
@@ -56,6 +75,7 @@ PanelWindow {
     MouseArea {
         id: dismissArea
         anchors.fill: parent
+        enabled: root.isOpen
         acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
         onPressed: root.close()
     }
@@ -64,13 +84,13 @@ PanelWindow {
     Rectangle {
         id: menuCard
         width: 224
-        implicitHeight: dockMenuCol.implicitHeight + 16
+        implicitHeight: dockMenuCol.implicitHeight + 12
         height: implicitHeight
-        radius: 12
+        radius: 11
 
-        // Liquid Glass Styling
-        color: Services.Theme.bgElevated
-        border.color: Services.Theme.borderHighlight
+        // macOS menu material
+        color: root.menuFill
+        border.color: root.menuBorder
         border.width: 1
 
         // Consume mouse clicks within the card to prevent backdrop dismiss
@@ -116,16 +136,17 @@ PanelWindow {
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.topMargin: 1
-            anchors.leftMargin: 8
-            anchors.rightMargin: 8
+            anchors.leftMargin: 10
+            anchors.rightMargin: 10
             height: 1
-            color: Qt.rgba(1, 1, 1, 0.15)
+            color: root.menuSpecular
         }
 
-        // Smooth entry animation
-        scale: root.isOpen ? 1.0 : 0.94
+        // Smooth entry / exit animation (fade handled here, not by the compositor)
+        scale: root.isOpen ? 1.0 : 0.96
         opacity: root.isOpen ? 1.0 : 0.0
-        Behavior on scale { NumberAnimation { duration: 140; easing.type: Easing.OutBack; easing.overshoot: 1.1 } }
+        transformOrigin: root.dockPos === "bottom" ? Item.Bottom : Item.Center
+        Behavior on scale { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
         Behavior on opacity { NumberAnimation { duration: 120 } }
 
         ColumnLayout {
@@ -133,8 +154,8 @@ PanelWindow {
             anchors.top: parent.top
             anchors.left: parent.left
             anchors.right: parent.right
-            anchors.margins: 8
-            spacing: 3
+            anchors.margins: 6
+            spacing: 2
 
             // ── 1. App Header ────────────────────────────────────────────────
             RowLayout {
@@ -154,13 +175,13 @@ PanelWindow {
                     Rectangle {
                         anchors.fill: parent
                         radius: 7
-                        color: Services.Theme.bgHover
+                        color: root.dark ? Qt.rgba(1, 1, 1, 0.12) : Qt.rgba(0, 0, 0, 0.08)
                         visible: !menuAppImg.source || menuAppImg.status !== Image.Ready || !menuAppImg.visible
 
                         Text {
                             anchors.centerIn: parent
-                            text: (root.item ? (root.item.name || "?") : "?").charAt(0).toUpperCase()
-                            color: Services.Theme.accent
+                            text: (root.shownItem ? (root.shownItem.name || "?") : "?").charAt(0).toUpperCase()
+                            color: root.textPrimary
                             font.pixelSize: 13
                             font.bold: true
                         }
@@ -170,9 +191,9 @@ PanelWindow {
                         id: menuAppImg
                         anchors.fill: parent
                         source: {
-                            if (!root.item) return ""
-                            const rawApp = root.item.app || root.item
-                            const raw = rawApp ? (typeof rawApp.icon === "string" ? rawApp.icon : (rawApp.icon?.name || (typeof root.item.icon === "string" ? root.item.icon : ""))) : ""
+                            if (!root.shownItem) return ""
+                            const rawApp = root.shownItem.app || root.shownItem
+                            const raw = rawApp ? (typeof rawApp.icon === "string" ? rawApp.icon : (rawApp.icon?.name || (typeof root.shownItem.icon === "string" ? root.shownItem.icon : ""))) : ""
                             if (!raw) return ""
                             if (Services.SystemTheme) {
                                 const res = Services.SystemTheme.getIcon(raw)
@@ -198,10 +219,10 @@ PanelWindow {
                     spacing: 2
 
                     Text {
-                        text: root.item ? (root.item.name || "") : ""
+                        text: root.shownItem ? (root.shownItem.name || "") : ""
                         font.pixelSize: Services.Theme.fontSizeMd
                         font.weight: Font.DemiBold
-                        color: Services.Theme.textPrimary
+                        color: root.textPrimary
                         elide: Text.ElideRight
                         Layout.fillWidth: true
                     }
@@ -210,33 +231,33 @@ PanelWindow {
                     RowLayout {
                         Layout.fillWidth: true
                         spacing: 4
-                        visible: Boolean(root.item && root.item.isRunning)
+                        visible: Boolean(root.shownItem && root.shownItem.isRunning)
 
                         Rectangle {
                             width: 5
                             height: 5
                             radius: 2.5
-                            color: Services.Theme.accent
+                            color: root.textSecondary
                         }
 
                         Text {
-                            text: (root.item && root.item.windows && root.item.windows.length > 1)
-                                ? (root.item.windows.length + " windows open")
+                            text: (root.shownItem && root.shownItem.windows && root.shownItem.windows.length > 1)
+                                ? (root.shownItem.windows.length + " windows open")
                                 : "Active"
                             font.pixelSize: 10
-                            color: Services.Theme.textSecondary
+                            color: root.textSecondary
                             elide: Text.ElideRight
                             Layout.fillWidth: true
                         }
                     }
 
                     Text {
-                        text: (root.item && root.item.comment) ? root.item.comment : "Application"
+                        text: (root.shownItem && root.shownItem.comment) ? root.shownItem.comment : "Application"
                         font.pixelSize: 10
-                        color: Services.Theme.textDisabled
+                        color: root.textTertiary
                         elide: Text.ElideRight
                         Layout.fillWidth: true
-                        visible: !Boolean(root.item && root.item.isRunning)
+                        visible: !Boolean(root.shownItem && root.shownItem.isRunning)
                     }
                 }
             }
@@ -246,204 +267,85 @@ PanelWindow {
                 Layout.fillWidth: true
                 Layout.preferredHeight: 1
                 implicitHeight: 1
-                Layout.topMargin: 2
-                Layout.bottomMargin: 2
-                color: Services.Theme.border
-                opacity: 0.5
+                Layout.topMargin: 3
+                Layout.bottomMargin: 3
+                Layout.leftMargin: 6
+                Layout.rightMargin: 6
+                color: root.menuDivider
             }
 
             // ── 2. Launch / New Window Action ────────────────────────────────
-            Rectangle {
-                Layout.fillWidth: true
-                Layout.preferredHeight: 30
-                implicitHeight: 30
-                radius: 6
-                color: dockLaunchMouse.containsMouse ? Services.Theme.bgHover : "transparent"
-
-                RowLayout {
-                    anchors.fill: parent
-                    anchors.leftMargin: 8
-                    anchors.rightMargin: 8
-                    spacing: 8
-
-                    Text {
-                        text: Services.Icons.play || "▶"
-                        font.family: Services.Theme.fontSymbols
-                        font.pixelSize: 11
-                        color: Services.Theme.accent
-                    }
-                    Text {
-                        text: (root.item && root.item.isRunning) ? "New Window" : "Launch"
-                        font.pixelSize: Services.Theme.fontSizeSm
-                        color: Services.Theme.textPrimary
-                        Layout.fillWidth: true
-                    }
-                }
-
-                MouseArea {
-                    id: dockLaunchMouse
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: {
-                        const target = root.item
-                        if (Services.DockService) {
-                            Services.DockService.closeMenu()
-                            Services.DockService.launchApp(target)
-                        }
+            MenuRow {
+                glyph: Services.Icons.play || "▶"
+                label: (root.shownItem && root.shownItem.isRunning) ? "New Window" : "Launch"
+                onTriggered: {
+                    const target = root.shownItem
+                    if (Services.DockService) {
+                        Services.DockService.closeMenu()
+                        Services.DockService.launchApp(target)
                     }
                 }
             }
 
             // ── 3. Desktop Entry Actions (e.g. New Tab, Private Window) ───────
             Repeater {
-                model: (root.item && root.item.actions) ? root.item.actions : []
-                delegate: Rectangle {
+                model: (root.shownItem && root.shownItem.actions) ? root.shownItem.actions : []
+                delegate: MenuRow {
                     required property var modelData
-                    Layout.fillWidth: true
-                    Layout.preferredHeight: 28
-                    implicitHeight: 28
-                    radius: 6
-                    color: dActMouse.containsMouse ? Services.Theme.bgHover : "transparent"
-
-                    RowLayout {
-                        anchors.fill: parent
-                        anchors.leftMargin: 8
-                        anchors.rightMargin: 8
-                        spacing: 8
-
-                        Text {
-                            text: "✦"
-                            font.pixelSize: 10
-                            color: Services.Theme.textSecondary
-                        }
-                        Text {
-                            text: modelData.name || "Action"
-                            font.pixelSize: Services.Theme.fontSizeSm
-                            color: Services.Theme.textPrimary
-                            elide: Text.ElideRight
-                            Layout.fillWidth: true
-                        }
-                    }
-
-                    MouseArea {
-                        id: dActMouse
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: {
-                            if (Services.DockService) Services.DockService.closeMenu()
-                            if (typeof modelData.execute === "function") {
-                                Services.Applications.launch(modelData)
-                            }
+                    label: modelData.name || "Action"
+                    onTriggered: {
+                        if (Services.DockService) Services.DockService.closeMenu()
+                        if (typeof modelData.execute === "function") {
+                            Services.Applications.launch(modelData)
                         }
                     }
                 }
             }
 
             // ── 4. Pin / Unpin Action ────────────────────────────────────────
-            Rectangle {
-                Layout.fillWidth: true
-                Layout.preferredHeight: 30
-                implicitHeight: 30
-                radius: 6
-                readonly property bool pinned: (root.item && Services.DockService) ? Services.DockService.isPinned(root.item.desktopId) : false
-                color: dockPinMouse.containsMouse ? Services.Theme.bgHover : "transparent"
-
-                RowLayout {
-                    anchors.fill: parent
-                    anchors.leftMargin: 8
-                    anchors.rightMargin: 8
-                    spacing: 8
-
-                    Text {
-                        text: Services.Icons.pin || "󰤩"
-                        font.family: Services.Theme.fontSymbols
-                        font.pixelSize: 12
-                        color: parent.parent.pinned ? Services.Theme.accent : Services.Theme.textSecondary
-                    }
-                    Text {
-                        text: parent.parent.pinned ? "Unpin from Dock" : "Pin to Dock"
-                        font.pixelSize: Services.Theme.fontSizeSm
-                        color: Services.Theme.textPrimary
-                        Layout.fillWidth: true
-                    }
-                }
-
-                MouseArea {
-                    id: dockPinMouse
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: {
-                        const target = root.item
-                        if (target && target.desktopId && Services.DockService) {
-                            Services.DockService.togglePin(target.desktopId)
-                            Services.DockService.closeMenu()
-                        }
+            MenuRow {
+                readonly property bool pinned: (root.shownItem && Services.DockService) ? Services.DockService.isPinned(root.shownItem.desktopId) : false
+                glyph: Services.Icons.pin || "󰤩"
+                label: pinned ? "Unpin from Dock" : "Pin to Dock"
+                onTriggered: {
+                    const target = root.shownItem
+                    if (target && target.desktopId && Services.DockService) {
+                        Services.DockService.togglePin(target.desktopId)
+                        Services.DockService.closeMenu()
                     }
                 }
             }
 
             // ── 5. Running Windows List ──────────────────────────────────────
-            Rectangle {
+            Item {
                 Layout.fillWidth: true
-                Layout.preferredHeight: visible ? 18 : 0
-                implicitHeight: visible ? 18 : 0
-                color: "transparent"
-                visible: Boolean(root.item && root.item.windows && root.item.windows.length > 0)
+                Layout.preferredHeight: visible ? 22 : 0
+                implicitHeight: visible ? 22 : 0
+                visible: Boolean(root.shownItem && root.shownItem.windows && root.shownItem.windows.length > 0)
 
                 Text {
                     anchors.left: parent.left
-                    anchors.leftMargin: 8
+                    anchors.leftMargin: 10
                     anchors.verticalCenter: parent.verticalCenter
-                    text: "Open Windows (" + (root.item ? root.item.windows.length : 0) + ")"
+                    anchors.verticalCenterOffset: 2
+                    text: "Open Windows (" + (root.shownItem && root.shownItem.windows ? root.shownItem.windows.length : 0) + ")"
                     font.pixelSize: 10
                     font.weight: Font.DemiBold
-                    color: Services.Theme.textDisabled
+                    color: root.textTertiary
                 }
             }
 
             Repeater {
-                model: (root.item && root.item.windows) ? root.item.windows : []
-                delegate: Rectangle {
+                model: (root.shownItem && root.shownItem.windows) ? root.shownItem.windows : []
+                delegate: MenuRow {
                     required property var modelData
-                    Layout.fillWidth: true
-                    Layout.preferredHeight: 28
-                    implicitHeight: 28
-                    radius: 6
-                    color: winMouse.containsMouse ? Services.Theme.bgHover : "transparent"
-
-                    RowLayout {
-                        anchors.fill: parent
-                        anchors.leftMargin: 8
-                        anchors.rightMargin: 8
-                        spacing: 8
-
-                        Text {
-                            text: "▪"
-                            font.pixelSize: 10
-                            color: (modelData.address === Services.DockService.activeWindowAddress) ? Services.Theme.accent : Services.Theme.textDisabled
-                        }
-                        Text {
-                            text: modelData.title || "Window"
-                            font.pixelSize: Services.Theme.fontSizeXs
-                            color: (modelData.address === Services.DockService.activeWindowAddress) ? Services.Theme.accent : Services.Theme.textPrimary
-                            elide: Text.ElideRight
-                            Layout.fillWidth: true
-                        }
-                    }
-
-                    MouseArea {
-                        id: winMouse
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: {
-                            if (Services.DockService) {
-                                Services.DockService.focusWindow(modelData.address)
-                                Services.DockService.closeMenu()
-                            }
+                    labelSize: Services.Theme.fontSizeXs
+                    label: modelData.title || "Window"
+                    emphasized: Boolean(Services.DockService && modelData.address === Services.DockService.activeWindowAddress)
+                    onTriggered: {
+                        if (Services.DockService) {
+                            Services.DockService.focusWindow(modelData.address)
+                            Services.DockService.closeMenu()
                         }
                     }
                 }
@@ -452,44 +354,26 @@ PanelWindow {
             // ── 6. Quit / Close All Windows (if running) ─────────────────────
             Rectangle {
                 Layout.fillWidth: true
-                Layout.preferredHeight: visible ? 30 : 0
-                implicitHeight: visible ? 30 : 0
-                radius: 6
-                visible: Boolean(root.item && root.item.isRunning)
-                color: quitMouse.containsMouse ? Qt.rgba(0.9, 0.2, 0.2, 0.15) : "transparent"
+                Layout.preferredHeight: visible ? 1 : 0
+                implicitHeight: visible ? 1 : 0
+                Layout.topMargin: 3
+                Layout.bottomMargin: 3
+                Layout.leftMargin: 6
+                Layout.rightMargin: 6
+                color: root.menuDivider
+                visible: Boolean(root.shownItem && root.shownItem.isRunning)
+            }
 
-                RowLayout {
-                    anchors.fill: parent
-                    anchors.leftMargin: 8
-                    anchors.rightMargin: 8
-                    spacing: 8
-
-                    Text {
-                        text: Services.Icons.close || "✕"
-                        font.family: Services.Theme.fontSymbols
-                        font.pixelSize: 11
-                        color: Services.Theme.danger
-                    }
-                    Text {
-                        text: "Quit / Close All"
-                        font.pixelSize: Services.Theme.fontSizeSm
-                        font.weight: Font.Medium
-                        color: Services.Theme.danger
-                        Layout.fillWidth: true
-                    }
-                }
-
-                MouseArea {
-                    id: quitMouse
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: {
-                        const target = root.item
-                        if (Services.DockService) {
-                            Services.DockService.closeMenu()
-                            Services.DockService.closeApp(target)
-                        }
+            MenuRow {
+                visible: Boolean(root.shownItem && root.shownItem.isRunning)
+                Layout.preferredHeight: visible ? 28 : 0
+                glyph: Services.Icons.close || "✕"
+                label: "Quit"
+                onTriggered: {
+                    const target = root.shownItem
+                    if (Services.DockService) {
+                        Services.DockService.closeMenu()
+                        Services.DockService.closeApp(target)
                     }
                 }
             }

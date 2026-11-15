@@ -62,4 +62,30 @@ else
     uptime_str="${m}m"
 fi
 
-echo "$cpu_pct|$ram_pct|$used_g|$tot_g|$temp|$disk_pct|$disk_used|$disk_tot|$uptime_str"
+# 6. Memory Available Pct & Pressure Stall Information (PSI)
+ma_pct=100
+if [ -n "$mt" ] && [ "$mt" -gt 0 ] && [ -n "$ma" ]; then
+    ma_pct=$(( (ma * 100) / mt ))
+fi
+
+cpu_psi="0.0"
+if [ -r /proc/pressure/cpu ]; then
+    while read -r line; do
+        if [[ "$line" =~ some.*avg10=([0-9.]+) ]]; then
+            cpu_psi="${BASH_REMATCH[1]}"
+            break
+        fi
+    done < /proc/pressure/cpu
+fi
+
+mem_psi="0.0"
+if [ -r /proc/pressure/memory ]; then
+    while read -r line; do
+        if [[ "$line" =~ some.*avg10=([0-9.]+) ]]; then
+            mem_psi="${BASH_REMATCH[1]}"
+            break
+        fi
+    done < /proc/pressure/memory
+fi
+
+echo "$cpu_pct|$ram_pct|$used_g|$tot_g|$temp|$disk_pct|$disk_used|$disk_tot|$uptime_str|$cpu_psi|$mem_psi|$ma_pct"

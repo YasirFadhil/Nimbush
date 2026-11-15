@@ -24,13 +24,6 @@ Item {
         return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0")
     }
 
-    Timer {
-        interval: 500
-        running: card.isPlaying
-        repeat: true
-        onTriggered: card.player?.positionChanged?.()
-    }
-
     // ── Card ─────────────────────────────────────────────────────────
     Rectangle {
         id: cardRect
@@ -231,7 +224,6 @@ Item {
                     waveColor: card.t.accent
                     trackColor: card.t.surfaceVariant
                     lineWidth: 3.0
-                    maxAmplitude: 3.0
                     position: card.player?.position ?? 0
                     duration: card.player?.length ?? 0
                     onSeekRequested: (ratio) => {

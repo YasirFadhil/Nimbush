@@ -338,6 +338,10 @@ Item {
         }
     }
 
+    // Tempo of the whole media morph (shell, cover/title flights, controls<->cava, satellite). Everything
+    // that has to move together reads this one number. 440 felt slow, the old 380 InOutCubic felt jumpy.
+    readonly property int mediaFlightMs: 340
+
     // Controls <-> cava morph (full card only; the peek has no control row).
     // mediaTransitionProgress is eased (InOutSine). This inverts that easing to recover plain linear
     // time t (0 = card controls, 1 = pill cava), so the morph runs on its own, evenly spread timeline.
@@ -1892,7 +1896,7 @@ Item {
         // average): in a 30 fps recording the card sat still for ~6 frames, then jumped in 2, which is
         // what made the morph look choppy. InOutSine peaks at ~1.6x average, so the same motion spreads
         // over far more frames. mediaFlightT inverts exactly this curve.
-        duration: 440
+        duration: root.mediaFlightMs
         easing.type: Easing.InOutSine
         onFinished: {
             root.mediaTransitionActive = false
@@ -2391,19 +2395,19 @@ Item {
                 // 380 ms for media keeps the shell morph in sync with
                 // mediaTransitionAnim so artwork flight and label crossfade
                 // all finish at the same moment.
-                duration: root.lockBlocked ? 240 : (root.slot0Activity === "media" ? 440 : (root.expanded ? 300 : 260))
+                duration: root.lockBlocked ? 240 : (root.slot0Activity === "media" ? root.mediaFlightMs : (root.expanded ? 300 : 260))
                 easing.type: root.slot0Activity === "media" ? Easing.InOutSine : Easing.OutCubic
             }
         }
         Behavior on height {
             NumberAnimation {
-                duration: root.lockBlocked ? 240 : (root.slot0Activity === "media" ? 440 : (root.expanded ? 300 : 260))
+                duration: root.lockBlocked ? 240 : (root.slot0Activity === "media" ? root.mediaFlightMs : (root.expanded ? 300 : 260))
                 easing.type: root.slot0Activity === "media" ? Easing.InOutSine : Easing.OutCubic
             }
         }
         Behavior on radius {
             NumberAnimation {
-                duration: root.lockBlocked ? 240 : (root.slot0Activity === "media" ? 440 : (root.expanded ? 280 : 240))
+                duration: root.lockBlocked ? 240 : (root.slot0Activity === "media" ? root.mediaFlightMs : (root.expanded ? 280 : 240))
                 easing.type: root.slot0Activity === "media" ? Easing.InOutSine : Easing.OutCubic
             }
         }
@@ -2600,10 +2604,10 @@ Item {
                 NumberAnimation { duration: cameraIndicator.shouldShow ? 300 : 180; easing.type: Easing.OutCubic }
             }
             // The satellite is slaved to the island's width, so while media owns the island it must run
-            // the island's exact curve (440 ms InOutSine), otherwise it drifts off the capsule edge.
+            // the island's exact curve (mediaFlightMs, InOutSine), otherwise it drifts off the capsule edge.
             Behavior on width {
                 NumberAnimation {
-                    duration: root.slot0Activity === "media" ? 440 : 380
+                    duration: root.slot0Activity === "media" ? root.mediaFlightMs : 380
                     easing.type: root.slot0Activity === "media" ? Easing.InOutSine : Easing.InOutCubic
                 }
             }
@@ -2611,7 +2615,7 @@ Item {
                 // Same duration/curve as width above; mismatched ones stretched the capsule into a
                 // ghost oval while it moved to its satellite slot.
                 NumberAnimation {
-                    duration: root.slot0Activity === "media" ? 440 : 380
+                    duration: root.slot0Activity === "media" ? root.mediaFlightMs : 380
                     easing.type: root.slot0Activity === "media" ? Easing.InOutSine : Easing.InOutCubic
                 }
             }
@@ -4401,7 +4405,6 @@ Item {
                             waveColor: Services.Theme.accent
                             trackColor: Services.Theme.surfaceVariant
                             lineWidth: 2.4
-                            maxAmplitude: 2.2
                             position: root.activePlayer?.position ?? 0
                             duration: root.activePlayer?.length ?? 0
                             opacity: root.mediaVolHudOpen ? 0.0 : 1.0
