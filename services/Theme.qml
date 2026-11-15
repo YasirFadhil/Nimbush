@@ -7,7 +7,15 @@ Singleton {
     id: themeRoot
 
     // ─── Theme Mode & State ────────────────────────────────────────────────
-    readonly property bool isDark: Services.Config ? (Services.Config.themeMode !== "light") : true
+    readonly property bool isDark: {
+        if (!Services.Config) return true
+        if (Services.Config.themeMode === "light") return false
+        if (Services.Config.themeMode === "dark") return true
+        if (Services.Config.themeMode === "system") {
+            return (Services.SystemTheme && Services.SystemTheme.currentColorScheme === "prefer-light") ? false : true
+        }
+        return true
+    }
     readonly property string mode: Services.Config ? Services.Config.themeMode : "dark"
 
     // ─── Transition Durations ──────────────────────────────────────────────

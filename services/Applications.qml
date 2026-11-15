@@ -53,6 +53,11 @@ Singleton {
         function onModelReset() { debounceTimer.restart() }
     }
 
+    Connections {
+        target: Services.SystemTheme || null
+        function onIconThemeRevChanged() { debounceTimer.restart() }
+    }
+
     Component.onCompleted: {
         _rebuildIndex()
         debounceTimer.restart()
@@ -170,11 +175,15 @@ Singleton {
             } else if (app.icon && app.icon.name) {
                 rawIcon = app.icon.name
             }
+            let resIcon = ""
             if (rawIcon && Services.SystemTheme) {
-                app.resolvedIcon = Services.SystemTheme.getIcon(rawIcon)
-            } else {
-                app.resolvedIcon = ""
+                resIcon = Services.SystemTheme.getIcon(rawIcon)
             }
+            if (!resIcon && app.id && Services.SystemTheme) {
+                const fallbackId = String(app.id).replace(/\.desktop$/i, "")
+                resIcon = Services.SystemTheme.getIcon(fallbackId)
+            }
+            try { app.resolvedIcon = resIcon } catch (e) {}
 
             const key = _keyFor(app)
             known[key] = true
@@ -187,6 +196,7 @@ Singleton {
                 genericLower: genericLower,
                 descLower: descLower,
                 idLower: idLower,
+                resolvedIcon: resIcon,
                 keywordsPad: " " + keywords.join(" ")
             })
         }

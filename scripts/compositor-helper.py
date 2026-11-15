@@ -18,15 +18,31 @@ from concurrent.futures import ThreadPoolExecutor
 
 HOME = os.path.expanduser("~")
 
-def is_hyprland():
-    sig = os.environ.get("HYPRLAND_INSTANCE_SIGNATURE", "")
-    desktop = os.environ.get("XDG_CURRENT_DESKTOP", "").lower()
-    return bool(sig) or "hyprland" in desktop
-
 def is_niri():
     sock = os.environ.get("NIRI_SOCKET", "")
     desktop = os.environ.get("XDG_CURRENT_DESKTOP", "").lower()
-    return bool(sock) or "niri" in desktop
+    session = os.environ.get("DESKTOP_SESSION", "").lower()
+    if bool(sock) or "niri" in desktop or "niri" in session:
+        return True
+    runtime_dir = os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
+    try:
+        if any(f.startswith("niri.") and f.endswith(".sock") for f in os.listdir(runtime_dir)):
+            return True
+    except Exception:
+        pass
+    return False
+
+def is_hyprland():
+    sig = os.environ.get("HYPRLAND_INSTANCE_SIGNATURE", "")
+    desktop = os.environ.get("XDG_CURRENT_DESKTOP", "").lower()
+    session = os.environ.get("DESKTOP_SESSION", "").lower()
+    if bool(sig) or "hyprland" in desktop or "hyprland" in session:
+        return True
+    runtime_dir = os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
+    hypr_dir = os.path.join(runtime_dir, "hypr")
+    if os.path.isdir(hypr_dir) and not is_niri():
+        return True
+    return False
 
 def is_lua_config():
     return os.path.exists(os.path.join(HOME, ".config/hypr/hyprland.lua"))
@@ -141,7 +157,6 @@ def query_all():
         try:
             r = subprocess.run(["hyprctl", "--batch", " ; ".join(batch_list)], capture_output=True, text=True, timeout=1.0)
             if r.returncode == 0:
-                import re
                 raw_items = [x.strip() for x in re.split(r"\n{2,}", r.stdout.strip()) if x.strip()]
                 if len(raw_items) >= 3:
                     try:
@@ -304,6 +319,55 @@ def query_all():
         except Exception:
             pass
 
+        # Parse actual configuration values from Niri KDL files
+        cfg_path = os.path.join(HOME, ".config/niri/config.kdl")
+        rules_path = os.path.join(HOME, ".config/niri/conf/rules.kdl")
+        niri_cfg = ""
+        niri_rules = ""
+        if os.path.exists(cfg_path):
+            try:
+                with open(cfg_path, "r", encoding="utf-8") as f:
+                    niri_cfg = f.read()
+            except Exception:
+                pass
+        if os.path.exists(rules_path):
+            try:
+                with open(rules_path, "r", encoding="utf-8") as f:
+                    niri_rules = f.read()
+            except Exception:
+                pass
+
+        m_gaps = re.search(r'^\s*gaps\s+(\d+)', niri_cfg, re.M)
+        niri_gaps = int(m_gaps.group(1)) if m_gaps else 16
+
+        m_prop = re.search(r'default-column-width\s*\{\s*proportion\s+([\d.]+)', niri_cfg)
+        niri_prop = float(m_prop.group(1)) if m_prop else 0.89
+
+        m_radius = re.search(r'geometry-corner-radius\s+(\d+)', niri_rules) or re.search(r'geometry-corner-radius\s+(\d+)', niri_cfg)
+        niri_radius = int(m_radius.group(1)) if m_radius else 12
+
+        m_tp = re.search(r'touchpad\s*\{([^}]+)\}', niri_cfg)
+        niri_tap = True
+        niri_natural = True
+        niri_dwt = False
+        if m_tp:
+            tp_body = m_tp.group(1)
+            niri_tap = bool(re.search(r'^\s*tap\b', tp_body, re.M))
+            niri_natural = bool(re.search(r'^\s*natural-scroll\b', tp_body, re.M))
+            niri_dwt = bool(re.search(r'^\s*dwt\b', tp_body, re.M))
+
+        niri_ffm = 1 if bool(re.search(r'^\s*focus-follows-mouse\b', niri_cfg, re.M)) else 0
+
+        m_anim = re.search(r'animations\s*\{([^}]+)\}', niri_cfg)
+        niri_anim = True
+        if m_anim:
+            niri_anim = not bool(re.search(r'^\s*off\b', m_anim.group(1), re.M))
+
+        m_sh = re.search(r'shadow\s*\{([^}]+)\}', niri_cfg)
+        niri_shadow = True
+        if m_sh:
+            niri_shadow = bool(re.search(r'^\s*on\b', m_sh.group(1), re.M)) or not bool(re.search(r'^\s*off\b', m_sh.group(1), re.M))
+
         return {
             "activeCompositor": "niri",
             "activeDisplayName": "Niri",
@@ -312,25 +376,26 @@ def query_all():
             "blur": True,
             "blur_size": 4,
             "blur_passes": 2,
-            "anim": True,
-            "shadow": True,
+            "anim": niri_anim,
+            "shadow": niri_shadow,
             "shadow_range": 4,
             "shadow_power": 3,
-            "rounding": 10,
+            "rounding": niri_radius,
             "border_size": 1,
-            "gaps_in": 5,
-            "gaps_out": 10,
+            "gaps_in": niri_gaps,
+            "gaps_out": niri_gaps,
             "active_opacity": 1.0,
             "inactive_opacity": 1.0,
             "dim_inactive": False,
             "dim_strength": 0.5,
             "layout": "scrolling",
-            "scrolling_column_width": 0.89,
+            "scrolling_column_width": niri_prop,
             "scrolling_fullscreen_on_one_column": False,
-            "touchpad_natural": True,
-            "touchpad_tap": True,
-            "touchpad_dwt": False,
+            "touchpad_natural": niri_natural,
+            "touchpad_tap": niri_tap,
+            "touchpad_dwt": niri_dwt,
             "sensitivity": 0.0,
+            "follow_mouse": niri_ffm,
             "resize_border": False,
             "disable_hyprland_logo": False,
             "monitorsCount": max(1, len(clean_monitors)),
@@ -443,6 +508,9 @@ lua_map = LUA_MAP
 keyword_map = KEYWORD_MAP
 
 def set_option(opt_name, opt_val):
+    if is_niri():
+        return save_niri_options({opt_name: opt_val})
+
     if opt_name in ("workspace_anim", "workspace_anim_style", "workspace_anim_speed", "workspace_anim_bezier"):
         kwargs = {}
         if opt_name == "workspace_anim":
@@ -766,9 +834,153 @@ def update_hyprconf_option(content, opt_name, opt_val):
 
     return content
 
+def save_niri_options(changes):
+    if not isinstance(changes, dict) or not changes:
+        return {"ok": True, "saved": False}
+
+    cfg_path = os.path.join(HOME, ".config/niri/config.kdl")
+    rules_path = os.path.join(HOME, ".config/niri/conf/rules.kdl")
+
+    cfg_content = ""
+    rules_content = ""
+    if os.path.exists(cfg_path):
+        try:
+            with open(cfg_path, "r", encoding="utf-8") as f:
+                cfg_content = f.read()
+        except Exception:
+            pass
+    if os.path.exists(rules_path):
+        try:
+            with open(rules_path, "r", encoding="utf-8") as f:
+                rules_content = f.read()
+        except Exception:
+            pass
+
+    new_cfg = cfg_content
+    new_rules = rules_content
+
+    for k, v in changes.items():
+        if k in ("gaps_in", "gaps_out", "gaps"):
+            try:
+                val_int = int(round(float(v)))
+                if re.search(r'^\s*gaps\s+\d+', new_cfg, re.M):
+                    new_cfg = re.sub(r'(^\s*gaps\s+)\d+', r'\g<1>' + str(val_int), new_cfg, flags=re.M)
+                elif re.search(r'layout\s*\{', new_cfg):
+                    new_cfg = re.sub(r'(layout\s*\{)', r'\1\n    gaps ' + str(val_int), new_cfg, count=1)
+            except Exception:
+                pass
+        elif k == "rounding":
+            try:
+                val_int = int(round(float(v)))
+                if new_rules and re.search(r'geometry-corner-radius\s+\d+', new_rules):
+                    new_rules = re.sub(r'(geometry-corner-radius\s+)\d+', r'\g<1>' + str(val_int), new_rules)
+                elif re.search(r'geometry-corner-radius\s+\d+', new_cfg):
+                    new_cfg = re.sub(r'(geometry-corner-radius\s+)\d+', r'\g<1>' + str(val_int), new_cfg)
+                elif new_rules:
+                    new_rules += f"\nwindow-rule {{\n    geometry-corner-radius {val_int}\n    clip-to-geometry true\n}}\n"
+            except Exception:
+                pass
+        elif k in ("scrolling_column_width", "column_width"):
+            try:
+                val_f = round(float(v), 2)
+                if re.search(r'default-column-width\s*\{\s*proportion\s+[\d.]+', new_cfg):
+                    new_cfg = re.sub(r'(default-column-width\s*\{\s*proportion\s+)[\d.]+', r'\g<1>' + str(val_f), new_cfg)
+            except Exception:
+                pass
+        elif k == "anim":
+            val_b = bool(v) if not isinstance(v, str) else v.lower() in ("true", "1")
+            m_anim = re.search(r'animations\s*\{([^}]+)\}', new_cfg)
+            if m_anim:
+                anim_body = m_anim.group(1)
+                if val_b:
+                    new_anim_body = re.sub(r'^\s*off\b', r'    // off', anim_body, flags=re.M)
+                else:
+                    if re.search(r'^\s*//\s*off\b', anim_body, flags=re.M):
+                        new_anim_body = re.sub(r'^\s*//\s*off\b', r'    off', anim_body, flags=re.M)
+                    elif not re.search(r'^\s*off\b', anim_body, flags=re.M):
+                        new_anim_body = "\n    off" + anim_body
+                    else:
+                        new_anim_body = anim_body
+                new_cfg = new_cfg[:m_anim.start(1)] + new_anim_body + new_cfg[m_anim.end(1):]
+        elif k == "shadow":
+            val_b = bool(v) if not isinstance(v, str) else v.lower() in ("true", "1")
+            m_sh = re.search(r'shadow\s*\{([^}]+)\}', new_cfg)
+            if m_sh:
+                sh_body = m_sh.group(1)
+                if val_b:
+                    if re.search(r'^\s*//\s*on\b', sh_body, flags=re.M):
+                        new_sh_body = re.sub(r'^\s*//\s*on\b', r'    on', sh_body, flags=re.M)
+                    elif re.search(r'^\s*off\b', sh_body, flags=re.M):
+                        new_sh_body = re.sub(r'^\s*off\b', r'    // off', sh_body, flags=re.M)
+                    else:
+                        new_sh_body = sh_body
+                else:
+                    if re.search(r'^\s*on\b', sh_body, flags=re.M):
+                        new_sh_body = re.sub(r'^\s*on\b', r'    // on', sh_body, flags=re.M)
+                    elif not re.search(r'^\s*off\b', sh_body, flags=re.M):
+                        new_sh_body = "\n    off" + sh_body
+                    else:
+                        new_sh_body = sh_body
+                new_cfg = new_cfg[:m_sh.start(1)] + new_sh_body + new_cfg[m_sh.end(1):]
+        elif k in ("touchpad_tap", "touchpad_natural", "touchpad_dwt"):
+            val_b = bool(v) if not isinstance(v, str) else v.lower() in ("true", "1")
+            prop_name = "tap" if k == "touchpad_tap" else ("natural-scroll" if k == "touchpad_natural" else "dwt")
+            m_tp = re.search(r'touchpad\s*\{([^}]+)\}', new_cfg)
+            if m_tp:
+                tp_body = m_tp.group(1)
+                if val_b:
+                    if re.search(rf'^\s*//\s*{prop_name}\b', tp_body, flags=re.M):
+                        new_tp_body = re.sub(rf'^\s*//\s*{prop_name}\b', f'    {prop_name}', tp_body, flags=re.M)
+                    elif not re.search(rf'^\s*{prop_name}\b', tp_body, flags=re.M):
+                        new_tp_body = f"\n        {prop_name}" + tp_body
+                    else:
+                        new_tp_body = tp_body
+                else:
+                    if re.search(rf'^\s*{prop_name}\b', tp_body, flags=re.M):
+                        new_tp_body = re.sub(rf'^\s*{prop_name}\b', f'    // {prop_name}', tp_body, flags=re.M)
+                    else:
+                        new_tp_body = tp_body
+                new_cfg = new_cfg[:m_tp.start(1)] + new_tp_body + new_cfg[m_tp.end(1):]
+        elif k == "follow_mouse":
+            try:
+                val_int = int(round(float(v)))
+                if val_int > 0:
+                    if re.search(r'^\s*//\s*focus-follows-mouse\b', new_cfg, re.M):
+                        new_cfg = re.sub(r'^\s*//\s*(focus-follows-mouse\b[^\n]*)', r'    \1', new_cfg, flags=re.M)
+                else:
+                    if re.search(r'^\s*focus-follows-mouse\b', new_cfg, re.M):
+                        new_cfg = re.sub(r'^\s*(focus-follows-mouse\b[^\n]*)', r'    // \1', new_cfg, flags=re.M)
+            except Exception:
+                pass
+
+    cfg_modified = False
+    rules_modified = False
+
+    if new_cfg != cfg_content and cfg_content:
+        tmp_path = f"{cfg_path}.tmp.{os.getpid()}"
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            f.write(new_cfg)
+        os.replace(tmp_path, cfg_path)
+        cfg_modified = True
+
+    if new_rules != rules_content and rules_content:
+        tmp_path = f"{rules_path}.tmp.{os.getpid()}"
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            f.write(new_rules)
+        os.replace(tmp_path, rules_path)
+        rules_modified = True
+
+    if cfg_modified or rules_modified:
+        reload_compositor()
+        return {"ok": True, "saved": True, "compositor": "niri"}
+    return {"ok": True, "no_change": True}
+
 def save_general_options(changes):
     if not isinstance(changes, dict) or not changes:
         return {"ok": True, "saved": False}
+
+    if is_niri():
+        return save_niri_options(changes)
 
     if is_lua_config():
         lua_path = os.path.join(HOME, ".config/hypr/hyprland.lua")
@@ -2377,7 +2589,9 @@ def reload_compositor():
             return {"ok": False, "error": str(e)}
     elif comp == "niri":
         try:
-            r = subprocess.run(["niri", "msg", "action", "reload-config"], capture_output=True, text=True, timeout=1.5)
+            r = subprocess.run(["niri", "msg", "action", "load-config-file"], capture_output=True, text=True, timeout=1.5)
+            if r.returncode != 0:
+                r = subprocess.run(["niri", "msg", "action", "reload-config"], capture_output=True, text=True, timeout=1.5)
             return {"ok": r.returncode == 0, "output": r.stdout.strip()}
         except Exception as e:
             return {"ok": False, "error": str(e)}

@@ -17,7 +17,7 @@ Singleton {
     // Bar writes this; lockscreen reads it to phase-sync its island & status pill
     property real barIslandProgress: 0.0
     property bool wizardOpen: false
-    readonly property bool isWizardActive: wizardOpen || (Services.Config ? !Services.Config.firstRunCompleted : false)
+    readonly property bool isWizardActive: wizardOpen
     property bool controlCenterVisible: false
     property bool wifiPanelVisible: false
     property bool btPanelVisible: false

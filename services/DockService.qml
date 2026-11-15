@@ -51,15 +51,25 @@ Singleton {
         }
     }
 
+    readonly property bool isNiri: Services.Compositor ? (Services.Compositor.activeCompositor === "niri") : Boolean(Quickshell.env("NIRI_SOCKET"))
+
     // ── Debounced Event Timers ───────────────────────────────────────────────
     Timer {
         id: clientDebounceTimer
         interval: 50
         repeat: false
         onTriggered: {
-            if (!clientsProc.running) {
-                clientsProc.output = ""
-                clientsProc.running = true
+            if (root.isNiri) {
+                root._refreshFromNiri()
+            } else {
+                if (!clientsProc.running) {
+                    clientsProc.output = ""
+                    clientsProc.running = true
+                }
+                if (!activeWinProc.running) {
+                    activeWinProc.output = ""
+                    activeWinProc.running = true
+                }
             }
         }
     }
@@ -96,15 +106,35 @@ Singleton {
     Component.onCompleted: {
         _rebuildPinnedItems()
         refreshClients()
-        activeWinProc.running = true
+        if (isNiri) {
+            _refreshFromNiri()
+        }
     }
 
     function refreshClients() {
         clientDebounceTimer.restart()
     }
 
-    // ── Hyprland Queries ─────────────────────────────────────────────────────
+    // ── Niri Native QML Backend ──────────────────────────────────────────────
+    Connections {
+        target: Services.NiriService || null
+        function onRunningWindowsChanged() { if (root.isNiri) root._refreshFromNiri() }
+        function onFocusedWindowChanged() { if (root.isNiri) root._refreshFromNiri() }
+        function onConnectedChanged() { if (root.isNiri) root._refreshFromNiri() }
+    }
 
+    function _refreshFromNiri() {
+        const service = Services.NiriService
+        const windows = service && Array.isArray(service.runningWindows) ? service.runningWindows : []
+        const focused = service ? service.focusedWindow : null
+
+        root.runningClients = windows.slice()
+        root.activeWindowAddress = focused ? String(focused.id) : ""
+        root.activeWindowClass = focused ? String(focused.appId || "") : ""
+        root._syncRunningClients()
+    }
+
+    // ── Hyprland Queries ─────────────────────────────────────────────────────
     Process {
         id: clientsProc
         command: ["hyprctl", "clients", "-j"]
@@ -117,7 +147,6 @@ Singleton {
                 try {
                     const data = JSON.parse(clientsProc.output)
                     if (Array.isArray(data)) {
-                        // Filter mapped and non-hidden windows with valid class
                         root.runningClients = data.filter(c => c && c.mapped && !c.hidden && c.class && c.class.length > 0)
                         root._syncRunningClients()
                     }
@@ -149,67 +178,24 @@ Singleton {
         }
     }
 
-    // ── Hyprland Dispatcher ───────────────────────────────────────────────────
-
-    // Hyprland 0.55+: `hyprctl dispatch` menerima SATU ekspresi Lua (hl.dsp.*),
-    // bukan lagi bentuk lama `dispatch <nama> <arg>`.
-    function _luaStr(s) {
-        return '"' + String(s).replace(/\\/g, "\\\\").replace(/"/g, '\\"') + '"'
-    }
-
-    function _hyprDispatch(luaExpr) {
-        var p = Qt.createQmlObject(
-            'import Quickshell.Io; Process { property string out: ""; stdout: SplitParser { onRead: d => parent.out += d } stderr: SplitParser { onRead: d => parent.out += d } }',
-            root)
-        p.command = ["hyprctl", "dispatch", luaExpr]
-        p.onExited.connect((code) => {
-            if (code !== 0 || (p.out.length > 0 && p.out.trim() !== "ok"))
-                console.warn("[DockService] dispatch gagal:", luaExpr, "->", p.out.trim())
-            p.destroy()
-        })
-        p.running = true
-    }
-
-    // ── Hyprland Live Socket2 Stream ─────────────────────────────────────────
-
     Process {
         id: hyprSocketProc
         command: ["sh", "-c", "socat -U - UNIX-CONNECT:$XDG_RUNTIME_DIR/hypr/$HYPRLAND_INSTANCE_SIGNATURE/.socket2.sock"]
-        running: true
+        running: !root.isNiri && Boolean(Quickshell.env("HYPRLAND_INSTANCE_SIGNATURE"))
         stdout: SplitParser {
             splitMarker: "\n"
             onRead: data => {
                 const line = data.trim()
                 if (!line) return
-
                 if (line.startsWith("openwindow>>") || line.startsWith("closewindow>>") || line.startsWith("movewindow>>")) {
-                    clientDebounceTimer.restart()
+                    root.refreshClients()
+                } else if (line.startsWith("activewindow>>")) {
+                    root.refreshClients()
                 } else if (line.startsWith("activewindowv2>>")) {
-                    const rawAddr = line.substring("activewindowv2>>".length).trim()
-                    const addr = "0x" + rawAddr.replace(/^0x/, '')
+                    const addr = "0x" + line.substring("activewindowv2>>".length).trim()
                     root.activeWindowAddress = addr
                     root._updateActiveState()
-                } else if (line.startsWith("activewindow>>")) {
-                    const rest = line.substring("activewindow>>".length)
-                    const comma = rest.indexOf(",")
-                    if (comma !== -1) {
-                        root.activeWindowClass = rest.substring(0, comma)
-                    }
                 }
-            }
-        }
-        onExited: (code) => {
-            reconnectTimer.restart()
-        }
-    }
-
-    Timer {
-        id: reconnectTimer
-        interval: 1500
-        repeat: false
-        onTriggered: {
-            if (!hyprSocketProc.running) {
-                hyprSocketProc.running = true
             }
         }
     }
@@ -573,8 +559,8 @@ Singleton {
             return
         }
         const targetId = (item.desktopId || "").replace(/\.desktop$/, '')
-        if (targetId.length > 0) {
-            _hyprDispatch('hl.dsp.exec_cmd(' + _luaStr(targetId) + ')')
+        if (targetId.length > 0 && Services.NiriService) {
+            Services.NiriService.launchDesktopId(targetId)
         }
     }
 
@@ -605,16 +591,39 @@ Singleton {
         launchApp(item)
     }
 
+    Process { id: hyprActionProc; running: false }
+    Process { id: niriActionProc; running: false }
+
     function focusWindow(address) {
         if (!address) return
-        // Jangan set activeWindowAddress manual di sini; biarkan event
-        // activewindowv2 dari socket2 yang jadi sumber kebenaran.
-        _hyprDispatch('hl.dsp.focus({ window = ' + _luaStr("address:" + address) + ' })')
+        if (!root.isNiri) {
+            hyprActionProc.command = ["hyprctl", "dispatch", "focuswindow", "address:" + address]
+            hyprActionProc.running = true
+            return
+        }
+        if (Services.NiriService && Services.NiriService.connected) {
+            Services.NiriService.focusWindow(address)
+            return
+        }
+        niriActionProc.command = ["niri", "msg", "action", "focus-window", "--id", String(address)]
+        niriActionProc.running = true
     }
 
     function closeWindow(address) {
         if (!address) return
-        _hyprDispatch('hl.dsp.window.close({ window = ' + _luaStr("address:" + address) + ' })')
+        if (!root.isNiri) {
+            hyprActionProc.command = ["hyprctl", "dispatch", "closewindow", "address:" + address]
+            hyprActionProc.running = true
+            clientDebounceTimer.restart()
+            return
+        }
+        if (Services.NiriService && Services.NiriService.connected) {
+            Services.NiriService.closeWindow(address)
+            clientDebounceTimer.restart()
+            return
+        }
+        niriActionProc.command = ["niri", "msg", "action", "close-window", "--id", String(address)]
+        niriActionProc.running = true
         clientDebounceTimer.restart()
     }
 

@@ -8,6 +8,63 @@ import re
 
 HOME = os.path.expanduser("~")
 
+def is_niri():
+    sock = os.environ.get("NIRI_SOCKET", "")
+    desktop = os.environ.get("XDG_CURRENT_DESKTOP", "").lower()
+    session = os.environ.get("DESKTOP_SESSION", "").lower()
+    if bool(sock) or "niri" in desktop or "niri" in session:
+        return True
+    runtime_dir = os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
+    try:
+        if any(f.startswith("niri.") and f.endswith(".sock") for f in os.listdir(runtime_dir)):
+            return True
+    except Exception:
+        pass
+    return False
+
+def is_hyprland():
+    sig = os.environ.get("HYPRLAND_INSTANCE_SIGNATURE", "")
+    desktop = os.environ.get("XDG_CURRENT_DESKTOP", "").lower()
+    session = os.environ.get("DESKTOP_SESSION", "").lower()
+    if bool(sig) or "hyprland" in desktop or "hyprland" in session:
+        return True
+    runtime_dir = os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
+    hypr_dir = os.path.join(runtime_dir, "hypr")
+    if os.path.isdir(hypr_dir) and not is_niri():
+        return True
+    return False
+
+def get_gtk_ini_value(key):
+    for p in [os.path.join(HOME, ".config/gtk-3.0/settings.ini"), os.path.join(HOME, ".config/gtk-4.0/settings.ini")]:
+        if os.path.exists(p):
+            try:
+                with open(p, "r", encoding="utf-8") as f:
+                    for line in f:
+                        line_s = line.strip()
+                        if line_s.startswith(f"{key}="):
+                            return line_s.split("=", 1)[1].strip().strip('"\'')
+            except Exception:
+                pass
+    return ""
+
+def get_pixmaps():
+    pixmap_dirs = ["/usr/share/pixmaps", "/usr/local/share/pixmaps", os.path.join(HOME, ".local/share/pixmaps")]
+    found = {}
+    for d in pixmap_dirs:
+        if os.path.isdir(d):
+            try:
+                for f in os.listdir(d):
+                    full = os.path.join(d, f)
+                    if os.path.isfile(full):
+                        base, _ = os.path.splitext(f)
+                        if base not in found:
+                            found[base] = full
+                        if f not in found:
+                            found[f] = full
+            except Exception:
+                pass
+    return found
+
 
 
 
@@ -491,29 +548,35 @@ def query_all():
     system_fonts, mono_fonts = get_fonts()
 
     schema = "org.gnome.desktop.interface"
-    cur_gtk = get_gsettings(schema, "gtk-theme") or (gtk_themes[0] if gtk_themes else "Adwaita")
-    persisted_icon = get_persisted_icon_theme()
-    cur_icon = persisted_icon or get_gsettings(schema, "icon-theme") or (icon_themes[0] if icon_themes else "MacTahoe-dark")
-    if not persisted_icon and cur_icon:
-        save_icon_theme_env(cur_icon)
-    cur_cursor = get_gsettings(schema, "cursor-theme") or (cursor_themes[0] if cursor_themes else "Adwaita")
+    cur_gtk = get_gsettings(schema, "gtk-theme") or get_gtk_ini_value("gtk-theme-name") or (gtk_themes[0] if gtk_themes else "Adwaita")
+    cur_icon = get_gsettings(schema, "icon-theme") or get_gtk_ini_value("gtk-icon-theme-name") or get_persisted_icon_theme() or (icon_themes[0] if icon_themes else "Adwaita")
+    # Always keep icon-theme.env synchronized with the actual system icon theme
+    save_icon_theme_env(cur_icon)
+
+    cur_cursor = get_gsettings(schema, "cursor-theme") or get_gtk_ini_value("gtk-cursor-theme-name") or (cursor_themes[0] if cursor_themes else "Adwaita")
     
-    cur_cursor_size_raw = get_gsettings(schema, "cursor-size")
+    cur_cursor_size_raw = get_gsettings(schema, "cursor-size") or get_gtk_ini_value("gtk-cursor-theme-size")
     try:
         cur_cursor_size = int(cur_cursor_size_raw)
     except Exception:
         cur_cursor_size = 24
         
-    cur_font_str = get_gsettings(schema, "font-name") or "Liga SFMonoNerdFont Medium 11"
+    cur_font_str = get_gsettings(schema, "font-name") or get_gtk_ini_value("gtk-font-name") or "SFProDisplay Nerd Font Propo 12"
     cur_doc_font_str = get_gsettings(schema, "document-font-name") or "Adwaita Sans 12"
-    cur_mono_font_str = get_gsettings(schema, "monospace-font-name") or "Adwaita Mono 11"
+    cur_mono_font_str = get_gsettings(schema, "monospace-font-name") or "Liga SFMono Nerd Font 11"
     
-    cur_font_fam, cur_font_sz = parse_font_spec(cur_font_str, "Liga SFMonoNerdFont", 11)
+    cur_font_fam, cur_font_sz = parse_font_spec(cur_font_str, "SFProDisplay Nerd Font Propo", 12)
     cur_doc_fam, cur_doc_sz = parse_font_spec(cur_doc_font_str, "Adwaita Sans", 12)
-    cur_mono_fam, cur_mono_sz = parse_font_spec(cur_mono_font_str, "Adwaita Mono", 11)
+    cur_mono_fam, cur_mono_sz = parse_font_spec(cur_mono_font_str, "Liga SFMono Nerd Font", 11)
     
-    cur_color_scheme = get_gsettings(schema, "color-scheme") or "default"
-    cur_hinting = get_gsettings(schema, "font-hinting") or "slight"
+    cur_color_scheme = get_gsettings(schema, "color-scheme")
+    if not cur_color_scheme or cur_color_scheme == "default":
+        prefer_dark = get_gtk_ini_value("gtk-application-prefer-dark-theme")
+        cur_color_scheme = "prefer-dark" if (prefer_dark in ["1", "true"]) else "prefer-light"
+
+    cur_hinting = get_gsettings(schema, "font-hinting") or get_gtk_ini_value("gtk-xft-hintstyle") or "slight"
+    if cur_hinting.startswith("hint"):
+        cur_hinting = cur_hinting[4:]
     cur_antialiasing = get_gsettings(schema, "font-antialiasing") or "grayscale"
     
     cur_scaling_raw = get_gsettings(schema, "text-scaling-factor")
@@ -529,6 +592,7 @@ def query_all():
         "cursor_sizes": [16, 24, 32, 36, 48, 64],
         "system_fonts": [{"id": f, "label": f} for f in system_fonts[:80]],
         "monospace_fonts": [{"id": f, "label": f} for f in mono_fonts[:60]],
+        "pixmaps": get_pixmaps(),
         "current": {
             "gtk_theme": cur_gtk,
             "icon_theme": cur_icon,
@@ -831,7 +895,8 @@ def set_cursor(name, size):
         sz = 24
     set_gsettings("org.gnome.desktop.interface", "cursor-theme", name)
     set_gsettings("org.gnome.desktop.interface", "cursor-size", sz)
-    run_proc(["hyprctl", "setcursor", name, str(sz)], timeout=1.0)
+    if is_hyprland():
+        run_proc(["hyprctl", "setcursor", name, str(sz)], timeout=1.0)
     for p in [os.path.join(HOME, ".config/gtk-3.0/settings.ini"), os.path.join(HOME, ".config/gtk-4.0/settings.ini")]:
         update_gtk_ini(p, {
             "gtk-cursor-theme-name": name,

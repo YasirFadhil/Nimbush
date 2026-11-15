@@ -2,9 +2,10 @@ pragma Singleton
 import QtQuick
 import Quickshell
 import Quickshell.Io
+import "." as Services
 
 // Tracks active workspace, full workspace list, and active window title.
-// Supports both Hyprland and Niri compositors automatically.
+// Supports both Niri and Hyprland compositors automatically.
 Singleton {
     id: root
 
@@ -14,52 +15,100 @@ Singleton {
     property string activeWindowTitle: ""
     property bool isFullscreen: false
 
-    // "hyprland", "niri", or "auto"
-    property string detectedCompositor: {
+    readonly property string detectedCompositor: {
+        if (Services.Compositor && Services.Compositor.activeCompositor)
+            return Services.Compositor.activeCompositor
         const niriSock = Quickshell.env("NIRI_SOCKET") || ""
         const hyprSig = Quickshell.env("HYPRLAND_INSTANCE_SIGNATURE") || ""
         const desktop = (Quickshell.env("XDG_CURRENT_DESKTOP") || "").toLowerCase()
         if (niriSock !== "" || desktop.includes("niri")) return "niri"
         if (hyprSig !== "" || desktop.includes("hyprland")) return "hyprland"
-        return "auto"
+        return "niri"
     }
 
     function isNiri() {
         return root.detectedCompositor === "niri"
     }
 
+    // ── Sync from Niri (via native QML NiriService or CLI fallback) ───────────
+    function syncFromNiri() {
+        const service = Services.NiriService
+        if (service && service.connected) {
+            const workspaces = service.workspaces || []
+            const indexes = []
+            for (let i = 0; i < workspaces.length; i++) {
+                const index = Number(workspaces[i].index)
+                if (Number.isFinite(index) && index > 0 && !indexes.includes(index)) indexes.push(index)
+            }
+            indexes.sort((a, b) => a - b)
+            root.workspaceIds = indexes
+
+            const focused = workspaces.find(ws => ws.isFocused) || workspaces.find(ws => ws.isActive)
+            if (focused) {
+                root.activeWorkspaceId = Number(focused.index) || 1
+                root.activeWorkspaceName = focused.name || String(root.activeWorkspaceId)
+            }
+
+            const window = service.focusedWindow
+            root.activeWindowTitle = window ? String(window.title || "") : ""
+            return
+        }
+
+        // Fallback to CLI queries if NiriService is not yet connected
+        if (isNiri()) {
+            refreshWorkspaceList()
+            refreshActiveWindow()
+        }
+    }
+
     function refreshWorkspaceList() {
         if (isNiri()) {
-            niriListProc.output = ""
-            niriListProc.running = true
+            if (Services.NiriService && Services.NiriService.connected) {
+                Services.NiriService.refreshWorkspaces()
+            } else if (!niriListProc.running) {
+                niriListProc.output = ""
+                niriListProc.running = true
+            }
         } else {
-            listProc.output = ""
-            listProc.running = true
+            if (!listProc.running) {
+                listProc.output = ""
+                listProc.running = true
+            }
         }
     }
 
     function refreshActiveWindow() {
         if (isNiri()) {
-            niriWindowProc.output = ""
-            niriWindowProc.running = true
+            if (Services.NiriService && Services.NiriService.connected) {
+                const window = Services.NiriService.focusedWindow
+                root.activeWindowTitle = window ? String(window.title || "") : ""
+            } else if (!niriWindowProc.running) {
+                niriWindowProc.output = ""
+                niriWindowProc.running = true
+            }
         } else {
-            windowProc.output = ""
-            windowProc.running = true
+            if (!windowProc.running) {
+                windowProc.output = ""
+                windowProc.running = true
+            }
         }
     }
 
     function switchTo(id) {
-        if (switchProc.running) {
-            switchProc.running = false
-        }
         if (isNiri()) {
+            if (Services.NiriService && Services.NiriService.connected) {
+                Services.NiriService.focusWorkspaceIndex(id)
+                root.activeWorkspaceId = parseInt(id) || root.activeWorkspaceId
+                root.activeWorkspaceName = String(id)
+                return
+            }
+            if (switchProc.running) switchProc.running = false
             switchProc.command = ["niri", "msg", "action", "focus-workspace", String(id)]
             switchProc.running = true
             root.activeWorkspaceId = parseInt(id) || root.activeWorkspaceId
             root.activeWorkspaceName = String(id)
         } else {
-            // Hyprland 0.55+: dispatch = satu ekspresi Lua, bukan `workspace <id>`.
-            // State TIDAK diset manual; biarkan event socket2 yang update indikator.
+            if (switchProc.running) switchProc.running = false
             const n = parseInt(id)
             const arg = (String(n) === String(id)) ? String(n) : JSON.stringify(String(id))
             switchProc.command = ["hyprctl", "dispatch", "hl.dsp.focus({ workspace = " + arg + " })"]
@@ -75,33 +124,112 @@ Singleton {
         stderr: SplitParser { onRead: d => switchProc.out += d }
         onExited: (code) => {
             const o = switchProc.out.trim()
-            if (code !== 0 || (o.length > 0 && o !== "ok"))
-                console.warn("[Workspaces] switch gagal:", switchProc.command.join(" "), "->", o)
+            if (code !== 0 && isNiri()) {
+                // Fallback for older Niri or numeric switch
+                niriSwitchFallback.command = ["niri", "msg", "action", "focus-workspace", String(root.activeWorkspaceId)]
+                niriSwitchFallback.running = true
+            }
             switchProc.out = ""
         }
     }
 
-    // Fallback compositor auto-detection process if env variables are not present
     Process {
-        id: detectProc
-        command: ["sh", "-c", "if [ -n \"$NIRI_SOCKET\" ] || command -v niri &>/dev/null; then echo 'niri'; else echo 'hyprland'; fi"]
-        running: root.detectedCompositor === "auto"
+        id: niriSwitchFallback
+        running: false
+    }
+
+    // ── NiriService Reactive Connections ─────────────────────────────────────
+    Connections {
+        target: Services.NiriService || null
+        function onWorkspacesChanged() { if (root.isNiri()) root.syncFromNiri() }
+        function onRunningWindowsChanged() { if (root.isNiri()) root.syncFromNiri() }
+        function onFocusedWindowChanged() { if (root.isNiri()) root.syncFromNiri() }
+        function onConnectedChanged() { if (root.isNiri()) root.syncFromNiri() }
+    }
+
+    // ── Niri Fallback Processes (Active when NiriService is unavailable) ──────
+    Process {
+        id: niriListProc
+        command: ["niri", "msg", "-j", "workspaces"]
+        running: root.isNiri() && (!Services.NiriService || !Services.NiriService.connected)
+        property string output: ""
         stdout: SplitParser {
-            onRead: data => {
-                const comp = data.trim()
-                if (comp === "niri" || comp === "hyprland") {
-                    root.detectedCompositor = comp
+            onRead: data => niriListProc.output += data
+        }
+        onExited: {
+            try {
+                const data = JSON.parse(niriListProc.output)
+                if (Array.isArray(data)) {
+                    root.workspaceIds = data.map(w => w.idx || w.id).sort((a, b) => a - b)
+                    const activeWs = data.find(w => w.is_focused || w.is_active)
+                    if (activeWs) {
+                        const wsId = activeWs.idx || activeWs.id
+                        root.activeWorkspaceId = wsId
+                        root.activeWorkspaceName = activeWs.name || String(wsId)
+                    }
                 }
+            } catch (e) {}
+            niriListProc.output = ""
+        }
+    }
+
+    Process {
+        id: niriWindowProc
+        command: ["niri", "msg", "-j", "focused-window"]
+        running: root.isNiri() && (!Services.NiriService || !Services.NiriService.connected)
+        property string output: ""
+        stdout: SplitParser {
+            onRead: data => niriWindowProc.output += data
+        }
+        onExited: {
+            try {
+                const data = JSON.parse(niriWindowProc.output)
+                root.activeWindowTitle = (data && data.title) ? data.title : ""
+                if (data && data.is_fullscreen !== undefined) {
+                    root.isFullscreen = Boolean(data.is_fullscreen)
+                }
+            } catch (e) {
+                root.activeWindowTitle = ""
+                root.isFullscreen = false
+            }
+            niriWindowProc.output = ""
+        }
+    }
+
+    Process {
+        id: niriEventProc
+        command: ["niri", "msg", "-j", "event-stream"]
+        running: root.isNiri() && (!Services.NiriService || !Services.NiriService.connected)
+        stdout: SplitParser {
+            splitMarker: "\n"
+            onRead: data => {
+                const line = data.trim()
+                if (!line) return
+                try {
+                    const evt = JSON.parse(line)
+                    if (evt.WorkspacesChanged) {
+                        root.refreshWorkspaceList()
+                        root.refreshActiveWindow()
+                    } else if (evt.WorkspaceActivated) {
+                        const wsId = evt.WorkspaceActivated.idx || evt.WorkspaceActivated.id
+                        if (wsId !== undefined) {
+                            root.activeWorkspaceId = wsId
+                            root.activeWorkspaceName = String(wsId)
+                        }
+                        root.refreshActiveWindow()
+                    } else if (evt.WindowFocusChanged || evt.WindowOpenedOrChanged || evt.WindowClosed) {
+                        root.refreshActiveWindow()
+                    }
+                } catch (e) {}
             }
         }
     }
 
-    // ---- Hyprland Processes ----
-
+    // ── Hyprland Queries & Socket2 Listener ──────────────────────────────────
     Process {
         id: initProc
         command: ["hyprctl", "activeworkspace", "-j"]
-        running: root.detectedCompositor === "hyprland"
+        running: !root.isNiri()
         property string output: ""
         stdout: SplitParser {
             onRead: data => initProc.output += data
@@ -121,7 +249,7 @@ Singleton {
     Process {
         id: listProc
         command: ["hyprctl", "workspaces", "-j"]
-        running: root.detectedCompositor === "hyprland"
+        running: !root.isNiri()
         property string output: ""
         stdout: SplitParser {
             onRead: data => listProc.output += data
@@ -138,7 +266,7 @@ Singleton {
     Process {
         id: windowProc
         command: ["hyprctl", "activewindow", "-j"]
-        running: root.detectedCompositor === "hyprland"
+        running: !root.isNiri()
         property string output: ""
         stdout: SplitParser {
             onRead: data => windowProc.output += data
@@ -147,32 +275,27 @@ Singleton {
             try {
                 const data = JSON.parse(windowProc.output)
                 root.activeWindowTitle = data.title || ""
-                root.isFullscreen = Boolean(data.fullscreen && data.fullscreen > 0)
+                if (data.fullscreen !== undefined) {
+                    root.isFullscreen = Boolean(data.fullscreen)
+                }
             } catch (e) {
                 root.activeWindowTitle = ""
-                root.isFullscreen = false
             }
             windowProc.output = ""
         }
     }
 
-    // ---- Hyprland live updates via event socket ----
+    // Hyprland live event stream via socket2
     Process {
         id: socatProc
-        command: ["sh", "-c", "socat -U - UNIX-CONNECT:$XDG_RUNTIME_DIR/hypr/$HYPRLAND_INSTANCE_SIGNATURE/.socket2.sock"]
-        running: root.detectedCompositor === "hyprland"
+        command: ["sh", "-c", "exec socat -U - UNIX-CONNECT:\"$XDG_RUNTIME_DIR/hypr/$HYPRLAND_INSTANCE_SIGNATURE/.socket2.sock\""]
+        running: !root.isNiri() && Boolean(Quickshell.env("HYPRLAND_INSTANCE_SIGNATURE"))
         stdout: SplitParser {
             splitMarker: "\n"
             onRead: data => {
                 const line = data.trim()
                 if (!line) return
-
-                if (line.startsWith("workspacev2>>")) {
-                    const parts = line.substring("workspacev2>>".length).split(",")
-                    root.activeWorkspaceId = parseInt(parts[0]) || 1
-                    root.activeWorkspaceName = parts[0]
-                    root.refreshActiveWindow()
-                } else if (line.startsWith("workspace>>")) {
+                if (line.startsWith("workspace>>")) {
                     const ws = line.substring("workspace>>".length)
                     root.activeWorkspaceId = parseInt(ws) || 1
                     root.activeWorkspaceName = ws
@@ -200,94 +323,16 @@ Singleton {
                 }
             }
         }
-        stderr: SplitParser {
-            onRead: data => {}
-        }
-        onExited: (exitCode) => console.warn("[Workspaces] Hyprland socat process exited, code:", exitCode)
     }
 
-    // ---- Niri Processes ----
-
-    Process {
-        id: niriListProc
-        command: ["niri", "msg", "-j", "workspaces"]
-        running: root.detectedCompositor === "niri"
-        property string output: ""
-        stdout: SplitParser {
-            onRead: data => niriListProc.output += data
-        }
-        onExited: {
-            try {
-                const data = JSON.parse(niriListProc.output)
-                if (Array.isArray(data)) {
-                    root.workspaceIds = data.map(w => w.idx || w.id).sort((a, b) => a - b)
-                    const activeWs = data.find(w => w.is_focused || w.is_active)
-                    if (activeWs) {
-                        const wsId = activeWs.idx || activeWs.id
-                        root.activeWorkspaceId = wsId
-                        root.activeWorkspaceName = activeWs.name || String(wsId)
-                    }
-                }
-            } catch (e) {}
-            niriListProc.output = ""
-        }
-    }
-
-    Process {
-        id: niriWindowProc
-        command: ["niri", "msg", "-j", "focused-window"]
-        running: root.detectedCompositor === "niri"
-        property string output: ""
-        stdout: SplitParser {
-            onRead: data => niriWindowProc.output += data
-        }
-        onExited: {
-            try {
-                const data = JSON.parse(niriWindowProc.output)
-                root.activeWindowTitle = (data && data.title) ? data.title : ""
-                if (data && data.is_fullscreen !== undefined) {
-                    root.isFullscreen = Boolean(data.is_fullscreen)
-                }
-            } catch (e) {
-                root.activeWindowTitle = ""
-                root.isFullscreen = false
+    Component.onCompleted: {
+        Qt.callLater(function() {
+            if (root.isNiri()) {
+                root.syncFromNiri()
+            } else {
+                root.refreshWorkspaceList()
+                root.refreshActiveWindow()
             }
-            niriWindowProc.output = ""
-        }
-    }
-
-    // ---- Niri live event stream ----
-    Process {
-        id: niriEventProc
-        command: ["niri", "msg", "-j", "event-stream"]
-        running: root.detectedCompositor === "niri"
-        stdout: SplitParser {
-            splitMarker: "\n"
-            onRead: data => {
-                const line = data.trim()
-                if (!line) return
-                try {
-                    const evt = JSON.parse(line)
-                    if (evt.WorkspacesChanged) {
-                        root.refreshWorkspaceList()
-                        root.refreshActiveWindow()
-                    } else if (evt.WorkspaceActivated) {
-                        const wsId = evt.WorkspaceActivated.idx || evt.WorkspaceActivated.id
-                        if (wsId !== undefined) {
-                            root.activeWorkspaceId = wsId
-                            root.activeWorkspaceName = String(wsId)
-                        }
-                        root.refreshActiveWindow()
-                    } else if (evt.WindowFocusChanged || evt.WindowOpenedOrChanged || evt.WindowClosed) {
-                        root.refreshActiveWindow()
-                    }
-                } catch (e) {}
-            }
-        }
-        stderr: SplitParser {
-            onRead: data => {}
-        }
-        onExited: (exitCode) => console.warn("[Workspaces] Niri event-stream process exited, code:", exitCode)
+        })
     }
 }
-

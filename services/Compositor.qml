@@ -15,12 +15,12 @@ Singleton {
         const desktop = (Quickshell.env("XDG_CURRENT_DESKTOP") || "").toLowerCase()
         const session = (Quickshell.env("DESKTOP_SESSION") || "").toLowerCase()
 
-        if (hyprSig !== "" || desktop.includes("hyprland") || session.includes("hyprland")) return "hyprland"
         if (niriSock !== "" || desktop.includes("niri") || session.includes("niri")) return "niri"
+        if (hyprSig !== "" || desktop.includes("hyprland") || session.includes("hyprland")) return "hyprland"
         if (swaySock !== "" || desktop.includes("sway") || session.includes("sway")) return "sway"
         if (desktop.includes("river") || session.includes("river")) return "river"
         if (desktop.includes("wayfire") || session.includes("wayfire")) return "wayfire"
-        return "hyprland" // Default fallback
+        return "hyprland"
     }
 
     readonly property string activeDisplayName: {
@@ -34,7 +34,7 @@ Singleton {
         }
     }
 
-    property string configType: "lua" // "lua", "conf", "kdl"
+    property string configType: "kdl" // "lua", "conf", "kdl"
     property string activeVersion: "Detecting..."
     property int monitorsCount: 1
     property int workspacesCount: 1
@@ -361,6 +361,10 @@ Singleton {
                 }
             }
             _isApplying = false
+        } else if (activeCompositor === "niri") {
+            // Apply & save changes directly via compositor helper
+            saveOptionsProc.command = [helperScript, "options-apply", "--changes", JSON.stringify(currentChanges)]
+            saveOptionsProc.running = true
         } else {
             // Fallback to helper script for other compositors
             const firstKey = keys[0]
@@ -375,6 +379,12 @@ Singleton {
 
     Process {
         id: saveOptionsProc
+        onExited: {
+            root._isApplying = false
+            if (Object.keys(root._pendingChanges).length > 0) {
+                root._flushPendingChanges()
+            }
+        }
     }
 
     Process {
@@ -414,6 +424,7 @@ Singleton {
     }
 
     function _applyWorkspaceAnim() {
+        if (activeCompositor === "niri") return
         workspaceAnimProc.targetEnabled = hyprWorkspaceAnim ? "true" : "false"
         workspaceAnimProc.targetStyle = hyprWorkspaceAnimStyle ? hyprWorkspaceAnimStyle : "slidevert"
         workspaceAnimProc.targetSpeed = (Math.round(hyprWorkspaceAnimSpeed * 10) / 10).toString()
@@ -444,6 +455,7 @@ Singleton {
     }
 
     function setHyprAnimStyle(styleId) {
+        if (activeCompositor === "niri") return
         if (!styleId) return
         hyprAnimStyle = styleId
         if (styleId === "disabled") {
@@ -461,6 +473,10 @@ Singleton {
 
     function toggleHyprAnim() {
         hyprAnim = !hyprAnim
+        if (activeCompositor === "niri") {
+            setOption("anim", hyprAnim)
+            return
+        }
         if (!hyprAnim) {
             setHyprAnimStyle("disabled")
         } else {
@@ -648,6 +664,7 @@ Singleton {
     function setMonitorScale(monName, scaleVal, saveToConfig) {
         if (!monName) return
         const s = Number(Number(scaleVal).toFixed(2))
+        if (activeCompositor === "niri") { if (saveToConfig) updateMonitorProperty(monName, "scale", s); return }
         if (configType === "lua") {
             fastHyprProc.command = ["hyprctl", "eval", `hl.monitor({ output = "${monName}", scale = ${s} })`]
         } else {
@@ -662,6 +679,7 @@ Singleton {
 
     function setMonitorMode(monName, modeStr, saveToConfig) {
         if (!monName || !modeStr) return
+        if (activeCompositor === "niri") { if (saveToConfig) updateMonitorProperty(monName, "mode", modeStr); return }
         if (configType === "lua") {
             fastHyprProc.command = ["hyprctl", "eval", `hl.monitor({ output = "${monName}", mode = "${modeStr}" })`]
         } else {
@@ -677,6 +695,7 @@ Singleton {
     function setMonitorTransform(monName, transformVal, saveToConfig) {
         if (!monName) return
         const t = parseInt(transformVal) || 0
+        if (activeCompositor === "niri") { console.warn("[Compositor] Output transform is not supported by this Niri editor"); return }
         if (configType === "lua") {
             fastHyprProc.command = ["hyprctl", "eval", `hl.monitor({ output = "${monName}", transform = ${t} })`]
         } else {
@@ -693,6 +712,16 @@ Singleton {
         if (!monName) return
         const posX = parseInt(x) || 0
         const posY = parseInt(y) || 0
+        if (activeCompositor === "niri") {
+            if (saveToConfig) {
+                var niriLayout = JSON.parse(JSON.stringify(monitorsList || []))
+                for (var ni = 0; ni < niriLayout.length; ni++) {
+                    if (niriLayout[ni].name === monName) { niriLayout[ni].x = posX; niriLayout[ni].y = posY; break }
+                }
+                applyMonitorLayout(niriLayout, true)
+            }
+            return
+        }
         if (configType === "lua") {
             fastHyprProc.command = ["hyprctl", "eval", `hl.monitor({ output = "${monName}", position = "${posX}x${posY}" })`]
         } else {
@@ -709,6 +738,7 @@ Singleton {
     function setMonitorVRR(monName, vrrBool, saveToConfig) {
         if (!monName) return
         const v = vrrBool ? 1 : 0
+        if (activeCompositor === "niri") { if (saveToConfig) updateMonitorProperty(monName, "vrr", Boolean(vrrBool)); return }
         if (configType === "lua") {
             fastHyprProc.command = ["hyprctl", "eval", `hl.monitor({ output = "${monName}", vrr = ${v} }) ; hl.config({ misc = { vrr = ${v} } })`]
         } else {
@@ -723,6 +753,7 @@ Singleton {
 
     function setMonitorDisabled(monName, disabledBool, saveToConfig) {
         if (!monName) return
+        if (activeCompositor === "niri") { if (saveToConfig) updateMonitorProperty(monName, "disabled", Boolean(disabledBool)); return }
         if (configType === "lua") {
             if (disabledBool) {
                 fastHyprProc.command = ["hyprctl", "eval", `hl.monitor({ output = "${monName}", mode = "disabled" })`]
@@ -746,6 +777,7 @@ Singleton {
     function setMonitorMirror(monName, mirrorTarget, saveToConfig) {
         if (!monName) return
         const mTarget = (mirrorTarget && mirrorTarget !== "none" && mirrorTarget !== monName) ? mirrorTarget : "none"
+        if (activeCompositor === "niri") { console.warn("[Compositor] Output mirroring is not supported by this Niri editor"); return }
         if (configType === "lua") {
             if (mTarget !== "none") {
                 fastHyprProc.command = ["hyprctl", "eval", `hl.monitor({ output = "${monName}", mirror = "${mTarget}" })`]
@@ -1186,6 +1218,7 @@ Singleton {
             try {
                 const data = JSON.parse(queryProcess.qOutput.trim())
                 if (data) {
+                    if (data.activeCompositor) root.activeCompositor = data.activeCompositor
                     if (data.version) root.activeVersion = data.version
                     if (data.configType) root.configType = data.configType
                     if (data.blur !== undefined) root.hyprBlur = data.blur

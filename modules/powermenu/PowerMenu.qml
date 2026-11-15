@@ -491,10 +491,10 @@ PanelWindow {
     // ── Action Processes ────────────────────────────────────────────────────
     Process { id: lockProc; command: ["sh", "-c", "qs ipc call lockscreen lock || hyprlock || swaylock"] }
     Process { id: reloadProc; command: ["sh", "-c", "touch \"" + (Quickshell.env("HOME") || "/home/" + (Quickshell.env("USER") || "user")) + "/.config/quickshell/shell.qml\" || pkill -USR1 qs || pkill -USR1 quickshell"] }
-    Process { id: logoutProc; command: ["sh", "-c", "niri msg action quit --skip-confirmation || hyprctl dispatch 'hl.dsp.exit()' || loginctl terminate-user $USER"] }
-    Process { id: sleepProc; command: ["sh", "-c", "qs ipc call lockscreen lock && sleep 0.2 && systemctl suspend"] }
-    Process { id: rebootProc; command: ["systemctl", "reboot"] }
-    Process { id: shutdownProc; command: ["systemctl", "poweroff"] }
+    Process { id: logoutProc; command: ["sh", "-c", "if [ -n \"$NIRI_SOCKET\" ]; then niri msg action quit --skip-confirmation; elif [ -n \"$HYPRLAND_INSTANCE_SIGNATURE\" ]; then hyprctl dispatch exit; else loginctl terminate-user \"$USER\"; fi"] }
+    Process { id: sleepProc; command: ["sh", "-c", "qs ipc call lockscreen lock && sleep 0.2 && (systemctl suspend 2>/dev/null || loginctl suspend 2>/dev/null)"] }
+    Process { id: rebootProc; command: ["sh", "-c", "systemctl reboot 2>/dev/null || loginctl reboot 2>/dev/null"] }
+    Process { id: shutdownProc; command: ["sh", "-c", "systemctl poweroff 2>/dev/null || loginctl poweroff 2>/dev/null"] }
 
     Process {
         id: userInfoProc

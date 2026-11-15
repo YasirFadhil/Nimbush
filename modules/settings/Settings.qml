@@ -5989,7 +5989,7 @@ FloatingWindow {
                                             Layout.fillWidth: true
                                             text: {
                                                 const v = Services.Compositor ? Services.Compositor.activeVersion : ""
-                                                const cleanV = v.split(" built")[0].replace(/^hyprland\s*/i, "").trim()
+                                                const cleanV = v.split(" built")[0].replace(/^(hyprland|niri)\s*/i, "").trim()
                                                 return (cleanV ? ("v" + cleanV + " · ") : "") + "Wayland Session"
                                             }
                                             font.pixelSize: 10
@@ -6272,9 +6272,12 @@ FloatingWindow {
                                         onToggled: () => { if (Services.Compositor) Services.Compositor.toggleHyprAnim() }
                                     }
 
-                                    SettingsDivider {}
+                                    SettingsDivider {
+                                        visible: Services.Compositor && Services.Compositor.activeCompositor === "hyprland"
+                                    }
 
                                     SettingsRow {
+                                        visible: Services.Compositor && Services.Compositor.activeCompositor === "hyprland"
                                         title: "Animation Preset"
                                         subtitle: "Select easing curve profile and global motion speed"
 
@@ -6302,6 +6305,7 @@ FloatingWindow {
                                 }
 
                                 SettingsSection {
+                                    visible: Services.Compositor && Services.Compositor.activeCompositor === "hyprland"
                                     title: "Workspace Animations"
                                     icon: Services.Icons.grid
 
@@ -6379,31 +6383,40 @@ FloatingWindow {
                                     icon: Services.Icons.eye
 
                                     SettingsSwitch {
+                                        visible: Services.Compositor && Services.Compositor.activeCompositor === "hyprland"
                                         title: "Blur"
                                         subtitle: "Background blur for transparent windows and panels"
                                         checked: Services.Compositor ? Services.Compositor.hyprBlur : true
                                         onToggled: () => { if (Services.Compositor) Services.Compositor.toggleHyprBlur() }
                                     }
 
-                                    SettingsDivider {}
+                                    SettingsDivider {
+                                        visible: Services.Compositor && Services.Compositor.activeCompositor === "hyprland"
+                                    }
 
                                     SettingsSlider {
+                                        visible: Services.Compositor && Services.Compositor.activeCompositor === "hyprland"
                                         title: "Blur Radius (Size)"
                                         from: 1; to: 16; stepSize: 1; valueSuffix: "px"
                                         value: Services.Compositor ? Services.Compositor.hyprBlurSize : 4
                                         onMoved: (v) => { if (Services.Compositor) Services.Compositor.setHyprBlurSize(Math.round(v)) }
                                     }
 
-                                    SettingsDivider {}
+                                    SettingsDivider {
+                                        visible: Services.Compositor && Services.Compositor.activeCompositor === "hyprland"
+                                    }
 
                                     SettingsSlider {
+                                        visible: Services.Compositor && Services.Compositor.activeCompositor === "hyprland"
                                         title: "Blur Iterations (Passes)"
                                         from: 1; to: 5; stepSize: 1; valueSuffix: "x"
                                         value: Services.Compositor ? Services.Compositor.hyprBlurPasses : 2
                                         onMoved: (v) => { if (Services.Compositor) Services.Compositor.setHyprBlurPasses(Math.round(v)) }
                                     }
 
-                                    SettingsDivider {}
+                                    SettingsDivider {
+                                        visible: Services.Compositor && Services.Compositor.activeCompositor === "hyprland"
+                                    }
 
                                     SettingsSwitch {
                                         title: "Window Drop Shadows"
@@ -6423,6 +6436,7 @@ FloatingWindow {
                                 }
 
                                 SettingsSection {
+                                    visible: Services.Compositor && Services.Compositor.activeCompositor === "hyprland"
                                     title: "Window Opacity & Dimming"
                                     icon: Services.Icons.contrast
 
@@ -6466,24 +6480,37 @@ FloatingWindow {
                                     SettingsDivider {}
 
                                     SettingsSlider {
-                                        title: "Gaps In (Between Windows)"
-                                        from: 0; to: 24; stepSize: 1; valueSuffix: "px"
+                                        title: (Services.Compositor && Services.Compositor.activeCompositor === "niri") ? "Window Gaps" : "Gaps In (Between Windows)"
+                                        from: 0; to: 32; stepSize: 1; valueSuffix: "px"
                                         value: Services.Compositor ? Services.Compositor.hyprGapsIn : 5
-                                        onMoved: (v) => { if (Services.Compositor) Services.Compositor.setHyprGapsIn(Math.round(v)) }
+                                        onMoved: (v) => {
+                                            if (Services.Compositor) {
+                                                Services.Compositor.setHyprGapsIn(Math.round(v))
+                                                if (Services.Compositor.activeCompositor === "niri") {
+                                                    Services.Compositor.setHyprGapsOut(Math.round(v))
+                                                }
+                                            }
+                                        }
                                     }
 
-                                    SettingsDivider {}
+                                    SettingsDivider {
+                                        visible: !(Services.Compositor && Services.Compositor.activeCompositor === "niri")
+                                    }
 
                                     SettingsSlider {
+                                        visible: !(Services.Compositor && Services.Compositor.activeCompositor === "niri")
                                         title: "Gaps Out (Screen Margins)"
                                         from: 0; to: 36; stepSize: 1; valueSuffix: "px"
                                         value: Services.Compositor ? Services.Compositor.hyprGapsOut : 10
                                         onMoved: (v) => { if (Services.Compositor) Services.Compositor.setHyprGapsOut(Math.round(v)) }
                                     }
 
-                                    SettingsDivider {}
+                                    SettingsDivider {
+                                        visible: Services.Compositor && Services.Compositor.activeCompositor === "hyprland"
+                                    }
 
                                     SettingsSwitch {
+                                        visible: Services.Compositor && Services.Compositor.activeCompositor === "hyprland"
                                         title: "Smart Gaps (No Gaps When Only)"
                                         subtitle: "Automatically remove gaps and borders if only one window is open"
                                         checked: Services.Compositor ? Services.Compositor.hyprSmartGaps : false
@@ -7414,9 +7441,9 @@ FloatingWindow {
                                 Layout.fillWidth: true
                                 spacing: 10
 
-                                // Hyprland-only content
+                                // Supported on Hyprland and Niri
                                 ColumnLayout {
-                                    visible: Services.Compositor && Services.Compositor.activeCompositor === "hyprland"
+                                    visible: Services.Compositor && (Services.Compositor.activeCompositor === "hyprland" || Services.Compositor.activeCompositor === "niri")
                                     Layout.fillWidth: true
                                     spacing: 10
 
@@ -7430,11 +7457,16 @@ FloatingWindow {
 
                                             SettingsDropdown {
                                                 currentValue: Services.Compositor ? String(Services.Compositor.hyprFollowMouse) : "1"
-                                                model: [
-                                                    { id: "1", label: "Hover Focus (Continuous)" },
-                                                    { id: "0", label: "Click to Focus (Strict)" },
-                                                    { id: "2", label: "Click on Tiled, Hover on Floating" }
-                                                ]
+                                                model: (Services.Compositor && Services.Compositor.activeCompositor === "niri")
+                                                    ? [
+                                                        { id: "1", label: "Enabled (Hover Focus)" },
+                                                        { id: "0", label: "Disabled (Click to Focus)" }
+                                                    ]
+                                                    : [
+                                                        { id: "1", label: "Hover Focus (Continuous)" },
+                                                        { id: "0", label: "Click to Focus (Strict)" },
+                                                        { id: "2", label: "Click on Tiled, Hover on Floating" }
+                                                    ]
                                                 onSelected: (val) => { if (Services.Compositor) Services.Compositor.setHyprFollowMouse(val) }
                                             }
                                         }
@@ -7469,18 +7501,24 @@ FloatingWindow {
                                             onToggled: (val) => { if (Services.Compositor) Services.Compositor.setHyprTouchpadDwt(val) }
                                         }
 
-                                        SettingsDivider {}
+                                        SettingsDivider {
+                                            visible: Services.Compositor && Services.Compositor.activeCompositor === "hyprland"
+                                        }
 
                                         SettingsSwitch {
+                                            visible: Services.Compositor && Services.Compositor.activeCompositor === "hyprland"
                                             title: "Touchpad 3-Finger Workspace Swipe"
                                             subtitle: "Smooth 1:1 trackpad swipe gesture to switch active workspace"
                                             checked: Services.Compositor ? Services.Compositor.hyprWorkspaceSwipe : true
                                             onToggled: (val) => { if (Services.Compositor) Services.Compositor.setHyprWorkspaceSwipe(val) }
                                         }
 
-                                        SettingsDivider {}
+                                        SettingsDivider {
+                                            visible: Services.Compositor && Services.Compositor.activeCompositor === "hyprland"
+                                        }
 
                                         SettingsSlider {
+                                            visible: Services.Compositor && Services.Compositor.activeCompositor === "hyprland"
                                             title: "Touchpad Pointer Sensitivity"
                                             from: -1.0; to: 1.0; stepSize: 0.05; decimals: 2
                                             value: Services.Compositor ? Services.Compositor.hyprSensitivity : 0.0
@@ -7489,9 +7527,9 @@ FloatingWindow {
                                     }
                                 }
 
-                                // Non-Hyprland fallback card
+                                // Non-Hyprland / Non-Niri fallback card
                                 Rectangle {
-                                    visible: !(Services.Compositor && Services.Compositor.activeCompositor === "hyprland")
+                                    visible: !(Services.Compositor && (Services.Compositor.activeCompositor === "hyprland" || Services.Compositor.activeCompositor === "niri"))
                                     Layout.fillWidth: true
                                     implicitHeight: noHyprInput.implicitHeight + 40
                                     radius: Services.Theme.radiusMd
@@ -7503,7 +7541,7 @@ FloatingWindow {
                                         anchors.centerIn: parent
                                         spacing: 8
                                         Text { Layout.alignment: Qt.AlignHCenter; text: Services.Icons.sliders; font.family: Services.Theme.fontSymbols; font.pixelSize: 24; color: Services.Theme.textDisabled }
-                                        Text { Layout.alignment: Qt.AlignHCenter; text: "Input & gesture controls require Hyprland"; font.pixelSize: 12; font.weight: Font.Medium; color: Services.Theme.textSecondary }
+                                        Text { Layout.alignment: Qt.AlignHCenter; text: "Input & gesture controls require Hyprland or Niri"; font.pixelSize: 12; font.weight: Font.Medium; color: Services.Theme.textSecondary }
                                         Text { Layout.alignment: Qt.AlignHCenter; text: "Detected compositor: " + (Services.Compositor ? Services.Compositor.activeDisplayName : "Unknown"); font.pixelSize: 10; color: Services.Theme.textDisabled }
                                     }
                                 }
@@ -7515,7 +7553,7 @@ FloatingWindow {
                                 Layout.fillWidth: true
                                 spacing: 10
 
-                                // Hyprland-only content
+                                // Hyprland-specific content
                                 ColumnLayout {
                                     visible: Services.Compositor && Services.Compositor.activeCompositor === "hyprland"
                                     Layout.fillWidth: true
@@ -7561,9 +7599,43 @@ FloatingWindow {
                                     }
                                 }
 
-                                // Non-Hyprland fallback card
+                                // Niri-specific content
+                                ColumnLayout {
+                                    visible: Services.Compositor && Services.Compositor.activeCompositor === "niri"
+                                    Layout.fillWidth: true
+                                    spacing: 10
+
+                                    SettingsSection {
+                                        title: "Niri Display & Performance"
+                                        icon: Services.Icons.speed
+
+                                        SettingsRow {
+                                            title: "Variable Refresh Rate (VRR)"
+                                            subtitle: "Automatic per-monitor adaptive sync configured in displays"
+                                            Text {
+                                                text: "Hardware Sync Active"
+                                                font.pixelSize: 11
+                                                color: Services.Theme.accent
+                                            }
+                                        }
+
+                                        SettingsDivider {}
+
+                                        SettingsRow {
+                                            title: "Client-Side Decorations"
+                                            subtitle: "Instruct Wayland clients to omit redundant titlebars and CSD borders"
+                                            Text {
+                                                text: "prefer-no-csd active"
+                                                font.pixelSize: 11
+                                                color: Services.Theme.accent
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // Fallback card for other compositors
                                 Rectangle {
-                                    visible: !(Services.Compositor && Services.Compositor.activeCompositor === "hyprland")
+                                    visible: !(Services.Compositor && (Services.Compositor.activeCompositor === "hyprland" || Services.Compositor.activeCompositor === "niri"))
                                     Layout.fillWidth: true
                                     implicitHeight: noHyprPower.implicitHeight + 40
                                     radius: Services.Theme.radiusMd
@@ -7575,7 +7647,7 @@ FloatingWindow {
                                         anchors.centerIn: parent
                                         spacing: 8
                                         Text { Layout.alignment: Qt.AlignHCenter; text: Services.Icons.speed; font.family: Services.Theme.fontSymbols; font.pixelSize: 24; color: Services.Theme.textDisabled }
-                                        Text { Layout.alignment: Qt.AlignHCenter; text: "Power & gaming controls require Hyprland"; font.pixelSize: 12; font.weight: Font.Medium; color: Services.Theme.textSecondary }
+                                        Text { Layout.alignment: Qt.AlignHCenter; text: "Power & gaming controls require Hyprland or Niri"; font.pixelSize: 12; font.weight: Font.Medium; color: Services.Theme.textSecondary }
                                         Text { Layout.alignment: Qt.AlignHCenter; text: "Detected compositor: " + (Services.Compositor ? Services.Compositor.activeDisplayName : "Unknown"); font.pixelSize: 10; color: Services.Theme.textDisabled }
                                     }
                                 }

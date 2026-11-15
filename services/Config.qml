@@ -199,7 +199,7 @@ Singleton {
     property string customAvatar: ""
     property int clipboardLimit: 50
     property int launcherMaxResults: 8
-    property bool firstRunCompleted: false
+    property bool firstRunCompleted: true
     property int customSettingsVersion: 2
 
     // ── Settings State Persistence ───────────────────────────────────────────

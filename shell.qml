@@ -129,6 +129,9 @@ ShellRoot {
     Loader {
         id: settingsLoader
         active: false
+        onLoaded: {
+            if (item) item.show(settingsWindow.pendingTab, settingsWindow.pendingSubTab)
+        }
         sourceComponent: SettingsModule.Settings {
             onVisibleChanged: {
                 if (!visible) settingsUnloadTimer.restart()
@@ -147,9 +150,13 @@ ShellRoot {
     QtObject {
         id: settingsWindow
         readonly property bool visible: settingsLoader.active && settingsLoader.item && settingsLoader.item.visible
+        property var pendingTab: undefined
+        property var pendingSubTab: undefined
 
         function show(tabIndex, subTabIndex) {
             settingsUnloadTimer.stop()
+            pendingTab = tabIndex
+            pendingSubTab = subTabIndex
             if (!settingsLoader.active) settingsLoader.active = true
             if (settingsLoader.item) settingsLoader.item.show(tabIndex, subTabIndex)
         }
@@ -166,6 +173,9 @@ ShellRoot {
     Loader {
         id: launcherLoader
         active: false
+        onLoaded: {
+            if (item) item.show()
+        }
         sourceComponent: Launcher.Launcher {
             onVisibleChanged: {
                 if (!visible) launcherUnloadTimer.restart()
@@ -203,6 +213,9 @@ ShellRoot {
     Loader {
         id: emojiPickerLoader
         active: false
+        onLoaded: {
+            if (item) item.show()
+        }
         sourceComponent: EmojiModule.EmojiPicker {
             onVisibleChanged: {
                 if (!visible) emojiPickerUnloadTimer.restart()
@@ -240,6 +253,9 @@ ShellRoot {
     Loader {
         id: dashboardLoader
         active: false
+        onLoaded: {
+            if (item) item.show()
+        }
         sourceComponent: DashboardModule.Dashboard {
             onVisibleChanged: {
                 if (!visible) dashboardUnloadTimer.restart()
@@ -277,6 +293,9 @@ ShellRoot {
     Loader {
         id: clipboardLoader
         active: false
+        onLoaded: {
+            if (item) item.show()
+        }
         sourceComponent: Clipboard.ClipboardHistory {
             onVisibleChanged: {
                 if (!visible) clipboardUnloadTimer.restart()
@@ -314,6 +333,9 @@ ShellRoot {
     Loader {
         id: powerMenuLoader
         active: false
+        onLoaded: {
+            if (item) item.open()
+        }
         sourceComponent: PowerMenu.PowerMenu {
             onMenuVisibleChanged: {
                 if (!menuVisible) powerMenuUnloadTimer.restart()
@@ -524,6 +546,9 @@ ShellRoot {
     Loader {
         id: welcomeLoader
         active: false
+        onLoaded: {
+            if (item) item.show()
+        }
         sourceComponent: WelcomeModule.Welcome {
             onVisibleChanged: {
                 if (!visible) welcomeUnloadTimer.restart()
