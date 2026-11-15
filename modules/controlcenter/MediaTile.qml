@@ -12,10 +12,10 @@ Rectangle {
     readonly property bool isPlaying: player?.isPlaying ?? false
 
     Layout.fillWidth: true
-    implicitHeight: hasPlayer ? 126 : 48
+    implicitHeight: 126
     radius: Services.Theme.radiusLg
-    color: Services.Theme.surfaceVariant
-    border.color: isPlaying ? Services.Theme.borderHighlight : Services.Theme.borderSubtle
+    color: (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06))
+    border.color: isPlaying ? (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.12)) : (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06))
     border.width: 1
     clip: true
 
@@ -27,34 +27,13 @@ Rectangle {
         return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0")
     }
 
-    // ── Idle State (No Media Playing) ──
-    RowLayout {
-        anchors.fill: parent
-        anchors.margins: 12
-        spacing: 8
-        visible: !card.hasPlayer
-
-        Text {
-            text: Services.Icons.music
-            font.family: Services.Theme.fontSymbols
-            font.pixelSize: 14
-            color: Services.Theme.textDisabled
-        }
-
-        Text {
-            text: "No Active Media"
-            font.pixelSize: 11
-            color: Services.Theme.textDisabled
-            Layout.fillWidth: true
-        }
-    }
-
     // ── Active Media Player ──
     ColumnLayout {
         anchors.fill: parent
         anchors.margins: 12
         spacing: 8
-        visible: card.hasPlayer
+        opacity: card.hasPlayer ? 1 : 0.6
+        Behavior on opacity { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
 
         // Row 1: Artwork | Title, artist, source pill, controls
         RowLayout {
@@ -70,8 +49,8 @@ Rectangle {
                 Rectangle {
                     anchors.fill: parent
                     radius: Services.Theme.radiusMd
-                    color: Services.Theme.surface
-                    border.color: Services.Theme.borderSubtle
+                    color: (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06))
+                    border.color: (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06))
                     border.width: 1
 
                     Text {
@@ -80,7 +59,16 @@ Rectangle {
                         color: Services.Theme.textSecondary
                         font.pixelSize: 26
                         font.bold: true
-                        visible: artImg.status !== Image.Ready
+                        visible: card.hasPlayer && artImg.status !== Image.Ready
+                    }
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: Services.Icons.music
+                        font.family: Services.Theme.fontSymbols
+                        font.pixelSize: 26
+                        color: Services.Theme.textDisabled
+                        visible: !card.hasPlayer
                     }
                 }
 
@@ -117,7 +105,7 @@ Rectangle {
                 spacing: 2
 
                 Text {
-                    text: card.player?.trackTitle || "—"
+                    text: card.hasPlayer ? (card.player?.trackTitle || "—") : "No Active Media"
                     color: Services.Theme.textPrimary
                     font.pixelSize: 14
                     font.bold: true
@@ -130,7 +118,7 @@ Rectangle {
                     spacing: 6
 
                     Text {
-                        text: card.player?.trackArtist || "Unknown Artist"
+                        text: card.hasPlayer ? (card.player?.trackArtist || "Unknown Artist") : "Play something to see it here"
                         color: Services.Theme.textSecondary
                         font.pixelSize: 11
                         elide: Text.ElideRight
@@ -142,8 +130,8 @@ Rectangle {
                         implicitHeight: 18
                         implicitWidth: stepperRow.implicitWidth + 8
                         radius: 9
-                        color: Services.Theme.surface
-                        border.color: Services.Theme.borderSubtle
+                        color: (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06))
+                        border.color: (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06))
                         border.width: 1
                         visible: (card.player?.identity ?? "").length > 0
 
@@ -155,7 +143,7 @@ Rectangle {
                             Rectangle {
                                 visible: Services.Mpris.playerCount > 1
                                 width: 14; height: 14; radius: 7
-                                color: prevArrMouse.containsMouse ? Services.Theme.bgHover : "transparent"
+                                color: prevArrMouse.containsMouse ? (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.10)) : "transparent"
                                 Text {
                                     anchors.centerIn: parent
                                     text: "‹"
@@ -194,7 +182,7 @@ Rectangle {
                             Rectangle {
                                 visible: Services.Mpris.playerCount > 1
                                 width: 14; height: 14; radius: 7
-                                color: nextArrMouse.containsMouse ? Services.Theme.bgHover : "transparent"
+                                color: nextArrMouse.containsMouse ? (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.10)) : "transparent"
                                 Text {
                                     anchors.centerIn: parent
                                     text: "›"
@@ -225,7 +213,7 @@ Rectangle {
 
                     Rectangle {
                         width: 28; height: 28; radius: 14
-                        color: prevHover.containsMouse && (card.player?.canGoPrevious ?? false) ? Services.Theme.bgHover : "transparent"
+                        color: prevHover.containsMouse && (card.player?.canGoPrevious ?? false) ? (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.10)) : "transparent"
                         opacity: (card.player?.canGoPrevious ?? false) ? 1 : 0.3
                         Behavior on color { ColorAnimation { duration: 200; easing.type: Easing.OutCubic } }
 
@@ -250,6 +238,7 @@ Rectangle {
                         id: playBtn
                         width: 34; height: 34; radius: 17
                         color: Services.Theme.accent
+                        opacity: card.hasPlayer ? 1 : 0.3
 
                         scale: playHover.pressed ? 0.92 : (playHover.containsMouse ? 1.06 : 1.0)
                         Behavior on scale { NumberAnimation { duration: 180; easing.type: Easing.OutBack; easing.overshoot: 1.2 } }
@@ -267,14 +256,14 @@ Rectangle {
                             anchors.fill: parent
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
-                            enabled: card.player?.canTogglePlaying ?? true
+                            enabled: card.hasPlayer && (card.player?.canTogglePlaying ?? true)
                             onClicked: (mouse) => { card.player?.togglePlaying(); mouse.accepted = true }
                         }
                     }
 
                     Rectangle {
                         width: 28; height: 28; radius: 14
-                        color: nextHover.containsMouse && (card.player?.canGoNext ?? false) ? Services.Theme.bgHover : "transparent"
+                        color: nextHover.containsMouse && (card.player?.canGoNext ?? false) ? (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.10)) : "transparent"
                         opacity: (card.player?.canGoNext ?? false) ? 1 : 0.3
                         Behavior on color { ColorAnimation { duration: 200; easing.type: Easing.OutCubic } }
 

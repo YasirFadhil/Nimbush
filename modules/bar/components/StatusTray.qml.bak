@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Layouts
+import Quickshell.Io
 import Quickshell.Services.SystemTray
 import "../../../services" as Services
 import "." as Components
@@ -13,6 +14,12 @@ RowLayout {
     property real rightMargin: 12
     property real centerReservedWidth: 0
     property string islandDemand: "idle"
+
+    // ── Auto-detect LAN / Ethernet (via shared NetworkState service) ──────
+    readonly property bool ethConnected: Services.NetworkState ? Services.NetworkState.connected : false
+    readonly property string ethIface: Services.NetworkState ? Services.NetworkState.interfaceName : ""
+    readonly property string ethIp: Services.NetworkState ? Services.NetworkState.ipv4Address : ""
+    readonly property string ethGlyph: Services.NetworkState ? Services.NetworkState.glyph : "\udb80\ude00"
 
     // ── Konstanta tuning ──────────────────────────────────────────
     readonly property real safetyGap: 20      // jarak napas minimum island↔tray
@@ -534,7 +541,7 @@ RowLayout {
                     spacing: root.isMinimal ? 5 : 8
 
                     Services.WifiSignal {
-                        visible: Services.Wifi
+                        visible: Services.Wifi && !root.ethConnected
                         width: root.isMinimal ? 16 : 18
                         height: root.isMinimal ? 16 : 18
                         signalStrength: Services.Wifi ? Services.Wifi.signalStrength : 0
@@ -545,6 +552,16 @@ RowLayout {
                             ? Services.Theme.accent
                             : Services.Theme.textDisabled
                         inactiveColor: Services.Theme.textSecondary
+                    }
+
+                    // Ikon LAN: gantiin ikon Wi-Fi otomatis selama kabel tercolok
+                    Text {
+                        visible: root.ethConnected
+                        text: root.ethGlyph
+                        font.family: Services.Theme.fontSymbols
+                        font.pixelSize: root.isMinimal ? 16 : 18
+                        color: Services.Theme.accent
+                        Layout.alignment: Qt.AlignVCenter
                     }
 
                     Text {

@@ -25,8 +25,10 @@ Rectangle {
     implicitHeight: 28
     implicitWidth: trayLayout.implicitWidth + 16
     radius: 14
-    color: Services.Theme.surface
-    border.color: Services.Theme.border
+    readonly property bool glassDark: Services.Theme.isDark
+    // Dock glass material
+    color: glassDark ? Qt.rgba(0.11, 0.11, 0.12, 0.38) : Qt.rgba(1, 1, 1, 0.30)
+    border.color: glassDark ? Qt.rgba(1, 1, 1, 0.18) : Qt.rgba(1, 1, 1, 0.50)
     border.width: 1
     visible: allItems.length > 0
 
@@ -58,8 +60,8 @@ Rectangle {
                     id: itemBg
                     anchors.fill: parent
                     radius: Services.Theme.radiusSm
-                    color: itemArea.containsMouse ? Services.Theme.surfaceVariant : "transparent"
-                    border.color: itemArea.containsMouse ? Services.Theme.borderHighlight : "transparent"
+                    color: itemArea.containsMouse ? (trayPill.glassDark ? Qt.rgba(1, 1, 1, 0.16) : Qt.rgba(1, 1, 1, 0.55)) : "transparent"
+                    border.color: "transparent"
                     border.width: 1
 
                     Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
@@ -160,8 +162,8 @@ Rectangle {
                 id: overflowBg
                 anchors.fill: parent
                 radius: Services.Theme.radiusSm
-                color: overflowArea.containsMouse ? Services.Theme.surfaceVariant : "transparent"
-                border.color: overflowArea.containsMouse ? Services.Theme.borderHighlight : "transparent"
+                color: overflowArea.containsMouse ? (trayPill.glassDark ? Qt.rgba(1, 1, 1, 0.16) : Qt.rgba(1, 1, 1, 0.55)) : "transparent"
+                border.color: "transparent"
                 border.width: 1
 
                 Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }

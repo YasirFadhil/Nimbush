@@ -130,18 +130,6 @@ PanelWindow {
             }
         }
 
-        // Subtle top specular highlight
-        Rectangle {
-            anchors.top: parent.top
-            anchors.left: parent.left
-            anchors.right: parent.right
-            anchors.topMargin: 1
-            anchors.leftMargin: 10
-            anchors.rightMargin: 10
-            height: 1
-            color: root.menuSpecular
-        }
-
         // Smooth entry / exit animation (fade handled here, not by the compositor)
         scale: root.isOpen ? 1.0 : 0.96
         opacity: root.isOpen ? 1.0 : 0.0

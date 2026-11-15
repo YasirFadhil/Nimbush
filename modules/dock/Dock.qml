@@ -401,19 +401,6 @@ Variants {
             border.color: root.glassBorder
             border.width: 1
 
-            // The only highlight the real dock has: one faint specular hairline on top
-            Rectangle {
-                anchors.top: parent.top
-                anchors.topMargin: 1
-                anchors.horizontalCenter: parent.horizontalCenter
-                width: Math.max(0, parent.width - parent.radius * 1.4)
-                height: 1
-                color: root.glassSpecular
-                z: 0
-            }
-
-
-
             // ── Unified Dock Tracker MouseArea ───────────────────────────────
             // Strictly 0 margins when idle so hover only triggers when cursor physically touches the dock pill.
             // When already hovered, expands slightly upward so cursor can hover lifted icons.

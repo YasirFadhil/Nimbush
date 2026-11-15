@@ -10,7 +10,7 @@ Singleton {
     property bool connected: false
     property string interfaceName: ""
     property string ipv4Address: ""
-    readonly property string glyph: "\udb80\ude00" // U+F0200 nf-md-ethernet
+    readonly property string glyph: "\udb80\udf17" // U+F0CD7 nf-md-lan
 
     // Compatibility aliases
     readonly property bool ethConnected: connected

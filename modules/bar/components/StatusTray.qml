@@ -41,20 +41,18 @@ RowLayout {
     readonly property int pillRadius: isMinimal ? 6 : (isIslands ? 14 : 10)
     readonly property int innerSpacing: isMinimal ? 4 : 6
 
+    // Dock glass material (Dock.qml): neutral low-alpha fill, white hairline border.
+    readonly property bool glassDark: Services.Theme.isDark
     function getPillBg(hovered) {
-        if (hovered) return Services.Theme.bgHover
-        if (isIslands) return Services.Theme.surface
-        if (isFloating) return Qt.rgba(Services.Theme.surface.r, Services.Theme.surface.g, Services.Theme.surface.b, 0.45)
-        if (isUnified) return Qt.rgba(Services.Theme.bgDeep.r, Services.Theme.bgDeep.g, Services.Theme.bgDeep.b, 0.4)
-        return "transparent"
+        if (isMinimal) return hovered ? Services.Theme.bgHover : "transparent"
+        if (hovered) return glassDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(1, 1, 1, 0.50)
+        return glassDark ? Qt.rgba(0.11, 0.11, 0.12, 0.38) : Qt.rgba(1, 1, 1, 0.30)
     }
 
     function getPillBorder(hovered) {
-        if (hovered) return Services.Theme.borderHighlight
-        if (isIslands) return Services.Theme.border
-        if (isFloating) return Qt.rgba(Services.Theme.border.r, Services.Theme.border.g, Services.Theme.border.b, 0.4)
-        if (isUnified) return Qt.rgba(Services.Theme.border.r, Services.Theme.border.g, Services.Theme.border.b, 0.3)
-        return "transparent"
+        if (isMinimal) return hovered ? Services.Theme.borderHighlight : "transparent"
+        if (hovered) return glassDark ? Qt.rgba(1, 1, 1, 0.26) : Qt.rgba(1, 1, 1, 0.75)
+        return glassDark ? Qt.rgba(1, 1, 1, 0.18) : Qt.rgba(1, 1, 1, 0.50)
     }
 
     // ── Daftar item dan urutan mengalah ───────────────────────────

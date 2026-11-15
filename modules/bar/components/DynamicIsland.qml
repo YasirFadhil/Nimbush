@@ -15,6 +15,16 @@ import "../../media" as MediaModule
 Item {
     id: root
 
+    // ----- Glass material (same language as Dock.qml) -----
+    // Neutral translucent fill + 1px white hairline + top specular. Blur comes from the
+    // compositor (layer rule on the bar namespace). Alpha is higher than the dock's 0.38
+    // because the island carries text and has to stay legible without blur.
+    readonly property bool glassDark: Services.Theme.isDark
+    readonly property color glassFill: glassDark ? Qt.rgba(0.11, 0.11, 0.12, 0.80) : Qt.rgba(1, 1, 1, 0.72)
+    readonly property color glassBorder: glassDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(1, 1, 1, 0.50)
+    readonly property color glassBorderStrong: glassDark ? Qt.rgba(1, 1, 1, 0.22) : Qt.rgba(1, 1, 1, 0.70)
+    readonly property color glassSpecular: glassDark ? Qt.rgba(1, 1, 1, 0.20) : Qt.rgba(1, 1, 1, 0.65)
+
     // ----- Public API & State -----
     property bool pinned: false
     property bool autoExpanded: false
@@ -2280,11 +2290,11 @@ Item {
             : Services.Theme.radiusLg
         radius: targetRadius
 
-        color: Services.Theme.bgPure
+        color: root.glassFill
         border.color: {
             if (root.isCritical) return Services.Theme.danger
-            if (root.expanded) return Services.Theme.borderHighlight
-            return Services.Theme.borderSubtle
+            if (root.expanded) return root.glassBorderStrong
+            return root.glassBorder
         }
         border.width: root.isCritical ? 1.5 : 1
 
@@ -4093,12 +4103,22 @@ Item {
 
 
                     // Running Title Text (Seamless physical morph across states)
+                    EdgeFadeMask {
+                        id: titleFadeMask
+                        width: mediaTitleContainer.width
+                        height: mediaTitleContainer.height
+                        leftAmt: Math.max(0.0, Math.min(1.0, (-mediaTitleText.x - 2) / 18))
+                        rightAmt: Math.max(0.0, Math.min(1.0, (mediaTitleText.maxScroll + mediaTitleText.x - 4) / 18))
+                    }
                     Item {
                         id: mediaTitleContainer
                         Layout.fillWidth: true
                         implicitHeight: mediaTitleText.implicitHeight
                         clip: true
                         opacity: root.mediaFlightActive ? 0.0 : 1.0
+                        layer.enabled: true
+                        layer.smooth: true
+                        layer.effect: MultiEffect { maskEnabled: true; maskSource: titleFadeMask }
 
                         Text {
                             id: mediaTitleText
@@ -4116,38 +4136,24 @@ Item {
                         // Soft edges instead of a hard cut through a glyph while the label
                         // overflows. The right edge fades out as the text runs out of room to
                         // scroll, the left edge appears once it has scrolled.
-                        Rectangle {
-                            anchors.top: parent.top
-                            anchors.bottom: parent.bottom
-                            anchors.right: parent.right
-                            width: 22
-                            opacity: Math.max(0.0, Math.min(1.0, (mediaTitleText.maxScroll + mediaTitleText.x - 4) / 18))
-                            gradient: Gradient {
-                                orientation: Gradient.Horizontal
-                                GradientStop { position: 0.0; color: Qt.rgba(Services.Theme.bgPure.r, Services.Theme.bgPure.g, Services.Theme.bgPure.b, 0.0) }
-                                GradientStop { position: 1.0; color: Services.Theme.bgPure }
-                            }
-                        }
-                        Rectangle {
-                            anchors.top: parent.top
-                            anchors.bottom: parent.bottom
-                            anchors.left: parent.left
-                            width: 22
-                            opacity: Math.max(0.0, Math.min(1.0, (-mediaTitleText.x - 2) / 18))
-                            gradient: Gradient {
-                                orientation: Gradient.Horizontal
-                                GradientStop { position: 0.0; color: Services.Theme.bgPure }
-                                GradientStop { position: 1.0; color: Qt.rgba(Services.Theme.bgPure.r, Services.Theme.bgPure.g, Services.Theme.bgPure.b, 0.0) }
-                            }
-                        }
                     }
 
                     // Running Artist Text (Seamless physical morph across states)
+                    EdgeFadeMask {
+                        id: artistFadeMask
+                        width: mediaArtistContainer.width
+                        height: mediaArtistContainer.height
+                        leftAmt: Math.max(0.0, Math.min(1.0, (-mediaArtistText.x - 2) / 18))
+                        rightAmt: Math.max(0.0, Math.min(1.0, (mediaArtistText.maxScroll + mediaArtistText.x - 4) / 18))
+                    }
                     Item {
                         id: mediaArtistContainer
                         Layout.fillWidth: true
                         implicitHeight: mediaArtistText.implicitHeight
                         clip: true
+                        layer.enabled: true
+                        layer.smooth: true
+                        layer.effect: MultiEffect { maskEnabled: true; maskSource: artistFadeMask }
                         visible: mediaInfoCol.fullArtist.length > 0
                         // Peek shows the artist under the title too. peekShape keeps it up while the
                         // peek closes, so it fades with the info column instead of snapping off.
@@ -4174,30 +4180,6 @@ Item {
                         // Soft edges instead of a hard cut through a glyph while the label
                         // overflows. The right edge fades out as the text runs out of room to
                         // scroll, the left edge appears once it has scrolled.
-                        Rectangle {
-                            anchors.top: parent.top
-                            anchors.bottom: parent.bottom
-                            anchors.right: parent.right
-                            width: 22
-                            opacity: Math.max(0.0, Math.min(1.0, (mediaArtistText.maxScroll + mediaArtistText.x - 4) / 18))
-                            gradient: Gradient {
-                                orientation: Gradient.Horizontal
-                                GradientStop { position: 0.0; color: Qt.rgba(Services.Theme.bgPure.r, Services.Theme.bgPure.g, Services.Theme.bgPure.b, 0.0) }
-                                GradientStop { position: 1.0; color: Services.Theme.bgPure }
-                            }
-                        }
-                        Rectangle {
-                            anchors.top: parent.top
-                            anchors.bottom: parent.bottom
-                            anchors.left: parent.left
-                            width: 22
-                            opacity: Math.max(0.0, Math.min(1.0, (-mediaArtistText.x - 2) / 18))
-                            gradient: Gradient {
-                                orientation: Gradient.Horizontal
-                                GradientStop { position: 0.0; color: Services.Theme.bgPure }
-                                GradientStop { position: 1.0; color: Qt.rgba(Services.Theme.bgPure.r, Services.Theme.bgPure.g, Services.Theme.bgPure.b, 0.0) }
-                            }
-                        }
                     }
 
                     // Row 2: quick actions under the artist (volume / open player / sleep timer).
@@ -4796,9 +4778,18 @@ Item {
             }
 
             // Title (+ the bullet, which fades out as the artist leaves the line)
+            EdgeFadeMask {
+                id: flightTitleFade
+                width: flightTitleClip.width
+                height: flightTitleClip.height
+                rightAmt: Math.max(0.0, Math.min(1.0, (mediaTitleText.maxScroll - 4) / 18)) * mediaTextFlight.sm(mediaTextFlight.p) * (1.0 - mediaTextFlight.clipOpen)
+            }
             Item {
                 id: flightTitleClip
                 clip: true
+                layer.enabled: true
+                layer.smooth: true
+                layer.effect: MultiEffect { maskEnabled: true; maskSource: flightTitleFade }
                 x: mediaTextFlight.clipMix(mediaTextFlight.mix(34, mediaTextFlight.expTitlePos.x), 0)
                 y: mediaTextFlight.clipMix(mediaTextFlight.mix(mediaTextFlight.collY, mediaTextFlight.expTitlePos.y) - 2, 0)
                 width: mediaTextFlight.clipMix(mediaTextFlight.mix(mediaTextFlight.cw, mediaTitleContainer.width), mediaTextFlight.width)
@@ -4848,26 +4839,23 @@ Item {
                 }
 
                 // Same soft right edge as the real label, fading in as the flight lands.
-                Rectangle {
-                    anchors.top: parent.top
-                    anchors.bottom: parent.bottom
-                    anchors.right: parent.right
-                    width: 22
-                    opacity: Math.max(0.0, Math.min(1.0, (mediaTitleText.maxScroll - 4) / 18)) * mediaTextFlight.sm(mediaTextFlight.p) * (1.0 - mediaTextFlight.clipOpen)
-                    gradient: Gradient {
-                        orientation: Gradient.Horizontal
-                        GradientStop { position: 0.0; color: Qt.rgba(Services.Theme.bgPure.r, Services.Theme.bgPure.g, Services.Theme.bgPure.b, 0.0) }
-                        GradientStop { position: 1.0; color: Services.Theme.bgPure }
-                    }
-                }
             }
 
             // Card-side artist: sits still on its own row and fades/settles in as the flight
             // lands (the pill-side copy above dissolves at the title's end). No travel path means
             // nothing can cross the title in either direction.
+            EdgeFadeMask {
+                id: flightArtistFade
+                width: flightArtistClip.width
+                height: flightArtistClip.height
+                rightAmt: Math.max(0.0, Math.min(1.0, (mediaArtistText.maxScroll - 4) / 18)) * flightArtistClip.fade
+            }
             Item {
                 id: flightArtistClip
                 clip: true
+                layer.enabled: true
+                layer.smooth: true
+                layer.effect: MultiEffect { maskEnabled: true; maskSource: flightArtistFade }
                 readonly property real fade: mediaTextFlight.sm((mediaTextFlight.p - 0.35) / 0.65)
                 x: mediaTextFlight.expArtistPos.x
                 y: mediaTextFlight.expArtistPos.y - 2
@@ -4884,18 +4872,6 @@ Item {
                 }
 
                 // Same soft right edge as the real label.
-                Rectangle {
-                    anchors.top: parent.top
-                    anchors.bottom: parent.bottom
-                    anchors.right: parent.right
-                    width: 22
-                    opacity: Math.max(0.0, Math.min(1.0, (mediaArtistText.maxScroll - 4) / 18)) * flightArtistClip.fade
-                    gradient: Gradient {
-                        orientation: Gradient.Horizontal
-                        GradientStop { position: 0.0; color: Qt.rgba(Services.Theme.bgPure.r, Services.Theme.bgPure.g, Services.Theme.bgPure.b, 0.0) }
-                        GradientStop { position: 1.0; color: Services.Theme.bgPure }
-                    }
-                }
             }
         }
 
@@ -6095,6 +6071,8 @@ Item {
         width: Math.max(0, (rightSatDot.x + 6) - (island.x + island.width - 6))
         gap: rightSatDot.leftMarginValue
         isRight: true
+        fillColor: root.glassFill
+        strokeColor: root.glassBorder
         snapped: rightSatDot.bridgeSnapped || root.expanded || root.lockBlocked
         z: 3
     }
@@ -6107,6 +6085,8 @@ Item {
         width: Math.max(0, (island.x + 6) - (leftSatDot.x + leftSatDot.width - 6))
         gap: leftSatDot.rightMarginValue
         isRight: false
+        fillColor: root.glassFill
+        strokeColor: root.glassBorder
         snapped: leftSatDot.bridgeSnapped || root.expanded || root.lockBlocked
         z: 3
     }
@@ -6124,8 +6104,8 @@ Item {
         implicitWidth: 32
         implicitHeight: 32
         radius: 16
-        color: Services.Theme.bgPure
-        border.color: Services.Theme.borderSubtle
+        color: root.glassFill
+        border.color: root.glassBorder
         border.width: 1
         z: 1
 
@@ -6552,8 +6532,8 @@ Item {
         implicitWidth: 32
         implicitHeight: 32
         radius: 16
-        color: Services.Theme.bgPure
-        border.color: Services.Theme.borderSubtle
+        color: root.glassFill
+        border.color: root.glassBorder
         border.width: 1
         z: 1
 
