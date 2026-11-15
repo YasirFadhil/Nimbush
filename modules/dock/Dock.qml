@@ -82,7 +82,7 @@ Variants {
 
         color: "transparent"
         WlrLayershell.layer: WlrLayer.Top
-        WlrLayershell.namespace: "quickshell:dock"
+        WlrLayershell.namespace: "quickshell:dock" // Hyprland layer rule: blur + ignore_alpha
         WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
 
         // Reserve space for tiled windows only when auto-hide is disabled
@@ -233,6 +233,99 @@ Variants {
             Services.OverlayManager && (Services.OverlayManager.isLocked || Services.OverlayManager.isLockAbsorbing)
         )
 
+        // ── macOS Glass Material Tokens ──────────────────────────────────────
+        // Fills are intentionally low-alpha: the compositor blur does the heavy lifting.
+        // Tint is neutral grey/white (macOS), not blue. Tune alpha by eye per wallpaper.
+        readonly property bool dark: Services.Theme.isDark
+        readonly property color glassFill: dark ? Qt.rgba(0.11, 0.11, 0.12, 0.38) : Qt.rgba(1, 1, 1, 0.30)
+        readonly property color glassBorder: dark ? Qt.rgba(1, 1, 1, 0.18) : Qt.rgba(1, 1, 1, 0.50)
+        readonly property color glassSpecular: dark ? Qt.rgba(1, 1, 1, 0.20) : Qt.rgba(1, 1, 1, 0.65)
+        readonly property color glassDot: dark ? Qt.rgba(1, 1, 1, 0.78) : Qt.rgba(0, 0, 0, 0.60)
+        readonly property color tooltipFill: dark ? Qt.rgba(0.14, 0.14, 0.15, 0.62) : Qt.rgba(1, 1, 1, 0.70)
+        readonly property color tooltipBorder: dark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.10)
+        readonly property color tooltipText: dark ? Qt.rgba(1, 1, 1, 0.92) : Qt.rgba(0, 0, 0, 0.85)
+
+        // ── Launch Bounce: per-app memory + personality ──────────────────────
+        // launchStats remembers how long each app took to open (EMA, this session),
+        // so the bounce tempo follows how fast/slow that app really is.
+        property var launchStats: ({})
+
+        // Pending launches live HERE (appKey -> click timestamp), not on the delegate or on
+        // modelData: delegates get recreated when the dock model refreshes, and
+        // modelData.isLaunching can go stale. Both used to silently kill the bounce.
+        property var launchingSince: ({})
+
+        // Set true, then watch `qs log` for "[dock-bounce]" lines to see what is happening.
+        readonly property bool debugBounce: false
+
+        // The launch bounce is the only "I'm opening it" feedback, so it ignores
+        // Services.Performance.decorativeMotion unless you flip this to true.
+        readonly property bool respectReducedMotion: false
+        function dbg(msg) {
+            if (debugBounce) console.log("[dock-bounce] " + msg)
+        }
+
+        function markLaunching(key) {
+            if (launchingSince[key] !== undefined) return
+            const c = Object.assign({}, launchingSince)
+            c[key] = Date.now()
+            launchingSince = c
+            dbg("launch start: " + key)
+        }
+        function finishLaunch(key, opened) {
+            const since = launchingSince[key]
+            if (since === undefined) return
+            const c = Object.assign({}, launchingSince)
+            delete c[key]
+            launchingSince = c
+            const elapsed = Date.now() - since
+            dbg("launch end: " + key + " opened=" + opened + " after " + elapsed + "ms")
+            // only learn from real launches (ignore timeouts / instant flips)
+            if (opened && elapsed > 80 && elapsed < 9500) recordLaunch(key, elapsed)
+        }
+
+        function launchEstimate(key) {
+            const v = launchStats[key]
+            return v !== undefined ? v : 900   // unknown app: assume "medium"
+        }
+        function recordLaunch(key, ms) {
+            const prev = launchStats[key]
+            const copy = Object.assign({}, launchStats)
+            copy[key] = prev === undefined ? ms : Math.round(prev * 0.5 + ms * 0.5)
+            launchStats = copy
+        }
+
+        // Small seeded PRNG so every app gets a stable, distinct "character"
+        function seededRandom(seed) {
+            let a = seed >>> 0
+            return function() {
+                a = (a + 0x6D2B79F5) >>> 0
+                let t = a
+                t = Math.imul(t ^ (t >>> 15), t | 1)
+                t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
+                return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+            }
+        }
+        function makePersona(key) {
+            let h = 2166136261
+            for (let i = 0; i < key.length; i++) {
+                h ^= key.charCodeAt(i)
+                h = Math.imul(h, 16777619)
+            }
+            const r = seededRandom(h)
+            return {
+                heightScale: 0.80 + r() * 0.45,          // how high it hops
+                periodScale: 0.88 + r() * 0.28,          // how fast it hops
+                skew: 0.80 + r() * 0.45,                 // when the apex happens (floaty vs snappy)
+                cushion: 0.08 + r() * 0.10,              // fraction of a hop spent squashing on landing
+                cushionDepth: 1.5 + r() * 3.0,           // px of landing squash
+                burst: 1 + Math.floor(r() * 3),          // 1-3 hops, then a breath
+                pause: r() * 0.45,                       // breath length (fraction of a hop)
+                settle: r() > 0.4,                       // small final hop after the app opens
+                jitter: 0.04 + r() * 0.06                // per-hop randomness
+            }
+        }
+
         // ── Main Dock Container (Liquid Glass Floating Pill) ─────────────────
         Rectangle {
             id: dockContainer
@@ -302,90 +395,23 @@ Variants {
             width: root.isVertical ? root.dockBarHeight : Math.max(root.dockBarHeight, Math.round(itemsLayout.width + 16))
             radius: Math.min(22, Math.round(root.dockBarHeight * 0.35))
 
-            // macOS Liquid Glass Styling
-            color: Services.Theme.isDark ? Qt.rgba(0.08, 0.08, 0.12, 0.58) : Qt.rgba(0.96, 0.96, 0.98, 0.64)
-            border.color: Services.Theme.isDark
-                ? Qt.rgba(1, 1, 1, root.isHovered ? 0.22 : 0.14)
-                : Qt.rgba(0, 0, 0, root.isHovered ? 0.16 : 0.10)
+            // macOS Dock material: neutral translucent fill. The backdrop blur itself
+            // comes from the compositor (layer rule on "quickshell:dock").
+            color: root.glassFill
+            border.color: root.glassBorder
             border.width: 1
-            Behavior on border.color { ColorAnimation { duration: 180 } }
 
-            // Inner subtle border rim
+            // The only highlight the real dock has: one faint specular hairline on top
             Rectangle {
-                anchors.fill: parent
-                anchors.margins: 1
-                radius: parent.radius - 1
-                color: "transparent"
-                border.color: Qt.rgba(1, 1, 1, Services.Theme.isDark ? 0.04 : 0.15)
-                border.width: 1
-            }
-
-
-            // ── Lightweight Liquid Glass Surface ───────────────────
-            Item {
-                id: dockGlassHighlight
-                anchors.fill: parent
+                anchors.top: parent.top
+                anchors.topMargin: 1
+                anchors.horizontalCenter: parent.horizontalCenter
+                width: Math.max(0, parent.width - parent.radius * 1.4)
+                height: 1
+                color: root.glassSpecular
                 z: 0
-
-                // Top reflection: brighter at the upper edge.
-                Rectangle {
-                    anchors.fill: parent
-                    radius: dockContainer.radius
-                    clip: true
-                    color: "transparent"
-
-                    gradient: Gradient {
-                        GradientStop {
-                            position: 0.0
-                            color: Services.Theme.isDark
-                                ? Qt.rgba(1, 1, 1, root.isHovered ? 0.20 : 0.14)
-                                : Qt.rgba(1, 1, 1, root.isHovered ? 0.52 : 0.38)
-                        }
-                        GradientStop {
-                            position: 0.28
-                            color: Services.Theme.isDark
-                                ? Qt.rgba(1, 1, 1, 0.065)
-                                : Qt.rgba(1, 1, 1, 0.18)
-                        }
-                        GradientStop {
-                            position: 0.62
-                            color: "transparent"
-                        }
-                        GradientStop {
-                            position: 1.0
-                            color: Services.Theme.isDark
-                                ? Qt.rgba(0, 0, 0, 0.20)
-                                : Qt.rgba(0, 0, 0, 0.075)
-                        }
-                    }
-                }
-
-                // Soft lower inner shade.
-                Rectangle {
-                    anchors {
-                        bottom: parent.bottom
-                        left: parent.left
-                        right: parent.right
-                        margins: 2
-                    }
-                    height: Math.max(5, parent.height * 0.16)
-                    radius: dockContainer.radius - 2
-                    color: "transparent"
-
-                    gradient: Gradient {
-                        GradientStop {
-                            position: 0.0
-                            color: "transparent"
-                        }
-                        GradientStop {
-                            position: 1.0
-                            color: Services.Theme.isDark
-                                ? Qt.rgba(0.08, 0.08, 0.12, 0.32)
-                                : Qt.rgba(0.96, 0.96, 0.98, 0.38)
-                        }
-                    }
-                }
             }
+
 
 
             // ── Unified Dock Tracker MouseArea ───────────────────────────────
@@ -467,18 +493,7 @@ Variants {
                         anchors.centerIn: parent
                         width: root.isVertical ? (root.iconSize * 0.55) : 1
                         height: root.isVertical ? 1 : (root.iconSize * 0.55)
-                        color: Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.22) : Qt.rgba(0, 0, 0, 0.18)
-
-                        // Subtle shadow alongside hairline
-                        Rectangle {
-                            anchors.top: root.isVertical ? parent.bottom : parent.top
-                            anchors.bottom: root.isVertical ? undefined : parent.bottom
-                            anchors.left: root.isVertical ? parent.left : parent.right
-                            anchors.right: root.isVertical ? parent.right : undefined
-                            width: root.isVertical ? parent.width : 1
-                            height: root.isVertical ? 1 : parent.height
-                            color: Services.Theme.isDark ? Qt.rgba(0, 0, 0, 0.3) : Qt.rgba(1, 1, 1, 0.45)
-                        }
+                        color: root.dark ? Qt.rgba(1, 1, 1, 0.24) : Qt.rgba(0, 0, 0, 0.20)
                     }
                 }
 
@@ -560,43 +575,220 @@ Variants {
                 }
 
                 // ── App Launch State Tracking ────────────────────────────────
-                property bool isLaunching: Boolean(modelData && modelData.isLaunching)
+                // Level-triggered: the delegate always reconciles itself against
+                // root.launchingSince, so a missed signal, a recreated delegate or a stale
+                // modelData flag can no longer leave the bounce stuck "off".
+                readonly property bool keyed: root.launchingSince[appKey] !== undefined
+                readonly property bool isLaunching: keyed
+                readonly property bool runningNow: Boolean(modelData && (modelData.isRunning || modelData.windowCount > 0))
 
-                Timer {
-                    id: launchTimeoutTimer
-                    interval: 10000 // 10s maximum safety limit
-                    repeat: false
-                    onTriggered: {
-                        iconDelegate.isLaunching = false
-                        if (iconDelegate.modelData) iconDelegate.modelData.isLaunching = false
-                    }
-                }
+                onKeyedChanged: reconcile()
+                onRunningNowChanged: reconcile()
+                Component.onCompleted: reconcile()
 
                 function startLaunching() {
-                    iconDelegate.isLaunching = true
-                    if (iconDelegate.modelData) iconDelegate.modelData.isLaunching = true
-                    launchTimeoutTimer.restart()
+                    root.markLaunching(appKey)
+                    if (modelData) modelData.isLaunching = true   // keep other consumers (launcher etc.) informed
+                    reconcile()
                 }
 
+                function reconcile() {
+                    // 1. A pending launch ends when the app shows up, or after 10s at most
+                    const since = root.launchingSince[appKey]
+                    if (since !== undefined) {
+                        if (runningNow) root.finishLaunch(appKey, true)
+                        else if (Date.now() - since > 10000) root.finishLaunch(appKey, false)
+                    }
+                    const want = root.launchingSince[appKey] !== undefined
+
+                    // 2. Bring the bounce in line with that state
+                    if (want && !launchActive) beginLaunchBounce()
+                    else if (!want && launchActive) endLaunchBounce()
+
+                    // 3. Never leave a stale "launching" flag on the model
+                    if (!want && modelData && modelData.isLaunching) modelData.isLaunching = false
+
+                    // 4. Engine liveness: revive a stalled engine, reset a stuck hop
+                    if (bounceState !== "idle") {
+                        if (stateT > 5) {
+                            root.dbg("stuck hop reset: " + appKey)
+                            stopEngine()
+                        } else if (!bounceEngine.running && motionAllowed) {
+                            root.dbg("engine revived: " + appKey)
+                            bounceEngine.running = true
+                        }
+                    }
+                }
+
+                // Self-heal tick while anything bounce-related is pending or in flight
+                Timer {
+                    interval: 250
+                    repeat: true
+                    running: iconDelegate.keyed || iconDelegate.launchActive || iconDelegate.bounceState !== "idle"
+                    onTriggered: iconDelegate.reconcile()
+                }
+
+                // Launches started elsewhere (app launcher etc.) flip modelData.isLaunching
                 Connections {
                     target: iconDelegate.modelData || null
-                    function onIsRunningChanged() {
-                        if (iconDelegate.modelData && iconDelegate.modelData.isRunning) {
-                            launchTimeoutTimer.stop()
-                            iconDelegate.isLaunching = false
-                        }
-                    }
-                    function onWindowCountChanged() {
-                        if (iconDelegate.modelData && iconDelegate.modelData.windowCount > 0) {
-                            launchTimeoutTimer.stop()
-                            iconDelegate.isLaunching = false
-                        }
-                    }
                     function onIsLaunchingChanged() {
-                        iconDelegate.isLaunching = Boolean(iconDelegate.modelData && iconDelegate.modelData.isLaunching)
-                        if (iconDelegate.isLaunching) launchTimeoutTimer.restart()
-                        else launchTimeoutTimer.stop()
+                        if (!iconDelegate.modelData) return
+                        if (iconDelegate.modelData.isLaunching) {
+                            root.markLaunching(iconDelegate.appKey)
+                        } else if (iconDelegate.keyed) {
+                            root.finishLaunch(iconDelegate.appKey, iconDelegate.runningNow)
+                        }
                     }
+                }
+
+                // ── Launch / Click Bounce Engine ─────────────────────────────
+                // A frame-driven hop simulation instead of fixed keyframes:
+                //  - tempo follows how long this app usually takes to open (root.launchStats)
+                //  - every app has its own hop height / timing / rhythm (root.makePersona)
+                //  - each hop gets a little random jitter so it never looks mechanical
+                //  - it always plays at least minHops, and finishes the current hop
+                //    gracefully when the app opens (no abrupt cut)
+                readonly property string appKey: modelData ? String(modelData.desktopId || modelData.name || ("slot" + index)) : ("slot" + index)
+                readonly property var persona: root.makePersona(appKey)
+                readonly property real liftDir: root.isBottom ? -1 : (root.isLeft ? 1 : -1)
+                readonly property real peakBase: Math.min(root.iconSize * 0.42, 26)
+                readonly property bool motionAllowed: !root.respectReducedMotion || (Services.Performance ? Services.Performance.decorativeMotion : true)
+
+                property real bounceOffset: 0          // px along the lift axis (sign already applied)
+                property string bounceState: "idle"    // "idle" | "hop" | "pause"
+                property real stateT: 0
+                property real hopDur: 0.4
+                property real hopH: 20
+                property real pauseDur: 0
+                property real basePeriod: 0.4
+                property real ampMul: 1.0
+                property int hopsDone: 0
+                property int burstPos: 0
+                property int minHops: 2
+                property bool launchActive: false
+                property bool settleQueued: false
+
+                // Height above rest (px, positive = away from the dock edge) at hop progress u in [0,1]
+                function hopLift(u) {
+                    const air = 1 - persona.cushion
+                    if (u < air) {
+                        const v = Math.pow(u / air, persona.skew)
+                        return hopH * 4 * v * (1 - v)
+                    }
+                    const w = (u - air) / persona.cushion
+                    return -persona.cushionDepth * Math.sin(Math.PI * w)
+                }
+
+                function beginHop() {
+                    const p = persona
+                    const j = 1 + (Math.random() * 2 - 1) * p.jitter
+                    hopDur = Math.max(0.18, basePeriod * p.periodScale * j)
+                    hopH = Math.min(30, peakBase * p.heightScale * ampMul * (1 + (Math.random() * 2 - 1) * p.jitter * 1.5))
+                    bounceState = "hop"
+                    stateT = 0
+                }
+
+                function runEngine() {
+                    if (!motionAllowed) {
+                        root.dbg("blocked by Services.Performance.decorativeMotion=false")
+                        bounceState = "idle"
+                        bounceOffset = 0
+                        return
+                    }
+                    bounceEngine.running = true
+                }
+
+                function stopEngine() {
+                    bounceEngine.running = false
+                    bounceState = "idle"
+                    bounceOffset = 0
+                }
+
+                // Decide what follows a finished hop / pause
+                function advance() {
+                    if (launchActive || hopsDone < minHops) {
+                        beginHop()
+                    } else if (settleQueued) {
+                        settleQueued = false
+                        ampMul = 0.35
+                        beginHop()
+                    } else {
+                        stopEngine()
+                    }
+                }
+
+                function endHop() {
+                    hopsDone++
+                    burstPos++
+                    bounceOffset = 0
+                    if ((launchActive || hopsDone < minHops) && burstPos >= persona.burst) {
+                        burstPos = 0
+                        bounceState = "pause"
+                        stateT = 0
+                        pauseDur = hopDur * persona.pause * (0.8 + Math.random() * 0.4)
+                    } else {
+                        advance()
+                    }
+                }
+
+                function stepBounce(dt) {
+                    if (!(dt > 0)) dt = 0.016          // guard against NaN / 0 frame time
+                    if (!isFinite(bounceOffset)) bounceOffset = 0
+                    if (bounceState === "hop") {
+                        stateT += dt
+                        const u = Math.min(1, stateT / hopDur)
+                        bounceOffset = liftDir * hopLift(u)
+                        if (u >= 1) endHop()
+                    } else if (bounceState === "pause") {
+                        stateT += dt
+                        if (stateT >= pauseDur) advance()
+                    } else {
+                        bounceEngine.running = false
+                    }
+                }
+
+                function beginLaunchBounce() {
+                    if (launchActive) return
+                    launchActive = true
+                    const est = root.launchEstimate(appKey)
+                    root.dbg("bounce begin: " + appKey + " est=" + est + "ms motionAllowed=" + motionAllowed)
+                    // fast app -> brisk 0.30s hops, slow app -> relaxed 0.52s hops
+                    basePeriod = 0.30 + 0.22 * Math.max(0, Math.min(1, (est - 250) / 1750))
+                    ampMul = 1.0
+                    hopsDone = 0
+                    burstPos = 0
+                    minHops = 2
+                    settleQueued = persona.settle
+                    if (bounceState === "idle") {
+                        beginHop()
+                        runEngine()
+                    }
+                }
+
+                function endLaunchBounce() {
+                    if (!launchActive) return
+                    launchActive = false
+                    root.dbg("bounce end: " + appKey)
+                }
+
+                // Small hop for clicking an app that is already running
+                function bounceOnce() {
+                    if (launchActive) return
+                    if (bounceState !== "idle" && bounceEngine.running) return   // a hop is already in flight
+                    basePeriod = 0.28
+                    ampMul = 0.70
+                    hopsDone = 0
+                    burstPos = 0
+                    minHops = 1
+                    settleQueued = false
+                    beginHop()
+                    runEngine()
+                }
+
+                FrameAnimation {
+                    id: bounceEngine
+                    running: false
+                    onTriggered: iconDelegate.stepBounce(Math.min(0.05, frameTime))
                 }
 
                 // ── Hover Detection for Tooltip ──────────────────────────────
@@ -627,8 +819,8 @@ Variants {
                     transform: [
                         Translate {
                             id: bounceTranslate
-                            x: 0
-                            y: 0
+                            x: root.isVertical ? iconDelegate.bounceOffset : 0
+                            y: root.isVertical ? 0 : iconDelegate.bounceOffset
                         },
                         Translate {
                             id: dragTranslate
@@ -644,102 +836,21 @@ Variants {
                         }
                     ]
 
-                    // Continuous macOS-style Launch Bounce (repeats until app window opens)
-                    SequentialAnimation {
-                        id: launchBounceAnim
-                        loops: Animation.Infinite
-                        running: iconDelegate.isLaunching && (Services.Performance ? Services.Performance.decorativeMotion : true)
-
-                        // 1. Leap up
-                        NumberAnimation {
-                            target: bounceTranslate
-                            property: root.isVertical ? "x" : "y"
-                            to: root.isBottom ? -20 : (root.isLeft ? 20 : -20)
-                            duration: 220
-                            easing.type: Easing.OutQuad
-                        }
-
-                        // 2. Drop down
-                        NumberAnimation {
-                            target: bounceTranslate
-                            property: root.isVertical ? "x" : "y"
-                            to: 0
-                            duration: 200
-                            easing.type: Easing.InQuad
-                        }
-
-                        // 3. Impact cushion / squash
-                        NumberAnimation {
-                            target: bounceTranslate
-                            property: root.isVertical ? "x" : "y"
-                            to: root.isBottom ? 2 : (root.isLeft ? -2 : 2)
-                            duration: 60
-                            easing.type: Easing.OutQuad
-                        }
-
-                        // 4. Return to rest
-                        NumberAnimation {
-                            target: bounceTranslate
-                            property: root.isVertical ? "x" : "y"
-                            to: 0
-                            duration: 70
-                            easing.type: Easing.OutCubic
-                        }
-
-                        // Pause
-                        PauseAnimation {
-                            duration: 110
-                        }
-
-                        onStopped: {
-                            settleAnimation.restart()
-                        }
-                    }
-
-                    // Graceful landing animation when launch completes
-                    NumberAnimation {
-                        id: settleAnimation
-                        target: bounceTranslate
-                        properties: "x,y"
-                        to: 0
-                        duration: 140
-                        easing.type: Easing.OutCubic
-                    }
-
-                    // Tactile macOS Bounce on Window Focus / Click (Already running)
-                    SequentialAnimation {
-                        id: clickBounce
-                        NumberAnimation {
-                            target: bounceTranslate
-                            property: root.isVertical ? "x" : "y"
-                            to: root.isBottom ? -8 : (root.isLeft ? 8 : -8)
-                            duration: 70
-                            easing.type: Easing.OutQuad
-                        }
-                        NumberAnimation {
-                            target: bounceTranslate
-                            property: root.isVertical ? "x" : "y"
-                            to: 0
-                            duration: 90
-                            easing.type: Easing.OutBounce
-                        }
-                    }
-
                     // Fallback Badge (Letter)
                     Rectangle {
                         anchors.fill: parent
                         radius: Math.round(root.iconSize * 0.24)
-                        color: (iconDelegate.modelData && iconDelegate.modelData.isActive)
-                            ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.25)
-                            : (iconDelegate.isDirectlyHovered ? Services.Theme.bgHover : Qt.rgba(255, 255, 255, 0.08))
-                        border.color: (iconDelegate.modelData && iconDelegate.modelData.isActive) ? Services.Theme.accent : "transparent"
-                        border.width: (iconDelegate.modelData && iconDelegate.modelData.isActive) ? 1 : 0
+                        color: root.dark
+                            ? Qt.rgba(1, 1, 1, iconDelegate.isDirectlyHovered ? 0.20 : 0.12)
+                            : Qt.rgba(0, 0, 0, iconDelegate.isDirectlyHovered ? 0.14 : 0.08)
+                        border.color: Qt.rgba(1, 1, 1, root.dark ? 0.14 : 0.40)
+                        border.width: 1
                         visible: !appImg.source || appImg.status !== Image.Ready || !appImg.visible
 
                         Text {
                             anchors.centerIn: parent
                             text: (iconDelegate.modelData ? (iconDelegate.modelData.name || "?") : "?").charAt(0).toUpperCase()
-                            color: (iconDelegate.modelData && iconDelegate.modelData.isActive) ? Services.Theme.accent : Services.Theme.textPrimary
+                            color: root.tooltipText
                             font.pixelSize: Math.round(root.iconSize * 0.45)
                             font.bold: true
                         }
@@ -854,23 +965,13 @@ Variants {
                         return 2 // "glow"
                     }
 
-                    color: isActiveApp ? Services.Theme.accent : Services.Theme.borderHighlight
+                    // macOS: neutral dot, same for every running app (no accent, no halo)
+                    color: root.glassDot
                     opacity: 1.0
 
                     Behavior on width { NumberAnimation { duration: 150 } }
                     Behavior on height { NumberAnimation { duration: 150 } }
                     Behavior on color { ColorAnimation { duration: 150 } }
-
-                    // Soft halo glow behind active indicator
-                    Rectangle {
-                        anchors.centerIn: parent
-                        width: parent.width + (runIndicator.style === "glow" ? 8 : 6)
-                        height: parent.height + (runIndicator.style === "glow" ? 6 : 6)
-                        radius: parent.radius + 2
-                        visible: runIndicator.isActiveApp && runIndicator.style === "glow"
-                        color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.5)
-                        z: -1
-                    }
                 }
 
                 // ── Tooltip Floating Beside / Above Icon ─────────────────────
@@ -895,9 +996,9 @@ Variants {
 
                     implicitWidth: tooltipText.implicitWidth + 16
                     implicitHeight: tooltipText.implicitHeight + 8
-                    radius: 8
-                    color: Services.Theme.bgElevated
-                    border.color: Services.Theme.borderHighlight
+                    radius: 7
+                    color: root.tooltipFill
+                    border.color: root.tooltipBorder
                     border.width: 1
 
                     Text {
@@ -906,7 +1007,7 @@ Variants {
                         text: (iconDelegate.modelData ? iconDelegate.modelData.name : "") + ((iconDelegate.modelData && iconDelegate.modelData.windowCount > 1) ? " (" + iconDelegate.modelData.windowCount + ")" : "")
                         font.pixelSize: Services.Theme.fontSizeSm
                         font.weight: Font.Medium
-                        color: Services.Theme.textPrimary
+                        color: root.tooltipText
                     }
                 }
 
@@ -992,11 +1093,16 @@ Variants {
                                 Services.DockService.openMenu(iconDelegate.modelData, iconScreenX, iconScreenY)
                             }
                         } else {
+                            root.dbg("click " + iconDelegate.appKey
+                                + " bounceOnClick=" + root.bounceOnClick
+                                + " isRunning=" + (iconDelegate.modelData ? iconDelegate.modelData.isRunning : "n/a")
+                                + " windowCount=" + (iconDelegate.modelData ? iconDelegate.modelData.windowCount : "n/a")
+                                + " motionAllowed=" + iconDelegate.motionAllowed)
                             if (root.bounceOnClick) {
                                 if (iconDelegate.modelData && !iconDelegate.modelData.isRunning) {
                                     iconDelegate.startLaunching()
                                 } else {
-                                    clickBounce.restart()
+                                    iconDelegate.bounceOnce()
                                 }
                             }
                             if (Services.DockService) {
