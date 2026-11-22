@@ -64,8 +64,8 @@ PanelWindow {
             radius: 12
             // macOS menu material (DockMenu.qml)
             readonly property bool dark: Services.Theme.isDark
-            color: dark ? Qt.rgba(0.14, 0.14, 0.15, 0.58) : Qt.rgba(1, 1, 1, 0.62)
-            border.color: dark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.12)
+            color: dark ? Qt.rgba(0.14, 0.14, 0.15, 0.80) : Qt.rgba(1, 1, 1, 0.88)
+            border.color: dark ? Qt.rgba(1, 1, 1, 0.22) : Qt.rgba(0, 0, 0, 0.14)
             border.width: 1
             clip: true
 

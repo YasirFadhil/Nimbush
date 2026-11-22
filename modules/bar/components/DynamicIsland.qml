@@ -20,10 +20,10 @@ Item {
     // compositor (layer rule on the bar namespace). Alpha is higher than the dock's 0.38
     // because the island carries text and has to stay legible without blur.
     readonly property bool glassDark: Services.Theme.isDark
-    readonly property color glassFill: glassDark ? Qt.rgba(0.11, 0.11, 0.12, 0.80) : Qt.rgba(1, 1, 1, 0.72)
-    readonly property color glassBorder: glassDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(1, 1, 1, 0.50)
-    readonly property color glassBorderStrong: glassDark ? Qt.rgba(1, 1, 1, 0.22) : Qt.rgba(1, 1, 1, 0.70)
-    readonly property color glassSpecular: glassDark ? Qt.rgba(1, 1, 1, 0.20) : Qt.rgba(1, 1, 1, 0.65)
+    readonly property color glassFill: glassDark ? Qt.rgba(0.11, 0.11, 0.12, 0.88) : Qt.rgba(1, 1, 1, 0.82)
+    readonly property color glassBorder: glassDark ? Qt.rgba(1, 1, 1, 0.22) : Qt.rgba(1, 1, 1, 0.65)
+    readonly property color glassBorderStrong: glassDark ? Qt.rgba(1, 1, 1, 0.34) : Qt.rgba(1, 1, 1, 0.80)
+    readonly property color glassSpecular: glassDark ? Qt.rgba(1, 1, 1, 0.28) : Qt.rgba(1, 1, 1, 0.75)
 
     // ----- Public API & State -----
     property bool pinned: false
@@ -1552,7 +1552,7 @@ Item {
             root.lastAudioMuted = Services.Audio.muted
         }
         if (Services.Power) {
-            root.lastChargingState = Services.Power.charging
+            root.lastChargingState = Services.Power.pluggedIn
         }
         if (Services.PowerProfile) {
             root.lastSaverEnabled = Services.PowerProfile.saverEnabled
@@ -1635,8 +1635,8 @@ Item {
 
     Connections {
         target: Services.Power
-        function onChargingChanged() {
-            const isCharging = Services.Power.charging
+        function onPluggedInChanged() {
+            const isCharging = Services.Power.pluggedIn
             if (!root.hudReady || !Services.Power.ready) {
                 root.lastChargingState = isCharging
                 return
@@ -2503,7 +2503,7 @@ Item {
         width: root.expanded ? root.calculatedExpandedWidth : root.calculatedCollapsedWidth
         height: root.expanded ? root.calculatedExpandedHeight : root.collapsedHeight
 
-        readonly property bool isCapsuleShape: !root.expanded || (!root.notifActive && (root.sysHudActive || root.isMediaPeek))
+        readonly property bool isCapsuleShape: !root.expanded || (!root.notifActive && (root.slot0Activity === "syshud" || root.isMediaPeek))
         // Animate toward the *final* capsule radius instead of deriving it from
         // the live animated height. A live height/2 binding turns the whole card
         // into an oval as soon as collapse starts.

@@ -3998,6 +3998,38 @@ Item {
                 onWheel: (event) => { root.adjustMediaVolume(event.angleDelta.y > 0 ? 0.05 : -0.05) }
             }
 
+            // "Player" button shown in lyrics mode, top-right of the header. It sits on mediaView
+            // (not in the header row) so it never adds layout spacing outside lyrics mode.
+            Item {
+                id: lyricsPlayerButton
+                z: 5
+                width: 42
+                height: 18
+                anchors.right: parent.right
+                y: Math.max(0, (mediaMainColumn.targetHeaderHeight - height) / 2)
+                // 0 = card, 1 = lyrics. Same curve/duration as the header + cover resize.
+                property real lyricsT: (root.mediaLyricsVisible && !mediaView.peekShape) ? 1.0 : 0.0
+                Behavior on lyricsT { NumberAnimation { duration: root.mediaFlightMs; easing.type: Easing.InOutSine } }
+                visible: lyricsT > 0.01
+                opacity: mediaInfoCol.opacity * lyricsT * lyricsT
+
+                Text {
+                    anchors.fill: parent
+                    verticalAlignment: Text.AlignVCenter
+                    horizontalAlignment: Text.AlignRight
+                    text: "Player"
+                    color: Services.Theme.accent
+                    font.pixelSize: 10
+                    font.bold: true
+                }
+                MouseArea {
+                    anchors.fill: parent
+                    enabled: root.mediaLyricsVisible
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: root.mediaLyricsVisible = false
+                }
+            }
+
             // Row 1: Track Art (left) + Info column (title, artist, progress, controls) + peek visualizer
             ColumnLayout {
                 id: mediaMainColumn
@@ -4279,6 +4311,8 @@ Item {
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     Layout.alignment: Qt.AlignVCenter
+                    // Room for the "Player" button (lyricsPlayerButton) while lyrics are open.
+                    Layout.rightMargin: 50 * lyricsPlayerButton.lyricsT
                     // Preserve title/artist geometry through the closing flight.
                     // The whole media layer is hidden after the handoff, so it does
                     // not need to collapse its internal spacing early.
@@ -4351,14 +4385,11 @@ Item {
                     Item {
                         id: mediaTitleContainer
                         Layout.fillWidth: true
-                        visible: !root.mediaLyricsVisible || opacity > 0.01
                         implicitHeight: mediaTitleText.implicitHeight
-                        Layout.maximumHeight: root.mediaLyricsVisible ? 0 : implicitHeight
-                        Behavior on Layout.maximumHeight {
-                            NumberAnimation { duration: 220; easing.type: Easing.InOutQuad }
-                        }
                         clip: true
-                        opacity: root.mediaLyricsVisible ? 0.0 : (root.mediaFlightActive ? 0.0 : 1.0)
+                        // Same label in every mode (card, lyrics, peek): lyrics mode only shrinks it
+                        // and moves the Player button in, it no longer swaps in a duplicate label.
+                        opacity: root.mediaFlightActive ? 0.0 : 1.0
                         Behavior on opacity {
                             enabled: !root.mediaTransitionActive && !root.mediaFlightEnabled
                             NumberAnimation { duration: 200; easing.type: Easing.InOutQuad }
@@ -4371,7 +4402,7 @@ Item {
                             id: mediaTitleText
                             text: mediaInfoCol.fullTitle
                             color: Services.Theme.textPrimary
-                            font.pixelSize: (root.isMediaPeek || (root.mediaTransitionActive && root.mediaWasPeek)) ? 12 : 14
+                            font.pixelSize: (root.isMediaPeek || (root.mediaTransitionActive && root.mediaWasPeek) || root.mediaLyricsVisible) ? 12 : 14
                             font.bold: true
                             width: parent.width
                             readonly property real maxScroll: Math.max(0, implicitWidth - parent.width + 8)
@@ -4396,21 +4427,15 @@ Item {
                     Item {
                         id: mediaArtistContainer
                         Layout.fillWidth: true
-                        visible: (!root.mediaLyricsVisible || opacity > 0.01) && mediaInfoCol.fullArtist.length > 0
+                        visible: mediaInfoCol.fullArtist.length > 0
                         implicitHeight: mediaArtistText.implicitHeight
-                        Layout.maximumHeight: root.mediaLyricsVisible ? 0 : implicitHeight
-                        Behavior on Layout.maximumHeight {
-                            NumberAnimation { duration: 220; easing.type: Easing.InOutQuad }
-                        }
                         clip: true
                         layer.enabled: true
                         layer.smooth: true
                         layer.effect: MultiEffect { maskEnabled: true; maskSource: artistFadeMask }
                         // Peek shows the artist under the title too. peekShape keeps it up while the
                         // peek closes, so it fades with the info column instead of snapping off.
-                        // Also fade out when lyrics are shown.
-                        opacity: root.mediaLyricsVisible ? 0.0
-                            : ((root.expanded || mediaView.peekShape) && !root.mediaFlightActive ? 1.0 : 0.0)
+                        opacity: ((root.expanded || mediaView.peekShape) && !root.mediaFlightActive) ? 1.0 : 0.0
                         Behavior on opacity {
                             // Off during the media transition: the flight overlay hands over
                             // to this label in one frame, so it must not fade in on its own.
@@ -4422,7 +4447,7 @@ Item {
                             id: mediaArtistText
                             text: mediaInfoCol.fullArtist
                             color: Services.Theme.textSecondary
-                            font.pixelSize: (root.isMediaPeek || (root.mediaTransitionActive && root.mediaWasPeek)) ? 10 : 11
+                            font.pixelSize: (root.isMediaPeek || (root.mediaTransitionActive && root.mediaWasPeek) || root.mediaLyricsVisible) ? 10 : 11
                             width: parent.width
                             readonly property real maxScroll: Math.max(0, implicitWidth - parent.width + 8)
                             x: (maxScroll > 0 && !mediaTextSwitchAnim.running && !root.mediaTransitionActive) ? -maxScroll * root.globalMediaMarqueeRatio : 0
@@ -4435,79 +4460,6 @@ Item {
                         // scroll, the left edge appears once it has scrolled.
                     }
 
-                    // Lyrics mode gets a dedicated lane beside the artwork.
-                    // The ListView keeps the active line centred and scrolls smoothly;
-                    // it does not swap three Text objects with a fade timer.
-                    ColumnLayout {
-                        id: lyricsModeColumn
-                        Layout.fillWidth: true
-                        Layout.fillHeight: true
-                        Layout.preferredHeight: root.mediaLyricsVisible ? 34 : 0
-                        Layout.minimumHeight: 0
-                        Layout.alignment: Qt.AlignTop
-                        // Keep in tree while fading out so the layout slot collapses smoothly
-                        visible: (root.mediaLyricsVisible || opacity > 0.01) && !mediaView.peekShape
-                        opacity: (root.mediaLyricsVisible && !mediaView.peekShape) ? 1.0 : 0.0
-                        Behavior on opacity {
-                            NumberAnimation { duration: 220; easing.type: Easing.InOutQuad }
-                        }
-                        spacing: 4
-
-                        RowLayout {
-                            Layout.fillWidth: true
-                            Layout.fillHeight: true
-                            spacing: 8
-
-                            ColumnLayout {
-                                Layout.fillWidth: true
-                                Layout.minimumWidth: 0
-                                Layout.alignment: Qt.AlignVCenter
-                                spacing: 1
-
-                                Text {
-                                    Layout.fillWidth: true
-                                    text: mediaInfoCol.fullTitle
-                                    color: Services.Theme.textPrimary
-                                    font.pixelSize: 12
-                                    font.bold: true
-                                    elide: Text.ElideRight
-                                }
-                                Text {
-                                    Layout.fillWidth: true
-                                    text: mediaInfoCol.fullArtist
-                                    color: Services.Theme.textSecondary
-                                    font.pixelSize: 10
-                                    elide: Text.ElideRight
-                                }
-                            }
-
-                            Item {
-                                id: lyricsBackButton
-                                Layout.preferredWidth: 42
-                                Layout.minimumWidth: 42
-                                Layout.preferredHeight: 18
-                                Layout.minimumHeight: 18
-                                Layout.alignment: Qt.AlignVCenter
-
-                                Text {
-                                    anchors.fill: parent
-                                    verticalAlignment: Text.AlignVCenter
-                                    horizontalAlignment: Text.AlignRight
-                                    text: "Player"
-                                    color: Services.Theme.accent
-                                    font.pixelSize: 10
-                                    font.bold: true
-                                }
-
-                                MouseArea {
-                                    anchors.fill: parent
-                                    cursorShape: Qt.PointingHandCursor
-                                    onClicked: root.mediaLyricsVisible = false
-                                }
-                            }
-                        }
-                    }
-
                     // Row 2: quick actions under the artist (volume / open player / sleep timer).
                     // The cover block is 60px tall but title + artist only use ~32px, so this costs no height.
                     Row {
@@ -4515,6 +4467,14 @@ Item {
                         Layout.topMargin: (!mediaView.peekShape && root.activePlayer !== null && !root.mediaLyricsVisible) ? 3 : 0
                         // Row is a positioner: its implicitHeight is read-only, so size it through the layout.
                         Layout.preferredHeight: (!mediaView.peekShape && root.activePlayer !== null && !root.mediaLyricsVisible) ? 20 : 0
+                        Behavior on Layout.preferredHeight {
+                            enabled: !root.mediaTransitionActive
+                            NumberAnimation { duration: root.mediaFlightMs; easing.type: Easing.InOutSine }
+                        }
+                        Behavior on Layout.topMargin {
+                            enabled: !root.mediaTransitionActive
+                            NumberAnimation { duration: root.mediaFlightMs; easing.type: Easing.InOutSine }
+                        }
                         clip: true
                         visible: (!mediaView.peekShape && root.activePlayer !== null && !root.mediaLyricsVisible) || opacity > 0.01
                         opacity: (!root.isMediaPeek && root.expanded && !root.mediaLyricsVisible) ? 1.0 : 0.0
@@ -5268,7 +5228,7 @@ Item {
                     // re-laying out and re-rasterising glyphs on every step (the visible
                     // "pop"). Lay out once at the largest size and scale smoothly instead.
                     font.pixelSize: 14
-                    scale: mediaTextFlight.mix(11 / 14, 1.0)
+                    scale: mediaTextFlight.mix(11 / 14, mediaTitleText.font.pixelSize / 14)
                     transformOrigin: Item.TopLeft
                     x: mediaTextFlight.mix(mediaTextFlight.collX, mediaTextFlight.expTitlePos.x) - flightTitleClip.x
                     y: mediaTextFlight.mix(mediaTextFlight.collY, mediaTextFlight.expTitlePos.y) - flightTitleClip.y
@@ -5329,7 +5289,7 @@ Item {
                 Text {
                     text: mediaInfoCol.fullArtist
                     color: Services.Theme.textSecondary
-                    font.pixelSize: 11
+                    font.pixelSize: mediaArtistText.font.pixelSize
                     x: 0
                     y: 2 + 5 * (1.0 - flightArtistClip.fade)
                     opacity: flightArtistClip.fade

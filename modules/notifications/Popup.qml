@@ -164,9 +164,10 @@ PanelWindow {
             width: popupListView.width
             implicitHeight: cardAllowed ? (cardContent.implicitHeight + 18) : 0
             height: isDismissing ? lockedHeight : ((implicitHeight > 0) ? implicitHeight : lockedHeight)
-            radius: Services.Theme.radiusMd
-            color: Services.Theme.surfaced
-            border.color: card.isCritical ? Services.Theme.danger : Services.Theme.border
+            radius: 16
+            // macOS menu material (DockMenu.qml); blur comes from the compositor
+            color: Services.Theme.isDark ? Qt.rgba(0.14, 0.14, 0.15, 0.62) : Qt.rgba(1, 1, 1, 0.66)
+            border.color: card.isCritical ? Services.Theme.danger : (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.12))
             border.width: 1
 
             transform: Translate {
@@ -280,15 +281,6 @@ PanelWindow {
                 acceptedButtons: Qt.NoButton
             }
 
-            // Subtle glow
-            Rectangle {
-                anchors.fill: parent
-                radius: parent.radius
-                color: "transparent"
-                border.color: Qt.rgba(1, 1, 1, Services.Theme.isDark ? 0.08 : 0.2)
-                border.width: 1
-            }
-
             // Left accent bar
             Rectangle {
                 visible: card.isCritical
@@ -317,8 +309,8 @@ PanelWindow {
                         Rectangle {
                             anchors.fill: parent
                             radius: 5
-                            color: Services.Theme.bgHover
-                            border.color: Services.Theme.border
+                            color: (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.10))
+                            border.color: (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.12))
                             border.width: 1
                             visible: popIcon.status !== Image.Ready
 
@@ -372,7 +364,7 @@ PanelWindow {
                         implicitHeight: 15
                         radius: 4
                         color: Qt.rgba(1, 1, 1, 0.08)
-                        border.color: Services.Theme.border
+                        border.color: (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.12))
                         border.width: 1
                         Layout.alignment: Qt.AlignVCenter
 
@@ -497,8 +489,8 @@ PanelWindow {
 
                             visible: actText.trim().length > 0
                             radius: 6
-                            color: actHover.containsMouse ? Services.Theme.bgHover : Services.Theme.surfaceVariant
-                            border.color: Services.Theme.border
+                            color: actHover.containsMouse ? (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.10)) : (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06))
+                            border.color: (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.12))
                             border.width: 1
                             implicitHeight: 24
                             implicitWidth: actLabel.implicitWidth + 16
@@ -545,8 +537,8 @@ PanelWindow {
                         Layout.fillWidth: true
                         implicitHeight: 32
                         radius: 7
-                        color: Services.Theme.bgHover
-                        border.color: popReplyInput.activeFocus ? Services.Theme.accent : Services.Theme.border
+                        color: (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.10))
+                        border.color: popReplyInput.activeFocus ? Services.Theme.accent : (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.12))
                         border.width: 1
 
                         TextInput {
@@ -590,8 +582,8 @@ PanelWindow {
                             implicitHeight: 22
                             implicitWidth: cancelTxt.implicitWidth + 14
                             radius: 6
-                            color: cancelMouse.containsMouse ? Services.Theme.bgHover : Services.Theme.surfaceVariant
-                            border.color: Services.Theme.border
+                            color: cancelMouse.containsMouse ? (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.10)) : (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06))
+                            border.color: (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.12))
                             border.width: 1
 
                             Text {

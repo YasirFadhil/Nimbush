@@ -22,14 +22,14 @@ RowLayout {
     readonly property bool glassDark: Services.Theme.isDark
     function getPillBg(hovered) {
         if (isMinimal) return hovered ? Services.Theme.bgHover : "transparent"
-        if (hovered) return glassDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(1, 1, 1, 0.50)
-        return glassDark ? Qt.rgba(0.11, 0.11, 0.12, 0.38) : Qt.rgba(1, 1, 1, 0.30)
+        if (hovered) return glassDark ? Qt.rgba(1, 1, 1, 0.20) : Qt.rgba(1, 1, 1, 0.65)
+        return glassDark ? Qt.rgba(0.11, 0.11, 0.12, 0.55) : Qt.rgba(1, 1, 1, 0.48)
     }
 
     function getPillBorder(hovered) {
         if (isMinimal) return hovered ? Services.Theme.borderHighlight : "transparent"
-        if (hovered) return glassDark ? Qt.rgba(1, 1, 1, 0.26) : Qt.rgba(1, 1, 1, 0.75)
-        return glassDark ? Qt.rgba(1, 1, 1, 0.18) : Qt.rgba(1, 1, 1, 0.50)
+        if (hovered) return glassDark ? Qt.rgba(1, 1, 1, 0.38) : Qt.rgba(1, 1, 1, 0.85)
+        return glassDark ? Qt.rgba(1, 1, 1, 0.28) : Qt.rgba(1, 1, 1, 0.65)
     }
 
     // OS Logo & Workspaces Pill

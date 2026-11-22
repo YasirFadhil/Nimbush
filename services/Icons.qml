@@ -47,6 +47,7 @@ Singleton {
     readonly property string batteryOneQtr:   "\uf243"   // nf-fa-battery_quarter (25%)
     readonly property string batteryEmpty:    "\uf244"   // nf-fa-battery_empty (0%)
     readonly property string batteryBolt:     "\uf0e7"   // nf-fa-bolt (charging)
+    readonly property string batteryPlug:     "\uf1e6"   // nf-fa-plug (plugged in, charge limit hold)
     readonly property string dash:      "\uf0e4"   // nf-fa-tachometer
     readonly property string dashboard: "\uf0e4"   // nf-fa-tachometer
     readonly property string image:     "\uf03e"   // nf-fa-picture_o
@@ -206,7 +207,8 @@ Singleton {
         return batteryFull
     }
 
-    function powerIcon(charging, percentage) {
+    function powerIcon(charging, percentage, holding) {
+        if (holding) return batteryPlug
         if (charging) return batteryBolt
         var p = (percentage > 0 && percentage <= 1) ? Math.round(percentage * 100) : Math.round(percentage)
         if (p >= 88) return batteryFull

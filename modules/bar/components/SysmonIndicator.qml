@@ -47,12 +47,12 @@ Rectangle {
     readonly property bool lit: sysmonMouse.containsMouse || isActive
     // Dock glass material
     color: isMinimal ? (lit ? Services.Theme.bgHover : "transparent")
-         : (lit ? (glassDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(1, 1, 1, 0.50))
-                : (glassDark ? Qt.rgba(0.11, 0.11, 0.12, 0.38) : Qt.rgba(1, 1, 1, 0.30)))
+         : (lit ? (glassDark ? Qt.rgba(1, 1, 1, 0.20) : Qt.rgba(1, 1, 1, 0.65))
+                : (glassDark ? Qt.rgba(0.11, 0.11, 0.12, 0.55) : Qt.rgba(1, 1, 1, 0.48)))
 
     border.color: isMinimal ? (lit ? Services.Theme.borderHighlight : "transparent")
-         : (lit ? (glassDark ? Qt.rgba(1, 1, 1, 0.26) : Qt.rgba(1, 1, 1, 0.75))
-                : (glassDark ? Qt.rgba(1, 1, 1, 0.18) : Qt.rgba(1, 1, 1, 0.50)))
+         : (lit ? (glassDark ? Qt.rgba(1, 1, 1, 0.38) : Qt.rgba(1, 1, 1, 0.85))
+                : (glassDark ? Qt.rgba(1, 1, 1, 0.28) : Qt.rgba(1, 1, 1, 0.65)))
     border.width: isMinimal ? 0 : 1
 
     Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }

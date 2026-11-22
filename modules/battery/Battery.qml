@@ -80,9 +80,10 @@ PanelWindow {
                 : (parent.width - 160)
             x: Math.max(12, Math.min(parent.width - width - 12, targetX - (width / 2)))
             y: root.isBottom ? (parent.height - height - 12) : 12
-            radius: Services.Theme.radiusLg
-            color: Services.Theme.surface
-            border.color: Services.Theme.border
+            radius: 20
+            // macOS menu material (DockMenu.qml); blur comes from the compositor
+            color: Services.Theme.isDark ? Qt.rgba(0.14, 0.14, 0.15, 0.62) : Qt.rgba(1, 1, 1, 0.66)
+            border.color: Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.12)
             border.width: 1
             clip: true
 
@@ -152,7 +153,7 @@ PanelWindow {
                     // Close Button
                     Rectangle {
                         width: 24; height: 24; radius: 12
-                        color: closeBtnArea.containsMouse ? Services.Theme.bgHover : "transparent"
+                        color: closeBtnArea.containsMouse ? (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.10)) : "transparent"
                         Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                         Text {
@@ -176,8 +177,8 @@ PanelWindow {
                 Rectangle {
                     Layout.fillWidth: true
                     radius: Services.Theme.radiusMd
-                    color: Services.Theme.surfaceVariant
-                    border.color: Services.Theme.borderSubtle
+                    color: (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06))
+                    border.color: (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06))
                     border.width: 1
                     implicitHeight: heroCol.implicitHeight + 24
 
@@ -258,7 +259,7 @@ PanelWindow {
                             Layout.fillWidth: true
                             height: 8
                             radius: 4
-                            color: Services.Theme.bgDeep
+                            color: (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.10) : Qt.rgba(0, 0, 0, 0.08))
 
                             Rectangle {
                                 id: levelFill
@@ -314,8 +315,8 @@ PanelWindow {
                             readonly property bool isCurrent: Services.PowerProfile.profile === "power-saver"
                             color: isCurrent 
                                 ? Qt.rgba(245/255, 158/255, 11/255, 0.18) 
-                                : (saverMouse.containsMouse ? Services.Theme.bgHover : Services.Theme.surfaceVariant)
-                            border.color: isCurrent ? "#f59e0b" : (saverMouse.containsMouse ? Services.Theme.borderHighlight : Services.Theme.borderSubtle)
+                                : (saverMouse.containsMouse ? (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.10)) : (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)))
+                            border.color: isCurrent ? "#f59e0b" : (saverMouse.containsMouse ? (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.12)) : (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)))
                             border.width: isCurrent ? 1.5 : 1
 
                             Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
@@ -360,8 +361,8 @@ PanelWindow {
                             readonly property bool isCurrent: Services.PowerProfile.profile === "balanced"
                             color: isCurrent 
                                 ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.18) 
-                                : (balancedMouse.containsMouse ? Services.Theme.bgHover : Services.Theme.surfaceVariant)
-                            border.color: isCurrent ? Services.Theme.accent : (balancedMouse.containsMouse ? Services.Theme.borderHighlight : Services.Theme.borderSubtle)
+                                : (balancedMouse.containsMouse ? (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.10)) : (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)))
+                            border.color: isCurrent ? Services.Theme.accent : (balancedMouse.containsMouse ? (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.12)) : (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)))
                             border.width: isCurrent ? 1.5 : 1
 
                             Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
@@ -406,8 +407,8 @@ PanelWindow {
                             readonly property bool isCurrent: Services.PowerProfile.profile === "performance"
                             color: isCurrent 
                                 ? Qt.rgba(239/255, 68/255, 68/255, 0.18) 
-                                : (perfMouse.containsMouse ? Services.Theme.bgHover : Services.Theme.surfaceVariant)
-                            border.color: isCurrent ? Services.Theme.danger : (perfMouse.containsMouse ? Services.Theme.borderHighlight : Services.Theme.borderSubtle)
+                                : (perfMouse.containsMouse ? (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.10)) : (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)))
+                            border.color: isCurrent ? Services.Theme.danger : (perfMouse.containsMouse ? (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.12)) : (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)))
                             border.width: isCurrent ? 1.5 : 1
 
                             Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
@@ -453,10 +454,10 @@ PanelWindow {
                     radius: Services.Theme.radiusMd
                     color: (Services.Config && Services.Config.batteryChargeLimitEnabled)
                         ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.12)
-                        : (limitMouse.containsMouse ? Services.Theme.bgHover : Services.Theme.surfaceVariant)
+                        : (limitMouse.containsMouse ? (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.10)) : (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)))
                     border.color: (Services.Config && Services.Config.batteryChargeLimitEnabled)
                         ? Services.Theme.accent
-                        : (limitMouse.containsMouse ? Services.Theme.borderHighlight : Services.Theme.borderSubtle)
+                        : (limitMouse.containsMouse ? (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.12)) : (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)))
                     border.width: 1
 
                     Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
@@ -532,10 +533,10 @@ PanelWindow {
                                 radius: 11
                                 color: (Services.Config && Services.Config.batteryChargeLimitEnabled)
                                     ? Services.Theme.accent
-                                    : Services.Theme.surfaceVariant
+                                    : (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06))
                                 border.color: (Services.Config && Services.Config.batteryChargeLimitEnabled)
                                     ? Services.Theme.accent
-                                    : Services.Theme.borderHighlight
+                                    : (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.12))
                                 border.width: 1
 
                                 Behavior on color { ColorAnimation { duration: 200 } }
@@ -589,8 +590,8 @@ PanelWindow {
                             Layout.fillWidth: true
                             implicitHeight: 52
                             radius: Services.Theme.radiusMd
-                            color: Services.Theme.surfaceVariant
-                            border.color: Services.Theme.borderSubtle
+                            color: (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06))
+                            border.color: (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06))
                             border.width: 1
 
                             RowLayout {
@@ -623,8 +624,8 @@ PanelWindow {
                             Layout.fillWidth: true
                             implicitHeight: 52
                             radius: Services.Theme.radiusMd
-                            color: Services.Theme.surfaceVariant
-                            border.color: Services.Theme.borderSubtle
+                            color: (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06))
+                            border.color: (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06))
                             border.width: 1
 
                             RowLayout {
@@ -661,8 +662,8 @@ PanelWindow {
                             Layout.fillWidth: true
                             implicitHeight: 52
                             radius: Services.Theme.radiusMd
-                            color: Services.Theme.surfaceVariant
-                            border.color: Services.Theme.borderSubtle
+                            color: (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06))
+                            border.color: (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06))
                             border.width: 1
 
                             RowLayout {
@@ -695,8 +696,8 @@ PanelWindow {
                             Layout.fillWidth: true
                             implicitHeight: 52
                             radius: Services.Theme.radiusMd
-                            color: Services.Theme.surfaceVariant
-                            border.color: Services.Theme.borderSubtle
+                            color: (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06))
+                            border.color: (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06))
                             border.width: 1
 
                             RowLayout {
@@ -730,8 +731,8 @@ PanelWindow {
                         Layout.fillWidth: true
                         implicitHeight: 38
                         radius: Services.Theme.radiusMd
-                        color: Services.Theme.surfaceVariant
-                        border.color: Services.Theme.borderSubtle
+                        color: (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06))
+                        border.color: (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06))
                         border.width: 1
 
                         RowLayout {
