@@ -61,11 +61,15 @@ PanelWindow {
             x: Math.max(12, Math.min(parent.width - width - 12, root.targetX - (width / 2)))
             implicitWidth: Math.max(200, contentColumn.implicitWidth + 24)
             implicitHeight: contentColumn.implicitHeight + 24
-            radius: Services.Theme.radiusLg
-            color: Services.Theme.bgElevated
-            border.color: Services.Theme.border
+            radius: 12
+            // macOS menu material (DockMenu.qml)
+            readonly property bool dark: Services.Theme.isDark
+            color: dark ? Qt.rgba(0.14, 0.14, 0.15, 0.80) : Qt.rgba(1, 1, 1, 0.88)
+            border.color: dark ? Qt.rgba(1, 1, 1, 0.22) : Qt.rgba(0, 0, 0, 0.14)
             border.width: 1
             clip: true
+
+            GlassSpecular {}
 
             opacity: root.isOpen ? 1.0 : 0.0
             scale: root.isOpen ? 1.0 : 0.96
@@ -155,10 +159,9 @@ PanelWindow {
                             Rectangle {
                                 id: itemBg
                                 anchors.fill: parent
-                                radius: Services.Theme.radiusSm
-                                color: itemArea.containsMouse ? Services.Theme.surfaceVariant : "transparent"
-                                border.color: itemArea.containsMouse ? Services.Theme.borderHighlight : "transparent"
-                                border.width: 1
+                                radius: 6
+                                color: itemArea.containsMouse ? Services.Theme.accent : "transparent"
+                                border.width: 0
 
                                 Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                                 Behavior on border.color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
@@ -207,7 +210,7 @@ PanelWindow {
                                         text: overflowItem.item.title || overflowItem.item.id || "Tray App"
                                         font.family: Services.Theme.fontMono
                                         font.pixelSize: Services.Theme.fontSizeMd
-                                        color: Services.Theme.textPrimary
+                                        color: itemArea.containsMouse ? Services.Theme.bgOnAccent : Services.Theme.textPrimary
                                         elide: Text.ElideRight
                                     }
                                 }

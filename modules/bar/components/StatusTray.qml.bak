@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Layouts
+import Quickshell.Io
 import Quickshell.Services.SystemTray
 import "../../../services" as Services
 import "." as Components
@@ -13,6 +14,12 @@ RowLayout {
     property real rightMargin: 12
     property real centerReservedWidth: 0
     property string islandDemand: "idle"
+
+    // ── Auto-detect LAN / Ethernet (via shared NetworkState service) ──────
+    readonly property bool ethConnected: Services.NetworkState ? Services.NetworkState.connected : false
+    readonly property string ethIface: Services.NetworkState ? Services.NetworkState.interfaceName : ""
+    readonly property string ethIp: Services.NetworkState ? Services.NetworkState.ipv4Address : ""
+    readonly property string ethGlyph: Services.NetworkState ? Services.NetworkState.glyph : "\udb80\ude00"
 
     // ── Konstanta tuning ──────────────────────────────────────────
     readonly property real safetyGap: 20      // jarak napas minimum island↔tray
@@ -34,20 +41,18 @@ RowLayout {
     readonly property int pillRadius: isMinimal ? 6 : (isIslands ? 14 : 10)
     readonly property int innerSpacing: isMinimal ? 4 : 6
 
+    // Dock glass material (Dock.qml): neutral low-alpha fill, white hairline border.
+    readonly property bool glassDark: Services.Theme.isDark
     function getPillBg(hovered) {
-        if (hovered) return Services.Theme.bgHover
-        if (isIslands) return Services.Theme.surface
-        if (isFloating) return Qt.rgba(Services.Theme.surface.r, Services.Theme.surface.g, Services.Theme.surface.b, 0.45)
-        if (isUnified) return Qt.rgba(Services.Theme.bgDeep.r, Services.Theme.bgDeep.g, Services.Theme.bgDeep.b, 0.4)
-        return "transparent"
+        if (isMinimal) return hovered ? Services.Theme.bgHover : "transparent"
+        if (hovered) return glassDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(1, 1, 1, 0.50)
+        return glassDark ? Qt.rgba(0.11, 0.11, 0.12, 0.38) : Qt.rgba(1, 1, 1, 0.30)
     }
 
     function getPillBorder(hovered) {
-        if (hovered) return Services.Theme.borderHighlight
-        if (isIslands) return Services.Theme.border
-        if (isFloating) return Qt.rgba(Services.Theme.border.r, Services.Theme.border.g, Services.Theme.border.b, 0.4)
-        if (isUnified) return Qt.rgba(Services.Theme.border.r, Services.Theme.border.g, Services.Theme.border.b, 0.3)
-        return "transparent"
+        if (isMinimal) return hovered ? Services.Theme.borderHighlight : "transparent"
+        if (hovered) return glassDark ? Qt.rgba(1, 1, 1, 0.26) : Qt.rgba(1, 1, 1, 0.75)
+        return glassDark ? Qt.rgba(1, 1, 1, 0.18) : Qt.rgba(1, 1, 1, 0.50)
     }
 
     // ── Daftar item dan urutan mengalah ───────────────────────────
@@ -534,7 +539,7 @@ RowLayout {
                     spacing: root.isMinimal ? 5 : 8
 
                     Services.WifiSignal {
-                        visible: Services.Wifi
+                        visible: Services.Wifi && !root.ethConnected
                         width: root.isMinimal ? 16 : 18
                         height: root.isMinimal ? 16 : 18
                         signalStrength: Services.Wifi ? Services.Wifi.signalStrength : 0
@@ -545,6 +550,16 @@ RowLayout {
                             ? Services.Theme.accent
                             : Services.Theme.textDisabled
                         inactiveColor: Services.Theme.textSecondary
+                    }
+
+                    // Ikon LAN: gantiin ikon Wi-Fi otomatis selama kabel tercolok
+                    Text {
+                        visible: root.ethConnected
+                        text: root.ethGlyph
+                        font.family: Services.Theme.fontSymbols
+                        font.pixelSize: root.isMinimal ? 16 : 18
+                        color: Services.Theme.accent
+                        Layout.alignment: Qt.AlignVCenter
                     }
 
                     Text {

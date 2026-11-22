@@ -13,9 +13,10 @@ Rectangle {
     implicitWidth: 300
     implicitHeight: contentColumn.implicitHeight + 14
 
-    radius: Services.Theme.radiusMd
-    color: Services.Theme.surfaced
-    border.color: notif && notif.urgency === 2 ? Services.Theme.danger : Services.Theme.border
+    radius: 16
+    // macOS menu material (DockMenu.qml); blur comes from the compositor
+    color: Services.Theme.isDark ? Qt.rgba(0.14, 0.14, 0.15, 0.82) : Qt.rgba(1, 1, 1, 0.88)
+    border.color: notif && notif.urgency === 2 ? Services.Theme.danger : (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.22) : Qt.rgba(0, 0, 0, 0.14))
     border.width: 1
 
     ColumnLayout {
@@ -44,7 +45,7 @@ Rectangle {
                 implicitHeight: 15
                 radius: 4
                 color: Qt.rgba(1, 1, 1, 0.08)
-                border.color: Services.Theme.border
+                border.color: (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.12))
                 border.width: 1
                 Layout.alignment: Qt.AlignVCenter
 
@@ -130,8 +131,8 @@ Rectangle {
 
                     visible: actText.trim().length > 0
                     radius: Services.Theme.radiusSm
-                    color: actMouse.containsMouse ? Services.Theme.accent : Services.Theme.surface
-                    border.color: Services.Theme.border
+                    color: actMouse.containsMouse ? Services.Theme.accent : (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06))
+                    border.color: (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.12))
                     border.width: 1
                     implicitHeight: 22
                     implicitWidth: actLabel.implicitWidth + 14

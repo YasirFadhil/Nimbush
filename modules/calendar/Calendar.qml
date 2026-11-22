@@ -72,9 +72,10 @@ PanelWindow {
             height: col.implicitHeight + 32
             x: root.isCenteredBar ? Math.round((parent.width - width) / 2) : (parent.width - width - 12)
             y: root.isBottom ? (parent.height - height - 12) : 12
-            radius: Services.Theme.radiusLg
-            color: Services.Theme.surface
-            border.color: Services.Theme.border
+            radius: 20
+            // macOS menu material (DockMenu.qml); blur comes from the compositor
+            color: Services.Theme.isDark ? Qt.rgba(0.14, 0.14, 0.15, 0.62) : Qt.rgba(1, 1, 1, 0.66)
+            border.color: Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.12)
             border.width: 1
             clip: true
 
@@ -109,7 +110,7 @@ PanelWindow {
 
                     Rectangle {
                         width: 24; height: 24; radius: 6
-                        color: prevMonthMouse.containsMouse ? Services.Theme.bgHover : "transparent"
+                        color: prevMonthMouse.containsMouse ? (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.10)) : "transparent"
                         Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                         Text {
@@ -131,7 +132,7 @@ PanelWindow {
 
                     Rectangle {
                         width: 24; height: 24; radius: 6
-                        color: nextMonthMouse.containsMouse ? Services.Theme.bgHover : "transparent"
+                        color: nextMonthMouse.containsMouse ? (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.10)) : "transparent"
                         Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                         Text {
@@ -184,8 +185,8 @@ PanelWindow {
                             Layout.preferredWidth: 34
                             Layout.preferredHeight: 30
                             radius: 8
-                            color: isToday ? Services.Theme.accent : (modelData > 0 && dayMouse.containsMouse ? Services.Theme.bgHover : "transparent")
-                            border.color: (!isToday && modelData > 0 && dayMouse.containsMouse) ? Services.Theme.border : "transparent"
+                            color: isToday ? Services.Theme.accent : (modelData > 0 && dayMouse.containsMouse ? (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.10)) : "transparent")
+                            border.color: (!isToday && modelData > 0 && dayMouse.containsMouse) ? (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.12)) : "transparent"
                             border.width: 1
 
                             Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }

@@ -44,16 +44,17 @@ Rectangle {
     implicitWidth: trayCompact ? trayWidthCompact : trayWidthFull
     radius: isMinimal ? 6 : (isIslands ? 14 : 10)
 
-    color: clockArea.containsMouse ? Services.Theme.bgHover 
-         : (isIslands ? Services.Theme.surface 
-         : (isFloating ? Qt.rgba(Services.Theme.surface.r, Services.Theme.surface.g, Services.Theme.surface.b, 0.45) 
-         : (isUnified ? Qt.rgba(Services.Theme.bgDeep.r, Services.Theme.bgDeep.g, Services.Theme.bgDeep.b, 0.4) : "transparent")))
+    readonly property bool glassDark: Services.Theme.isDark
+    // Dock glass material
+    color: isMinimal ? (clockArea.containsMouse ? Services.Theme.bgHover : "transparent")
+         : (clockArea.containsMouse ? (glassDark ? Qt.rgba(1, 1, 1, 0.20) : Qt.rgba(1, 1, 1, 0.65))
+                                    : (glassDark ? Qt.rgba(0.11, 0.11, 0.12, 0.55) : Qt.rgba(1, 1, 1, 0.48)))
 
-    border.color: clockArea.containsMouse ? Services.Theme.borderHighlight 
-         : (isIslands ? Services.Theme.border 
-         : (isFloating ? Qt.rgba(Services.Theme.border.r, Services.Theme.border.g, Services.Theme.border.b, 0.4) 
-         : (isUnified ? Qt.rgba(Services.Theme.border.r, Services.Theme.border.g, Services.Theme.border.b, 0.3) : "transparent")))
+    border.color: isMinimal ? (clockArea.containsMouse ? Services.Theme.borderHighlight : "transparent")
+         : (clockArea.containsMouse ? (glassDark ? Qt.rgba(1, 1, 1, 0.38) : Qt.rgba(1, 1, 1, 0.85))
+                                    : (glassDark ? Qt.rgba(1, 1, 1, 0.28) : Qt.rgba(1, 1, 1, 0.65)))
     border.width: isMinimal ? 0 : 1
+
 
     Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
     Behavior on border.color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }

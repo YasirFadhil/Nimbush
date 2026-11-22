@@ -10,6 +10,10 @@ Item {
     property bool isRight: true     // true = bridge to the right of island, false = bridge to the left
     property bool snapped: true     // true = bridge broken/inactive, false = bridge actively rendering
     property real maxGap: 8.0
+    property color fillColor: Services.Theme.bgPure
+    property color strokeColor: Services.Theme.borderSubtle
+    onFillColorChanged: bridgeCanvas.requestPaint()
+    onStrokeColorChanged: bridgeCanvas.requestPaint()
 
     implicitHeight: 32
     visible: !snapped && gap >= -8.0 && gap <= maxGap && width > 0
@@ -46,7 +50,7 @@ Item {
             const midX = w / 2
 
             // Fill fluid body with solid background (merges capsule and droplet into one fluid body)
-            ctx.fillStyle = Services.Theme.bgPure
+            ctx.fillStyle = bridgeRoot.fillColor
             ctx.beginPath()
             // Top concave arc
             ctx.moveTo(0, cy - edgeHalfH)
@@ -59,7 +63,7 @@ Item {
             ctx.fill()
 
             // Subtle meniscus stroke on top and bottom edges
-            ctx.strokeStyle = Services.Theme.borderSubtle
+            ctx.strokeStyle = bridgeRoot.strokeColor
             ctx.lineWidth = 1.0
             ctx.lineCap = "round"
             ctx.lineJoin = "round"

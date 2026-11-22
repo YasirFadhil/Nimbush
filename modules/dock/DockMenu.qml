@@ -25,13 +25,13 @@ PanelWindow {
     // Menus are a bit more opaque than the dock for legibility. Blur comes from the
     // compositor (layer rule on "quickshell:dockmenu"); keep ignore_alpha below menuFill alpha.
     readonly property bool dark: Services.Theme.isDark
-    readonly property color menuFill: dark ? Qt.rgba(0.14, 0.14, 0.15, 0.58) : Qt.rgba(1, 1, 1, 0.62)
-    readonly property color menuBorder: dark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.12)
-    readonly property color menuSpecular: dark ? Qt.rgba(1, 1, 1, 0.16) : Qt.rgba(1, 1, 1, 0.70)
-    readonly property color menuDivider: dark ? Qt.rgba(1, 1, 1, 0.12) : Qt.rgba(0, 0, 0, 0.12)
-    readonly property color textPrimary: dark ? Qt.rgba(1, 1, 1, 0.92) : Qt.rgba(0, 0, 0, 0.85)
-    readonly property color textSecondary: dark ? Qt.rgba(1, 1, 1, 0.60) : Qt.rgba(0, 0, 0, 0.55)
-    readonly property color textTertiary: dark ? Qt.rgba(1, 1, 1, 0.40) : Qt.rgba(0, 0, 0, 0.38)
+    readonly property color menuFill: dark ? Qt.rgba(0.14, 0.14, 0.15, 0.80) : Qt.rgba(1, 1, 1, 0.88)
+    readonly property color menuBorder: dark ? Qt.rgba(1, 1, 1, 0.22) : Qt.rgba(0, 0, 0, 0.14)
+    readonly property color menuSpecular: dark ? Qt.rgba(1, 1, 1, 0.24) : Qt.rgba(1, 1, 1, 0.80)
+    readonly property color menuDivider: dark ? Qt.rgba(1, 1, 1, 0.18) : Qt.rgba(0, 0, 0, 0.14)
+    readonly property color textPrimary: dark ? Qt.rgba(1, 1, 1, 0.97) : Qt.rgba(0, 0, 0, 0.90)
+    readonly property color textSecondary: dark ? Qt.rgba(1, 1, 1, 0.75) : Qt.rgba(0, 0, 0, 0.65)
+    readonly property color textTertiary: dark ? Qt.rgba(1, 1, 1, 0.52) : Qt.rgba(0, 0, 0, 0.45)
 
     // Stay mapped while the card is still fading out, otherwise the fade never plays
     visible: root.isOpen || menuCard.opacity > 0.01
@@ -128,18 +128,6 @@ PanelWindow {
                 const targetY = Services.DockService ? Services.DockService.contextMenuY : (root.height / 2)
                 return Math.max(12, Math.min(targetY - height / 2, root.height - height - 12))
             }
-        }
-
-        // Subtle top specular highlight
-        Rectangle {
-            anchors.top: parent.top
-            anchors.left: parent.left
-            anchors.right: parent.right
-            anchors.topMargin: 1
-            anchors.leftMargin: 10
-            anchors.rightMargin: 10
-            height: 1
-            color: root.menuSpecular
         }
 
         // Smooth entry / exit animation (fade handled here, not by the compositor)

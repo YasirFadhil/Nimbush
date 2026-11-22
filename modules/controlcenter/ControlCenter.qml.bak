@@ -4,6 +4,7 @@ import QtQuick.Layouts
 import Quickshell
 import Quickshell.Io
 import Quickshell.Wayland
+import Quickshell.Services.Mpris
 import "../../services" as Services
 import "." as Local
 
@@ -20,7 +21,7 @@ PanelWindow {
     visible: Services.OverlayManager.controlCenterVisible
     WlrLayershell.layer: WlrLayer.Top
     WlrLayershell.namespace: "quickshell:controlcenter"
-    WlrLayershell.keyboardFocus: Services.OverlayManager.isLocked ? WlrKeyboardFocus.Exclusive : (root.wifiPasswordTarget !== "" ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None)
+    WlrLayershell.keyboardFocus: Services.OverlayManager.isLocked ? WlrKeyboardFocus.Exclusive : ((root.wifiPasswordTarget !== "" || Services.OverlayManager.phonePanelVisible) ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None)
 
     mask: Region {
         Region {
@@ -35,6 +36,12 @@ PanelWindow {
     property string wifiPasswordInput: ""
     property bool audioSinkSelectorOpen: false
 
+    // ── Auto-detect LAN / Ethernet (via shared NetworkState service) ──
+    readonly property bool ethConnected: Services.NetworkState ? Services.NetworkState.connected : false
+    readonly property string ethIface: Services.NetworkState ? Services.NetworkState.interfaceName : ""
+    readonly property string ethIp: Services.NetworkState ? Services.NetworkState.ipv4Address : ""
+    readonly property string ethGlyph: Services.NetworkState ? Services.NetworkState.glyph : "\udb80\ude00"
+
     Process {
         id: pwrProc
         command: ["quickshell", "ipc", "call", "powermenu", "open"]
@@ -48,6 +55,260 @@ PanelWindow {
         command: ["sh", "-c", "mkdir -p ~/Pictures/Screenshots && sleep 0.2 && (hyprshot -m region -o ~/Pictures/Screenshots || (GEOM=$(slurp) && [ -n \"$GEOM\" ] && FILE=\"$HOME/Pictures/Screenshots/Screenshot_$(date +'%Y%m%d_%H%M%S').png\" && grim -g \"$GEOM\" \"$FILE\" && wl-copy < \"$FILE\"))"]
     }
 
+    // ── KDE Connect (Phone panel) ──
+    // Parsed from `kdeconnect-cli -l`, polled while Control Center is open.
+    property var phoneDevices: []
+    property bool phoneLoaded: false
+    property bool phoneError: false
+    property var phoneBattery: ({})   // id -> { charge, charging }
+    property string phoneStatus: ""        // short feedback after an action ("Ping sent", ...)
+    property string phonePendingMsg: ""
+    property var phoneNet: ({})            // id -> { type, strength } (cellular, when the phone reports it)
+    property var phonePlugins: ({})        // id -> { clipboard, notifications, mprisremote, sftp } booleans
+    property string phoneScriptKind: ""
+    readonly property int phoneConnectedCount: root.phoneDevices.filter(d => d.usable).length
+
+    function parsePhoneDevices(out) {
+        // Line format: "- <name>: <id> [on <ip> via LAN] (<status>)", e.g.
+        //   "- Pixel 7: a1b2c3 (paired and reachable)"
+        //   "- vivo 1819: 3af4...d57d on 192.168.100.3 via LAN (paired and reachable)"
+        // The optional middle part depends on the KDE Connect version.
+        const list = []
+        const lines = out.split("\n")
+        for (let i = 0; i < lines.length; i++) {
+            const m = lines[i].match(/^- (.+): (\S+)(?: .*?)? \((.+)\)\s*$/)
+            if (!m) continue
+            const reachable = /\breachable\b/.test(m[3])
+            const paired = /\bpaired\b/.test(m[3]) && !/\bnot paired\b/.test(m[3])
+            const via = lines[i].match(/ on (\S+) via (\S+)/)
+            list.push({ name: m[1], id: m[2], status: m[3], reachable: reachable, paired: paired,
+                        usable: reachable && paired, ip: via ? via[1] : "", link: via ? via[2] : "" })
+        }
+        list.sort((a, b) => (b.usable ? 1 : 0) - (a.usable ? 1 : 0))
+        root.phoneDevices = list
+        root.phoneError = false
+        root.phoneLoaded = true
+        root.refreshPhoneBattery()
+        if (Services.OverlayManager.phonePanelVisible) root.refreshPhonePlugins()
+    }
+
+    // Device ids come from kdeconnect-cli output; only interpolate them into a shell
+    // command / argv after validating they are plain [A-Za-z0-9_].
+    function isSafePhoneId(id) { return /^[A-Za-z0-9_]+$/.test(id) }
+
+    function refreshPhoneBattery() {
+        const ids = root.phoneDevices.filter(d => d.usable && root.isSafePhoneId(d.id)).map(d => d.id)
+        if (ids.length === 0 || phoneBatteryProc.running) return
+        const base = 'busctl --user get-property org.kde.kdeconnect /modules/kdeconnect/devices/$id/battery org.kde.kdeconnect.device.battery'
+        const net = 'busctl --user get-property org.kde.kdeconnect /modules/kdeconnect/devices/$id/connectivity_report org.kde.kdeconnect.device.connectivity_report'
+        const script = 'for id in ' + ids.join(' ') + '; do '
+                     + 'c=$(' + base + ' charge 2>/dev/null); '
+                     + 's=$(' + base + ' isCharging 2>/dev/null); '
+                     + 'n=$(' + net + ' cellularNetworkType 2>/dev/null); '
+                     + 'g=$(' + net + ' cellularNetworkStrength 2>/dev/null); '
+                     + 'echo "$id|$c|$s|$n|$g"; done'
+        phoneBatteryProc.command = ["sh", "-c", script]
+        phoneBatteryProc.running = true
+    }
+
+    function setPhoneStatus(msg) {
+        if (!msg) return
+        root.phoneStatus = msg
+        phoneStatusTimer.restart()
+    }
+
+    // `arg` is an optional value (or list of values) appended after the flag. Everything is
+    // passed as plain argv elements, never through a shell.
+    function phoneAction(id, flag, doneMsg, arg) {
+        if (!root.isSafePhoneId(id) || phoneActionProc.running) return
+        root.phonePendingMsg = doneMsg || ""
+        const cmd = ["kdeconnect-cli", "-d", id, flag]
+        if (Array.isArray(arg)) { for (let i = 0; i < arg.length; i++) cmd.push(arg[i]) }
+        else if (arg !== undefined) cmd.push(arg)
+        phoneActionProc.command = cmd
+        phoneActionProc.running = true
+    }
+
+    function phoneListNow() { if (!phoneListProc.running) phoneListProc.running = true }
+
+    // Ask KDE Connect to rescan the network, then re-read the device list.
+    function phoneRescan() {
+        root.setPhoneStatus("Scanning for devices...")
+        if (!phoneRefreshProc.running) phoneRefreshProc.running = true
+    }
+
+    // Run a small shell script for device `id` (passed as $1, never interpolated).
+    function phoneRunScript(kind, script, id) {
+        if (!root.isSafePhoneId(id) || phoneScriptProc.running) return
+        root.phoneScriptKind = kind
+        phoneScriptProc.command = ["sh", "-c", script, "sh", id]
+        phoneScriptProc.running = true
+    }
+
+    // Pick a file with zenity (or kdialog) and send it with `kdeconnect-cli --share`.
+    function phoneShareFile(id) {
+        const script = 'if command -v zenity >/dev/null 2>&1; then '
+                     + 'f=$(zenity --file-selection --title="Send to phone" 2>/dev/null); '
+                     + 'elif command -v kdialog >/dev/null 2>&1; then '
+                     + 'f=$(kdialog --getopenfilename "$HOME" 2>/dev/null); '
+                     + 'else exit 127; fi; '
+                     + '[ -n "$f" ] || exit 2; '
+                     + 'kdeconnect-cli -d "$1" --share "$f"'
+        phoneRunScript("share", script, id)
+    }
+
+    // Mount the phone over SFTP (kdeconnectd uses sshfs) and open it in the file manager.
+    function phoneBrowseFiles(id) {
+        root.setPhoneStatus("Mounting phone files...")
+        const script = 'p="/modules/kdeconnect/devices/$1/sftp"; i=org.kde.kdeconnect.device.sftp; '
+                     + 'busctl --user call org.kde.kdeconnect "$p" $i mountAndWait 2>/dev/null | grep -q "b true" || exit 3; '
+                     + 'mp=$(busctl --user call org.kde.kdeconnect "$p" $i mountPoint 2>/dev/null | sed -n \'s/^s "\\(.*\\)"$/\\1/p\'); '
+                     + '[ -n "$mp" ] || exit 4; '
+                     + 'xdg-open "$mp"'
+        phoneRunScript("browse", script, id)
+    }
+
+    // Ask the phone to take a photo; KDE Connect saves it to the given path.
+    function phoneTakePhoto(id) {
+        const script = 'd="${XDG_PICTURES_DIR:-$HOME/Pictures}"; mkdir -p "$d" || exit 1; '
+                     + 'kdeconnect-cli -d "$1" --photo "$d/phone-$(date +%Y%m%d-%H%M%S).jpg"'
+        phoneRunScript("photo", script, id)
+    }
+
+    // Plugin switches (DBus: org.kde.kdeconnect.device isPluginEnabled / setPluginEnabled).
+    function refreshPhonePlugins() {
+        const ids = root.phoneDevices.filter(d => d.usable && root.isSafePhoneId(d.id)).map(d => d.id)
+        if (ids.length === 0 || phonePluginProc.running) return
+        const script = 'for id in ' + ids.join(' ') + '; do o="$id"; '
+                     + 'for pl in clipboard notifications mprisremote sftp; do '
+                     + 'v=$(busctl --user call org.kde.kdeconnect /modules/kdeconnect/devices/$id org.kde.kdeconnect.device isPluginEnabled s kdeconnect_$pl 2>/dev/null); '
+                     + 'o="$o|$pl=$v"; done; echo "$o"; done'
+        phonePluginProc.command = ["sh", "-c", script]
+        phonePluginProc.running = true
+    }
+
+    function phoneTogglePlugin(id, key, enable) {
+        if (!root.isSafePhoneId(id) || !/^[a-z]+$/.test(key) || phonePluginSetProc.running) return
+        phonePluginSetProc.command = ["busctl", "--user", "call", "org.kde.kdeconnect",
+                                      "/modules/kdeconnect/devices/" + id, "org.kde.kdeconnect.device",
+                                      "setPluginEnabled", "sb", "kdeconnect_" + key, enable ? "true" : "false"]
+        phonePluginSetProc.running = true
+    }
+
+    Timer {
+        id: phoneStatusTimer
+        interval: 2500
+        repeat: false
+        onTriggered: root.phoneStatus = ""
+    }
+    Timer {
+        id: phoneRescanTimer
+        interval: 1500
+        repeat: false
+        onTriggered: root.phoneListNow()
+    }
+    Process {
+        id: phoneActionProc
+        onExited: (exitCode, exitStatus) => {
+            root.setPhoneStatus(exitCode === 0 ? root.phonePendingMsg : "Action failed")
+            root.phoneListNow()
+        }
+    }
+    Process {
+        id: phoneRefreshProc
+        command: ["kdeconnect-cli", "--refresh"]
+        onExited: (exitCode, exitStatus) => phoneRescanTimer.restart()
+    }
+    Process {
+        id: phoneScriptProc
+        onExited: (exitCode, exitStatus) => {
+            const k = root.phoneScriptKind
+            if (exitCode === 0) {
+                if (k === "share") root.setPhoneStatus("File sent")
+                else if (k === "browse") root.setPhoneStatus("Opened phone files")
+                else if (k === "photo") root.setPhoneStatus("Photo requested - saved to Pictures")
+            }
+            else if (exitCode === 2) { /* picker cancelled */ }
+            else if (exitCode === 127) root.setPhoneStatus("Install zenity or kdialog to send files")
+            else if (k === "browse") root.setPhoneStatus("Could not open phone files (File access enabled? sshfs installed?)")
+            else root.setPhoneStatus("Action failed")
+        }
+    }
+    Process {
+        id: phonePluginProc
+        stdout: StdioCollector {
+            onStreamFinished: {
+                // Line format: "<id>|clipboard=b true|notifications=b false|..." (missing value = unknown)
+                const res = {}
+                const lines = text.split("\n")
+                for (let i = 0; i < lines.length; i++) {
+                    const p = lines[i].split("|")
+                    if (p.length < 2 || p[0] === "") continue
+                    const st = {}
+                    for (let j = 1; j < p.length; j++) {
+                        const kv = p[j].match(/^(\w+)=b (true|false)$/)
+                        if (kv) st[kv[1]] = (kv[2] === "true")
+                    }
+                    res[p[0]] = st
+                }
+                root.phonePlugins = res
+            }
+        }
+    }
+    Process {
+        id: phonePluginSetProc
+        onExited: (exitCode, exitStatus) => {
+            if (exitCode !== 0) root.setPhoneStatus("Could not change plugin")
+            root.refreshPhonePlugins()
+        }
+    }
+    Process {
+        id: phoneBatteryProc
+        stdout: StdioCollector {
+            onStreamFinished: {
+                // Line format: "<id>|i 85|b true|s "LTE"|i 3" (the last two only when the phone reports connectivity)
+                const res = Object.assign({}, root.phoneBattery)
+                const net = Object.assign({}, root.phoneNet)
+                const lines = text.split("\n")
+                for (let i = 0; i < lines.length; i++) {
+                    const p = lines[i].split("|")
+                    if (p.length < 3) continue
+                    const n = (p[3] || "").match(/^s "(.+)"/)
+                    if (n) {
+                        const g = (p[4] || "").match(/^i (-?\d+)/)
+                        net[p[0]] = { type: n[1], strength: g ? parseInt(g[1]) : -1 }
+                    }
+                    const c = p[1].match(/^i (\d+)/)
+                    if (!c) continue
+                    res[p[0]] = { charge: parseInt(c[1]), charging: /true/.test(p[2]) }
+                }
+                root.phoneBattery = res
+                root.phoneNet = net
+            }
+        }
+    }
+
+    Process {
+        id: phoneListProc
+        command: ["sh", "-c", "kdeconnect-cli -l 2>&1"]
+        stdout: StdioCollector {
+            onStreamFinished: root.parsePhoneDevices(text)
+        }
+        onExited: (exitCode, exitStatus) => {
+            if (exitCode !== 0) {
+                root.phoneError = true
+                root.phoneLoaded = true
+            }
+        }
+    }
+    Timer {
+        interval: 5000
+        repeat: true
+        triggeredOnStart: true
+        running: root.visible
+        onTriggered: if (!phoneListProc.running) phoneListProc.running = true
+    }
+
     function open() {
         Services.OverlayManager.closeAllExcept(root)
         Services.OverlayManager.controlCenterVisible = true
@@ -57,6 +318,7 @@ PanelWindow {
         Services.OverlayManager.wifiPanelVisible = false
         Services.OverlayManager.btPanelVisible = false
         Services.OverlayManager.audioPanelVisible = false
+        Services.OverlayManager.phonePanelVisible = false
     }
     function hide() { close() }
     function show() { open() }
@@ -77,7 +339,7 @@ PanelWindow {
         default property alias content: inner.data
         Layout.fillWidth: true
         radius: Services.Theme.radiusLg
-        color: Services.Theme.surfaceVariant
+        color: (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06))
         implicitHeight: inner.implicitHeight + 24
 
         ColumnLayout {
@@ -99,9 +361,10 @@ PanelWindow {
             y: root.isBottom ? (parent.height - height - 12) : 12
             width: 356
             height: Math.min(462, parent.height - 24)
-            radius: Services.Theme.radiusMd
-            color: Qt.alpha(Services.Theme.surface, 0.94)
-            border.color: Services.Theme.border
+            radius: 20
+            // macOS menu material (DockMenu.qml); blur comes from the compositor
+            color: Services.Theme.isDark ? Qt.rgba(0.14, 0.14, 0.15, 0.62) : Qt.rgba(1, 1, 1, 0.66)
+            border.color: Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.12)
             border.width: 1
             clip: true
 
@@ -157,7 +420,9 @@ PanelWindow {
                         id: headerActions
                         // Fixed geometry: children and their text metrics must not
                         // resize/reposition this group while Wi-Fi/BT layouts morph.
-                        width: 160
+                        // 58 (battery) + 4 * 26 (buttons) + 4 * 8 (spacing) = 194.
+                        // Update this if a button is added/removed.
+                        width: 194
                         height: 26
                         // Anchor by the panel's fixed geometry, not the layout item's
                         // right edge. The layout width can be recalculated while Wi-Fi/BT
@@ -172,7 +437,7 @@ PanelWindow {
                             width: 58
                             height: 24
                             radius: 12
-                            color: Services.Theme.surfaceVariant
+                            color: (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06))
                             border.color: Services.Theme.border
                             border.width: 1
 
@@ -190,8 +455,9 @@ PanelWindow {
                                     Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                                     SequentialAnimation {
-                                        running: Services.Power.isLow
+                                        running: root.visible && Services.Power.isLow
                                         loops: Animation.Infinite
+                                        onRunningChanged: if (!running) headerBatIcon.opacity = 1.0
                                         NumberAnimation { target: headerBatIcon; property: "opacity"; to: 0.2; duration: 500; easing.type: Easing.InOutQuad }
                                         NumberAnimation { target: headerBatIcon; property: "opacity"; to: 1.0; duration: 500; easing.type: Easing.InOutQuad }
                                     }
@@ -211,8 +477,8 @@ PanelWindow {
                         Rectangle {
                             width: 26; height: 26; radius: 13
                             color: updateBtnMouse.containsMouse
-                                   ? Services.Theme.surfaceVariant
-                                   : (Services.OverlayManager.updatePanelVisible || Services.ShellUpdate.hasUpdate ? Services.Theme.bgHover : "transparent")
+                                   ? (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06))
+                                   : (Services.OverlayManager.updatePanelVisible || Services.ShellUpdate.hasUpdate ? (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.10)) : "transparent")
                             border.color: Services.ShellUpdate.hasUpdate
                                           ? Services.Theme.accent
                                           : (Services.OverlayManager.updatePanelVisible ? Services.Theme.border : "transparent")
@@ -255,10 +521,56 @@ PanelWindow {
                             }
                         }
 
+                        // Phone Icon Button
+                        Rectangle {
+                            width: 26; height: 26; radius: 13
+                            color: phoneBtnMouse.containsMouse
+                                   ? (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06))
+                                   : (Services.OverlayManager.phonePanelVisible ? (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.10)) : "transparent")
+                            border.color: Services.OverlayManager.phonePanelVisible ? Services.Theme.border : "transparent"
+                            border.width: Services.OverlayManager.phonePanelVisible ? 1 : 0
+                            Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+
+                            Text {
+                                anchors.centerIn: parent
+                                text: Services.Icons.phone || "\udb80\udd1c"
+                                font.family: Services.Theme.fontSymbols
+                                font.pixelSize: 12
+                                color: (phoneBtnMouse.containsMouse || Services.OverlayManager.phonePanelVisible) ? Services.Theme.textPrimary : Services.Theme.textSecondary
+                            }
+
+                            // Connected indicator
+                            Rectangle {
+                                visible: root.phoneConnectedCount > 0
+                                width: 7; height: 7; radius: 3.5
+                                anchors.right: parent.right
+                                anchors.bottom: parent.bottom
+                                anchors.rightMargin: 3
+                                anchors.bottomMargin: 3
+                                color: Services.Theme.success
+                            }
+
+                            MouseArea {
+                                id: phoneBtnMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: {
+                                    Services.OverlayManager.phonePanelVisible = !Services.OverlayManager.phonePanelVisible
+                                    if (Services.OverlayManager.phonePanelVisible) {
+                                        Services.OverlayManager.wifiPanelVisible = false
+                                        Services.OverlayManager.btPanelVisible = false
+                                        Services.OverlayManager.audioPanelVisible = false
+                                        Services.OverlayManager.updatePanelVisible = false
+                                    }
+                                }
+                            }
+                        }
+
                         // Settings Icon Button
                         Rectangle {
                             width: 26; height: 26; radius: 13
-                            color: settingsHover.containsMouse ? Services.Theme.surfaceVariant : "transparent"
+                            color: settingsHover.containsMouse ? (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)) : "transparent"
                             Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                             Text {
@@ -284,7 +596,7 @@ PanelWindow {
                         // Power Menu Icon Button
                         Rectangle {
                             width: 26; height: 26; radius: 13
-                            color: pwrHover.containsMouse ? Services.Theme.surfaceVariant : "transparent"
+                            color: pwrHover.containsMouse ? (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)) : "transparent"
                             Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                             Text {
@@ -335,8 +647,10 @@ PanelWindow {
                         height: parent.height
                         enabled: !Services.OverlayManager.btPanelVisible
                         radius: Services.Theme.radiusLg
-                        color: Services.Wifi.enabled ? Qt.alpha(Services.Theme.accent, 0.2) : Services.Theme.surfaceVariant
-                        border.color: Services.Wifi.enabled ? Qt.alpha(Services.Theme.accent, 0.4) : "transparent"
+                        // Tile "aktif" kalau Wi-Fi nyala ATAU LAN tercolok
+                        readonly property bool active: Services.Wifi.enabled || root.ethConnected
+                        color: wifiTile.active ? Qt.alpha(Services.Theme.accent, 0.2) : (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06))
+                        border.color: wifiTile.active ? Qt.alpha(Services.Theme.accent, 0.4) : "transparent"
                         border.width: 1
                         clip: true
 
@@ -364,9 +678,9 @@ PanelWindow {
                                     Layout.preferredWidth: 32
                                     Layout.preferredHeight: 32
                                     radius: 16
-                                    color: Services.Wifi.enabled
+                                    color: wifiTile.active
                                            ? (wifiIconMouse.containsMouse ? Qt.lighter(Services.Theme.accent, 1.1) : Services.Theme.accent)
-                                           : (wifiIconMouse.containsMouse ? Services.Theme.bgHover : Qt.alpha(Services.Theme.textPrimary, 0.08))
+                                           : (wifiIconMouse.containsMouse ? (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.10)) : Qt.alpha(Services.Theme.textPrimary, 0.08))
                                     scale: wifiIconMouse.pressed ? 0.88 : (wifiIconMouse.containsMouse ? 1.06 : 1.0)
                                     Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                                     Behavior on scale { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
@@ -380,6 +694,17 @@ PanelWindow {
                                         connected: Services.Wifi.connected
                                         wifiEnabled: Services.Wifi.enabled
                                         activeColor: Services.Wifi.enabled ? Services.Theme.bgOnAccent : Services.Theme.textPrimary
+                                        visible: !root.ethConnected
+                                    }
+
+                                    // Ikon LAN: muncul otomatis (prioritas) selama kabel tercolok
+                                    Text {
+                                        anchors.centerIn: parent
+                                        visible: root.ethConnected
+                                        text: root.ethGlyph
+                                        font.family: Services.Theme.fontSymbols
+                                        font.pixelSize: 16
+                                        color: Services.Theme.bgOnAccent
                                     }
 
                                     MouseArea {
@@ -413,7 +738,9 @@ PanelWindow {
                                             Text {
                                                 text: Services.OverlayManager.wifiPanelVisible
                                                       ? "Wi-Fi Networks"
-                                                      : (Services.Wifi.enabled ? (Services.Wifi.connected ? Services.Wifi.ssid : "Wi-Fi") : "Wi-Fi")
+                                                      : (root.ethConnected
+                                                         ? "Ethernet"
+                                                         : (Services.Wifi.enabled ? (Services.Wifi.connected ? Services.Wifi.ssid : "Wi-Fi") : "Wi-Fi"))
                                                 font.pixelSize: 12
                                                 font.bold: true
                                                 elide: Text.ElideRight
@@ -423,9 +750,11 @@ PanelWindow {
                                             Text {
                                                 text: Services.OverlayManager.wifiPanelVisible
                                                       ? (Services.Wifi.scanning ? "Scanning networks..." : (Services.Wifi.networks.length + " networks found"))
-                                                      : (Services.Wifi.enabled ? (Services.Wifi.connected ? ("Connected • " + Services.Wifi.signalStrength + "%") : "On") : "Off")
+                                                      : (root.ethConnected
+                                                         ? (root.ethIp !== "" ? "Connected" : "Connecting...")
+                                                         : (Services.Wifi.enabled ? (Services.Wifi.connected ? ("Connected • " + Services.Wifi.signalStrength + "%") : "On") : "Off"))
                                                 font.pixelSize: 10
-                                                color: Services.Wifi.enabled ? Services.Theme.textSecondary : Services.Theme.textDisabled
+                                                color: wifiTile.active ? Services.Theme.textSecondary : Services.Theme.textDisabled
                                                 Layout.fillWidth: true
                                                 elide: Text.ElideRight
                                             }
@@ -438,7 +767,7 @@ PanelWindow {
                                             radius: 13
                                             visible: opacity > 0.01
                                             opacity: Services.OverlayManager.wifiPanelVisible ? 1 : 0
-                                            color: refreshWifiMouse.containsMouse ? Services.Theme.bgHover : "transparent"
+                                            color: refreshWifiMouse.containsMouse ? (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.10)) : "transparent"
                                             scale: refreshWifiMouse.pressed ? 0.88 : (refreshWifiMouse.containsMouse ? 1.08 : 1.0)
                                             Behavior on opacity { NumberAnimation { duration: 160 } }
                                             Behavior on scale { NumberAnimation { duration: 120 } }
@@ -505,6 +834,44 @@ PanelWindow {
                                     width: parent.width
                                     spacing: 6
 
+                                    Rectangle {
+                                        visible: root.ethConnected
+                                        Layout.fillWidth: true
+                                        implicitHeight: 40
+                                        radius: Services.Theme.radiusSm
+                                        color: (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06))
+
+                                        RowLayout {
+                                            anchors.fill: parent
+                                            anchors.margins: 8
+                                            spacing: 8
+
+                                            Text {
+                                                text: root.ethGlyph
+                                                font.family: Services.Theme.fontSymbols
+                                                font.pixelSize: 14
+                                                color: Services.Theme.accent
+                                            }
+                                            ColumnLayout {
+                                                Layout.fillWidth: true
+                                                spacing: 0
+                                                Text {
+                                                    text: "Ethernet (" + root.ethIface + ")"
+                                                    font.pixelSize: 11
+                                                    font.bold: true
+                                                    color: Services.Theme.accent
+                                                    elide: Text.ElideRight
+                                                    Layout.fillWidth: true
+                                                }
+                                                Text {
+                                                    text: root.ethIp !== "" ? ("Connected • " + root.ethIp) : "Connecting..."
+                                                    font.pixelSize: 10
+                                                    color: Services.Theme.textSecondary
+                                                }
+                                            }
+                                        }
+                                    }
+
                                     Text {
                                         visible: !Services.Wifi.enabled
                                         text: "Wi-Fi is turned off"
@@ -539,7 +906,7 @@ PanelWindow {
                                             Layout.fillWidth: true
                                             implicitHeight: netCol.implicitHeight + 12
                                             radius: Services.Theme.radiusSm
-                                            color: netRowArea.containsMouse ? Services.Theme.bgHover : (netRow.modelData.inUse ? Qt.alpha(Services.Theme.accent, 0.2) : "transparent")
+                                            color: netRowArea.containsMouse ? (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.10)) : (netRow.modelData.inUse ? Qt.alpha(Services.Theme.accent, 0.2) : "transparent")
 
                                             readonly property bool isSaved: Services.Wifi.isSaved(netRow.modelData.ssid)
                                             readonly property bool isPwOpen: root.wifiPasswordTarget === netRow.modelData.ssid
@@ -662,7 +1029,7 @@ PanelWindow {
                                                         Layout.fillWidth: true
                                                         height: 30
                                                         radius: 6
-                                                        color: Services.Theme.surface
+                                                        color: (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06))
 
                                                         TextInput {
                                                             anchors.fill: parent
@@ -699,7 +1066,7 @@ PanelWindow {
                         height: parent.height
                         enabled: !Services.OverlayManager.wifiPanelVisible
                         radius: Services.Theme.radiusLg
-                        color: Services.Bluetooth.enabled ? Qt.alpha(Services.Theme.accent, 0.2) : Services.Theme.surfaceVariant
+                        color: Services.Bluetooth.enabled ? Qt.alpha(Services.Theme.accent, 0.2) : (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06))
                         border.color: Services.Bluetooth.enabled ? Qt.alpha(Services.Theme.accent, 0.4) : "transparent"
                         border.width: 1
                         clip: true
@@ -731,7 +1098,7 @@ PanelWindow {
                                     radius: 16
                                     color: Services.Bluetooth.enabled
                                            ? (btIconMouse.containsMouse ? Qt.lighter(Services.Theme.accent, 1.1) : Services.Theme.accent)
-                                           : (btIconMouse.containsMouse ? Services.Theme.bgHover : Qt.alpha(Services.Theme.textPrimary, 0.08))
+                                           : (btIconMouse.containsMouse ? (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.10)) : Qt.alpha(Services.Theme.textPrimary, 0.08))
                                     scale: btIconMouse.pressed ? 0.88 : (btIconMouse.containsMouse ? 1.06 : 1.0)
                                     Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                                     Behavior on scale { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
@@ -814,7 +1181,7 @@ PanelWindow {
                                             radius: 13
                                             visible: opacity > 0.01
                                             opacity: Services.OverlayManager.btPanelVisible ? 1 : 0
-                                            color: refreshBtMouse.containsMouse ? Services.Theme.bgHover : "transparent"
+                                            color: refreshBtMouse.containsMouse ? (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.10)) : "transparent"
                                             scale: refreshBtMouse.pressed ? 0.88 : (refreshBtMouse.containsMouse ? 1.08 : 1.0)
                                             Behavior on opacity { NumberAnimation { duration: 160 } }
                                             Behavior on scale { NumberAnimation { duration: 120 } }
@@ -915,7 +1282,7 @@ PanelWindow {
                                             Layout.fillWidth: true
                                             implicitHeight: 34
                                             radius: Services.Theme.radiusSm
-                                            color: btItemArea.containsMouse ? Services.Theme.bgHover : (btItem.modelData.connected ? Qt.alpha(Services.Theme.accent, 0.2) : "transparent")
+                                            color: btItemArea.containsMouse ? (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.10)) : (btItem.modelData.connected ? Qt.alpha(Services.Theme.accent, 0.2) : "transparent")
 
                                             MouseArea {
                                                 id: btItemArea
@@ -987,7 +1354,7 @@ PanelWindow {
                                                     // Unpair / Forget button
                                                     Rectangle {
                                                         width: 20; height: 20; radius: 10
-                                                        color: unpairBtMouse.containsMouse ? Services.Theme.bgHover : "transparent"
+                                                        color: unpairBtMouse.containsMouse ? (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.10)) : "transparent"
 
                                                         Text {
                                                             anchors.centerIn: parent
@@ -1016,7 +1383,7 @@ PanelWindow {
                                         Layout.fillWidth: true
                                         implicitHeight: 28
                                         radius: Services.Theme.radiusSm
-                                        color: scanBtnArea.containsMouse ? Services.Theme.bgHover : Qt.alpha(Services.Theme.textPrimary, 0.08)
+                                        color: scanBtnArea.containsMouse ? (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.10)) : Qt.alpha(Services.Theme.textPrimary, 0.08)
                                         Layout.topMargin: 4
 
                                         RowLayout {
@@ -1065,7 +1432,7 @@ PanelWindow {
                                             Layout.fillWidth: true
                                             implicitHeight: 34
                                             radius: Services.Theme.radiusSm
-                                            color: unpItemArea.containsMouse ? Services.Theme.bgHover : "transparent"
+                                            color: unpItemArea.containsMouse ? (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.10)) : "transparent"
 
                                             MouseArea {
                                                 id: unpItemArea
@@ -1143,7 +1510,7 @@ PanelWindow {
                                 Layout.fillHeight: true
                                 Layout.preferredWidth: 1
                                 radius: Services.Theme.radiusLg
-                                color: Services.Theme.surfaceVariant
+                                color: (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06))
 
                                 ColumnLayout {
                                     anchors.fill: parent
@@ -1240,8 +1607,8 @@ PanelWindow {
                                 readonly property bool isActive: Services.Notifications.doNotDisturb
                                 color: isActive
                                     ? Qt.alpha(Services.Theme.accent, 0.26)
-                                    : (dndMouse.containsMouse ? Services.Theme.bgHover : Services.Theme.surfaceVariant)
-                                border.color: isActive ? Services.Theme.accent : (dndMouse.containsMouse ? Services.Theme.borderHighlight : "transparent")
+                                    : (dndMouse.containsMouse ? (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.10)) : (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)))
+                                border.color: isActive ? Services.Theme.accent : (dndMouse.containsMouse ? (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.12)) : "transparent")
                                 border.width: 1
                                 scale: dndMouse.pressed ? 0.93 : 1.0
                                 clip: true
@@ -1325,8 +1692,8 @@ PanelWindow {
                                 readonly property bool isActive: Services.PowerProfile.saverEnabled
                                 color: isActive
                                     ? Qt.alpha(Services.Theme.accent, 0.26)
-                                    : (saverMouse.containsMouse ? Services.Theme.bgHover : Services.Theme.surfaceVariant)
-                                border.color: isActive ? Services.Theme.accent : (saverMouse.containsMouse ? Services.Theme.borderHighlight : "transparent")
+                                    : (saverMouse.containsMouse ? (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.10)) : (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)))
+                                border.color: isActive ? Services.Theme.accent : (saverMouse.containsMouse ? (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.12)) : "transparent")
                                 border.width: 1
                                 scale: saverMouse.pressed ? 0.93 : 1.0
                                 clip: true
@@ -1406,8 +1773,8 @@ PanelWindow {
                                 readonly property bool isDark: Services.Config ? (Services.Config.themeMode === "dark" || Services.Config.themeMode !== "light") : true
                                 color: isDark
                                     ? Qt.alpha(Services.Theme.accent, 0.26)
-                                    : (themeMouse.containsMouse ? Services.Theme.bgHover : Services.Theme.surfaceVariant)
-                                border.color: isDark ? Services.Theme.accent : (themeMouse.containsMouse ? Services.Theme.borderHighlight : "transparent")
+                                    : (themeMouse.containsMouse ? (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.10)) : (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)))
+                                border.color: isDark ? Services.Theme.accent : (themeMouse.containsMouse ? (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.12)) : "transparent")
                                 border.width: 1
                                 scale: themeMouse.pressed ? 0.93 : 1.0
                                 clip: true
@@ -1485,8 +1852,8 @@ PanelWindow {
                                 readonly property bool isActive: Services.Audio.muted
                                 color: isActive
                                     ? Qt.alpha(Services.Theme.accent, 0.26)
-                                    : (muteMouse.containsMouse ? Services.Theme.bgHover : Services.Theme.surfaceVariant)
-                                border.color: isActive ? Services.Theme.accent : (muteMouse.containsMouse ? Services.Theme.borderHighlight : "transparent")
+                                    : (muteMouse.containsMouse ? (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.10)) : (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)))
+                                border.color: isActive ? Services.Theme.accent : (muteMouse.containsMouse ? (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.12)) : "transparent")
                                 border.width: 1
                                 scale: muteMouse.pressed ? 0.93 : 1.0
                                 clip: true
@@ -1574,11 +1941,11 @@ PanelWindow {
                 id: fullPanelOverlay
                 z: 100
                 anchors.fill: parent
-                color: Services.Theme.surface
-                radius: Services.Theme.radiusMd
+                color: "transparent"
+                radius: 20
                 clip: true
 
-                readonly property bool isOpen: Services.OverlayManager.audioPanelVisible || Services.OverlayManager.updatePanelVisible
+                readonly property bool isOpen: Services.OverlayManager.audioPanelVisible || Services.OverlayManager.updatePanelVisible || Services.OverlayManager.phonePanelVisible
 
                 opacity: isOpen ? 1 : 0
                 visible: opacity > 0.01
@@ -1599,7 +1966,7 @@ PanelWindow {
                         // Back Button (<)
                         Rectangle {
                             width: 28; height: 28; radius: 14
-                            color: backBtnMouse.containsMouse ? Services.Theme.surfaceVariant : "transparent"
+                            color: backBtnMouse.containsMouse ? (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)) : "transparent"
                             Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                             Text {
@@ -1620,6 +1987,7 @@ PanelWindow {
                                     Services.OverlayManager.btPanelVisible = false
                                     Services.OverlayManager.audioPanelVisible = false
                                     Services.OverlayManager.updatePanelVisible = false
+                                    Services.OverlayManager.phonePanelVisible = false
                                 }
                             }
                         }
@@ -1632,7 +2000,9 @@ PanelWindow {
                                      ? "Bluetooth Devices"
                                      : (Services.OverlayManager.audioPanelVisible
                                         ? "Audio Output Devices"
-                                        : "Shell Updates & Branches"))
+                                        : (Services.OverlayManager.phonePanelVisible
+                                           ? "Phone"
+                                           : "Shell Updates & Branches")))
                             color: Services.Theme.textPrimary
                             font.bold: true
                             font.pixelSize: 14
@@ -1643,7 +2013,7 @@ PanelWindow {
                         Rectangle {
                             width: 28; height: 28; radius: 14
                             visible: !Services.OverlayManager.updatePanelVisible
-                            color: refreshBtnMouse.containsMouse ? Services.Theme.surfaceVariant : "transparent"
+                            color: refreshBtnMouse.containsMouse ? (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)) : "transparent"
                             Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                             Text {
@@ -1663,6 +2033,7 @@ PanelWindow {
                                     if (Services.OverlayManager.wifiPanelVisible) Services.Wifi.scan()
                                     else if (Services.OverlayManager.btPanelVisible) Services.Bluetooth.listDevices()
                                     else if (Services.OverlayManager.audioPanelVisible) Services.Audio.refreshAll()
+                                    else if (Services.OverlayManager.phonePanelVisible) root.phoneRescan()
                                 }
                             }
                         }
@@ -1671,7 +2042,7 @@ PanelWindow {
                             width: 38; height: 20; radius: 10
                             visible: Services.OverlayManager.wifiPanelVisible || Services.OverlayManager.btPanelVisible
                             color: (Services.OverlayManager.wifiPanelVisible ? Services.Wifi.enabled : Services.Bluetooth.enabled)
-                                   ? Services.Theme.accent : Services.Theme.surfaceVariant
+                                   ? Services.Theme.accent : (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06))
                             Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                             Rectangle {
@@ -1714,6 +2085,44 @@ PanelWindow {
                                 Layout.fillWidth: true
                                 spacing: 8
 
+                                Rectangle {
+                                    visible: root.ethConnected
+                                    Layout.fillWidth: true
+                                    implicitHeight: 40
+                                    radius: Services.Theme.radiusSm
+                                    color: (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06))
+
+                                    RowLayout {
+                                        anchors.fill: parent
+                                        anchors.margins: 8
+                                        spacing: 8
+
+                                        Text {
+                                            text: root.ethGlyph
+                                            font.family: Services.Theme.fontSymbols
+                                            font.pixelSize: 14
+                                            color: Services.Theme.accent
+                                        }
+                                        ColumnLayout {
+                                            Layout.fillWidth: true
+                                            spacing: 0
+                                            Text {
+                                                text: "Ethernet (" + root.ethIface + ")"
+                                                font.pixelSize: 11
+                                                font.bold: true
+                                                color: Services.Theme.accent
+                                                elide: Text.ElideRight
+                                                Layout.fillWidth: true
+                                            }
+                                            Text {
+                                                text: root.ethIp !== "" ? ("Connected • " + root.ethIp) : "Connecting..."
+                                                font.pixelSize: 10
+                                                color: Services.Theme.textSecondary
+                                            }
+                                        }
+                                    }
+                                }
+
                                 Text {
                                     visible: !Services.Wifi.enabled
                                     text: "Wi-Fi is turned off"
@@ -1738,7 +2147,7 @@ PanelWindow {
                                         Layout.fillWidth: true
                                         implicitHeight: wifiPanelNetCol.implicitHeight + 14
                                         radius: Services.Theme.radiusSm
-                                        color: wifiPanelNetArea.containsMouse ? Services.Theme.bgHover : (wifiPanelNetRow.modelData.inUse ? Services.Theme.surfaceVariant : "transparent")
+                                        color: wifiPanelNetArea.containsMouse ? (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.10)) : (wifiPanelNetRow.modelData.inUse ? (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)) : "transparent")
                                         Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                                         readonly property bool isSaved: Services.Wifi.isSaved(wifiPanelNetRow.modelData.ssid)
@@ -1848,7 +2257,7 @@ PanelWindow {
                                                     Layout.fillWidth: true
                                                     height: 32
                                                     radius: 6
-                                                    color: Services.Theme.surfaceVariant
+                                                    color: (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06))
                                                     border.color: pwInput.activeFocus ? Services.Theme.accent : Services.Theme.border
                                                     border.width: 1
 
@@ -1904,7 +2313,7 @@ PanelWindow {
                                         Layout.fillWidth: true
                                         implicitHeight: 44
                                         radius: Services.Theme.radiusMd
-                                        color: btArea.containsMouse ? Services.Theme.bgHover : Services.Theme.surfaceVariant
+                                        color: btArea.containsMouse ? (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.10)) : (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06))
                                         Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                                         MouseArea {
@@ -1951,7 +2360,7 @@ PanelWindow {
                                                     implicitWidth: btBtnText.implicitWidth + 14
                                                     implicitHeight: 22
                                                     radius: 11
-                                                    color: btRow.modelData.connected ? Services.Theme.surfaceVariant : Services.Theme.accent
+                                                    color: btRow.modelData.connected ? (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)) : Services.Theme.accent
 
                                                     Text {
                                                         id: btBtnText
@@ -1982,7 +2391,7 @@ PanelWindow {
                                         Layout.fillWidth: true
                                         implicitHeight: 44
                                         radius: Services.Theme.radiusMd
-                                        color: audioSinkRow.modelData.isCurrent ? Services.Theme.accent : (audioSinkRowArea.containsMouse ? Services.Theme.bgHover : Services.Theme.surfaceVariant)
+                                        color: audioSinkRow.modelData.isCurrent ? Services.Theme.accent : (audioSinkRowArea.containsMouse ? (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.10)) : (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)))
 
                                         MouseArea {
                                             id: audioSinkRowArea
@@ -2054,7 +2463,7 @@ PanelWindow {
                                             radius: Services.Theme.radiusSm
                                             color: Services.ShellUpdate.currentBranch === "main"
                                                    ? Services.Theme.accent
-                                                   : (stableBtnMouse.containsMouse ? Services.Theme.surfaceVariant : Services.Theme.bgHover)
+                                                   : (stableBtnMouse.containsMouse ? (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)) : (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.10)))
                                             border.color: Services.ShellUpdate.currentBranch === "main" ? Services.Theme.accent : Services.Theme.border
                                             border.width: 1
                                             Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
@@ -2095,7 +2504,7 @@ PanelWindow {
                                             radius: Services.Theme.radiusSm
                                             color: Services.ShellUpdate.currentBranch === "master"
                                                    ? Services.Theme.accent
-                                                   : (unstableBtnMouse.containsMouse ? Services.Theme.surfaceVariant : Services.Theme.bgHover)
+                                                   : (unstableBtnMouse.containsMouse ? (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)) : (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.10)))
                                             border.color: Services.ShellUpdate.currentBranch === "master" ? Services.Theme.accent : Services.Theme.border
                                             border.width: 1
                                             Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
@@ -2136,7 +2545,7 @@ PanelWindow {
                                     Layout.fillWidth: true
                                     implicitHeight: statusCol.implicitHeight + 20
                                     radius: Services.Theme.radiusSm
-                                    color: Services.Theme.surfaceVariant
+                                    color: (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06))
                                     border.color: Services.Theme.border
                                     border.width: 1
 
@@ -2239,7 +2648,7 @@ PanelWindow {
                                         Layout.fillWidth: true
                                         implicitHeight: 32
                                         radius: Services.Theme.radiusSm
-                                        color: checkBtnMouse.containsMouse ? Services.Theme.surfaceVariant : Services.Theme.bgHover
+                                        color: checkBtnMouse.containsMouse ? (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)) : (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.10))
                                         border.color: Services.Theme.border
                                         border.width: 1
                                         Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
@@ -2266,7 +2675,7 @@ PanelWindow {
                                         Layout.fillWidth: true
                                         implicitHeight: 32
                                         radius: Services.Theme.radiusSm
-                                        color: updateBtnClickMouse.containsMouse ? Services.Theme.accent : Services.Theme.bgHover
+                                        color: updateBtnClickMouse.containsMouse ? Services.Theme.accent : (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.10))
                                         border.color: Services.Theme.accent
                                         border.width: 1
                                         Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
@@ -2284,6 +2693,1087 @@ PanelWindow {
                                             anchors.fill: parent
                                             cursorShape: Qt.PointingHandCursor
                                             onClicked: Services.ShellUpdate.applyUpdate()
+                                        }
+                                    }
+                                }
+                            }
+
+                            // ── Phone Section ──
+                            ColumnLayout {
+                                visible: Services.OverlayManager.phonePanelVisible
+                                Layout.fillWidth: true
+                                spacing: 10
+
+                                // ── Empty / Loading / Error State ──
+                                Rectangle {
+                                    visible: root.phoneDevices.length === 0
+                                    Layout.fillWidth: true
+                                    implicitHeight: 180
+                                    radius: Services.Theme.radiusMd
+                                    color: (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06))
+                                    border.color: Services.Theme.border
+                                    border.width: 1
+
+                                    ColumnLayout {
+                                        anchors.centerIn: parent
+                                        width: parent.width - 48
+                                        spacing: 10
+
+                                        // Phone icon with animated glow when loading
+                                        Item {
+                                            Layout.alignment: Qt.AlignHCenter
+                                            width: 56; height: 56
+
+                                            Rectangle {
+                                                anchors.centerIn: parent
+                                                width: 56; height: 56; radius: 28
+                                                color: Qt.alpha(Services.Theme.accent, 0.1)
+                                                border.color: Qt.alpha(Services.Theme.accent, root.phoneLoaded && !root.phoneError ? 0.0 : 0.25)
+                                                border.width: 1
+
+                                                SequentialAnimation on opacity {
+                                                    running: !root.phoneLoaded && !root.phoneError
+                                                    loops: Animation.Infinite
+                                                    NumberAnimation { to: 0.3; duration: 800; easing.type: Easing.InOutSine }
+                                                    NumberAnimation { to: 1.0; duration: 800; easing.type: Easing.InOutSine }
+                                                }
+                                            }
+
+                                            Text {
+                                                anchors.centerIn: parent
+                                                text: root.phoneError ? "\uf071" : "\udb80\udd1c"
+                                                font.family: Services.Theme.fontSymbols
+                                                font.pixelSize: 26
+                                                color: root.phoneError
+                                                       ? Services.Theme.danger
+                                                       : (root.phoneLoaded ? Services.Theme.textDisabled : Services.Theme.accent)
+                                                Behavior on color { ColorAnimation { duration: 300 } }
+                                            }
+                                        }
+
+                                        Text {
+                                            Layout.fillWidth: true
+                                            horizontalAlignment: Text.AlignHCenter
+                                            font.pixelSize: 13
+                                            font.bold: true
+                                            color: root.phoneError ? Services.Theme.danger : Services.Theme.textPrimary
+                                            text: root.phoneError ? "KDE Connect unavailable"
+                                                  : (root.phoneLoaded ? "No devices found" : "Looking for devices...")
+                                            Behavior on color { ColorAnimation { duration: 300 } }
+                                        }
+
+                                        Text {
+                                            visible: root.phoneLoaded || root.phoneError
+                                            Layout.fillWidth: true
+                                            horizontalAlignment: Text.AlignHCenter
+                                            wrapMode: Text.WordWrap
+                                            font.pixelSize: 10
+                                            color: Services.Theme.textDisabled
+                                            text: root.phoneError
+                                                  ? "Could not run kdeconnect-cli.\nIs KDE Connect installed and running?"
+                                                  : "Open the KDE Connect app on your phone\nand make sure it's on the same network."
+                                        }
+
+                                        // Scan button
+                                        Rectangle {
+                                            visible: root.phoneLoaded && !root.phoneError
+                                            Layout.alignment: Qt.AlignHCenter
+                                            implicitWidth: scanPhoneRow.implicitWidth + 24
+                                            implicitHeight: 30
+                                            radius: 15
+                                            color: scanPhoneMouse.containsMouse
+                                                   ? Qt.alpha(Services.Theme.accent, 0.25)
+                                                   : Qt.alpha(Services.Theme.accent, 0.15)
+                                            border.color: Qt.alpha(Services.Theme.accent, 0.4)
+                                            border.width: 1
+                                            Behavior on color { ColorAnimation { duration: 200 } }
+
+                                            RowLayout {
+                                                id: scanPhoneRow
+                                                anchors.centerIn: parent
+                                                spacing: 6
+
+                                                Text {
+                                                    text: "\uf021"
+                                                    font.family: Services.Theme.fontSymbols
+                                                    font.pixelSize: 11
+                                                    color: Services.Theme.accent
+                                                }
+                                                Text {
+                                                    text: "Scan for devices"
+                                                    font.pixelSize: 11
+                                                    font.bold: true
+                                                    color: Services.Theme.accent
+                                                }
+                                            }
+
+                                            MouseArea {
+                                                id: scanPhoneMouse
+                                                anchors.fill: parent
+                                                hoverEnabled: true
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: root.phoneRescan()
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // ── Device Cards ──
+                                Repeater {
+                                    model: root.phoneDevices
+                                    delegate: Rectangle {
+                                        id: phoneRow
+                                        required property var modelData
+                                        readonly property var bat: root.phoneBattery[phoneRow.modelData.id]
+                                        readonly property var net: root.phoneNet[phoneRow.modelData.id]
+                                        readonly property var pst: root.phonePlugins[phoneRow.modelData.id] || ({})
+                                        property bool smsMode: false
+                                        property bool confirmUnpair: false
+                                        Layout.fillWidth: true
+                                        implicitHeight: phoneContent.implicitHeight + 24
+                                        radius: Services.Theme.radiusMd
+                                        color: phoneRow.modelData.usable
+                                               ? (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06))
+                                               : (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06))
+                                        border.color: phoneRow.modelData.usable
+                                                      ? Qt.alpha(Services.Theme.success, 0.3)
+                                                      : Services.Theme.border
+                                        border.width: 1
+                                        Behavior on border.color { ColorAnimation { duration: 300 } }
+
+                                        function sendDraft() {
+                                            const t = phoneTextInput.text.trim()
+                                            if (t === "") return
+                                            const id = phoneRow.modelData.id
+                                            if (phoneRow.smsMode) {
+                                                const num = phoneNumberInput.text.trim()
+                                                if (!/^\+?[0-9 ()\-]{3,20}$/.test(num)) {
+                                                    root.setPhoneStatus("Enter a valid phone number")
+                                                    return
+                                                }
+                                                root.phoneAction(id, "--send-sms", "SMS sent", [t, "--destination", num])
+                                            } else if (/^https?:\/\/\S+$/i.test(t)) {
+                                                root.phoneAction(id, "--share", "Link sent to phone", t)
+                                            } else {
+                                                root.phoneAction(id, "--share-text", "Sent to phone", t)
+                                            }
+                                            phoneTextInput.text = ""
+                                        }
+
+                                        Timer {
+                                            id: unpairTimer
+                                            interval: 3000
+                                            repeat: false
+                                            onTriggered: phoneRow.confirmUnpair = false
+                                        }
+
+                                        ColumnLayout {
+                                            id: phoneContent
+                                            anchors.left: parent.left
+                                            anchors.right: parent.right
+                                            anchors.top: parent.top
+                                            anchors.margins: 14
+                                            spacing: 10
+
+                                            // ── Device Header ──
+                                            RowLayout {
+                                                Layout.fillWidth: true
+                                                spacing: 10
+
+                                                // Avatar Circle
+                                                Rectangle {
+                                                    width: 40; height: 40; radius: 20
+                                                    color: phoneRow.modelData.usable
+                                                           ? Qt.alpha(Services.Theme.success, 0.15)
+                                                           : Qt.alpha(Services.Theme.textDisabled, 0.1)
+                                                    border.color: phoneRow.modelData.usable
+                                                                  ? Qt.alpha(Services.Theme.success, 0.4)
+                                                                  : Qt.alpha(Services.Theme.border, 0.5)
+                                                    border.width: 1
+                                                    Behavior on color { ColorAnimation { duration: 300 } }
+
+                                                    Text {
+                                                        anchors.centerIn: parent
+                                                        text: "\udb80\udd1c"
+                                                        font.family: Services.Theme.fontSymbols
+                                                        font.pixelSize: 18
+                                                        color: phoneRow.modelData.usable
+                                                               ? Services.Theme.success
+                                                               : Services.Theme.textDisabled
+                                                        Behavior on color { ColorAnimation { duration: 300 } }
+                                                    }
+
+                                                    // Online dot
+                                                    Rectangle {
+                                                        visible: phoneRow.modelData.usable
+                                                        width: 10; height: 10; radius: 5
+                                                        anchors.right: parent.right
+                                                        anchors.bottom: parent.bottom
+                                                        anchors.rightMargin: 1
+                                                        anchors.bottomMargin: 1
+                                                        color: Services.Theme.success
+                                                        border.color: (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06))
+                                                        border.width: 2
+                                                    }
+                                                }
+
+                                                // Name + status
+                                                ColumnLayout {
+                                                    Layout.fillWidth: true
+                                                    spacing: 2
+
+                                                    Text {
+                                                        text: phoneRow.modelData.name
+                                                        font.pixelSize: 13
+                                                        font.bold: true
+                                                        color: Services.Theme.textPrimary
+                                                        elide: Text.ElideRight
+                                                        Layout.fillWidth: true
+                                                    }
+                                                    RowLayout {
+                                                        spacing: 6
+
+                                                        Text {
+                                                            text: phoneRow.modelData.usable
+                                                                  ? "Connected"
+                                                                  : (phoneRow.modelData.reachable ? "Not paired" : "Not reachable")
+                                                            font.pixelSize: 10
+                                                            color: phoneRow.modelData.usable
+                                                                   ? Services.Theme.success
+                                                                   : Services.Theme.textSecondary
+                                                        }
+
+                                                        // IP badge
+                                                        Rectangle {
+                                                            visible: phoneRow.modelData.usable && phoneRow.modelData.ip !== ""
+                                                            implicitWidth: ipLabel.implicitWidth + 10
+                                                            implicitHeight: 16
+                                                            radius: 8
+                                                            color: Qt.alpha(Services.Theme.textPrimary, 0.07)
+
+                                                            Text {
+                                                                id: ipLabel
+                                                                anchors.centerIn: parent
+                                                                text: phoneRow.modelData.ip
+                                                                font.pixelSize: 9
+                                                                font.family: Services.Theme.fontMono
+                                                                color: Services.Theme.textDisabled
+                                                            }
+                                                        }
+                                                    }
+                                                }
+
+                                                // Cellular + Battery column
+                                                ColumnLayout {
+                                                    spacing: 3
+                                                    Layout.alignment: Qt.AlignVCenter | Qt.AlignRight
+
+                                                    // Cellular network badge
+                                                    Rectangle {
+                                                        visible: phoneRow.net !== undefined
+                                                        implicitWidth: netBadgeRow.implicitWidth + 10
+                                                        implicitHeight: 18
+                                                        radius: 9
+                                                        color: Qt.alpha(Services.Theme.textPrimary, 0.08)
+
+                                                        RowLayout {
+                                                            id: netBadgeRow
+                                                            anchors.centerIn: parent
+                                                            spacing: 3
+
+                                                            Text {
+                                                                text: "\uf1eb"
+                                                                font.family: Services.Theme.fontSymbols
+                                                                font.pixelSize: 9
+                                                                color: Services.Theme.textSecondary
+                                                            }
+                                                            Text {
+                                                                text: phoneRow.net ? phoneRow.net.type : ""
+                                                                font.family: Services.Theme.fontMono
+                                                                font.pixelSize: 9
+                                                                color: Services.Theme.textSecondary
+                                                            }
+                                                        }
+                                                    }
+
+                                                    // Battery badge
+                                                    Rectangle {
+                                                        visible: phoneRow.bat !== undefined
+                                                        implicitWidth: batBadgeRow.implicitWidth + 10
+                                                        implicitHeight: 18
+                                                        radius: 9
+                                                        color: phoneRow.bat && phoneRow.bat.charging
+                                                               ? Qt.alpha(Services.Theme.success, 0.15)
+                                                               : (phoneRow.bat && phoneRow.bat.charge <= 20
+                                                                  ? Qt.alpha(Services.Theme.danger, 0.15)
+                                                                  : Qt.alpha(Services.Theme.textPrimary, 0.08))
+                                                        border.color: phoneRow.bat && phoneRow.bat.charging
+                                                                      ? Qt.alpha(Services.Theme.success, 0.3)
+                                                                      : (phoneRow.bat && phoneRow.bat.charge <= 20
+                                                                         ? Qt.alpha(Services.Theme.danger, 0.3)
+                                                                         : "transparent")
+                                                        border.width: 1
+                                                        Behavior on color { ColorAnimation { duration: 300 } }
+
+                                                        RowLayout {
+                                                            id: batBadgeRow
+                                                            anchors.centerIn: parent
+                                                            spacing: 3
+
+                                                            Text {
+                                                                text: phoneRow.bat ? Services.Icons.powerIcon(phoneRow.bat.charging, phoneRow.bat.charge) : ""
+                                                                font.family: Services.Theme.fontSymbols
+                                                                font.pixelSize: 10
+                                                                color: phoneRow.bat && phoneRow.bat.charging
+                                                                       ? Services.Theme.success
+                                                                       : (phoneRow.bat && phoneRow.bat.charge <= 20
+                                                                          ? Services.Theme.danger
+                                                                          : Services.Theme.textSecondary)
+                                                            }
+                                                            Text {
+                                                                text: phoneRow.bat ? phoneRow.bat.charge + "%" : ""
+                                                                font.family: Services.Theme.fontMono
+                                                                font.pixelSize: 10
+                                                                font.bold: true
+                                                                color: phoneRow.bat && phoneRow.bat.charging
+                                                                       ? Services.Theme.success
+                                                                       : (phoneRow.bat && phoneRow.bat.charge <= 20
+                                                                          ? Services.Theme.danger
+                                                                          : Services.Theme.textSecondary)
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+
+                                            // ── Battery Progress Bar ──
+                                            Rectangle {
+                                                visible: phoneRow.bat !== undefined && phoneRow.modelData.usable
+                                                Layout.fillWidth: true
+                                                implicitHeight: 5
+                                                radius: 3
+                                                color: Qt.alpha(Services.Theme.textDisabled, 0.18)
+
+                                                Rectangle {
+                                                    height: parent.height
+                                                    radius: 3
+                                                    width: parent.width * (phoneRow.bat ? Math.min(100, phoneRow.bat.charge) / 100 : 0)
+                                                    color: {
+                                                        if (!phoneRow.bat) return Services.Theme.textDisabled
+                                                        if (phoneRow.bat.charging) return Services.Theme.success
+                                                        if (phoneRow.bat.charge <= 20) return Services.Theme.danger
+                                                        if (phoneRow.bat.charge <= 40) return "#e09000"
+                                                        return Services.Theme.success
+                                                    }
+                                                    Behavior on width { NumberAnimation { duration: 400; easing.type: Easing.OutCubic } }
+                                                    Behavior on color { ColorAnimation { duration: 300 } }
+                                                }
+                                            }
+
+                                            // ── Divider ──
+                                            Rectangle {
+                                                visible: phoneRow.modelData.usable
+                                                Layout.fillWidth: true
+                                                implicitHeight: 1
+                                                color: Services.Theme.border
+                                                opacity: 0.5
+                                            }
+
+                                            // ── Action Buttons (Icon + Label tiles) ──
+                                            GridLayout {
+                                                visible: phoneRow.modelData.usable
+                                                Layout.fillWidth: true
+                                                columns: 3
+                                                rowSpacing: 6
+                                                columnSpacing: 6
+
+                                                Repeater {
+                                                    model: [
+                                                        { label: "Ping",      icon: "\uf0a1", kind: "flag",   flag: "--ping",           done: "Ping sent" },
+                                                        { label: "Ring",      icon: "\uf3cd", kind: "flag",   flag: "--ring",           done: "Ringing phone" },
+                                                        { label: "File",      icon: "\uf093", kind: "share",  flag: "",                 done: "" },
+                                                        { label: "Clipboard", icon: "\uf0ea", kind: "flag",   flag: "--send-clipboard", done: "Clipboard sent" },
+                                                        { label: "Browse",    icon: "\uf07c", kind: "browse", flag: "",                 done: "" },
+                                                        { label: "Photo",     icon: "\uf030", kind: "photo",  flag: "",                 done: "" }
+                                                    ]
+                                                    delegate: Rectangle {
+                                                        id: phoneActBtn
+                                                        required property var modelData
+                                                        Layout.fillWidth: true
+                                                        Layout.preferredWidth: 1
+                                                        implicitHeight: 46
+                                                        radius: Services.Theme.radiusSm
+                                                        color: phoneActMouse.containsMouse
+                                                               ? Qt.alpha(Services.Theme.accent, 0.15)
+                                                               : Qt.alpha(Services.Theme.textPrimary, 0.05)
+                                                        border.color: phoneActMouse.containsMouse
+                                                                      ? Qt.alpha(Services.Theme.accent, 0.35)
+                                                                      : Services.Theme.border
+                                                        border.width: 1
+                                                        scale: phoneActMouse.pressed ? 0.92 : 1.0
+                                                        Behavior on color { ColorAnimation { duration: 200 } }
+                                                        Behavior on border.color { ColorAnimation { duration: 200 } }
+                                                        Behavior on scale { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
+
+                                                        ColumnLayout {
+                                                            anchors.centerIn: parent
+                                                            spacing: 3
+
+                                                            Text {
+                                                                Layout.alignment: Qt.AlignHCenter
+                                                                text: phoneActBtn.modelData.icon
+                                                                font.family: Services.Theme.fontSymbols
+                                                                font.pixelSize: 14
+                                                                color: phoneActMouse.containsMouse
+                                                                       ? Services.Theme.accent
+                                                                       : Services.Theme.textSecondary
+                                                                Behavior on color { ColorAnimation { duration: 200 } }
+                                                            }
+                                                            Text {
+                                                                Layout.alignment: Qt.AlignHCenter
+                                                                text: phoneActBtn.modelData.label
+                                                                font.pixelSize: 9
+                                                                font.bold: phoneActMouse.containsMouse
+                                                                color: phoneActMouse.containsMouse
+                                                                       ? Services.Theme.textPrimary
+                                                                       : Services.Theme.textSecondary
+                                                                Behavior on color { ColorAnimation { duration: 200 } }
+                                                            }
+                                                        }
+
+                                                        MouseArea {
+                                                            id: phoneActMouse
+                                                            anchors.fill: parent
+                                                            hoverEnabled: true
+                                                            cursorShape: Qt.PointingHandCursor
+                                                            onClicked: {
+                                                                const id = phoneRow.modelData.id
+                                                                const k = phoneActBtn.modelData.kind
+                                                                if (k === "share") root.phoneShareFile(id)
+                                                                else if (k === "browse") root.phoneBrowseFiles(id)
+                                                                else if (k === "photo") root.phoneTakePhoto(id)
+                                                                else root.phoneAction(id, phoneActBtn.modelData.flag, phoneActBtn.modelData.done)
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+
+                                            // ── Pair Button (reachable but not yet paired) ──
+                                            Rectangle {
+                                                visible: phoneRow.modelData.reachable && !phoneRow.modelData.paired
+                                                Layout.fillWidth: true
+                                                implicitHeight: 36
+                                                radius: Services.Theme.radiusSm
+                                                color: pairMouse.containsMouse
+                                                       ? Qt.alpha(Services.Theme.accent, 0.25)
+                                                       : Qt.alpha(Services.Theme.accent, 0.12)
+                                                border.color: Qt.alpha(Services.Theme.accent, 0.5)
+                                                border.width: 1
+                                                Behavior on color { ColorAnimation { duration: 200 } }
+
+                                                RowLayout {
+                                                    anchors.centerIn: parent
+                                                    spacing: 6
+
+                                                    Text {
+                                                        text: "\uf0c1"
+                                                        font.family: Services.Theme.fontSymbols
+                                                        font.pixelSize: 12
+                                                        color: Services.Theme.accent
+                                                    }
+                                                    Text {
+                                                        text: "Pair this device"
+                                                        font.pixelSize: 11
+                                                        font.bold: true
+                                                        color: Services.Theme.accent
+                                                    }
+                                                }
+
+                                                MouseArea {
+                                                    id: pairMouse
+                                                    anchors.fill: parent
+                                                    hoverEnabled: true
+                                                    cursorShape: Qt.PointingHandCursor
+                                                    onClicked: root.phoneAction(phoneRow.modelData.id, "--pair", "Pairing requested")
+                                                }
+                                            }
+
+                                            // ── Message / Send Area ──
+                                            ColumnLayout {
+                                                visible: phoneRow.modelData.usable
+                                                Layout.fillWidth: true
+                                                spacing: 6
+
+                                                // SMS phone number field
+                                                Rectangle {
+                                                    visible: phoneRow.smsMode
+                                                    Layout.fillWidth: true
+                                                    implicitHeight: 34
+                                                    radius: 17
+                                                    color: Qt.alpha(Services.Theme.textPrimary, 0.06)
+                                                    border.color: phoneNumberInput.activeFocus
+                                                                  ? Qt.alpha(Services.Theme.accent, 0.5)
+                                                                  : Services.Theme.border
+                                                    border.width: 1
+                                                    Behavior on border.color { ColorAnimation { duration: 200 } }
+
+                                                    RowLayout {
+                                                        anchors.fill: parent
+                                                        anchors.leftMargin: 12
+                                                        anchors.rightMargin: 12
+                                                        spacing: 6
+
+                                                        Text {
+                                                            text: "\uf095"
+                                                            font.family: Services.Theme.fontSymbols
+                                                            font.pixelSize: 11
+                                                            color: Services.Theme.textDisabled
+                                                        }
+
+                                                        Item {
+                                                            Layout.fillWidth: true
+                                                            Layout.fillHeight: true
+
+                                                            TextInput {
+                                                                id: phoneNumberInput
+                                                                anchors.fill: parent
+                                                                verticalAlignment: TextInput.AlignVCenter
+                                                                clip: true
+                                                                selectByMouse: true
+                                                                inputMethodHints: Qt.ImhDialableCharactersOnly
+                                                                font.pixelSize: 11
+                                                                color: Services.Theme.textPrimary
+                                                                Keys.onReturnPressed: phoneTextInput.forceActiveFocus()
+                                                                Keys.onEnterPressed: phoneTextInput.forceActiveFocus()
+                                                            }
+                                                            Text {
+                                                                visible: phoneNumberInput.text === ""
+                                                                anchors.verticalCenter: parent.verticalCenter
+                                                                text: "Phone number (+1 234 567 8900)"
+                                                                font.pixelSize: 11
+                                                                color: Services.Theme.textDisabled
+                                                            }
+                                                        }
+                                                    }
+                                                }
+
+                                                // Message / link input row
+                                                Rectangle {
+                                                    Layout.fillWidth: true
+                                                    implicitHeight: 36
+                                                    radius: 18
+                                                    color: Qt.alpha(Services.Theme.textPrimary, 0.06)
+                                                    border.color: phoneTextInput.activeFocus
+                                                                  ? Qt.alpha(Services.Theme.accent, 0.5)
+                                                                  : Services.Theme.border
+                                                    border.width: 1
+                                                    Behavior on border.color { ColorAnimation { duration: 200 } }
+
+                                                    RowLayout {
+                                                        anchors.fill: parent
+                                                        anchors.leftMargin: 6
+                                                        anchors.rightMargin: 6
+                                                        spacing: 4
+
+                                                        // SMS toggle chip
+                                                        Rectangle {
+                                                            implicitWidth: smsChipLabel.implicitWidth + 14
+                                                            implicitHeight: 24
+                                                            radius: 12
+                                                            color: phoneRow.smsMode
+                                                                   ? Qt.alpha(Services.Theme.accent, 0.3)
+                                                                   : (smsModeMouse.containsMouse ? Qt.alpha(Services.Theme.textPrimary, 0.1) : "transparent")
+                                                            border.color: phoneRow.smsMode
+                                                                          ? Qt.alpha(Services.Theme.accent, 0.5)
+                                                                          : Qt.alpha(Services.Theme.border, 0.7)
+                                                            border.width: 1
+                                                            Behavior on color { ColorAnimation { duration: 200 } }
+
+                                                            RowLayout {
+                                                                anchors.centerIn: parent
+                                                                spacing: 4
+
+                                                                Text {
+                                                                    text: "\uf27a"
+                                                                    font.family: Services.Theme.fontSymbols
+                                                                    font.pixelSize: 10
+                                                                    color: phoneRow.smsMode ? Services.Theme.accent : Services.Theme.textSecondary
+                                                                }
+                                                                Text {
+                                                                    id: smsChipLabel
+                                                                    text: "SMS"
+                                                                    font.pixelSize: 10
+                                                                    font.bold: phoneRow.smsMode
+                                                                    color: phoneRow.smsMode ? Services.Theme.textPrimary : Services.Theme.textSecondary
+                                                                }
+                                                            }
+
+                                                            MouseArea {
+                                                                id: smsModeMouse
+                                                                anchors.fill: parent
+                                                                hoverEnabled: true
+                                                                cursorShape: Qt.PointingHandCursor
+                                                                onClicked: phoneRow.smsMode = !phoneRow.smsMode
+                                                            }
+                                                        }
+
+                                                        // Text input
+                                                        Item {
+                                                            Layout.fillWidth: true
+                                                            Layout.fillHeight: true
+
+                                                            TextInput {
+                                                                id: phoneTextInput
+                                                                anchors.fill: parent
+                                                                verticalAlignment: TextInput.AlignVCenter
+                                                                clip: true
+                                                                selectByMouse: true
+                                                                font.pixelSize: 11
+                                                                color: Services.Theme.textPrimary
+                                                                Keys.onReturnPressed: phoneRow.sendDraft()
+                                                                Keys.onEnterPressed: phoneRow.sendDraft()
+                                                            }
+                                                            Text {
+                                                                visible: phoneTextInput.text === ""
+                                                                anchors.verticalCenter: parent.verticalCenter
+                                                                text: phoneRow.smsMode ? "Type a message..." : "Send text, link, or message..."
+                                                                font.pixelSize: 11
+                                                                color: Services.Theme.textDisabled
+                                                            }
+                                                        }
+
+                                                        // Send button
+                                                        Rectangle {
+                                                            implicitWidth: 52
+                                                            implicitHeight: 24
+                                                            radius: 12
+                                                            color: sendMouse.containsMouse
+                                                                   ? Services.Theme.accent
+                                                                   : Qt.alpha(Services.Theme.accent, 0.25)
+                                                            border.color: Qt.alpha(Services.Theme.accent, sendMouse.containsMouse ? 1.0 : 0.4)
+                                                            border.width: 1
+                                                            Behavior on color { ColorAnimation { duration: 200 } }
+
+                                                            RowLayout {
+                                                                anchors.centerIn: parent
+                                                                spacing: 4
+
+                                                                Text {
+                                                                    text: "\uf1d8"
+                                                                    font.family: Services.Theme.fontSymbols
+                                                                    font.pixelSize: 10
+                                                                    color: sendMouse.containsMouse ? Services.Theme.bgDeep : Services.Theme.accent
+                                                                    Behavior on color { ColorAnimation { duration: 200 } }
+                                                                }
+                                                                Text {
+                                                                    text: "Send"
+                                                                    font.pixelSize: 10
+                                                                    font.bold: true
+                                                                    color: sendMouse.containsMouse ? Services.Theme.bgDeep : Services.Theme.accent
+                                                                    Behavior on color { ColorAnimation { duration: 200 } }
+                                                                }
+                                                            }
+
+                                                            MouseArea {
+                                                                id: sendMouse
+                                                                anchors.fill: parent
+                                                                hoverEnabled: true
+                                                                cursorShape: Qt.PointingHandCursor
+                                                                onClicked: phoneRow.sendDraft()
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+
+                                            // ── Plugin Toggles ──
+                                            ColumnLayout {
+                                                visible: phoneRow.modelData.usable && Object.keys(phoneRow.pst).length > 0
+                                                Layout.fillWidth: true
+                                                spacing: 6
+
+                                                // Section label
+                                                RowLayout {
+                                                    spacing: 6
+
+                                                    Text {
+                                                        text: "\uf1b2"
+                                                        font.family: Services.Theme.fontSymbols
+                                                        font.pixelSize: 9
+                                                        color: Services.Theme.textDisabled
+                                                    }
+                                                    Text {
+                                                        text: "Plugins"
+                                                        font.pixelSize: 10
+                                                        font.bold: true
+                                                        color: Services.Theme.textDisabled
+                                                    }
+                                                }
+
+                                                GridLayout {
+                                                    Layout.fillWidth: true
+                                                    columns: 2
+                                                    rowSpacing: 5
+                                                    columnSpacing: 5
+
+                                                    Repeater {
+                                                        model: [
+                                                            { key: "clipboard",     label: "Clipboard",    icon: "\uf0ea" },
+                                                            { key: "notifications", label: "Notifications",icon: "\uf0f3" },
+                                                            { key: "mprisremote",   label: "Media control", icon: "\uf144" },
+                                                            { key: "sftp",          label: "File access",  icon: "\uf07c" }
+                                                        ]
+                                                        delegate: Rectangle {
+                                                            id: plugChip
+                                                            required property var modelData
+                                                            readonly property var st: phoneRow.pst[plugChip.modelData.key]
+                                                            visible: plugChip.st !== undefined
+                                                            Layout.fillWidth: true
+                                                            Layout.preferredWidth: 1
+                                                            implicitHeight: 30
+                                                            radius: Services.Theme.radiusSm
+                                                            color: plugChip.st
+                                                                   ? Qt.alpha(Services.Theme.accent, plugMouse.containsMouse ? 0.25 : 0.15)
+                                                                   : (plugMouse.containsMouse ? Qt.alpha(Services.Theme.textPrimary, 0.08) : Qt.alpha(Services.Theme.textPrimary, 0.04))
+                                                            border.color: plugChip.st
+                                                                          ? Qt.alpha(Services.Theme.accent, 0.4)
+                                                                          : Qt.alpha(Services.Theme.border, 0.6)
+                                                            border.width: 1
+                                                            Behavior on color { ColorAnimation { duration: 200 } }
+
+                                                            RowLayout {
+                                                                anchors.fill: parent
+                                                                anchors.leftMargin: 10
+                                                                anchors.rightMargin: 10
+                                                                spacing: 6
+
+                                                                Text {
+                                                                    text: plugChip.modelData.icon
+                                                                    font.family: Services.Theme.fontSymbols
+                                                                    font.pixelSize: 11
+                                                                    color: plugChip.st ? Services.Theme.accent : Services.Theme.textDisabled
+                                                                    Behavior on color { ColorAnimation { duration: 200 } }
+                                                                }
+
+                                                                Text {
+                                                                    text: plugChip.modelData.label
+                                                                    font.pixelSize: 10
+                                                                    font.bold: plugChip.st === true
+                                                                    color: plugChip.st ? Services.Theme.textPrimary : Services.Theme.textSecondary
+                                                                    Layout.fillWidth: true
+                                                                    elide: Text.ElideRight
+                                                                    Behavior on color { ColorAnimation { duration: 200 } }
+                                                                }
+
+                                                                // Mini toggle indicator
+                                                                Rectangle {
+                                                                    width: 26; height: 14; radius: 7
+                                                                    color: plugChip.st ? Services.Theme.accent : Qt.alpha(Services.Theme.textDisabled, 0.3)
+                                                                    Behavior on color { ColorAnimation { duration: 200 } }
+
+                                                                    Rectangle {
+                                                                        width: 10; height: 10; radius: 5
+                                                                        anchors.verticalCenter: parent.verticalCenter
+                                                                        x: plugChip.st ? parent.width - width - 2 : 2
+                                                                        color: "white"
+                                                                        Behavior on x { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
+                                                                    }
+                                                                }
+                                                            }
+
+                                                            MouseArea {
+                                                                id: plugMouse
+                                                                anchors.fill: parent
+                                                                hoverEnabled: true
+                                                                cursorShape: Qt.PointingHandCursor
+                                                                onClicked: root.phoneTogglePlugin(phoneRow.modelData.id, plugChip.modelData.key, !plugChip.st)
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+
+                                            // ── Unpair Footer ──
+                                            RowLayout {
+                                                visible: phoneRow.modelData.paired
+                                                Layout.fillWidth: true
+
+                                                Item { Layout.fillWidth: true }
+
+                                                Rectangle {
+                                                    implicitWidth: unpairRowContent.implicitWidth + 16
+                                                    implicitHeight: 22
+                                                    radius: 11
+                                                    color: phoneRow.confirmUnpair
+                                                           ? Qt.alpha(Services.Theme.danger, 0.2)
+                                                           : (unpairMouse.containsMouse ? Qt.alpha(Services.Theme.danger, 0.1) : "transparent")
+                                                    border.color: phoneRow.confirmUnpair || unpairMouse.containsMouse
+                                                                  ? Qt.alpha(Services.Theme.danger, 0.5)
+                                                                  : "transparent"
+                                                    border.width: 1
+                                                    Behavior on color { ColorAnimation { duration: 200 } }
+
+                                                    RowLayout {
+                                                        id: unpairRowContent
+                                                        anchors.centerIn: parent
+                                                        spacing: 5
+
+                                                        Text {
+                                                            text: "\uf127"
+                                                            font.family: Services.Theme.fontSymbols
+                                                            font.pixelSize: 10
+                                                            color: phoneRow.confirmUnpair || unpairMouse.containsMouse
+                                                                   ? Services.Theme.danger
+                                                                   : Services.Theme.textDisabled
+                                                            Behavior on color { ColorAnimation { duration: 200 } }
+                                                        }
+                                                        Text {
+                                                            text: phoneRow.confirmUnpair ? "Confirm unpair" : "Unpair"
+                                                            font.pixelSize: 10
+                                                            font.bold: phoneRow.confirmUnpair
+                                                            color: phoneRow.confirmUnpair || unpairMouse.containsMouse
+                                                                   ? Services.Theme.danger
+                                                                   : Services.Theme.textDisabled
+                                                            Behavior on color { ColorAnimation { duration: 200 } }
+                                                        }
+                                                    }
+
+                                                    MouseArea {
+                                                        id: unpairMouse
+                                                        anchors.fill: parent
+                                                        anchors.margins: -4
+                                                        hoverEnabled: true
+                                                        cursorShape: Qt.PointingHandCursor
+                                                        onClicked: {
+                                                            if (phoneRow.confirmUnpair) {
+                                                                phoneRow.confirmUnpair = false
+                                                                root.phoneAction(phoneRow.modelData.id, "--unpair", "Unpaired")
+                                                            } else {
+                                                                phoneRow.confirmUnpair = true
+                                                                unpairTimer.restart()
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // ── Phone Media Player (via MPRIS / KDE Connect) ──
+                                Repeater {
+                                    model: Mpris.players
+                                    delegate: Rectangle {
+                                        id: phoneMediaCard
+                                        required property var modelData
+                                        visible: (phoneMediaCard.modelData.dbusName || "").toLowerCase().indexOf("kdeconnect") !== -1
+                                        Layout.fillWidth: true
+                                        implicitHeight: mediaCardContent.implicitHeight + 24
+                                        radius: Services.Theme.radiusMd
+                                        color: (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06))
+                                        border.color: Qt.alpha(Services.Theme.accent, 0.2)
+                                        border.width: 1
+
+                                        ColumnLayout {
+                                            id: mediaCardContent
+                                            anchors.left: parent.left
+                                            anchors.right: parent.right
+                                            anchors.top: parent.top
+                                            anchors.margins: 14
+                                            spacing: 10
+
+                                            // Media info row
+                                            RowLayout {
+                                                Layout.fillWidth: true
+                                                spacing: 10
+
+                                                // Album art placeholder
+                                                Rectangle {
+                                                    width: 44; height: 44; radius: 8
+                                                    color: Qt.alpha(Services.Theme.accent, 0.15)
+                                                    border.color: Qt.alpha(Services.Theme.accent, 0.3)
+                                                    border.width: 1
+
+                                                    Text {
+                                                        anchors.centerIn: parent
+                                                        text: phoneMediaCard.modelData.isPlaying ? "\uf001" : "\uf04d"
+                                                        font.family: Services.Theme.fontSymbols
+                                                        font.pixelSize: 18
+                                                        color: Services.Theme.accent
+                                                        opacity: phoneMediaCard.modelData.isPlaying ? 1.0 : 0.5
+                                                        Behavior on opacity { NumberAnimation { duration: 300 } }
+                                                    }
+                                                }
+
+                                                ColumnLayout {
+                                                    Layout.fillWidth: true
+                                                    spacing: 3
+
+                                                    Text {
+                                                        Layout.fillWidth: true
+                                                        text: phoneMediaCard.modelData.trackTitle || "Nothing playing"
+                                                        font.pixelSize: 12
+                                                        font.bold: true
+                                                        color: Services.Theme.textPrimary
+                                                        elide: Text.ElideRight
+                                                    }
+                                                    Text {
+                                                        Layout.fillWidth: true
+                                                        text: phoneMediaCard.modelData.trackArtist || phoneMediaCard.modelData.identity || "Phone media"
+                                                        font.pixelSize: 10
+                                                        color: Services.Theme.textSecondary
+                                                        elide: Text.ElideRight
+                                                    }
+
+                                                    // Playing indicator pill
+                                                    Rectangle {
+                                                        visible: phoneMediaCard.modelData.isPlaying
+                                                        implicitWidth: nowPlayingLabel.implicitWidth + 12
+                                                        implicitHeight: 14
+                                                        radius: 7
+                                                        color: Qt.alpha(Services.Theme.success, 0.2)
+                                                        border.color: Qt.alpha(Services.Theme.success, 0.4)
+                                                        border.width: 1
+
+                                                        Text {
+                                                            id: nowPlayingLabel
+                                                            anchors.centerIn: parent
+                                                            text: "▶ Now playing"
+                                                            font.pixelSize: 8
+                                                            font.bold: true
+                                                            color: Services.Theme.success
+                                                        }
+                                                    }
+                                                }
+                                            }
+
+                                            // Playback controls
+                                            RowLayout {
+                                                Layout.fillWidth: true
+                                                spacing: 8
+
+                                                Item { Layout.fillWidth: true }
+
+                                                // Previous
+                                                Rectangle {
+                                                    visible: phoneMediaCard.modelData.canGoPrevious
+                                                    width: 32; height: 32; radius: 16
+                                                    color: prevMouse.containsMouse ? (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.10)) : Qt.alpha(Services.Theme.textPrimary, 0.07)
+                                                    border.color: prevMouse.containsMouse ? Services.Theme.border : "transparent"
+                                                    border.width: 1
+                                                    Behavior on color { ColorAnimation { duration: 150 } }
+                                                    scale: prevMouse.pressed ? 0.88 : 1.0
+                                                    Behavior on scale { NumberAnimation { duration: 100 } }
+
+                                                    Text {
+                                                        anchors.centerIn: parent
+                                                        text: "\uf04a"
+                                                        font.family: Services.Theme.fontSymbols
+                                                        font.pixelSize: 11
+                                                        color: Services.Theme.textSecondary
+                                                    }
+                                                    MouseArea {
+                                                        id: prevMouse
+                                                        anchors.fill: parent
+                                                        hoverEnabled: true
+                                                        cursorShape: Qt.PointingHandCursor
+                                                        onClicked: phoneMediaCard.modelData.previous()
+                                                    }
+                                                }
+
+                                                // Play / Pause
+                                                Rectangle {
+                                                    visible: phoneMediaCard.modelData.canTogglePlaying
+                                                    width: 40; height: 40; radius: 20
+                                                    color: playMouse.containsMouse
+                                                           ? Services.Theme.accent
+                                                           : Qt.alpha(Services.Theme.accent, 0.25)
+                                                    border.color: Qt.alpha(Services.Theme.accent, playMouse.containsMouse ? 1.0 : 0.4)
+                                                    border.width: 1
+                                                    Behavior on color { ColorAnimation { duration: 150 } }
+                                                    scale: playMouse.pressed ? 0.88 : 1.0
+                                                    Behavior on scale { NumberAnimation { duration: 100; easing.type: Easing.OutBack } }
+
+                                                    Text {
+                                                        anchors.centerIn: parent
+                                                        text: phoneMediaCard.modelData.isPlaying ? "\uf04c" : "\uf04b"
+                                                        font.family: Services.Theme.fontSymbols
+                                                        font.pixelSize: 14
+                                                        color: playMouse.containsMouse ? Services.Theme.bgDeep : Services.Theme.textPrimary
+                                                        Behavior on color { ColorAnimation { duration: 150 } }
+                                                    }
+                                                    MouseArea {
+                                                        id: playMouse
+                                                        anchors.fill: parent
+                                                        hoverEnabled: true
+                                                        cursorShape: Qt.PointingHandCursor
+                                                        onClicked: phoneMediaCard.modelData.togglePlaying()
+                                                    }
+                                                }
+
+                                                // Next
+                                                Rectangle {
+                                                    visible: phoneMediaCard.modelData.canGoNext
+                                                    width: 32; height: 32; radius: 16
+                                                    color: nextMouse.containsMouse ? (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.10)) : Qt.alpha(Services.Theme.textPrimary, 0.07)
+                                                    border.color: nextMouse.containsMouse ? Services.Theme.border : "transparent"
+                                                    border.width: 1
+                                                    Behavior on color { ColorAnimation { duration: 150 } }
+                                                    scale: nextMouse.pressed ? 0.88 : 1.0
+                                                    Behavior on scale { NumberAnimation { duration: 100 } }
+
+                                                    Text {
+                                                        anchors.centerIn: parent
+                                                        text: "\uf04e"
+                                                        font.family: Services.Theme.fontSymbols
+                                                        font.pixelSize: 11
+                                                        color: Services.Theme.textSecondary
+                                                    }
+                                                    MouseArea {
+                                                        id: nextMouse
+                                                        anchors.fill: parent
+                                                        hoverEnabled: true
+                                                        cursorShape: Qt.PointingHandCursor
+                                                        onClicked: phoneMediaCard.modelData.next()
+                                                    }
+                                                }
+
+                                                Item { Layout.fillWidth: true }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // ── Status Toast ──
+                                Rectangle {
+                                    visible: root.phoneStatus !== ""
+                                    Layout.fillWidth: true
+                                    implicitHeight: statusToastRow.implicitHeight + 14
+                                    radius: Services.Theme.radiusSm
+                                    color: Qt.alpha(Services.Theme.accent, 0.12)
+                                    border.color: Qt.alpha(Services.Theme.accent, 0.3)
+                                    border.width: 1
+
+                                    RowLayout {
+                                        id: statusToastRow
+                                        anchors.centerIn: parent
+                                        width: parent.width - 24
+                                        spacing: 8
+
+                                        Text {
+                                            text: "\uf05a"
+                                            font.family: Services.Theme.fontSymbols
+                                            font.pixelSize: 11
+                                            color: Services.Theme.accent
+                                        }
+                                        Text {
+                                            Layout.fillWidth: true
+                                            text: root.phoneStatus
+                                            font.pixelSize: 11
+                                            font.bold: true
+                                            color: Services.Theme.textPrimary
+                                            wrapMode: Text.WordWrap
                                         }
                                     }
                                 }

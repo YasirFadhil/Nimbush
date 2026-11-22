@@ -15,6 +15,16 @@ import "../../media" as MediaModule
 Item {
     id: root
 
+    // ----- Glass material (same language as Dock.qml) -----
+    // Neutral translucent fill + 1px white hairline + top specular. Blur comes from the
+    // compositor (layer rule on the bar namespace). Alpha is higher than the dock's 0.38
+    // because the island carries text and has to stay legible without blur.
+    readonly property bool glassDark: Services.Theme.isDark
+    readonly property color glassFill: glassDark ? Qt.rgba(0.11, 0.11, 0.12, 0.88) : Qt.rgba(1, 1, 1, 0.82)
+    readonly property color glassBorder: glassDark ? Qt.rgba(1, 1, 1, 0.22) : Qt.rgba(1, 1, 1, 0.65)
+    readonly property color glassBorderStrong: glassDark ? Qt.rgba(1, 1, 1, 0.34) : Qt.rgba(1, 1, 1, 0.80)
+    readonly property color glassSpecular: glassDark ? Qt.rgba(1, 1, 1, 0.28) : Qt.rgba(1, 1, 1, 0.75)
+
     // ----- Public API & State -----
     property bool pinned: false
     property bool autoExpanded: false
@@ -150,7 +160,229 @@ Item {
     function playIconA(t) { return mixQuad(icoPlayA, icoPauseA, t) }
     function playIconB(t) { return mixQuad(icoPlayB, icoPauseB, t) }
 
-    // ===================== Media control features =====================
+    // ===================== Media lyrics (LRCLIB + animated ListView) =====================
+    property bool mediaLyricsVisible: false
+    property bool mediaLyricsLoading: false
+    property string mediaLyricsError: ""
+    property string mediaLyricsRaw: ""
+    property var mediaLyricsLines: []
+    property int mediaLyricsIndex: 0
+    property int mediaLyricsDisplayIndex: 0
+    property string mediaLyricsTrackKey: ""
+
+    // Key of the track that is playing right now. Must match the format stored in
+    // mediaLyricsTrackKey by fetchMediaLyrics(), so the two can be compared.
+    readonly property string currentLyricsKey: stableTrackTitle.trim()
+        + (stableTrackArtist.trim() ? " — " + stableTrackArtist.trim() : "")
+
+    // True when the lyrics we hold are missing or belong to a different track.
+    function lyricsAreStale() {
+        return root.mediaLyricsLines.length === 0
+            || root.mediaLyricsTrackKey !== root.currentLyricsKey
+    }
+
+    function normalizeLyricsKey(value) {
+        return String(value || "").toLowerCase()
+            .replace(/\([^)]*\)|\[[^\]]*\]/g, " ")
+            .replace(/\b(feat\.?|ft\.?)\b.*$/i, "")
+            .replace(/[^\p{L}\p{N}]+/gu, " ")
+            .trim()
+    }
+
+    function fetchMediaLyrics() {
+        const title = root.stableTrackTitle.trim()
+        const artist = root.stableTrackArtist.trim()
+        if (!title) {
+            root.mediaLyricsLoading = false
+            root.mediaLyricsError = "Track title unavailable"
+            return
+        }
+
+        root.mediaLyricsLoading = true
+        root.mediaLyricsError = ""
+        root.mediaLyricsRaw = ""
+        root.mediaLyricsLines = []
+        root.mediaLyricsIndex = 0
+        root.mediaLyricsDisplayIndex = 0
+        root.mediaLyricsTrackKey = root.currentLyricsKey
+
+        // Search is more forgiving than /api/get: it can return alternate title,
+        // artist-credit and duration matches. Rank the results locally.
+        const command = [
+            "curl", "-fsSG", "--max-time", "8",
+            "-H", "User-Agent: Nimbush Quickshell desktop shell",
+            "https://lrclib.net/api/search",
+            "--data-urlencode", "track_name=" + title
+        ]
+        if (artist)
+            command.push("--data-urlencode", "artist_name=" + artist)
+        mediaLyricsRequest.command = command
+        mediaLyricsRequest.running = true
+    }
+
+    function parseMediaLyrics(payload) {
+        let results
+        try { results = JSON.parse(payload) }
+        catch (e) {
+            root.mediaLyricsLoading = false
+            root.mediaLyricsError = "Invalid lyrics response"
+            return
+        }
+
+        // /api/search returns an array. Keep a defensive object path for API compatibility.
+        const candidates = Array.isArray(results) ? results : (results ? [results] : [])
+        const wantedTitle = root.normalizeLyricsKey(root.stableTrackTitle)
+        const wantedArtist = root.normalizeLyricsKey(root.stableTrackArtist)
+        const duration = Number(root.activePlayer?.length ?? 0)
+
+        let best = null
+        let bestScore = -Infinity
+        for (const item of candidates) {
+            const itemTitle = root.normalizeLyricsKey(item.trackName)
+            const itemArtist = root.normalizeLyricsKey(item.artistName)
+            if (!itemTitle) continue
+
+            let score = 0
+            if (itemTitle === wantedTitle) score += 100
+            else if (itemTitle.includes(wantedTitle) || wantedTitle.includes(itemTitle)) score += 55
+            else continue
+
+            if (wantedArtist && itemArtist === wantedArtist) score += 70
+            else if (wantedArtist && (itemArtist.includes(wantedArtist) || wantedArtist.includes(itemArtist))) score += 35
+
+            const itemDuration = Number(item.duration || 0)
+            if (duration > 0 && itemDuration > 0) {
+                const delta = Math.abs(duration - itemDuration)
+                score += Math.max(-30, 25 - delta * 2)
+            }
+            if (String(item.syncedLyrics || "").trim()) score += 12
+            if (String(item.plainLyrics || "").trim()) score += 4
+
+            if (score > bestScore) {
+                bestScore = score
+                best = item
+            }
+        }
+
+        root.mediaLyricsLoading = false
+        if (!best || bestScore < 35) {
+            root.mediaLyricsError = "Lyrics not found for this track"
+            return
+        }
+        if (best.instrumental) {
+            root.mediaLyricsError = "Instrumental track"
+            return
+        }
+
+        const synced = String(best.syncedLyrics || "").trim()
+        const plain = String(best.plainLyrics || "").trim()
+        const source = synced || plain
+        if (!source) {
+            root.mediaLyricsError = "No lyrics available"
+            return
+        }
+
+        const lines = []
+        if (synced) {
+            // Accept [mm:ss], [mm:ss.xx], and multiple timestamps on one line.
+            const re = /\[(\d{1,2}):(\d{2})(?:[.:](\d{1,3}))?\]/g
+            for (const rawLine of synced.split(/\r?\n/)) {
+                const text = rawLine.replace(/^\s*(?:\[\d{1,2}:\d{2}(?:[.:]\d{1,3})?\])+\s*/, "").trim()
+                if (!text) continue
+                re.lastIndex = 0
+                let match
+                while ((match = re.exec(rawLine)) !== null) {
+                    const fraction = match[3] ? Number("0." + match[3]) : 0
+                    lines.push({
+                        time: Number(match[1]) * 60 + Number(match[2]) + fraction,
+                        text: text
+                    })
+                }
+            }
+        } else {
+            for (const line of plain.split(/\r?\n/)) {
+                if (line.trim()) lines.push({ time: -1, text: line.trim() })
+            }
+        }
+
+        lines.sort((a, b) => a.time - b.time)
+        root.mediaLyricsRaw = source
+        root.mediaLyricsLines = lines
+        root.mediaLyricsIndex = 0
+        root.mediaLyricsDisplayIndex = 0
+        root.mediaLyricsError = lines.length ? "" : "No readable lyrics"
+        root.updateMediaLyricsIndex()
+    }
+
+    readonly property string mediaLyricsCurrentText: mediaLyricsLines.length
+        ? String(mediaLyricsLines[Math.max(0, Math.min(mediaLyricsIndex, mediaLyricsLines.length - 1))].text || "")
+        : ""
+
+    function updateMediaLyricsIndex() {
+        if (!root.mediaLyricsLines.length) return
+        const position = Number(root.activePlayer?.position ?? 0)
+        let next = 0
+        if (root.mediaLyricsLines[0].time < 0) {
+            const duration = Math.max(1, Number(root.activePlayer?.length ?? 1))
+            next = Math.min(root.mediaLyricsLines.length - 1,
+                Math.floor(Math.max(0, position) / duration * root.mediaLyricsLines.length))
+        } else {
+            for (let i = 0; i < root.mediaLyricsLines.length; i++) {
+                if (root.mediaLyricsLines[i].time <= position) next = i
+                else break
+            }
+        }
+        if (next !== root.mediaLyricsIndex) {
+            root.mediaLyricsIndex = next
+            // Let the lyrics ListView animate to the active line.
+            // Direct updates avoid a fade-delay race between playback and display.
+            root.mediaLyricsDisplayIndex = next
+        }
+    }
+
+    Process {
+        id: mediaLyricsRequest
+        stdout: StdioCollector { onStreamFinished: root.parseMediaLyrics(text) }
+        stderr: StdioCollector { onStreamFinished: (text) => {
+            // Do not call trim() on collector output: some Quickshell versions
+            // can emit an undefined value when the process has no stderr stream.
+            const stderrText = (text === undefined || text === null) ? "" : String(text)
+            if (stderrText.length > 0 && root.mediaLyricsLoading) {
+                root.mediaLyricsLoading = false
+                root.mediaLyricsError = "Lyrics service unavailable"
+            }
+        } }
+        onExited: (exitCode) => {
+            if (exitCode !== 0 && root.mediaLyricsLoading) {
+                root.mediaLyricsLoading = false
+                root.mediaLyricsError = "Lyrics not found (network/API)"
+            }
+        }
+    }
+
+    Timer {
+        interval: 100
+        repeat: true
+        running: root.mediaLyricsVisible && root.mediaLyricsLines.length > 0
+        onTriggered: root.updateMediaLyricsIndex()
+    }
+
+    // Never keep the previous track's lyrics around once the track changes,
+    // even while the lyrics panel is closed.
+    function handleLyricsTrackChange() {
+        if (mediaLyricsVisible) {
+            fetchMediaLyrics()
+        } else if (mediaLyricsTrackKey !== currentLyricsKey) {
+            mediaLyricsLines = []
+            mediaLyricsRaw = ""
+            mediaLyricsError = ""
+            mediaLyricsIndex = 0
+            mediaLyricsDisplayIndex = 0
+        }
+    }
+    onStableTrackTitleChanged: handleLyricsTrackChange()
+    onStableTrackArtistChanged: handleLyricsTrackChange()
+
     property bool mediaShowRemaining: false          // tap the right-hand time to flip total <-> remaining
     property bool mediaVolHudOpen: false             // scroll over the card (or tap the speaker) to open
     property bool mediaVolDragging: false
@@ -1320,7 +1552,7 @@ Item {
             root.lastAudioMuted = Services.Audio.muted
         }
         if (Services.Power) {
-            root.lastChargingState = Services.Power.charging
+            root.lastChargingState = Services.Power.pluggedIn
         }
         if (Services.PowerProfile) {
             root.lastSaverEnabled = Services.PowerProfile.saverEnabled
@@ -1403,8 +1635,8 @@ Item {
 
     Connections {
         target: Services.Power
-        function onChargingChanged() {
-            const isCharging = Services.Power.charging
+        function onPluggedInChanged() {
+            const isCharging = Services.Power.pluggedIn
             if (!root.hudReady || !Services.Power.ready) {
                 root.lastChargingState = isCharging
                 return
@@ -2050,7 +2282,7 @@ Item {
         if (wallpaperMode) return 120
         if (slot0Activity === "syshud") return 54
         if (isMediaPeek) return 54
-        if (hasMedia) return 144
+        if (hasMedia) return mediaLyricsVisible ? 196 : 144
         return 52
     }
 
@@ -2271,7 +2503,7 @@ Item {
         width: root.expanded ? root.calculatedExpandedWidth : root.calculatedCollapsedWidth
         height: root.expanded ? root.calculatedExpandedHeight : root.collapsedHeight
 
-        readonly property bool isCapsuleShape: !root.expanded || (!root.notifActive && (root.sysHudActive || root.isMediaPeek))
+        readonly property bool isCapsuleShape: !root.expanded || (!root.notifActive && (root.slot0Activity === "syshud" || root.isMediaPeek))
         // Animate toward the *final* capsule radius instead of deriving it from
         // the live animated height. A live height/2 binding turns the whole card
         // into an oval as soon as collapse starts.
@@ -2280,11 +2512,11 @@ Item {
             : Services.Theme.radiusLg
         radius: targetRadius
 
-        color: Services.Theme.bgPure
+        color: root.glassFill
         border.color: {
             if (root.isCritical) return Services.Theme.danger
-            if (root.expanded) return Services.Theme.borderHighlight
-            return Services.Theme.borderSubtle
+            if (root.expanded) return root.glassBorderStrong
+            return root.glassBorder
         }
         border.width: root.isCritical ? 1.5 : 1
 
@@ -3727,7 +3959,12 @@ Item {
                 : 336
             height: (root.isMediaPeek || (root.mediaWasPeek && !root.expanded))
                 ? 34
-                : 120
+                : (root.mediaLyricsVisible ? 172 : 120)
+            Behavior on height {
+                // Keep in sync with the island shell morph (340ms InOutSine) so mediaView
+                // never exceeds the island boundary mid-animation and gets clipped.
+                NumberAnimation { duration: root.mediaFlightMs; easing.type: Easing.InOutSine }
+            }
 
             readonly property bool activeState: !Services.OverlayManager.isLocked && root.expanded && (root.slot0Activity === "media") && !root.wallpaperMode && !root.dropWorkflowActive
             // True for the peek capsule AND for its closing morph. Everything that changes the
@@ -3761,23 +3998,65 @@ Item {
                 onWheel: (event) => { root.adjustMediaVolume(event.angleDelta.y > 0 ? 0.05 : -0.05) }
             }
 
+            // "Player" button shown in lyrics mode, top-right of the header. It sits on mediaView
+            // (not in the header row) so it never adds layout spacing outside lyrics mode.
+            Item {
+                id: lyricsPlayerButton
+                z: 5
+                width: 42
+                height: 18
+                anchors.right: parent.right
+                y: Math.max(0, (mediaMainColumn.targetHeaderHeight - height) / 2)
+                // 0 = card, 1 = lyrics. Same curve/duration as the header + cover resize.
+                property real lyricsT: (root.mediaLyricsVisible && !mediaView.peekShape) ? 1.0 : 0.0
+                Behavior on lyricsT { NumberAnimation { duration: root.mediaFlightMs; easing.type: Easing.InOutSine } }
+                visible: lyricsT > 0.01
+                opacity: mediaInfoCol.opacity * lyricsT * lyricsT
+
+                Text {
+                    anchors.fill: parent
+                    verticalAlignment: Text.AlignVCenter
+                    horizontalAlignment: Text.AlignRight
+                    text: "Player"
+                    color: Services.Theme.accent
+                    font.pixelSize: 10
+                    font.bold: true
+                }
+                MouseArea {
+                    anchors.fill: parent
+                    enabled: root.mediaLyricsVisible
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: root.mediaLyricsVisible = false
+                }
+            }
+
             // Row 1: Track Art (left) + Info column (title, artist, progress, controls) + peek visualizer
             ColumnLayout {
+                id: mediaMainColumn
                 anchors.fill: parent
                 spacing: 0
+
+                // Animated header height driver — keeps mediaHeaderRow and mediaView.height
+                // in lock-step so the ColumnLayout never overflows during the lyrics morph.
+                property real targetHeaderHeight: mediaView.peekShape ? 34 : (root.mediaLyricsVisible ? 34 : 60)
+                Behavior on targetHeaderHeight {
+                    NumberAnimation { duration: root.mediaFlightMs; easing.type: Easing.InOutSine }
+                }
 
             // Header: cover + (title, artist, quick actions)
             RowLayout {
                 id: mediaHeaderRow
                 Layout.fillWidth: true
-                Layout.preferredHeight: mediaView.peekShape ? 34 : 60
+                Layout.preferredHeight: mediaMainColumn.targetHeaderHeight
+                Layout.minimumHeight: mediaMainColumn.targetHeaderHeight
                 spacing: (root.isMediaPeek || (root.mediaWasPeek && !root.expanded)) ? 10 : 12
                 Behavior on spacing { NumberAnimation { duration: 320; easing.type: Easing.InOutCubic } }
 
                 // Artwork Container: Morphs between a 34px peek tile and a 60px full cover.
                 Item {
                     id: mediaArtWrapper
-                    readonly property real restingSize: (root.isMediaPeek || (root.mediaWasPeek && !root.expanded)) ? 34.0 : 60.0
+                    readonly property real restingSize: (root.isMediaPeek || (root.mediaWasPeek && !root.expanded)) ? 34.0
+                        : (root.mediaLyricsVisible ? 34.0 : 60.0)
 
                     // ── Art URL caching ──────────────────────────────────────────────
                     // Keep the last valid art URL so the artwork never goes blank when
@@ -3832,7 +4111,7 @@ Item {
                     // squircle (0.3 * size) once the scale is applied: no shape pop at handoff.
                     readonly property real artRadius: {
                         const peekShape = root.isMediaPeek || (root.mediaWasPeek && !root.expanded)
-                        const base = peekShape ? (width / 2) : 16.0
+                        const base = peekShape ? (width / 2) : (root.mediaLyricsVisible ? 10.0 : 16.0)
                         if (!root.mediaTransitionActive) return base
                         return base + ((0.3 * restingSize) - base) * root.mediaTransitionProgress
                     }
@@ -3978,7 +4257,7 @@ Item {
                             anchors.centerIn: parent
                             text: (root.activePlayer && root.activePlayer.identity) ? Services.Icons.playerIcon(root.activePlayer.identity) : "󰎈"
                             font.family: Services.Theme.fontSymbols
-                            font.pixelSize: root.isMediaPeek ? 15 : 28
+                            font.pixelSize: (root.isMediaPeek || root.mediaLyricsVisible) ? 15 : 28
                             color: Services.Theme.accent
                             // Hidden whenever the image is loading OR ready — only shown
                             // when there is truly no artwork (source empty or Error).
@@ -4030,7 +4309,10 @@ Item {
                 ColumnLayout {
                     id: mediaInfoCol
                     Layout.fillWidth: true
+                    Layout.fillHeight: true
                     Layout.alignment: Qt.AlignVCenter
+                    // Room for the "Player" button (lyricsPlayerButton) while lyrics are open.
+                    Layout.rightMargin: 50 * lyricsPlayerButton.lyricsT
                     // Preserve title/artist geometry through the closing flight.
                     // The whole media layer is hidden after the handoff, so it does
                     // not need to collapse its internal spacing early.
@@ -4093,18 +4375,34 @@ Item {
 
 
                     // Running Title Text (Seamless physical morph across states)
+                    EdgeFadeMask {
+                        id: titleFadeMask
+                        width: mediaTitleContainer.width
+                        height: mediaTitleContainer.height
+                        leftAmt: Math.max(0.0, Math.min(1.0, (-mediaTitleText.x - 2) / 18))
+                        rightAmt: Math.max(0.0, Math.min(1.0, (mediaTitleText.maxScroll + mediaTitleText.x - 4) / 18))
+                    }
                     Item {
                         id: mediaTitleContainer
                         Layout.fillWidth: true
                         implicitHeight: mediaTitleText.implicitHeight
                         clip: true
+                        // Same label in every mode (card, lyrics, peek): lyrics mode only shrinks it
+                        // and moves the Player button in, it no longer swaps in a duplicate label.
                         opacity: root.mediaFlightActive ? 0.0 : 1.0
+                        Behavior on opacity {
+                            enabled: !root.mediaTransitionActive && !root.mediaFlightEnabled
+                            NumberAnimation { duration: 200; easing.type: Easing.InOutQuad }
+                        }
+                        layer.enabled: true
+                        layer.smooth: true
+                        layer.effect: MultiEffect { maskEnabled: true; maskSource: titleFadeMask }
 
                         Text {
                             id: mediaTitleText
                             text: mediaInfoCol.fullTitle
                             color: Services.Theme.textPrimary
-                            font.pixelSize: (root.isMediaPeek || (root.mediaTransitionActive && root.mediaWasPeek)) ? 12 : 14
+                            font.pixelSize: (root.isMediaPeek || (root.mediaTransitionActive && root.mediaWasPeek) || root.mediaLyricsVisible) ? 12 : 14
                             font.bold: true
                             width: parent.width
                             readonly property real maxScroll: Math.max(0, implicitWidth - parent.width + 8)
@@ -4116,39 +4414,25 @@ Item {
                         // Soft edges instead of a hard cut through a glyph while the label
                         // overflows. The right edge fades out as the text runs out of room to
                         // scroll, the left edge appears once it has scrolled.
-                        Rectangle {
-                            anchors.top: parent.top
-                            anchors.bottom: parent.bottom
-                            anchors.right: parent.right
-                            width: 22
-                            opacity: Math.max(0.0, Math.min(1.0, (mediaTitleText.maxScroll + mediaTitleText.x - 4) / 18))
-                            gradient: Gradient {
-                                orientation: Gradient.Horizontal
-                                GradientStop { position: 0.0; color: Qt.rgba(Services.Theme.bgPure.r, Services.Theme.bgPure.g, Services.Theme.bgPure.b, 0.0) }
-                                GradientStop { position: 1.0; color: Services.Theme.bgPure }
-                            }
-                        }
-                        Rectangle {
-                            anchors.top: parent.top
-                            anchors.bottom: parent.bottom
-                            anchors.left: parent.left
-                            width: 22
-                            opacity: Math.max(0.0, Math.min(1.0, (-mediaTitleText.x - 2) / 18))
-                            gradient: Gradient {
-                                orientation: Gradient.Horizontal
-                                GradientStop { position: 0.0; color: Services.Theme.bgPure }
-                                GradientStop { position: 1.0; color: Qt.rgba(Services.Theme.bgPure.r, Services.Theme.bgPure.g, Services.Theme.bgPure.b, 0.0) }
-                            }
-                        }
                     }
 
                     // Running Artist Text (Seamless physical morph across states)
+                    EdgeFadeMask {
+                        id: artistFadeMask
+                        width: mediaArtistContainer.width
+                        height: mediaArtistContainer.height
+                        leftAmt: Math.max(0.0, Math.min(1.0, (-mediaArtistText.x - 2) / 18))
+                        rightAmt: Math.max(0.0, Math.min(1.0, (mediaArtistText.maxScroll + mediaArtistText.x - 4) / 18))
+                    }
                     Item {
                         id: mediaArtistContainer
                         Layout.fillWidth: true
+                        visible: mediaInfoCol.fullArtist.length > 0
                         implicitHeight: mediaArtistText.implicitHeight
                         clip: true
-                        visible: mediaInfoCol.fullArtist.length > 0
+                        layer.enabled: true
+                        layer.smooth: true
+                        layer.effect: MultiEffect { maskEnabled: true; maskSource: artistFadeMask }
                         // Peek shows the artist under the title too. peekShape keeps it up while the
                         // peek closes, so it fades with the info column instead of snapping off.
                         opacity: ((root.expanded || mediaView.peekShape) && !root.mediaFlightActive) ? 1.0 : 0.0
@@ -4156,14 +4440,14 @@ Item {
                             // Off during the media transition: the flight overlay hands over
                             // to this label in one frame, so it must not fade in on its own.
                             enabled: !root.mediaTransitionActive && !root.mediaFlightEnabled
-                            NumberAnimation { duration: root.expanded ? 240 : 120; easing.type: root.expanded ? Easing.OutCubic : Easing.InQuad }
+                            NumberAnimation { duration: root.expanded ? 220 : 120; easing.type: root.expanded ? Easing.InOutQuad : Easing.InQuad }
                         }
 
                         Text {
                             id: mediaArtistText
                             text: mediaInfoCol.fullArtist
                             color: Services.Theme.textSecondary
-                            font.pixelSize: (root.isMediaPeek || (root.mediaTransitionActive && root.mediaWasPeek)) ? 10 : 11
+                            font.pixelSize: (root.isMediaPeek || (root.mediaTransitionActive && root.mediaWasPeek) || root.mediaLyricsVisible) ? 10 : 11
                             width: parent.width
                             readonly property real maxScroll: Math.max(0, implicitWidth - parent.width + 8)
                             x: (maxScroll > 0 && !mediaTextSwitchAnim.running && !root.mediaTransitionActive) ? -maxScroll * root.globalMediaMarqueeRatio : 0
@@ -4174,42 +4458,26 @@ Item {
                         // Soft edges instead of a hard cut through a glyph while the label
                         // overflows. The right edge fades out as the text runs out of room to
                         // scroll, the left edge appears once it has scrolled.
-                        Rectangle {
-                            anchors.top: parent.top
-                            anchors.bottom: parent.bottom
-                            anchors.right: parent.right
-                            width: 22
-                            opacity: Math.max(0.0, Math.min(1.0, (mediaArtistText.maxScroll + mediaArtistText.x - 4) / 18))
-                            gradient: Gradient {
-                                orientation: Gradient.Horizontal
-                                GradientStop { position: 0.0; color: Qt.rgba(Services.Theme.bgPure.r, Services.Theme.bgPure.g, Services.Theme.bgPure.b, 0.0) }
-                                GradientStop { position: 1.0; color: Services.Theme.bgPure }
-                            }
-                        }
-                        Rectangle {
-                            anchors.top: parent.top
-                            anchors.bottom: parent.bottom
-                            anchors.left: parent.left
-                            width: 22
-                            opacity: Math.max(0.0, Math.min(1.0, (-mediaArtistText.x - 2) / 18))
-                            gradient: Gradient {
-                                orientation: Gradient.Horizontal
-                                GradientStop { position: 0.0; color: Services.Theme.bgPure }
-                                GradientStop { position: 1.0; color: Qt.rgba(Services.Theme.bgPure.r, Services.Theme.bgPure.g, Services.Theme.bgPure.b, 0.0) }
-                            }
-                        }
                     }
 
                     // Row 2: quick actions under the artist (volume / open player / sleep timer).
                     // The cover block is 60px tall but title + artist only use ~32px, so this costs no height.
                     Row {
                         id: mediaActionsRow
-                        Layout.topMargin: (!mediaView.peekShape && root.activePlayer !== null) ? 3 : 0
+                        Layout.topMargin: (!mediaView.peekShape && root.activePlayer !== null && !root.mediaLyricsVisible) ? 3 : 0
                         // Row is a positioner: its implicitHeight is read-only, so size it through the layout.
-                        Layout.preferredHeight: (!mediaView.peekShape && root.activePlayer !== null) ? 20 : 0
+                        Layout.preferredHeight: (!mediaView.peekShape && root.activePlayer !== null && !root.mediaLyricsVisible) ? 20 : 0
+                        Behavior on Layout.preferredHeight {
+                            enabled: !root.mediaTransitionActive
+                            NumberAnimation { duration: root.mediaFlightMs; easing.type: Easing.InOutSine }
+                        }
+                        Behavior on Layout.topMargin {
+                            enabled: !root.mediaTransitionActive
+                            NumberAnimation { duration: root.mediaFlightMs; easing.type: Easing.InOutSine }
+                        }
                         clip: true
-                        visible: (!mediaView.peekShape && root.activePlayer !== null) || opacity > 0.01
-                        opacity: (!root.isMediaPeek && root.expanded) ? 1.0 : 0.0
+                        visible: (!mediaView.peekShape && root.activePlayer !== null && !root.mediaLyricsVisible) || opacity > 0.01
+                        opacity: (!root.isMediaPeek && root.expanded && !root.mediaLyricsVisible) ? 1.0 : 0.0
                         spacing: 4
                         Behavior on opacity {
                             NumberAnimation { duration: root.expanded ? 240 : 120; easing.type: root.expanded ? Easing.OutCubic : Easing.InQuad }
@@ -4301,6 +4569,38 @@ Item {
                                 onClicked: (mouse) => { root.cycleMediaSleep(); mouse.accepted = true }
                             }
                         }
+
+                        // Lyrics: fetch timestamped/plain lyrics from LRCLIB for the current MPRIS track.
+                        Item {
+                            width: 48; height: 20
+                            Rectangle {
+                                anchors.fill: parent
+                                radius: 7
+                                color: root.mediaLyricsVisible ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.18)
+                                                               : (lyricsArea.containsMouse ? Services.Theme.surfaceVariant : "transparent")
+                                Behavior on color { ColorAnimation { duration: 180; easing.type: Easing.OutCubic } }
+                            }
+                            Text {
+                                anchors.centerIn: parent
+                                text: "Lyrics"
+                                font.pixelSize: 10
+                                font.bold: root.mediaLyricsVisible
+                                color: root.mediaLyricsVisible ? Services.Theme.accent : Services.Theme.textSecondary
+                                Behavior on color { ColorAnimation { duration: 180; easing.type: Easing.OutCubic } }
+                            }
+                            MouseArea {
+                                id: lyricsArea
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: (mouse) => {
+                                    root.mediaLyricsVisible = !root.mediaLyricsVisible
+                                    if (root.mediaLyricsVisible && root.lyricsAreStale())
+                                        root.fetchMediaLyrics()
+                                    mouse.accepted = true
+                                }
+                            }
+                        }
                     }
 
                     function prepareArtworkFlight() {
@@ -4329,9 +4629,105 @@ Item {
             ColumnLayout {
                 id: mediaLowerRows
                 Layout.fillWidth: true
+                Layout.fillHeight: true
                 spacing: 0
                 // same reveal/hide curve the old info column applied to these rows
                 opacity: mediaInfoCol.opacity
+
+                    // ── Lyrics lane: lives in the FULL-width lower block (not beside the cover) ──
+                    // so the active line is centred on the island. The cover shrinks to the top-left
+                    // and the lyrics take the space it used to occupy.
+                    Item {
+                        id: lyricsViewport
+                        Layout.fillWidth: true
+                        Layout.minimumHeight: 0
+                        // Full card width (not the narrow lane beside the cover) so the active
+                        // line sits on the island's centre line. Height follows the same eased
+                        // timeline as the header / mediaView, so the sum never drifts mid-morph.
+                        Layout.preferredHeight: root.mediaLyricsVisible ? 78 : 0
+                        Behavior on Layout.preferredHeight {
+                            NumberAnimation { duration: root.mediaFlightMs; easing.type: Easing.InOutSine }
+                        }
+                        visible: !mediaView.peekShape && (root.mediaLyricsVisible || opacity > 0.01)
+                        opacity: (root.mediaLyricsVisible && !mediaView.peekShape) ? 1.0 : 0.0
+                        Behavior on opacity { NumberAnimation { duration: 220; easing.type: Easing.InOutQuad } }
+                        clip: true
+
+                        ListView {
+                            id: lyricsLineView
+                            anchors.fill: parent
+                            clip: true
+                            interactive: false
+                            boundsBehavior: Flickable.StopAtBounds
+                            model: root.mediaLyricsLines.length
+                            currentIndex: root.mediaLyricsLines.length > 0
+                                ? Math.max(0, Math.min(root.mediaLyricsDisplayIndex, root.mediaLyricsLines.length - 1))
+                                : -1
+                            spacing: 3
+                            // Every line has the same fixed height, so the scroll is a pure
+                            // translation. Animating delegate heights while the view scrolls
+                            // makes the scroll target drift mid-animation and look jerky.
+                            readonly property real lineH: 22
+                            highlightFollowsCurrentItem: true
+                            highlightRangeMode: ListView.StrictlyEnforceRange
+                            preferredHighlightBegin: Math.max(0, (height - lineH) / 2)
+                            preferredHighlightEnd: Math.min(height, (height + lineH) / 2)
+                            highlightMoveDuration: 420
+                            highlightMoveVelocity: -1
+
+                            delegate: Item {
+                                id: lyricsLineDelegate
+                                required property int index
+                                width: lyricsLineView.width
+                                height: lyricsLineView.lineH
+                                readonly property int lineDistance: Math.abs(index - lyricsLineView.currentIndex)
+
+                                Text {
+                                    anchors.fill: parent
+                                    horizontalAlignment: Text.AlignHCenter
+                                    verticalAlignment: Text.AlignVCenter
+                                    text: String(root.mediaLyricsLines[lyricsLineDelegate.index]
+                                        ? root.mediaLyricsLines[lyricsLineDelegate.index].text : "")
+                                    color: lyricsLineDelegate.lineDistance === 0
+                                        ? Services.Theme.textPrimary : Services.Theme.textSecondary
+                                    opacity: lyricsLineDelegate.lineDistance === 0
+                                        ? 1.0 : (lyricsLineDelegate.lineDistance === 1 ? 0.52 : 0.12)
+                                    // Fixed font size + weight: size/weight changes re-layout the text
+                                    // every frame and make it shimmer. Scale does the emphasis instead.
+                                    font.pixelSize: 13
+                                    font.weight: Font.DemiBold
+                                    elide: Text.ElideRight
+                                    wrapMode: Text.NoWrap
+                                    transformOrigin: Item.Center
+                                    scale: lyricsLineDelegate.lineDistance === 0 ? 1.0 : 0.78
+
+                                    Behavior on scale {
+                                        NumberAnimation { duration: 320; easing.type: Easing.OutCubic }
+                                    }
+                                    Behavior on opacity {
+                                        NumberAnimation { duration: 320; easing.type: Easing.OutCubic }
+                                    }
+                                    Behavior on color {
+                                        ColorAnimation { duration: 320; easing.type: Easing.OutCubic }
+                                    }
+                                }
+                            }
+                        }
+
+                        Text {
+                            anchors.fill: parent
+                            visible: root.mediaLyricsLines.length === 0
+                            text: root.mediaLyricsLoading
+                                ? "Finding lyrics…"
+                                : (root.mediaLyricsError !== "" ? root.mediaLyricsError : "Waiting for lyrics")
+                            color: Services.Theme.textSecondary
+                            font.pixelSize: 11
+                            horizontalAlignment: Text.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
+                            wrapMode: Text.WordWrap
+                            elide: Text.ElideRight
+                        }
+                    }
 
                     // Row 2: Progress Bar & Timers. Scroll over the card (or tap the speaker) and a volume
                     // slider takes this row over for a moment; tap the right-hand time to flip total/remaining.
@@ -4339,7 +4735,7 @@ Item {
                         id: mediaProgressRow
                         Layout.fillWidth: true
                         implicitHeight: (!mediaView.peekShape && root.activePlayer !== null) ? 18 : 0
-                        Layout.topMargin: (!mediaView.peekShape && root.activePlayer !== null) ? 4 : 0
+                        Layout.topMargin: (!mediaView.peekShape && root.activePlayer !== null) ? 2 : 0
                         visible: (!mediaView.peekShape && root.activePlayer !== null) || opacity > 0.01
                         opacity: (!root.isMediaPeek && root.expanded) ? 1.0 : 0.0
                         clip: true
@@ -4485,12 +4881,22 @@ Item {
                         }
                     }
 
+                    // Flexible gap keeps transport controls pinned to the bottom in lyrics mode.
+                    Item {
+                        id: mediaLyricsControlsSpacer
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        Layout.preferredHeight: 0
+                        visible: !mediaView.peekShape && root.activePlayer !== null
+                    }
+
                     // Row 3: Controls. Left: shuffle + back 10s. Centre: prev / play / next (always dead
                     // centre, because both side groups share the leftover width equally). Right: forward 10s + repeat.
                     RowLayout {
                         id: mediaControlsRow
                         Layout.fillWidth: true
-                        implicitHeight: (!mediaView.peekShape && root.activePlayer !== null) ? 36 : 0
+                        implicitHeight: (!mediaView.peekShape && root.activePlayer !== null)
+                            ? 38 : 0
                         Layout.topMargin: (!mediaView.peekShape && root.activePlayer !== null) ? 2 : 0
                         visible: (!mediaView.peekShape && root.activePlayer !== null) || opacity > 0.01
                         opacity: (!root.isMediaPeek && root.expanded) ? 1.0 : 0.0
@@ -4796,9 +5202,18 @@ Item {
             }
 
             // Title (+ the bullet, which fades out as the artist leaves the line)
+            EdgeFadeMask {
+                id: flightTitleFade
+                width: flightTitleClip.width
+                height: flightTitleClip.height
+                rightAmt: Math.max(0.0, Math.min(1.0, (mediaTitleText.maxScroll - 4) / 18)) * mediaTextFlight.sm(mediaTextFlight.p) * (1.0 - mediaTextFlight.clipOpen)
+            }
             Item {
                 id: flightTitleClip
                 clip: true
+                layer.enabled: true
+                layer.smooth: true
+                layer.effect: MultiEffect { maskEnabled: true; maskSource: flightTitleFade }
                 x: mediaTextFlight.clipMix(mediaTextFlight.mix(34, mediaTextFlight.expTitlePos.x), 0)
                 y: mediaTextFlight.clipMix(mediaTextFlight.mix(mediaTextFlight.collY, mediaTextFlight.expTitlePos.y) - 2, 0)
                 width: mediaTextFlight.clipMix(mediaTextFlight.mix(mediaTextFlight.cw, mediaTitleContainer.width), mediaTextFlight.width)
@@ -4813,7 +5228,7 @@ Item {
                     // re-laying out and re-rasterising glyphs on every step (the visible
                     // "pop"). Lay out once at the largest size and scale smoothly instead.
                     font.pixelSize: 14
-                    scale: mediaTextFlight.mix(11 / 14, 1.0)
+                    scale: mediaTextFlight.mix(11 / 14, mediaTitleText.font.pixelSize / 14)
                     transformOrigin: Item.TopLeft
                     x: mediaTextFlight.mix(mediaTextFlight.collX, mediaTextFlight.expTitlePos.x) - flightTitleClip.x
                     y: mediaTextFlight.mix(mediaTextFlight.collY, mediaTextFlight.expTitlePos.y) - flightTitleClip.y
@@ -4848,26 +5263,23 @@ Item {
                 }
 
                 // Same soft right edge as the real label, fading in as the flight lands.
-                Rectangle {
-                    anchors.top: parent.top
-                    anchors.bottom: parent.bottom
-                    anchors.right: parent.right
-                    width: 22
-                    opacity: Math.max(0.0, Math.min(1.0, (mediaTitleText.maxScroll - 4) / 18)) * mediaTextFlight.sm(mediaTextFlight.p) * (1.0 - mediaTextFlight.clipOpen)
-                    gradient: Gradient {
-                        orientation: Gradient.Horizontal
-                        GradientStop { position: 0.0; color: Qt.rgba(Services.Theme.bgPure.r, Services.Theme.bgPure.g, Services.Theme.bgPure.b, 0.0) }
-                        GradientStop { position: 1.0; color: Services.Theme.bgPure }
-                    }
-                }
             }
 
             // Card-side artist: sits still on its own row and fades/settles in as the flight
             // lands (the pill-side copy above dissolves at the title's end). No travel path means
             // nothing can cross the title in either direction.
+            EdgeFadeMask {
+                id: flightArtistFade
+                width: flightArtistClip.width
+                height: flightArtistClip.height
+                rightAmt: Math.max(0.0, Math.min(1.0, (mediaArtistText.maxScroll - 4) / 18)) * flightArtistClip.fade
+            }
             Item {
                 id: flightArtistClip
                 clip: true
+                layer.enabled: true
+                layer.smooth: true
+                layer.effect: MultiEffect { maskEnabled: true; maskSource: flightArtistFade }
                 readonly property real fade: mediaTextFlight.sm((mediaTextFlight.p - 0.35) / 0.65)
                 x: mediaTextFlight.expArtistPos.x
                 y: mediaTextFlight.expArtistPos.y - 2
@@ -4877,25 +5289,13 @@ Item {
                 Text {
                     text: mediaInfoCol.fullArtist
                     color: Services.Theme.textSecondary
-                    font.pixelSize: 11
+                    font.pixelSize: mediaArtistText.font.pixelSize
                     x: 0
                     y: 2 + 5 * (1.0 - flightArtistClip.fade)
                     opacity: flightArtistClip.fade
                 }
 
                 // Same soft right edge as the real label.
-                Rectangle {
-                    anchors.top: parent.top
-                    anchors.bottom: parent.bottom
-                    anchors.right: parent.right
-                    width: 22
-                    opacity: Math.max(0.0, Math.min(1.0, (mediaArtistText.maxScroll - 4) / 18)) * flightArtistClip.fade
-                    gradient: Gradient {
-                        orientation: Gradient.Horizontal
-                        GradientStop { position: 0.0; color: Qt.rgba(Services.Theme.bgPure.r, Services.Theme.bgPure.g, Services.Theme.bgPure.b, 0.0) }
-                        GradientStop { position: 1.0; color: Services.Theme.bgPure }
-                    }
-                }
             }
         }
 
@@ -6095,6 +6495,8 @@ Item {
         width: Math.max(0, (rightSatDot.x + 6) - (island.x + island.width - 6))
         gap: rightSatDot.leftMarginValue
         isRight: true
+        fillColor: root.glassFill
+        strokeColor: root.glassBorder
         snapped: rightSatDot.bridgeSnapped || root.expanded || root.lockBlocked
         z: 3
     }
@@ -6107,6 +6509,8 @@ Item {
         width: Math.max(0, (island.x + 6) - (leftSatDot.x + leftSatDot.width - 6))
         gap: leftSatDot.rightMarginValue
         isRight: false
+        fillColor: root.glassFill
+        strokeColor: root.glassBorder
         snapped: leftSatDot.bridgeSnapped || root.expanded || root.lockBlocked
         z: 3
     }
@@ -6124,8 +6528,8 @@ Item {
         implicitWidth: 32
         implicitHeight: 32
         radius: 16
-        color: Services.Theme.bgPure
-        border.color: Services.Theme.borderSubtle
+        color: root.glassFill
+        border.color: root.glassBorder
         border.width: 1
         z: 1
 
@@ -6552,8 +6956,8 @@ Item {
         implicitWidth: 32
         implicitHeight: 32
         radius: 16
-        color: Services.Theme.bgPure
-        border.color: Services.Theme.borderSubtle
+        color: root.glassFill
+        border.color: root.glassBorder
         border.width: 1
         z: 1
 

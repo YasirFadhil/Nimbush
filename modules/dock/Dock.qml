@@ -116,7 +116,15 @@ Variants {
         }
 
         // ── Single Dock Mouse Coordinate Tracker (Dock-Relative Space) ────────
-        readonly property real mouseDockCoord: (root.isHovered && dockTracker.containsMouse) ? dockTracker.dockMousePos : dockTracker.lastValidDockMousePos
+        readonly property real mouseDockCoord: {
+            const coord = (root.isHovered && dockTracker.containsMouse) ? dockTracker.dockMousePos : dockTracker.lastValidDockMousePos
+            return coord
+        }
+        onMouseDockCoordChanged: {
+            if (root.debugBounce) {
+                console.log("[dock-hover] mouseDockCoord=" + mouseDockCoord + " isHovered=" + root.isHovered + " containsMouse=" + dockTracker.containsMouse + " dockMousePos=" + dockTracker.dockMousePos + " lastValid=" + dockTracker.lastValidDockMousePos)
+            }
+        }
 
         // ── Pinned Drag-and-Drop Reordering State ─────────────────────────────
         property int draggedPinnedIndex: -1
@@ -210,6 +218,37 @@ Variants {
             }
         }
 
+        // ── Reset hover state when dock context menu closes ──────────────────
+        // When DockMenu (Overlay layer) is open it swallows all mouse events,
+        // so dockTracker never receives onExited. Force a clean reset so the
+        // magnification wave doesn't freeze on the last-hovered icon.
+        // We ALWAYS reset both position fields regardless of containsMouse —
+        // the overlay may close while the cursor is still physically over the
+        // dock, in which case onEntered never re-fires and the stale frozen
+        // position persists until the user actually moves the mouse.
+        Connections {
+            target: Services.DockService
+            function onIsMenuOpenChanged() {
+                if (!Services.DockService.isMenuOpen) {
+                    menuCloseHoverReset.restart()
+                }
+            }
+        }
+        Timer {
+            id: menuCloseHoverReset
+            interval: 60
+            repeat: false
+            onTriggered: {
+                // Always flush the stale position so the magnification wave resets.
+                dockTracker.dockMousePos = -99999
+                dockTracker.lastValidDockMousePos = -99999
+                // Only clear isHovered if cursor is genuinely outside the dock.
+                if (!dockTracker.containsMouse && !hoverEdgeDetector.containsMouse) {
+                    root.isHovered = false
+                }
+            }
+        }
+
         // ── Auto-hide Edge Trigger Detector ──────────────────────────────────
         MouseArea {
             id: hoverEdgeDetector
@@ -237,13 +276,13 @@ Variants {
         // Fills are intentionally low-alpha: the compositor blur does the heavy lifting.
         // Tint is neutral grey/white (macOS), not blue. Tune alpha by eye per wallpaper.
         readonly property bool dark: Services.Theme.isDark
-        readonly property color glassFill: dark ? Qt.rgba(0.11, 0.11, 0.12, 0.38) : Qt.rgba(1, 1, 1, 0.30)
-        readonly property color glassBorder: dark ? Qt.rgba(1, 1, 1, 0.18) : Qt.rgba(1, 1, 1, 0.50)
-        readonly property color glassSpecular: dark ? Qt.rgba(1, 1, 1, 0.20) : Qt.rgba(1, 1, 1, 0.65)
-        readonly property color glassDot: dark ? Qt.rgba(1, 1, 1, 0.78) : Qt.rgba(0, 0, 0, 0.60)
-        readonly property color tooltipFill: dark ? Qt.rgba(0.14, 0.14, 0.15, 0.62) : Qt.rgba(1, 1, 1, 0.70)
-        readonly property color tooltipBorder: dark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.10)
-        readonly property color tooltipText: dark ? Qt.rgba(1, 1, 1, 0.92) : Qt.rgba(0, 0, 0, 0.85)
+        readonly property color glassFill: dark ? Qt.rgba(0.11, 0.11, 0.12, 0.55) : Qt.rgba(1, 1, 1, 0.48)
+        readonly property color glassBorder: dark ? Qt.rgba(1, 1, 1, 0.28) : Qt.rgba(1, 1, 1, 0.65)
+        readonly property color glassSpecular: dark ? Qt.rgba(1, 1, 1, 0.28) : Qt.rgba(1, 1, 1, 0.75)
+        readonly property color glassDot: dark ? Qt.rgba(1, 1, 1, 0.90) : Qt.rgba(0, 0, 0, 0.72)
+        readonly property color tooltipFill: dark ? Qt.rgba(0.14, 0.14, 0.15, 0.82) : Qt.rgba(1, 1, 1, 0.88)
+        readonly property color tooltipBorder: dark ? Qt.rgba(1, 1, 1, 0.22) : Qt.rgba(0, 0, 0, 0.14)
+        readonly property color tooltipText: dark ? Qt.rgba(1, 1, 1, 0.97) : Qt.rgba(0, 0, 0, 0.90)
 
         // ── Launch Bounce: per-app memory + personality ──────────────────────
         // launchStats remembers how long each app took to open (EMA, this session),
@@ -256,7 +295,7 @@ Variants {
         property var launchingSince: ({})
 
         // Set true, then watch `qs log` for "[dock-bounce]" lines to see what is happening.
-        readonly property bool debugBounce: false
+        readonly property bool debugBounce: true
 
         // The launch bounce is the only "I'm opening it" feedback, so it ignores
         // Services.Performance.decorativeMotion unless you flip this to true.
@@ -401,19 +440,6 @@ Variants {
             border.color: root.glassBorder
             border.width: 1
 
-            // The only highlight the real dock has: one faint specular hairline on top
-            Rectangle {
-                anchors.top: parent.top
-                anchors.topMargin: 1
-                anchors.horizontalCenter: parent.horizontalCenter
-                width: Math.max(0, parent.width - parent.radius * 1.4)
-                height: 1
-                color: root.glassSpecular
-                z: 0
-            }
-
-
-
             // ── Unified Dock Tracker MouseArea ───────────────────────────────
             // Strictly 0 margins when idle so hover only triggers when cursor physically touches the dock pill.
             // When already hovered, expands slightly upward so cursor can hover lifted icons.
@@ -449,11 +475,13 @@ Variants {
                     }
                 }
                 onEntered: {
+                    if (root.debugBounce) console.log("[dock-hover] dockTracker onEntered")
                     hideDelayTimer.stop()
                     updateMouse(dockTracker.mouseX, dockTracker.mouseY)
                     root.isHovered = true
                 }
                 onExited: {
+                    if (root.debugBounce) console.log("[dock-hover] dockTracker onExited")
                     if (root.isDraggingPinned) return
                     dockMousePos = -99999
                     root.isHovered = false

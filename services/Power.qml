@@ -17,9 +17,26 @@ Singleton {
 
     readonly property bool upowerActive: UPower.displayDevice && UPower.displayDevice.isPresent && !isNaN(UPower.displayDevice.percentage) && UPower.displayDevice.percentage >= 0
 
-    property bool charging: isChargeInhibited ? false : (upowerActive 
-        ? isChargingState(UPower.displayDevice.state) 
+    // While a charger is connected the battery is either charging or being held
+    // by the EC charge limit; raw battery state flaps between the two, so follow
+    // the (stable) AC status instead of the battery state.
+    property bool charging: isChargeInhibited ? false : (upowerActive
+        ? pluggedIn
         : (sysfsState === "charging" || sysfsState === "full"))
+
+    // True while a charger is connected, independent of whether the battery is
+    // actually taking current. With an EC charge limit the battery state flaps
+    // between charging/discharging every few seconds, but UPower's OnBattery
+    // (derived from the AC line-power devices) stays stable.
+    readonly property bool pluggedIn: upowerActive
+        ? !UPower.onBattery
+        : (sysfsState === "charging" || sysfsState === "full" || sysfsState === "not charging")
+
+    // Plugged in but the battery is not taking meaningful current (EC charge
+    // limit hold, or already full). Real charging draws several watts, while
+    // a held battery sits at ~0-0.05 W of noise.
+    readonly property bool holding: pluggedIn && upowerActive
+        && Math.abs(UPower.displayDevice.changeRate) < 0.5
 
     property real percentage: upowerActive 
         ? UPower.displayDevice.percentage 
@@ -31,8 +48,10 @@ Singleton {
         if (isChargeInhibited) return "Charge Limit Active (Idle)"
         if (upowerActive) {
             const st = UPower.displayDevice.state
-            if (st === UPowerDeviceState.Charging) return "Charging"
             if (st === UPowerDeviceState.FullyCharged) return "Fully Charged"
+            if (holding) return "Plugged In (Charge Limit)"
+            if (pluggedIn && (st === UPowerDeviceState.Charging || st === UPowerDeviceState.Discharging)) return "Charging"
+            if (st === UPowerDeviceState.Charging) return "Charging"
             if (st === UPowerDeviceState.Discharging) return "Discharging"
             if (st === UPowerDeviceState.Empty) return "Empty"
         }

@@ -186,9 +186,10 @@ PanelWindow {
         y: centerWin.isBottom ? (parent.height - height - 12) : 12
         width: 340
         height: Math.max(420, Math.min(mainCol.implicitHeight + 20, Math.min(620, parent.height - 24)))
-        radius: 16
-        color: centerWin.t.surface
-        border.color: centerWin.t.border
+        radius: 20
+        // macOS menu material (DockMenu.qml); blur comes from the compositor
+        color: Services.Theme.isDark ? Qt.rgba(0.14, 0.14, 0.15, 0.82) : Qt.rgba(1, 1, 1, 0.88)
+        border.color: (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.22) : Qt.rgba(0, 0, 0, 0.14))
         border.width: 1
         clip: true
 
@@ -235,8 +236,8 @@ PanelWindow {
                         implicitWidth: totalCountTxt.implicitWidth + 10
                         implicitHeight: 18
                         radius: 9
-                        color: centerWin.t.surfaceVariant
-                        border.color: centerWin.t.border
+                        color: (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06))
+                        border.color: (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.12))
                         border.width: 1
 
                         Text {
@@ -258,9 +259,9 @@ PanelWindow {
                     implicitHeight: 32
                     radius: 9
                     color: dndHover.containsMouse
-                        ? (Services.Notifications.doNotDisturb ? "#d94a60" : centerWin.t.bgHover)
-                        : (Services.Notifications.doNotDisturb ? centerWin.t.danger : centerWin.t.surfaceVariant)
-                    border.color: Services.Notifications.doNotDisturb ? centerWin.t.danger : centerWin.t.border
+                        ? (Services.Notifications.doNotDisturb ? "#d94a60" : (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.10)))
+                        : (Services.Notifications.doNotDisturb ? centerWin.t.danger : (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)))
+                    border.color: Services.Notifications.doNotDisturb ? centerWin.t.danger : (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.12))
                     border.width: 1
 
                     Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
@@ -286,8 +287,8 @@ PanelWindow {
                     implicitWidth: 32
                     implicitHeight: 32
                     radius: 9
-                    color: clearHover.containsMouse ? centerWin.t.bgHover : centerWin.t.surfaceVariant
-                    border.color: centerWin.t.border
+                    color: clearHover.containsMouse ? (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.10)) : (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06))
+                    border.color: (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.12))
                     border.width: 1
                     opacity: Services.Notifications.historyList.count > 0 ? 1 : 0.4
                     enabled: Services.Notifications.historyList.count > 0
@@ -318,7 +319,7 @@ PanelWindow {
             Rectangle {
                 Layout.fillWidth: true
                 height: 1
-                color: centerWin.t.border
+                color: (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.12))
                 opacity: 0.6
             }
 
@@ -342,7 +343,7 @@ PanelWindow {
                     contentItem: Rectangle {
                         implicitWidth: 4
                         radius: 2
-                        color: centerWin.t.borderHighlight
+                        color: (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.12))
                     }
                 }
 
@@ -368,8 +369,8 @@ PanelWindow {
                     implicitHeight: cardContent.implicitHeight + 20
                     height: implicitHeight
                     radius: 14
-                    color: centerWin.t.surfaceVariant
-                    border.color: isBatteryGroup ? centerWin.t.warning : (groupCard.isCritical ? centerWin.t.danger : centerWin.t.border)
+                    color: (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.12) : Qt.rgba(0, 0, 0, 0.09))
+                    border.color: isBatteryGroup ? centerWin.t.warning : (groupCard.isCritical ? centerWin.t.danger : (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.20) : Qt.rgba(0, 0, 0, 0.15)))
                     border.width: 1
                     clip: true
 
@@ -399,7 +400,7 @@ PanelWindow {
                                 Layout.fillWidth: true
                                 Layout.preferredHeight: 28
                                 radius: 8
-                                color: (headerMouse.containsMouse && groupCard.isMulti) ? centerWin.t.bgHover : "transparent"
+                                color: (headerMouse.containsMouse && groupCard.isMulti) ? (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.10)) : "transparent"
                                 Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
 
                                 MouseArea {
@@ -429,8 +430,8 @@ PanelWindow {
                                         Rectangle {
                                             anchors.fill: parent
                                             radius: 6
-                                            color: centerWin.t.bgHover
-                                            border.color: centerWin.t.border
+                                            color: (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.10))
+                                            border.color: (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.12))
                                             border.width: 1
                                             visible: hIcon.status !== Image.Ready
 
@@ -594,7 +595,7 @@ PanelWindow {
                                 Rectangle {
                                     anchors.fill: parent
                                     radius: 6
-                                    color: groupDismissBtn.containsMouse ? centerWin.t.bgHover : "transparent"
+                                    color: groupDismissBtn.containsMouse ? (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.10)) : "transparent"
                                     Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                                 }
                                 Text {
@@ -705,7 +706,7 @@ PanelWindow {
                                             Rectangle {
                                                 anchors.fill: parent
                                                 radius: 5
-                                                color: pItemDismissBtn.containsMouse ? centerWin.t.bgHover : "transparent"
+                                                color: pItemDismissBtn.containsMouse ? (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.10)) : "transparent"
                                                 Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                                             }
                                             Text {
@@ -763,8 +764,8 @@ PanelWindow {
 
                                         visible: actText.trim().length > 0
                                         radius: 6
-                                        color: pActHover.containsMouse ? centerWin.t.bgHover : centerWin.t.surface
-                                        border.color: centerWin.t.border
+                                        color: pActHover.containsMouse ? (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.10)) : (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06))
+                                        border.color: (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.12))
                                         border.width: 1
                                         implicitHeight: 24
                                         implicitWidth: pActLabel.implicitWidth + 16
@@ -809,8 +810,8 @@ PanelWindow {
                                     Layout.fillWidth: true
                                     implicitHeight: 32
                                     radius: 7
-                                    color: centerWin.t.bgHover
-                                    border.color: pReplyInput.activeFocus ? centerWin.t.accent : centerWin.t.border
+                                    color: (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.10))
+                                    border.color: pReplyInput.activeFocus ? centerWin.t.accent : (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.12))
                                     border.width: 1
 
                                     TextInput {
@@ -861,8 +862,8 @@ PanelWindow {
                                         implicitHeight: 22
                                         implicitWidth: pCancelTxt.implicitWidth + 14
                                         radius: 6
-                                        color: pCancelMouse.containsMouse ? centerWin.t.bgHover : centerWin.t.surface
-                                        border.color: centerWin.t.border
+                                        color: pCancelMouse.containsMouse ? (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.10)) : (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06))
+                                        border.color: (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.12))
                                         border.width: 1
 
                                         Text {
@@ -954,8 +955,8 @@ PanelWindow {
                                 height: stackPeekContent.implicitHeight + 8
                                 implicitHeight: height
                                 radius: 8
-                                color: peekMouse.containsMouse ? centerWin.t.bgHover : centerWin.t.surface
-                                border.color: centerWin.t.border
+                                color: peekMouse.containsMouse ? (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.10)) : (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06))
+                                border.color: (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.12))
                                 border.width: 1
                                 opacity: Math.max(0.0, 1.0 - groupCard.expandProgress * 2.2)
                                 visible: opacity > 0.01
@@ -1036,7 +1037,7 @@ PanelWindow {
                                         Rectangle {
                                             Layout.fillWidth: true
                                             height: 1
-                                            color: centerWin.t.border
+                                            color: (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.12))
                                             opacity: 0.65
                                             Layout.topMargin: 4
                                             Layout.bottomMargin: 4
@@ -1105,7 +1106,7 @@ PanelWindow {
                                                         Rectangle {
                                                             anchors.fill: parent
                                                             radius: 5
-                                                            color: olderDismissBtn.containsMouse ? centerWin.t.bgHover : "transparent"
+                                                            color: olderDismissBtn.containsMouse ? (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.10)) : "transparent"
                                                             Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
                                                         }
                                                         Text {
@@ -1161,8 +1162,8 @@ PanelWindow {
 
                                                     visible: actText.trim().length > 0
                                                     radius: 6
-                                                    color: oActHover.containsMouse ? centerWin.t.bgHover : centerWin.t.surface
-                                                    border.color: centerWin.t.border
+                                                    color: oActHover.containsMouse ? (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.10)) : (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06))
+                                                    border.color: (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.12))
                                                     border.width: 1
                                                     implicitHeight: 24
                                                     implicitWidth: oActLabel.implicitWidth + 16
@@ -1207,8 +1208,8 @@ PanelWindow {
                                                 Layout.fillWidth: true
                                                 implicitHeight: 32
                                                 radius: 7
-                                                color: centerWin.t.bgHover
-                                                border.color: oReplyInput.activeFocus ? centerWin.t.accent : centerWin.t.border
+                                                color: (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.10))
+                                                border.color: oReplyInput.activeFocus ? centerWin.t.accent : (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.12))
                                                 border.width: 1
 
                                                 TextInput {
@@ -1258,8 +1259,8 @@ PanelWindow {
                                                     implicitHeight: 22
                                                     implicitWidth: oCancelTxt.implicitWidth + 14
                                                     radius: 6
-                                                    color: oCancelMouse.containsMouse ? centerWin.t.bgHover : centerWin.t.surface
-                                                    border.color: centerWin.t.border
+                                                    color: oCancelMouse.containsMouse ? (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.10)) : (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06))
+                                                    border.color: (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.12))
                                                     border.width: 1
 
                                                     Text {
@@ -1347,8 +1348,8 @@ PanelWindow {
                         implicitWidth: 56
                         implicitHeight: 56
                         radius: 28
-                        color: centerWin.t.surfaceVariant
-                        border.color: centerWin.t.border
+                        color: (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06))
+                        border.color: (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.12))
                         border.width: 1
 
                         Text {

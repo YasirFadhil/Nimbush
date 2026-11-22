@@ -65,11 +65,15 @@ PanelWindow {
             x: Math.max(12, Math.min(parent.width - width - 12, root.targetX - (width / 2)))
             implicitWidth: Math.max(180, menuColumn.implicitWidth + 24)
             implicitHeight: menuColumn.implicitHeight + 24
-            radius: Services.Theme.radiusLg
-            color: Services.Theme.bgElevated
-            border.color: Services.Theme.border
+            radius: 12
+            // macOS menu material (DockMenu.qml)
+            readonly property bool dark: Services.Theme.isDark
+            color: dark ? Qt.rgba(0.14, 0.14, 0.15, 0.80) : Qt.rgba(1, 1, 1, 0.88)
+            border.color: dark ? Qt.rgba(1, 1, 1, 0.22) : Qt.rgba(0, 0, 0, 0.14)
             border.width: 1
             clip: true
+
+            GlassSpecular {}
 
             opacity: root.isOpen ? 1.0 : 0.0
             scale: root.isOpen ? 1.0 : 0.96
@@ -175,10 +179,9 @@ PanelWindow {
                                 Layout.fillWidth: true
                                 Layout.preferredHeight: 30
                                 visible: !menuItem.modelData.isSeparator
-                                radius: Services.Theme.radiusSm
-                                color: itemMouseArea.containsMouse && menuItem.modelData.enabled ? Services.Theme.surfaceVariant : "transparent"
-                                border.color: itemMouseArea.containsMouse && menuItem.modelData.enabled ? Services.Theme.borderHighlight : "transparent"
-                                border.width: 1
+                                radius: 6
+                                color: itemMouseArea.containsMouse && menuItem.modelData.enabled ? Services.Theme.accent : "transparent"
+                                border.width: 0
 
                                 RowLayout {
                                     anchors.fill: parent
@@ -193,7 +196,7 @@ PanelWindow {
                                         font.family: Services.Theme.fontMono
                                         font.pixelSize: Services.Theme.fontSizeLg
                                         font.bold: true
-                                        color: Services.Theme.accent
+                                        color: itemMouseArea.containsMouse ? Services.Theme.bgOnAccent : Services.Theme.accent
                                     }
 
                                     // Entry Icon
@@ -231,7 +234,7 @@ PanelWindow {
                                         text: menuItem.modelData.text ? menuItem.modelData.text.replace(/&/g, "") : ""
                                         font.family: Services.Theme.fontMono
                                         font.pixelSize: Services.Theme.fontSizeLg
-                                        color: menuItem.modelData.enabled ? Services.Theme.textPrimary : Services.Theme.textDisabled
+                                        color: itemMouseArea.containsMouse && menuItem.modelData.enabled ? Services.Theme.bgOnAccent : (menuItem.modelData.enabled ? Services.Theme.textPrimary : Services.Theme.textDisabled)
                                         elide: Text.ElideRight
                                     }
 
@@ -296,10 +299,9 @@ PanelWindow {
                                         Rectangle {
                                             anchors.fill: parent
                                             visible: !subItem.modelData.isSeparator
-                                            radius: Services.Theme.radiusSm
-                                            color: subItemMouseArea.containsMouse && subItem.modelData.enabled ? Services.Theme.surfaceVariant : "transparent"
-                                            border.color: subItemMouseArea.containsMouse && subItem.modelData.enabled ? Services.Theme.borderHighlight : "transparent"
-                                            border.width: 1
+                                            radius: 6
+                                            color: subItemMouseArea.containsMouse && subItem.modelData.enabled ? Services.Theme.accent : "transparent"
+                                            border.width: 0
 
                                             RowLayout {
                                                 anchors.fill: parent
@@ -313,7 +315,7 @@ PanelWindow {
                                                     font.family: Services.Theme.fontMono
                                                     font.pixelSize: Services.Theme.fontSizeMd
                                                     font.bold: true
-                                                    color: Services.Theme.accent
+                                                    color: subItemMouseArea.containsMouse ? Services.Theme.bgOnAccent : Services.Theme.accent
                                                 }
 
                                                 Image {
@@ -349,7 +351,7 @@ PanelWindow {
                                                     text: subItem.modelData.text ? subItem.modelData.text.replace(/&/g, "") : ""
                                                     font.family: Services.Theme.fontMono
                                                     font.pixelSize: Services.Theme.fontSizeMd
-                                                    color: subItem.modelData.enabled ? Services.Theme.textPrimary : Services.Theme.textDisabled
+                                                    color: subItemMouseArea.containsMouse && subItem.modelData.enabled ? Services.Theme.bgOnAccent : (subItem.modelData.enabled ? Services.Theme.textPrimary : Services.Theme.textDisabled)
                                                     elide: Text.ElideRight
                                                 }
                                             }
