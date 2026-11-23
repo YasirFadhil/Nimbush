@@ -171,6 +171,7 @@ in
             dbus-python
           ]))
           gobject-introspection
+          at-spi2-core
           gtk3
           fontconfig
           dconf
@@ -367,7 +368,10 @@ window-rule {
 
         Service = {
           EnvironmentFile = "-%h/.config/quickshell/state/icon-theme.env";
-          Environment = [ "FACEID_PYTHON=${faceIdPython}/bin/python" ];
+          Environment = [
+            "FACEID_PYTHON=${faceIdPython}/bin/python"
+            "GI_TYPELIB_PATH=${pkgs.at-spi2-core}/lib/girepository-1.0"
+          ];
           ExecStart = if cfg.package != null
             then "${cfg.package}/bin/quickshell-shell"
             else "${pkgs.quickshell}/bin/qs -c %h/.config/quickshell";

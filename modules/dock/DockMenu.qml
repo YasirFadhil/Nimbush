@@ -3,6 +3,7 @@ import QtQuick.Layouts
 import Quickshell
 import Quickshell.Wayland
 import "../../services" as Services
+import "../common" as Common
 
 PanelWindow {
     id: root
@@ -263,7 +264,7 @@ PanelWindow {
             }
 
             // ── 2. Launch / New Window Action ────────────────────────────────
-            MenuRow {
+            Common.MenuRow {
                 glyph: Services.Icons.play || "▶"
                 label: (root.shownItem && root.shownItem.isRunning) ? "New Window" : "Launch"
                 onTriggered: {
@@ -278,7 +279,7 @@ PanelWindow {
             // ── 3. Desktop Entry Actions (e.g. New Tab, Private Window) ───────
             Repeater {
                 model: (root.shownItem && root.shownItem.actions) ? root.shownItem.actions : []
-                delegate: MenuRow {
+                delegate: Common.MenuRow {
                     required property var modelData
                     label: modelData.name || "Action"
                     onTriggered: {
@@ -291,7 +292,7 @@ PanelWindow {
             }
 
             // ── 4. Pin / Unpin Action ────────────────────────────────────────
-            MenuRow {
+            Common.MenuRow {
                 readonly property bool pinned: (root.shownItem && Services.DockService) ? Services.DockService.isPinned(root.shownItem.desktopId) : false
                 glyph: Services.Icons.pin || "󰤩"
                 label: pinned ? "Unpin from Dock" : "Pin to Dock"
@@ -325,7 +326,7 @@ PanelWindow {
 
             Repeater {
                 model: (root.shownItem && root.shownItem.windows) ? root.shownItem.windows : []
-                delegate: MenuRow {
+                delegate: Common.MenuRow {
                     required property var modelData
                     labelSize: Services.Theme.fontSizeXs
                     label: modelData.title || "Window"
@@ -352,7 +353,7 @@ PanelWindow {
                 visible: Boolean(root.shownItem && root.shownItem.isRunning)
             }
 
-            MenuRow {
+            Common.MenuRow {
                 visible: Boolean(root.shownItem && root.shownItem.isRunning)
                 Layout.preferredHeight: visible ? 28 : 0
                 glyph: Services.Icons.close || "✕"

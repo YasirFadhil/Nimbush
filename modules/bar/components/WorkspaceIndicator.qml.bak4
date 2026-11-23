@@ -1,0 +1,479 @@
+import QtQuick
+import QtQuick.Layouts
+import Quickshell
+import "../../../services" as Services
+
+RowLayout {
+    id: wsRoot
+    spacing: isMinimal ? 4 : (isMacMenuBar ? 4 : 8)
+
+    readonly property string barStyle: Services.Config ? Services.Config.barStyle : "islands"
+    readonly property string workspaceStyle: Services.Config ? Services.Config.workspaceStyle : "pills"
+    readonly property bool showAll: Services.Config ? Services.Config.workspaceShowAll : true
+    readonly property bool isIslands: barStyle === "islands"
+    readonly property bool isMinimal: barStyle === "minimal"
+    readonly property bool isFloating: barStyle === "floating"
+    readonly property bool isUnified: barStyle === "unified"
+    readonly property bool isMacMenuBar: isIslands
+
+    readonly property int pillHeight: isMinimal ? 24 : 28
+    readonly property int pillRadius: isMinimal ? 6 : (isIslands ? 7 : 10)
+
+    // Hover background for macOS-style pills
+    readonly property bool glassDark: Services.Theme.isDark
+    function getPillBg(hovered) {
+        if (isMacMenuBar)
+            return hovered
+                ? (glassDark ? Qt.rgba(1, 1, 1, 0.13) : Qt.rgba(0, 0, 0, 0.08))
+                : "transparent"
+        if (isMinimal) return hovered ? Services.Theme.bgHover : "transparent"
+        if (hovered) return glassDark ? Qt.rgba(1, 1, 1, 0.20) : Qt.rgba(1, 1, 1, 0.65)
+        return glassDark ? Qt.rgba(0.11, 0.11, 0.12, 0.55) : Qt.rgba(1, 1, 1, 0.48)
+    }
+
+    function getPillBorder(hovered) {
+        if (isMacMenuBar) return "transparent"
+        if (isMinimal) return hovered ? Services.Theme.borderHighlight : "transparent"
+        if (hovered) return glassDark ? Qt.rgba(1, 1, 1, 0.38) : Qt.rgba(1, 1, 1, 0.85)
+        return glassDark ? Qt.rgba(1, 1, 1, 0.28) : Qt.rgba(1, 1, 1, 0.65)
+    }
+
+    function getAppDisplayName(appId) {
+        const raw = String(appId || "").trim()
+        if (!raw) return "Desktop"
+
+        const key = raw.toLowerCase()
+        const aliases = {
+            "org.wezfurlong.wezterm": "WezTerm",
+            "org.gnome.terminal": "Terminal",
+            "org.gnome.console": "Console",
+            "org.gnome.nautilus": "Files",
+            "org.kde.dolphin": "Dolphin",
+            "org.kde.konsole": "Konsole",
+            "org.xfce.thunar": "Thunar",
+            "thunar": "Thunar",
+            "org.mozilla.firefox": "Firefox",
+            "firefox": "Firefox",
+            "brave-browser": "Brave Browser",
+            "com.brave.browser": "Brave Browser",
+            "chromium": "Chromium",
+            "chromium-browser": "Chromium",
+            "org.chromium.chromium": "Chromium",
+            "google-chrome": "Google Chrome",
+            "google-chrome-stable": "Google Chrome",
+            "code": "Visual Studio Code",
+            "code-oss": "Visual Studio Code",
+            "com.spotify.client": "Spotify",
+            "spotify": "Spotify",
+            "org.telegram.desktop": "Telegram",
+            "com.discordapp.discord": "Discord",
+            "discord": "Discord",
+            "org.quickshell": "Nimbush",
+            "quickshell": "Nimbush",
+            "kitty": "Kitty",
+            "foot": "Foot",
+            "footclient": "Foot",
+            "alacritty": "Alacritty",
+            "wezterm": "WezTerm",
+            "xterm": "XTerm"
+        }
+        if (aliases[key]) return aliases[key]
+
+        // Try ActiveApp for a richer name
+        if (Services.ActiveApp && Services.ActiveApp.appName && Services.ActiveApp.appName !== "Desktop") {
+            if (Services.ActiveApp.windowClass && Services.ActiveApp.windowClass.toLowerCase() === key) {
+                return Services.ActiveApp.appName
+            }
+        }
+
+        let name = raw.split(/[./]/).pop().replace(/[-_]+/g, " ").trim()
+        if (!name) return "Desktop"
+        return name.replace(/\b[a-z]/g, c => c.toUpperCase())
+    }
+
+    // ── Computed active application name ────────────────────────────────────
+    readonly property string currentAppName: {
+        if (Services.ActiveApp && Services.ActiveApp.hasWindow && Services.ActiveApp.appName) {
+            return Services.ActiveApp.appName
+        }
+        return wsRoot.getAppDisplayName(Services.Workspaces ? Services.Workspaces.activeWindowAppId : "")
+    }
+
+    // ── AT-SPI native menu model ─────────────────────────────────────────────
+    readonly property bool hasNativeMenu: Boolean(Services.AppMenu && Services.AppMenu.available && Services.AppMenu.model && Services.AppMenu.model.length > 0)
+    readonly property var nativeMenuModel: (Services.AppMenu && Services.AppMenu.model) ? Services.AppMenu.model : []
+
+    // ── Open / Close Menu Helper ─────────────────────────────────────────────
+    function openMenu(menuData, isFb, anchorItem) {
+        if (!appMenuPopup) return
+        var targetX = 16
+        if (anchorItem) {
+            var globalPos = anchorItem.mapToItem(null, 0, 0)
+            targetX = globalPos.x
+        }
+        appMenuPopup.openAt(menuData, targetX, isFb)
+    }
+
+    function closeMenu() {
+        if (appMenuPopup) {
+            appMenuPopup.close()
+        }
+    }
+
+    // ── 1. OS Logo & Workspaces Pill ─────────────────────────────────────────
+    Rectangle {
+        id: wsPill
+        implicitHeight: wsRoot.pillHeight
+        implicitWidth: wsPillLayout.implicitWidth + (wsRoot.isMinimal || wsRoot.isMacMenuBar ? 8 : 20)
+        radius: wsRoot.pillRadius
+        color: wsRoot.getPillBg(wsPillMouse.containsMouse)
+        border.color: wsRoot.getPillBorder(wsPillMouse.containsMouse)
+        border.width: (wsRoot.isMinimal || wsRoot.isMacMenuBar) ? 0 : 1
+
+        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+        Behavior on border.color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+
+        MouseArea {
+            id: wsPillMouse
+            anchors.fill: parent
+            hoverEnabled: true
+            acceptedButtons: Qt.NoButton
+        }
+
+        RowLayout {
+            id: wsPillLayout
+            anchors.centerIn: parent
+            spacing: wsRoot.isMinimal ? 6 : 10
+
+            // OS Logo — click to toggle launcher / dashboard
+            Item {
+                Layout.preferredWidth: logoText.implicitWidth
+                Layout.preferredHeight: logoText.implicitHeight
+                Layout.alignment: Qt.AlignVCenter
+
+                Text {
+                    id: logoText
+                    anchors.centerIn: parent
+                    text: Services.OsInfo.logoGlyph
+                    font.family: Services.Theme.fontSymbols
+                    font.pixelSize: wsRoot.isMinimal ? Services.Theme.fontSizeXl : (wsRoot.isMacMenuBar ? Math.round(Services.Theme.fontSizeXl * 1.2) : Services.Theme.fontSize3xl)
+                    color: wsRoot.isMacMenuBar
+                        ? (logoMouse.containsMouse ? Services.Theme.accent : Services.Theme.textPrimary)
+                        : (logoMouse.containsMouse ? Qt.lighter(Services.Theme.accent, 1.2) : Services.Theme.accent)
+                    scale: logoMouse.containsMouse ? 1.1 : 1.0
+
+                    Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                    Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
+                }
+
+                MouseArea {
+                    id: logoMouse
+                    anchors.fill: parent
+                    anchors.margins: -4
+                    hoverEnabled: true
+                    acceptedButtons: Qt.LeftButton | Qt.RightButton
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: (mouse) => {
+                        if (mouse.button === Qt.LeftButton) {
+                            Services.OverlayManager.dashboardToggleRequested()
+                        } else if (mouse.button === Qt.RightButton) {
+                            Services.OverlayManager.launcherToggleRequested()
+                        }
+                    }
+                }
+            }
+
+            // Divider (hidden in macMenuBar mode for cleaner macOS look)
+            Rectangle {
+                width: 1
+                height: wsRoot.isMinimal ? 10 : 12
+                color: Services.Theme.border
+                opacity: 0.8
+                Layout.alignment: Qt.AlignVCenter
+                visible: !wsRoot.isMacMenuBar
+            }
+
+            // Workspace Indicators
+            RowLayout {
+                id: wsRow
+                spacing: (wsRoot.workspaceStyle === "numbers" || wsRoot.workspaceStyle === "icons") ? (wsRoot.isMinimal ? 2 : 4) : 6
+                Layout.alignment: Qt.AlignVCenter
+
+                property var workspaceList: {
+                    const list = wsRoot.showAll ? [1, 2, 3, 4, 5] : []
+                    const openList = Services.Workspaces.workspaceIds || []
+                    const activeId = Services.Workspaces.activeWorkspaceId || 1
+                    if (!list.includes(activeId)) list.push(activeId)
+                    for (let i = 0; i < openList.length; i++) {
+                        const id = openList[i]
+                        if (id > 0 && !list.includes(id)) list.push(id)
+                    }
+                    return list.sort((a, b) => a - b)
+                }
+
+                Repeater {
+                    model: wsRow.workspaceList
+
+                    Item {
+                        id: wsItem
+                        required property int modelData
+                        property int wsId: modelData
+                        property bool isActive: wsId === Services.Workspaces.activeWorkspaceId
+                        property bool isOccupied: (Services.Workspaces.workspaceIds || []).includes(wsId)
+
+                        Layout.alignment: Qt.AlignVCenter
+
+                        Layout.preferredWidth: {
+                            if (wsRoot.workspaceStyle === "numbers" || wsRoot.workspaceStyle === "icons") {
+                                return wsRoot.isMinimal ? 18 : 22
+                            } else if (wsRoot.workspaceStyle === "dots") {
+                                return isActive ? (wsRoot.isMinimal ? 8 : 10) : (isOccupied ? 6 : 5)
+                            } else {
+                                return isActive ? 22 : (isOccupied ? 12 : 7)
+                            }
+                        }
+
+                        Layout.preferredHeight: {
+                            if (wsRoot.workspaceStyle === "numbers" || wsRoot.workspaceStyle === "icons") {
+                                return wsRoot.isMinimal ? 18 : 22
+                            } else if (wsRoot.workspaceStyle === "dots") {
+                                return isActive ? (wsRoot.isMinimal ? 8 : 10) : (isOccupied ? 6 : 5)
+                            } else {
+                                return 7
+                            }
+                        }
+
+                        Behavior on Layout.preferredWidth {
+                            NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
+                        }
+
+                        // --- PILLS STYLE ---
+                        Rectangle {
+                            visible: wsRoot.workspaceStyle === "pills"
+                            anchors.fill: parent
+                            radius: 3.5
+                            color: wsItem.isActive ? Services.Theme.accent
+                                 : (wsMouse.containsMouse ? Services.Theme.textPrimary
+                                 : (wsItem.isOccupied ? Services.Theme.accentDim : Services.Theme.textDisabled))
+                            opacity: wsItem.isActive ? 1.0 : (wsMouse.containsMouse ? 1.0 : (wsItem.isOccupied ? 0.75 : 0.35))
+
+                            Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                            Behavior on opacity { NumberAnimation { duration: 150 } }
+                        }
+
+                        // --- DOTS STYLE ---
+                        Rectangle {
+                            visible: wsRoot.workspaceStyle === "dots"
+                            anchors.fill: parent
+                            radius: width / 2
+                            color: wsItem.isActive ? Services.Theme.accent
+                                 : (wsMouse.containsMouse ? Services.Theme.textPrimary
+                                 : (wsItem.isOccupied ? Services.Theme.accentDim : Services.Theme.textDisabled))
+                            opacity: wsItem.isActive ? 1.0 : (wsMouse.containsMouse ? 1.0 : (wsItem.isOccupied ? 0.8 : 0.3))
+
+                            Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                            Behavior on opacity { NumberAnimation { duration: 150 } }
+                        }
+
+                        // --- NUMBERS STYLE ---
+                        Rectangle {
+                            visible: wsRoot.workspaceStyle === "numbers"
+                            anchors.fill: parent
+                            radius: wsRoot.isMinimal ? 4 : 6
+                            color: wsItem.isActive ? Services.Theme.accent 
+                                : (wsMouse.containsMouse ? Services.Theme.bgHover 
+                                : (wsItem.isOccupied ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.15) : "transparent"))
+                            border.color: wsItem.isActive ? Services.Theme.accent 
+                                : (wsItem.isOccupied ? Services.Theme.accentDim : "transparent")
+                            border.width: wsItem.isOccupied && !wsItem.isActive ? 1 : 0
+
+                            Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                            Behavior on border.color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+
+                            Text {
+                                anchors.centerIn: parent
+                                text: wsItem.wsId
+                                font.family: Services.Theme.fontMono
+                                font.pixelSize: wsRoot.isMinimal ? 9 : 10
+                                font.bold: wsItem.isActive || wsItem.isOccupied
+                                color: wsItem.isActive ? Services.Theme.bgOnAccent 
+                                    : (wsMouse.containsMouse ? Services.Theme.textPrimary 
+                                    : (wsItem.isOccupied ? Services.Theme.accent : Services.Theme.textDisabled))
+                                Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                            }
+                        }
+
+                        // --- ICONS STYLE ---
+                        Rectangle {
+                            visible: wsRoot.workspaceStyle === "icons"
+                            anchors.fill: parent
+                            radius: wsRoot.isMinimal ? 4 : 6
+                            color: wsItem.isActive ? Services.Theme.accent 
+                                : (wsMouse.containsMouse ? Services.Theme.bgHover : "transparent")
+                            border.color: (wsItem.isOccupied && !wsItem.isActive) ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.3) : "transparent"
+                            border.width: 1
+
+                            Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+
+                            function getWsIcon(id) {
+                                switch (id) {
+                                    case 1: return "\uf120" // terminal
+                                    case 2: return "\uf268" // web
+                                    case 3: return "\uf121" // code
+                                    case 4: return "\uf001" // music
+                                    case 5: return "\uf07c" // files
+                                    default: return "\uf108" // display
+                                }
+                            }
+
+                            Text {
+                                anchors.centerIn: parent
+                                text: parent.getWsIcon(wsItem.wsId)
+                                font.family: Services.Theme.fontSymbols
+                                font.pixelSize: wsRoot.isMinimal ? 9 : 11
+                                color: wsItem.isActive ? Services.Theme.bgOnAccent 
+                                    : (wsMouse.containsMouse ? Services.Theme.textPrimary 
+                                    : (wsItem.isOccupied ? Services.Theme.accent : Services.Theme.textDisabled))
+                                Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                            }
+                        }
+
+                        MouseArea {
+                            id: wsMouse
+                            anchors.fill: parent
+                            anchors.margins: -4
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: Services.Workspaces.switchTo(wsItem.wsId)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ── 2. macOS-style Global Application Menu (islands mode) ─────────────────
+    // 2a. Active App Name Pill (macOS style: bold, click for window controls / fallback menu)
+    Rectangle {
+        id: appNamePill
+        visible: wsRoot.isMacMenuBar
+        implicitHeight: wsRoot.pillHeight
+        implicitWidth: appNameText.implicitWidth + 14
+        radius: wsRoot.pillRadius
+
+        readonly property bool isCurrentOpen: Boolean(appMenuPopup && appMenuPopup.isOpen && appMenuPopup.isFallback)
+        color: (isCurrentOpen || appNameMouse.containsMouse) ? wsRoot.getPillBg(true) : "transparent"
+        Behavior on color { ColorAnimation { duration: 150 } }
+
+        Text {
+            id: appNameText
+            anchors.centerIn: parent
+            text: wsRoot.currentAppName
+            font.family: Services.Theme.fontFamily
+            font.pixelSize: Services.Theme.fontSizeMd
+            font.weight: Font.Bold
+            color: appNamePill.isCurrentOpen ? Services.Theme.accent : Services.Theme.textPrimary
+            elide: Text.ElideRight
+        }
+
+        MouseArea {
+            id: appNameMouse
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onClicked: {
+                if (appNamePill.isCurrentOpen) {
+                    wsRoot.closeMenu()
+                } else {
+                    wsRoot.openMenu(null, true, appNamePill)
+                }
+            }
+        }
+    }
+
+    // 2b. Real AT-SPI Menu Bar Items (File, Edit, View, Help, ...)
+    Repeater {
+        id: menuItemRepeater
+        model: (wsRoot.isMacMenuBar && wsRoot.hasNativeMenu) ? wsRoot.nativeMenuModel : []
+
+        Rectangle {
+            id: menuPill
+            required property var modelData
+            required property int index
+
+            visible: wsRoot.isMacMenuBar
+            implicitHeight: wsRoot.pillHeight
+            implicitWidth: menuPillText.implicitWidth + 12
+            radius: wsRoot.pillRadius
+
+            readonly property bool isCurrentOpen: Boolean(appMenuPopup && appMenuPopup.isOpen && !appMenuPopup.isFallback && appMenuPopup.activeMenuData === modelData)
+            color: (isCurrentOpen || menuPillMouse.containsMouse) ? wsRoot.getPillBg(true) : "transparent"
+            Behavior on color { ColorAnimation { duration: 120 } }
+
+            Text {
+                id: menuPillText
+                anchors.centerIn: parent
+                text: menuPill.modelData.label || ""
+                font.family: Services.Theme.fontFamily
+                font.pixelSize: Services.Theme.fontSizeSm
+                font.weight: Font.Medium
+                color: menuPill.isCurrentOpen ? Services.Theme.accent : Services.Theme.textPrimary
+            }
+
+            MouseArea {
+                id: menuPillMouse
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+
+                onEntered: {
+                    // macOS scrub: if any menu is already open, hovering another menu switches instantly!
+                    if (appMenuPopup && appMenuPopup.isOpen && !appMenuPopup.isFallback && appMenuPopup.activeMenuData !== menuPill.modelData) {
+                        wsRoot.openMenu(menuPill.modelData, false, menuPill)
+                    }
+                }
+
+                onClicked: {
+                    if (menuPill.isCurrentOpen) {
+                        wsRoot.closeMenu()
+                    } else {
+                        wsRoot.openMenu(menuPill.modelData, false, menuPill)
+                    }
+                }
+            }
+        }
+    }
+
+    // ── 3. Active Window Title Pill (non-macMenuBar modes) ──────────────────
+    Rectangle {
+        id: titlePill
+        implicitHeight: wsRoot.pillHeight
+        implicitWidth: titleText.implicitWidth + (wsRoot.isMinimal || wsRoot.isMacMenuBar ? 8 : 20)
+        radius: wsRoot.pillRadius
+        color: wsRoot.getPillBg(false)
+        border.color: wsRoot.getPillBorder(false)
+        border.width: (wsRoot.isMinimal || wsRoot.isMacMenuBar) ? 0 : 1
+        visible: !wsRoot.isMacMenuBar && Services.Workspaces.activeWindowTitle.length > 0
+        Layout.maximumWidth: wsRoot.isMinimal ? 220 : 280
+
+        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+        Behavior on border.color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+
+        Text {
+            id: titleText
+            anchors.centerIn: parent
+            width: parent.width - (wsRoot.isMinimal || wsRoot.isMacMenuBar ? 8 : 20)
+            text: Services.Workspaces.activeWindowTitle
+            font.family: wsRoot.isMacMenuBar ? Services.Theme.fontFamily : Services.Theme.fontMono
+            font.pixelSize: wsRoot.isMinimal ? Services.Theme.fontSizeMd : Services.Theme.fontSizeLg
+            font.weight: wsRoot.isMacMenuBar ? Font.DemiBold : Font.Normal
+            color: wsRoot.isMacMenuBar ? Services.Theme.textPrimary : Services.Theme.textSecondary
+            elide: Text.ElideRight
+        }
+    }
+
+    // ── 4. Global Application Menu Popup Window ──────────────────────────────
+    AppMenuPopup {
+        id: appMenuPopup
+    }
+}

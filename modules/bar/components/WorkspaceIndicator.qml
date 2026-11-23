@@ -5,7 +5,7 @@ import "../../../services" as Services
 
 RowLayout {
     id: wsRoot
-    spacing: isMinimal ? 4 : 8
+    spacing: isMinimal ? 4 : (isMacMenuBar ? 4 : 8)
 
     readonly property string barStyle: Services.Config ? Services.Config.barStyle : "islands"
     readonly property string workspaceStyle: Services.Config ? Services.Config.workspaceStyle : "pills"
@@ -14,33 +14,169 @@ RowLayout {
     readonly property bool isMinimal: barStyle === "minimal"
     readonly property bool isFloating: barStyle === "floating"
     readonly property bool isUnified: barStyle === "unified"
+    readonly property bool isMacMenuBar: isIslands
 
     readonly property int pillHeight: isMinimal ? 24 : 28
-    readonly property int pillRadius: isMinimal ? 6 : (isIslands ? 14 : 10)
+    readonly property int pillRadius: isMinimal ? 6 : (isIslands ? 7 : 10)
 
-    // Dock glass material (Dock.qml): neutral low-alpha fill, white hairline border.
+    // Hover background for macOS-style pills
     readonly property bool glassDark: Services.Theme.isDark
     function getPillBg(hovered) {
+        if (isMacMenuBar)
+            return hovered
+                ? (glassDark ? Qt.rgba(1, 1, 1, 0.13) : Qt.rgba(0, 0, 0, 0.08))
+                : "transparent"
         if (isMinimal) return hovered ? Services.Theme.bgHover : "transparent"
         if (hovered) return glassDark ? Qt.rgba(1, 1, 1, 0.20) : Qt.rgba(1, 1, 1, 0.65)
         return glassDark ? Qt.rgba(0.11, 0.11, 0.12, 0.55) : Qt.rgba(1, 1, 1, 0.48)
     }
 
     function getPillBorder(hovered) {
+        if (isMacMenuBar) return "transparent"
         if (isMinimal) return hovered ? Services.Theme.borderHighlight : "transparent"
         if (hovered) return glassDark ? Qt.rgba(1, 1, 1, 0.38) : Qt.rgba(1, 1, 1, 0.85)
         return glassDark ? Qt.rgba(1, 1, 1, 0.28) : Qt.rgba(1, 1, 1, 0.65)
     }
 
-    // OS Logo & Workspaces Pill
+    function getAppDisplayName(appId) {
+        const raw = String(appId || "").trim()
+        if (!raw) return "Desktop"
+
+        const key = raw.toLowerCase()
+        const aliases = {
+            "org.wezfurlong.wezterm": "WezTerm",
+            "org.gnome.terminal": "Terminal",
+            "org.gnome.console": "Console",
+            "org.gnome.nautilus": "Files",
+            "org.kde.dolphin": "Dolphin",
+            "org.kde.konsole": "Konsole",
+            "org.xfce.thunar": "Thunar",
+            "thunar": "Thunar",
+            "org.mozilla.firefox": "Firefox",
+            "firefox": "Firefox",
+            "brave-browser": "Brave Browser",
+            "com.brave.browser": "Brave Browser",
+            "chromium": "Chromium",
+            "chromium-browser": "Chromium",
+            "org.chromium.chromium": "Chromium",
+            "google-chrome": "Google Chrome",
+            "google-chrome-stable": "Google Chrome",
+            "code": "Visual Studio Code",
+            "code-oss": "Visual Studio Code",
+            "com.spotify.client": "Spotify",
+            "spotify": "Spotify",
+            "org.telegram.desktop": "Telegram",
+            "com.discordapp.discord": "Discord",
+            "discord": "Discord",
+            "org.quickshell": "Nimbush",
+            "quickshell": "Nimbush",
+            "kitty": "Kitty",
+            "foot": "Foot",
+            "footclient": "Foot",
+            "alacritty": "Alacritty",
+            "wezterm": "WezTerm",
+            "xterm": "XTerm"
+        }
+        if (aliases[key]) return aliases[key]
+
+        // Try ActiveApp for a richer name
+        if (Services.ActiveApp && Services.ActiveApp.appName && Services.ActiveApp.appName !== "Desktop") {
+            if (Services.ActiveApp.windowClass && Services.ActiveApp.windowClass.toLowerCase() === key) {
+                return Services.ActiveApp.appName
+            }
+        }
+
+        let name = raw.split(/[./]/).pop().replace(/[-_]+/g, " ").trim()
+        if (!name) return "Desktop"
+        return name.replace(/\b[a-z]/g, c => c.toUpperCase())
+    }
+
+    // ── Computed active application name ────────────────────────────────────
+    readonly property string currentAppName: {
+        if (Services.ActiveApp && Services.ActiveApp.hasWindow && Services.ActiveApp.appName) {
+            return Services.ActiveApp.appName
+        }
+        return wsRoot.getAppDisplayName(Services.Workspaces ? Services.Workspaces.activeWindowAppId : "")
+    }
+
+    // ── AT-SPI native menu model ─────────────────────────────────────────────
+    readonly property bool hasNativeMenu: Boolean(Services.AppMenu && Services.AppMenu.available && Services.AppMenu.model && Services.AppMenu.model.length > 0)
+    readonly property var nativeMenuModel: (Services.AppMenu && Services.AppMenu.model) ? Services.AppMenu.model : []
+
+    // ── Standard macOS Menu Bar (Always persistent for apps without AT-SPI) ──
+    readonly property var standardFallbackMenu: [
+        {
+            label: "File",
+            children: [
+                { label: "New Window", shortcut: "Ctrl+Shift+N", actionType: "newWindow" },
+                { separator: true },
+                { label: "Close Window", shortcut: "Super+Q", actionType: "closeWindow" },
+                { label: "Quit " + currentAppName, shortcut: "Super+Shift+Q", actionType: "quitApp" }
+            ]
+        },
+        {
+            label: "Edit",
+            children: [
+                { label: "Cut", shortcut: "Ctrl+X", actionType: "cut" },
+                { label: "Copy", shortcut: "Ctrl+C", actionType: "copy" },
+                { label: "Paste", shortcut: "Ctrl+V", actionType: "paste" },
+                { separator: true },
+                { label: "Select All", shortcut: "Ctrl+A", actionType: "selectAll" }
+            ]
+        },
+        {
+            label: "View",
+            children: [
+                { label: (Services.ActiveApp && Services.ActiveApp.isFullscreen) ? "Exit Fullscreen" : "Toggle Fullscreen", shortcut: "Super+F", actionType: "fullscreen" },
+                { label: (Services.ActiveApp && Services.ActiveApp.isFloating) ? "Tile Window" : "Float Window", shortcut: "Super+T", actionType: "float" },
+                { label: "Center Window", actionType: "center" }
+            ]
+        },
+        {
+            label: "Window",
+            children: [
+                { label: "Minimize", shortcut: "Super+H", actionType: "minimize" },
+                { label: "Next Window", shortcut: "Super+Tab", actionType: "nextWindow" },
+                { label: "Pin on All Workspaces", actionType: "pin" }
+            ]
+        },
+        {
+            label: "Help",
+            children: [
+                { label: currentAppName + " Help", actionType: "aboutApp" },
+                { label: "Keybindings", actionType: "keybinds" }
+            ]
+        }
+    ]
+
+    readonly property var activeMenuModel: hasNativeMenu ? nativeMenuModel : standardFallbackMenu
+
+    // ── Open / Close Menu Helper ─────────────────────────────────────────────
+    function openMenu(menuData, isFb, anchorItem) {
+        if (!appMenuPopup) return
+        var targetX = 16
+        if (anchorItem) {
+            var globalPos = anchorItem.mapToItem(null, 0, 0)
+            targetX = globalPos.x
+        }
+        appMenuPopup.openAt(menuData, targetX, isFb)
+    }
+
+    function closeMenu() {
+        if (appMenuPopup) {
+            appMenuPopup.close()
+        }
+    }
+
+    // ── 1. OS Logo & Workspaces Pill ─────────────────────────────────────────
     Rectangle {
         id: wsPill
         implicitHeight: wsRoot.pillHeight
-        implicitWidth: wsPillLayout.implicitWidth + (wsRoot.isMinimal ? 12 : 20)
+        implicitWidth: wsPillLayout.implicitWidth + (wsRoot.isMinimal || wsRoot.isMacMenuBar ? 8 : 20)
         radius: wsRoot.pillRadius
         color: wsRoot.getPillBg(wsPillMouse.containsMouse)
         border.color: wsRoot.getPillBorder(wsPillMouse.containsMouse)
-        border.width: wsRoot.isMinimal ? 0 : 1
+        border.width: (wsRoot.isMinimal || wsRoot.isMacMenuBar) ? 0 : 1
 
         Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
         Behavior on border.color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
@@ -68,8 +204,10 @@ RowLayout {
                     anchors.centerIn: parent
                     text: Services.OsInfo.logoGlyph
                     font.family: Services.Theme.fontSymbols
-                    font.pixelSize: wsRoot.isMinimal ? Services.Theme.fontSizeXl : Services.Theme.fontSize3xl
-                    color: logoMouse.containsMouse ? Qt.lighter(Services.Theme.accent, 1.2) : Services.Theme.accent
+                    font.pixelSize: wsRoot.isMinimal ? Services.Theme.fontSizeXl : (wsRoot.isMacMenuBar ? Math.round(Services.Theme.fontSizeXl * 1.2) : Services.Theme.fontSize3xl)
+                    color: wsRoot.isMacMenuBar
+                        ? (logoMouse.containsMouse ? Services.Theme.accent : Services.Theme.textPrimary)
+                        : (logoMouse.containsMouse ? Qt.lighter(Services.Theme.accent, 1.2) : Services.Theme.accent)
                     scale: logoMouse.containsMouse ? 1.1 : 1.0
 
                     Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
@@ -93,13 +231,14 @@ RowLayout {
                 }
             }
 
-            // Divider
+            // Divider (hidden in macMenuBar mode for cleaner macOS look)
             Rectangle {
                 width: 1
                 height: wsRoot.isMinimal ? 10 : 12
                 color: Services.Theme.border
                 opacity: 0.8
                 Layout.alignment: Qt.AlignVCenter
+                visible: !wsRoot.isMacMenuBar
             }
 
             // Workspace Indicators
@@ -132,14 +271,12 @@ RowLayout {
 
                         Layout.alignment: Qt.AlignVCenter
 
-                        // Size depends on workspaceStyle
                         Layout.preferredWidth: {
                             if (wsRoot.workspaceStyle === "numbers" || wsRoot.workspaceStyle === "icons") {
                                 return wsRoot.isMinimal ? 18 : 22
                             } else if (wsRoot.workspaceStyle === "dots") {
                                 return isActive ? (wsRoot.isMinimal ? 8 : 10) : (isOccupied ? 6 : 5)
                             } else {
-                                // "pills" default
                                 return isActive ? 22 : (isOccupied ? 12 : 7)
                             }
                         }
@@ -263,16 +400,108 @@ RowLayout {
         }
     }
 
-    // Active Window Title Pill
+    // ── 2. macOS-style Global Application Menu (islands mode) ─────────────────
+    // 2a. Active App Name Pill (macOS style: bold, click for window controls / fallback menu)
+    Rectangle {
+        id: appNamePill
+        visible: wsRoot.isMacMenuBar
+        implicitHeight: wsRoot.pillHeight
+        implicitWidth: appNameText.implicitWidth + 14
+        radius: wsRoot.pillRadius
+
+        readonly property bool isCurrentOpen: Boolean(appMenuPopup && appMenuPopup.isOpen && appMenuPopup.isFallback)
+        color: (isCurrentOpen || appNameMouse.containsMouse) ? wsRoot.getPillBg(true) : "transparent"
+        Behavior on color { ColorAnimation { duration: 150 } }
+
+        Text {
+            id: appNameText
+            anchors.centerIn: parent
+            text: wsRoot.currentAppName
+            font.family: Services.Theme.fontFamily
+            font.pixelSize: Services.Theme.fontSizeMd
+            font.weight: Font.Bold
+            color: appNamePill.isCurrentOpen ? Services.Theme.accent : Services.Theme.textPrimary
+            elide: Text.ElideRight
+        }
+
+        MouseArea {
+            id: appNameMouse
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onClicked: {
+                if (appNamePill.isCurrentOpen) {
+                    wsRoot.closeMenu()
+                } else {
+                    wsRoot.openMenu(null, true, appNamePill)
+                }
+            }
+        }
+    }
+
+    // 2b. Real AT-SPI or Standard macOS Menu Bar Items
+    Repeater {
+        id: menuItemRepeater
+        model: wsRoot.isMacMenuBar ? wsRoot.activeMenuModel : []
+
+        Rectangle {
+            id: menuPill
+            required property var modelData
+            required property int index
+
+            visible: wsRoot.isMacMenuBar
+            implicitHeight: wsRoot.pillHeight
+            implicitWidth: menuPillText.implicitWidth + 12
+            radius: wsRoot.pillRadius
+
+            readonly property bool isCurrentOpen: Boolean(appMenuPopup && appMenuPopup.isOpen && !appMenuPopup.isFallback && appMenuPopup.activeMenuData === modelData)
+            color: (isCurrentOpen || menuPillMouse.containsMouse) ? wsRoot.getPillBg(true) : "transparent"
+            Behavior on color { ColorAnimation { duration: 120 } }
+
+            Text {
+                id: menuPillText
+                anchors.centerIn: parent
+                text: menuPill.modelData.label || ""
+                font.family: Services.Theme.fontFamily
+                font.pixelSize: Services.Theme.fontSizeSm
+                font.weight: Font.Medium
+                color: menuPill.isCurrentOpen ? Services.Theme.accent : Services.Theme.textPrimary
+            }
+
+            MouseArea {
+                id: menuPillMouse
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+
+                onEntered: {
+                    // macOS scrub: if any menu is already open, hovering another menu switches instantly!
+                    if (appMenuPopup && appMenuPopup.isOpen && !appMenuPopup.isFallback && appMenuPopup.activeMenuData !== menuPill.modelData) {
+                        wsRoot.openMenu(menuPill.modelData, false, menuPill)
+                    }
+                }
+
+                onClicked: {
+                    if (menuPill.isCurrentOpen) {
+                        wsRoot.closeMenu()
+                    } else {
+                        wsRoot.openMenu(menuPill.modelData, false, menuPill)
+                    }
+                }
+            }
+        }
+    }
+
+    // ── 3. Active Window Title Pill (non-macMenuBar modes) ──────────────────
     Rectangle {
         id: titlePill
         implicitHeight: wsRoot.pillHeight
-        implicitWidth: titleText.implicitWidth + (wsRoot.isMinimal ? 12 : 20)
+        implicitWidth: titleText.implicitWidth + (wsRoot.isMinimal || wsRoot.isMacMenuBar ? 8 : 20)
         radius: wsRoot.pillRadius
         color: wsRoot.getPillBg(false)
         border.color: wsRoot.getPillBorder(false)
-        border.width: wsRoot.isMinimal ? 0 : 1
-        visible: Services.Workspaces.activeWindowTitle.length > 0
+        border.width: (wsRoot.isMinimal || wsRoot.isMacMenuBar) ? 0 : 1
+        visible: !wsRoot.isMacMenuBar && Services.Workspaces.activeWindowTitle.length > 0
         Layout.maximumWidth: wsRoot.isMinimal ? 220 : 280
 
         Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
@@ -281,12 +510,18 @@ RowLayout {
         Text {
             id: titleText
             anchors.centerIn: parent
-            width: parent.width - (wsRoot.isMinimal ? 12 : 20)
+            width: parent.width - (wsRoot.isMinimal || wsRoot.isMacMenuBar ? 8 : 20)
             text: Services.Workspaces.activeWindowTitle
-            font.family: Services.Theme.fontMono
+            font.family: wsRoot.isMacMenuBar ? Services.Theme.fontFamily : Services.Theme.fontMono
             font.pixelSize: wsRoot.isMinimal ? Services.Theme.fontSizeMd : Services.Theme.fontSizeLg
-            color: Services.Theme.textSecondary
+            font.weight: wsRoot.isMacMenuBar ? Font.DemiBold : Font.Normal
+            color: wsRoot.isMacMenuBar ? Services.Theme.textPrimary : Services.Theme.textSecondary
             elide: Text.ElideRight
         }
+    }
+
+    // ── 4. Global Application Menu Popup Window ──────────────────────────────
+    AppMenuPopup {
+        id: appMenuPopup
     }
 }

@@ -25,6 +25,7 @@ Singleton {
     property bool updatePanelVisible: false
     property bool phonePanelVisible: false
     property bool calendarVisible: false
+    property bool appMenuVisible: false
     property bool batteryPanelVisible: false
     property bool volumePanelVisible: false
     property bool sysmonPanelVisible: false
@@ -123,6 +124,9 @@ Singleton {
         }
         if (except !== "calendar") {
             calendarVisible = false
+        }
+        if (except !== "appMenu") {
+            appMenuVisible = false
         }
         if (except !== "batteryPanel") {
             batteryPanelVisible = false

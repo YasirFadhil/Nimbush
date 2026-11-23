@@ -45,14 +45,14 @@ RowLayout {
     readonly property bool glassDark: Services.Theme.isDark
     function getPillBg(hovered) {
         if (isMinimal) return hovered ? Services.Theme.bgHover : "transparent"
-        if (hovered) return glassDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(1, 1, 1, 0.50)
-        return glassDark ? Qt.rgba(0.11, 0.11, 0.12, 0.38) : Qt.rgba(1, 1, 1, 0.30)
+        if (hovered) return glassDark ? Qt.rgba(1, 1, 1, 0.20) : Qt.rgba(1, 1, 1, 0.65)
+        return glassDark ? Qt.rgba(0.11, 0.11, 0.12, 0.55) : Qt.rgba(1, 1, 1, 0.48)
     }
 
     function getPillBorder(hovered) {
         if (isMinimal) return hovered ? Services.Theme.borderHighlight : "transparent"
-        if (hovered) return glassDark ? Qt.rgba(1, 1, 1, 0.26) : Qt.rgba(1, 1, 1, 0.75)
-        return glassDark ? Qt.rgba(1, 1, 1, 0.18) : Qt.rgba(1, 1, 1, 0.50)
+        if (hovered) return glassDark ? Qt.rgba(1, 1, 1, 0.38) : Qt.rgba(1, 1, 1, 0.85)
+        return glassDark ? Qt.rgba(1, 1, 1, 0.28) : Qt.rgba(1, 1, 1, 0.65)
     }
 
     // ── Daftar item dan urutan mengalah ───────────────────────────
@@ -386,7 +386,7 @@ RowLayout {
             id: mBatIcon
             font.family: Services.Theme.fontSymbols
             font.pixelSize: root.isMinimal ? Services.Theme.fontSizeMd : Services.Theme.fontSizeXl
-            text: Services.Icons.powerIcon(Services.Power.charging, Services.Power.percentage * 100)
+            text: Services.Icons.powerIcon(Services.Power.charging, Services.Power.percentage * 100, Services.Power.holding)
         }
 
         readonly property real trayWidthCompact: Math.ceil(mBatIcon.width) + baseHPad
@@ -423,7 +423,7 @@ RowLayout {
 
             Text {
                 id: batIconText
-                text: Services.Icons.powerIcon(Services.Power.charging, Services.Power.percentage * 100)
+                text: Services.Icons.powerIcon(Services.Power.charging, Services.Power.percentage * 100, Services.Power.holding)
                 font.family: Services.Theme.fontSymbols
                 font.pixelSize: root.isMinimal ? Services.Theme.fontSizeMd : Services.Theme.fontSizeXl
                 color: Services.Power.isLow ? "#ff4444" : (Services.Power.isWarning ? "#e06c75" : (Services.PowerProfile.saverEnabled ? "#ff9800" : ((batMouse.containsMouse || Services.OverlayManager.batteryPanelVisible) ? Services.Theme.accent : Services.Theme.textPrimary)))

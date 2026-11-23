@@ -1,0 +1,115 @@
+import QtQuick
+import QtQuick.Layouts
+import Quickshell
+import "../../../services" as Services
+
+RowLayout {
+    id: root
+
+    property var popup: null
+    readonly property bool isMacMenuBar: Services.Config ? (Services.Config.barStyle === "islands") : true
+    readonly property bool isMinimal: Services.Config ? (Services.Config.barStyle === "minimal") : false
+    readonly property int itemHeight: isMinimal ? 24 : 28
+    readonly property int itemRadius: isMinimal ? 5 : 6
+
+    readonly property bool dark: Services.Theme.isDark
+    readonly property color hoverBg: dark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.08)
+    readonly property color pressedBg: dark ? Qt.rgba(1, 1, 1, 0.22) : Qt.rgba(0, 0, 0, 0.14)
+
+    spacing: 3
+
+    // ── 1. Application Name Pill ─────────────────────────────────────────────
+    Rectangle {
+        id: appPill
+        implicitHeight: root.itemHeight
+        implicitWidth: appNameText.implicitWidth + 14
+        radius: root.itemRadius
+        color: appMouse.containsMouse ? root.hoverBg : "transparent"
+
+        Behavior on color { ColorAnimation { duration: 150 } }
+
+        Text {
+            id: appNameText
+            anchors.centerIn: parent
+            text: (Services.ActiveApp && Services.ActiveApp.appName) ? Services.ActiveApp.appName : "Desktop"
+            font.family: Services.Theme.fontFamily
+            font.pixelSize: Services.Theme.fontSizeMd
+            font.weight: Font.Bold
+            color: Services.Theme.textPrimary
+            elide: Text.ElideRight
+        }
+
+        MouseArea {
+            id: appMouse
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onClicked: {
+                if (root.popup) {
+                    if (root.popup.isOpen && root.popup.isFallback) {
+                        root.popup.close()
+                    } else {
+                        const globalPos = appPill.mapToItem(null, 0, appPill.height)
+                        root.popup.openAt(null, globalPos.x, globalPos.y + 4, true)
+                    }
+                }
+            }
+        }
+    }
+
+    // ── 2. Real Accessible Menu Bar Items (File, Edit, ...) ──────────────────
+    Repeater {
+        model: (Services.AppMenu && Services.AppMenu.available) ? Services.AppMenu.model : []
+
+        Rectangle {
+            id: menuPill
+            required property var modelData
+            required property int index
+
+            implicitHeight: root.itemHeight
+            implicitWidth: menuText.implicitWidth + 12
+            radius: root.itemRadius
+
+            readonly property bool isCurrentOpen: Boolean(root.popup && root.popup.isOpen && !root.popup.isFallback && root.popup.activeMenuData === modelData)
+            color: (isCurrentOpen || menuMouse.containsMouse) ? root.hoverBg : "transparent"
+
+            Behavior on color { ColorAnimation { duration: 120 } }
+
+            Text {
+                id: menuText
+                anchors.centerIn: parent
+                text: menuPill.modelData.label || ""
+                font.family: Services.Theme.fontFamily
+                font.pixelSize: Services.Theme.fontSizeSm
+                font.weight: Font.Medium
+                color: isCurrentOpen ? Services.Theme.accent : Services.Theme.textPrimary
+            }
+
+            MouseArea {
+                id: menuMouse
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+
+                onEntered: {
+                    // macOS-like scrub: if popup is already open, hovering switches to this menu immediately
+                    if (root.popup && root.popup.isOpen && !root.popup.isFallback) {
+                        const globalPos = menuPill.mapToItem(null, 0, menuPill.height)
+                        root.popup.openAt(menuPill.modelData, globalPos.x, globalPos.y + 4, false)
+                    }
+                }
+
+                onClicked: {
+                    if (root.popup) {
+                        if (menuPill.isCurrentOpen) {
+                            root.popup.close()
+                        } else {
+                            const globalPos = menuPill.mapToItem(null, 0, menuPill.height)
+                            root.popup.openAt(menuPill.modelData, globalPos.x, globalPos.y + 4, false)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

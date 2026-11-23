@@ -1,0 +1,375 @@
+import QtQuick
+import QtQuick.Layouts
+import Quickshell
+import Quickshell.Wayland
+import "../../../services" as Services
+import "../../common" as Common
+
+PanelWindow {
+    id: root
+    property string overlayId: "appMenu"
+
+    property bool isOpen: false
+    property var activeMenuData: null
+    property real targetX: 20
+    property bool isFallback: false
+
+    readonly property bool isBottom: Services.Config ? (Services.Config.barPosition === "bottom") : false
+    readonly property int barTotalHeight: Services.Config ? (Services.Config.barStyle === "minimal" ? 30 : (Services.Config.barStyle === "unified" ? 38 : (Services.Config.barStyle === "floating" ? 46 : 36))) : 36
+
+    anchors { top: true; bottom: true; left: true; right: true }
+    color: "transparent"
+    exclusiveZone: 0
+    visible: isOpen || (popupCard && popupCard.opacity > 0.01)
+    WlrLayershell.layer: WlrLayer.Top
+    WlrLayershell.namespace: "quickshell:appmenu"
+    WlrLayershell.keyboardFocus: root.isOpen ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
+
+    mask: Region {
+        Region {
+            x: 0
+            y: root.isBottom ? 0 : root.barTotalHeight
+            width: root.width
+            height: root.height - root.barTotalHeight
+        }
+    }
+
+    // Active submenu state
+    property var activeSubmenuItem: null
+    property real activeSubmenuY: 12
+
+    // macOS menu styling tokens
+    readonly property bool dark: Services.Theme.isDark
+    readonly property color menuFill: dark ? Qt.rgba(0.14, 0.14, 0.15, 0.88) : Qt.rgba(1, 1, 1, 0.92)
+    readonly property color menuBorder: dark ? Qt.rgba(1, 1, 1, 0.22) : Qt.rgba(0, 0, 0, 0.14)
+    readonly property color menuSpecular: dark ? Qt.rgba(1, 1, 1, 0.24) : Qt.rgba(1, 1, 1, 0.80)
+    readonly property color menuDivider: dark ? Qt.rgba(1, 1, 1, 0.18) : Qt.rgba(0, 0, 0, 0.14)
+    readonly property color textPrimary: dark ? Qt.rgba(1, 1, 1, 0.97) : Qt.rgba(0, 0, 0, 0.90)
+    readonly property color textSecondary: dark ? Qt.rgba(1, 1, 1, 0.75) : Qt.rgba(0, 0, 0, 0.65)
+    readonly property color textTertiary: dark ? Qt.rgba(1, 1, 1, 0.52) : Qt.rgba(0, 0, 0, 0.45)
+
+    function openAt(menuData, xPos, fallback) {
+        if (Services.OverlayManager) Services.OverlayManager.closeAllExcept(root)
+        activeMenuData = menuData
+        targetX = Math.max(12, xPos)
+        isFallback = Boolean(fallback)
+        activeSubmenuItem = null
+        isOpen = true
+    }
+
+    function close() {
+        isOpen = false
+        activeSubmenuItem = null
+    }
+
+    function hide() { close() }
+
+    Component.onCompleted: {
+        if (Services.OverlayManager) Services.OverlayManager.register(root)
+    }
+
+    Item {
+        id: escFocus
+        focus: root.isOpen
+        Keys.onEscapePressed: root.close()
+    }
+
+    // Dismiss on outside click
+    MouseArea {
+        anchors.fill: parent
+        enabled: root.isOpen
+        onClicked: root.close()
+
+        // ── Main Popup Card ──────────────────────────────────────────────────
+        Rectangle {
+            id: popupCard
+            x: Math.max(12, Math.min(parent.width - width - 12, root.targetX))
+            y: root.isBottom ? (parent.height - height - 12) : 12
+            width: Math.max(200, menuColumn.implicitWidth + 20)
+            height: menuColumn.implicitHeight + 16
+            radius: 12
+            color: root.menuFill
+            border.color: root.menuBorder
+            border.width: 1
+
+            opacity: root.isOpen ? 1.0 : 0.0
+            scale: root.isOpen ? 1.0 : 0.96
+            transform: Translate {
+                y: root.isOpen ? 0 : (root.isBottom ? 20 : -20)
+                Behavior on y { NumberAnimation { duration: 280; easing.type: Easing.OutCubic } }
+            }
+            Behavior on opacity { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
+            Behavior on scale   { NumberAnimation { duration: 280; easing.type: Easing.OutBack } }
+
+            // Inner specular rim highlight
+            Rectangle {
+                anchors.fill: parent
+                anchors.margins: 1
+                radius: parent.radius - 1
+                color: "transparent"
+                border.color: root.menuSpecular
+                border.width: 1
+            }
+
+            // Prevent backdrop click inside card
+            MouseArea {
+                anchors.fill: parent
+                acceptedButtons: Qt.LeftButton | Qt.RightButton
+                onClicked: (mouse) => mouse.accepted = true
+            }
+
+            ColumnLayout {
+                id: menuColumn
+                anchors.fill: parent
+                anchors.margins: 8
+                spacing: 2
+
+                // ── Case 1: Real AT-SPI Menu Items ───────────────────────────
+                Repeater {
+                    model: (!root.isFallback && root.activeMenuData && root.activeMenuData.children) ? root.activeMenuData.children : []
+                    delegate: Item {
+                        id: itemDelegate
+                        required property var modelData
+                        property var item: modelData
+                        readonly property bool isSep: Boolean(item.separator || item.role === "separator" || item.label === "-")
+                        readonly property bool hasKids: Boolean(item.children && item.children.length > 0)
+
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: isSep ? 7 : 26
+                        implicitHeight: Layout.preferredHeight
+
+                        // Separator line
+                        Rectangle {
+                            visible: itemDelegate.isSep
+                            anchors.verticalCenter: parent.verticalCenter
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            anchors.leftMargin: 6
+                            anchors.rightMargin: 6
+                            height: 1
+                            color: root.menuDivider
+                        }
+
+                        // Menu Row
+                        Common.MenuRow {
+                            visible: !itemDelegate.isSep
+                            anchors.fill: parent
+                            label: itemDelegate.item.label || ""
+                            shortcut: itemDelegate.item.shortcut || ""
+                            enabled: itemDelegate.item.enabled !== false
+                            hasSubmenu: itemDelegate.hasKids
+                            glyph: itemDelegate.item.checked ? "\uf00c" : "" // checkmark
+
+                            onHoveredChanged: {
+                                if (hovered && itemDelegate.hasKids) {
+                                    root.activeSubmenuItem = itemDelegate.item
+                                    root.activeSubmenuY = popupCard.y + itemDelegate.y
+                                }
+                            }
+
+                            onTriggered: {
+                                if (itemDelegate.hasKids) {
+                                    root.activeSubmenuItem = itemDelegate.item
+                                    root.activeSubmenuY = popupCard.y + itemDelegate.y
+                                } else {
+                                    if (Services.AppMenu) {
+                                        Services.AppMenu.trigger(itemDelegate.item.path)
+                                    }
+                                    root.close()
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // ── Case 2: Fallback Application Menu ────────────────────────
+                ColumnLayout {
+                    visible: root.isFallback
+                    Layout.fillWidth: true
+                    spacing: 2
+
+                    // App Title Header
+                    Item {
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 30
+                        implicitHeight: 30
+
+                        RowLayout {
+                            anchors.fill: parent
+                            anchors.leftMargin: 10
+                            anchors.rightMargin: 10
+                            spacing: 8
+
+                            Text {
+                                text: (Services.ActiveApp && Services.ActiveApp.appName) ? Services.ActiveApp.appName : "Application"
+                                font.family: Services.Theme.fontFamily
+                                font.pixelSize: Services.Theme.fontSizeSm
+                                font.weight: Font.Bold
+                                color: root.textPrimary
+                                elide: Text.ElideRight
+                                Layout.fillWidth: true
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        Layout.fillWidth: true
+                        height: 1
+                        Layout.leftMargin: 6
+                        Layout.rightMargin: 6
+                        Layout.topMargin: 2
+                        Layout.bottomMargin: 2
+                        color: root.menuDivider
+                    }
+
+                    // Window Actions
+                    Common.MenuRow {
+                        glyph: "\uf2d1" // minimize
+                        label: "Minimize"
+                        shortcut: "Super+H"
+                        onTriggered: {
+                            root.close()
+                            if (Services.Compositor) Services.Compositor.dispatch("togglespecialworkspace", "minimized")
+                        }
+                    }
+
+                    Common.MenuRow {
+                        glyph: (Services.ActiveApp && Services.ActiveApp.isFullscreen) ? "\uf066" : "\uf2d0"
+                        label: (Services.ActiveApp && Services.ActiveApp.isFullscreen) ? "Exit Fullscreen" : "Fullscreen"
+                        shortcut: "Super+F"
+                        onTriggered: {
+                            root.close()
+                            if (Services.Compositor) Services.Compositor.dispatch("fullscreen", "0")
+                        }
+                    }
+
+                    Common.MenuRow {
+                        glyph: "\uf0b2" // float
+                        label: (Services.ActiveApp && Services.ActiveApp.isFloating) ? "Tile Window" : "Float Window"
+                        shortcut: "Super+T"
+                        onTriggered: {
+                            root.close()
+                            if (Services.Compositor) Services.Compositor.dispatch("togglefloating", "")
+                        }
+                    }
+
+                    Common.MenuRow {
+                        glyph: "\uf047" // center
+                        label: "Center Window"
+                        onTriggered: {
+                            root.close()
+                            if (Services.Compositor) Services.Compositor.dispatch("centerwindow", "")
+                        }
+                    }
+
+                    Rectangle {
+                        Layout.fillWidth: true
+                        height: 1
+                        Layout.leftMargin: 6
+                        Layout.rightMargin: 6
+                        Layout.topMargin: 2
+                        Layout.bottomMargin: 2
+                        color: root.menuDivider
+                    }
+
+                    Common.MenuRow {
+                        glyph: "\uf00d" // close
+                        label: "Close Window"
+                        shortcut: "Super+Q"
+                        onTriggered: {
+                            root.close()
+                            if (Services.Compositor) Services.Compositor.dispatch("closewindow", "activewindow")
+                        }
+                    }
+
+                    Common.MenuRow {
+                        glyph: "\uf011" // quit
+                        label: "Quit " + (Services.ActiveApp ? Services.ActiveApp.appName : "App")
+                        onTriggered: {
+                            root.close()
+                            if (Services.Compositor) Services.Compositor.dispatch("killactive", "")
+                        }
+                    }
+                }
+            }
+        }
+
+        // ── Submenu Popup Card (Cascading) ───────────────────────────────────
+        Rectangle {
+            id: submenuCard
+            visible: Boolean(root.activeSubmenuItem && root.activeSubmenuItem.children && root.activeSubmenuItem.children.length > 0)
+            x: Math.min(parent.width - width - 12, popupCard.x + popupCard.width + 4)
+            y: Math.max(12, Math.min(parent.height - height - 12, root.activeSubmenuY))
+            width: Math.max(180, submenuColumn.implicitWidth + 20)
+            height: submenuColumn.implicitHeight + 16
+            radius: 12
+            color: root.menuFill
+            border.color: root.menuBorder
+            border.width: 1
+
+            // Specular rim
+            Rectangle {
+                anchors.fill: parent
+                anchors.margins: 1
+                radius: parent.radius - 1
+                color: "transparent"
+                border.color: root.menuSpecular
+                border.width: 1
+            }
+
+            MouseArea {
+                anchors.fill: parent
+                acceptedButtons: Qt.LeftButton | Qt.RightButton
+                onClicked: (mouse) => mouse.accepted = true
+            }
+
+            ColumnLayout {
+                id: submenuColumn
+                anchors.fill: parent
+                anchors.margins: 8
+                spacing: 2
+
+                Repeater {
+                    model: (root.activeSubmenuItem && root.activeSubmenuItem.children) ? root.activeSubmenuItem.children : []
+                    delegate: Item {
+                        id: subItemDelegate
+                        required property var modelData
+                        property var item: modelData
+                        readonly property bool isSep: Boolean(item.separator || item.role === "separator" || item.label === "-")
+
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: isSep ? 7 : 26
+                        implicitHeight: Layout.preferredHeight
+
+                        Rectangle {
+                            visible: subItemDelegate.isSep
+                            anchors.verticalCenter: parent.verticalCenter
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            anchors.leftMargin: 6
+                            anchors.rightMargin: 6
+                            height: 1
+                            color: root.menuDivider
+                        }
+
+                        Common.MenuRow {
+                            visible: !subItemDelegate.isSep
+                            anchors.fill: parent
+                            label: subItemDelegate.item.label || ""
+                            shortcut: subItemDelegate.item.shortcut || ""
+                            enabled: subItemDelegate.item.enabled !== false
+                            glyph: subItemDelegate.item.checked ? "\uf00c" : ""
+
+                            onTriggered: {
+                                if (Services.AppMenu) {
+                                    Services.AppMenu.trigger(subItemDelegate.item.path)
+                                }
+                                root.close()
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

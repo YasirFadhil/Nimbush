@@ -5,7 +5,7 @@ import "../../../services" as Services
 
 RowLayout {
     id: wsRoot
-    spacing: isMinimal ? 4 : 8
+    spacing: isMinimal ? 4 : (isMacMenuBar ? 7 : 8)
 
     readonly property string barStyle: Services.Config ? Services.Config.barStyle : "islands"
     readonly property string workspaceStyle: Services.Config ? Services.Config.workspaceStyle : "pills"
@@ -14,35 +14,85 @@ RowLayout {
     readonly property bool isMinimal: barStyle === "minimal"
     readonly property bool isFloating: barStyle === "floating"
     readonly property bool isUnified: barStyle === "unified"
+    readonly property bool isMacMenuBar: isIslands
 
     readonly property int pillHeight: isMinimal ? 24 : 28
-    readonly property int pillRadius: isMinimal ? 6 : (isIslands ? 14 : 10)
+    readonly property int pillRadius: isMinimal ? 6 : (isIslands ? 7 : 10)
 
+    // Dock glass material (Dock.qml): neutral low-alpha fill, white hairline border.
+    readonly property bool glassDark: Services.Theme.isDark
     function getPillBg(hovered) {
-        if (hovered) return Services.Theme.bgHover
-        if (isIslands) return Services.Theme.surface
-        if (isFloating) return Qt.rgba(Services.Theme.surface.r, Services.Theme.surface.g, Services.Theme.surface.b, 0.45)
-        if (isUnified) return Qt.rgba(Services.Theme.bgDeep.r, Services.Theme.bgDeep.g, Services.Theme.bgDeep.b, 0.4)
-        return "transparent"
+        if (isMacMenuBar)
+            return hovered
+                ? (glassDark ? Qt.rgba(1, 1, 1, 0.13) : Qt.rgba(0, 0, 0, 0.08))
+                : "transparent"
+        if (isMinimal) return hovered ? Services.Theme.bgHover : "transparent"
+        if (hovered) return glassDark ? Qt.rgba(1, 1, 1, 0.20) : Qt.rgba(1, 1, 1, 0.65)
+        return glassDark ? Qt.rgba(0.11, 0.11, 0.12, 0.55) : Qt.rgba(1, 1, 1, 0.48)
     }
 
     function getPillBorder(hovered) {
-        if (hovered) return Services.Theme.borderHighlight
-        if (isIslands) return Services.Theme.border
-        if (isFloating) return Qt.rgba(Services.Theme.border.r, Services.Theme.border.g, Services.Theme.border.b, 0.4)
-        if (isUnified) return Qt.rgba(Services.Theme.border.r, Services.Theme.border.g, Services.Theme.border.b, 0.3)
-        return "transparent"
+        if (isMacMenuBar) return "transparent"
+        if (isMinimal) return hovered ? Services.Theme.borderHighlight : "transparent"
+        if (hovered) return glassDark ? Qt.rgba(1, 1, 1, 0.38) : Qt.rgba(1, 1, 1, 0.85)
+        return glassDark ? Qt.rgba(1, 1, 1, 0.28) : Qt.rgba(1, 1, 1, 0.65)
+    }
+
+    function getAppDisplayName(appId) {
+        const raw = String(appId || "").trim()
+        if (!raw) return "Desktop"
+
+        const key = raw.toLowerCase()
+        const aliases = {
+            "org.wezfurlong.wezterm": "WezTerm",
+            "org.gnome.terminal": "Terminal",
+            "org.gnome.console": "Console",
+            "org.gnome.nautilus": "Files",
+            "org.kde.dolphin": "Dolphin",
+            "org.kde.konsole": "Konsole",
+            "org.xfce.thunar": "Thunar",
+            "thunar": "Thunar",
+            "org.mozilla.firefox": "Firefox",
+            "firefox": "Firefox",
+            "brave-browser": "Brave Browser",
+            "com.brave.browser": "Brave Browser",
+            "chromium": "Chromium",
+            "chromium-browser": "Chromium",
+            "org.chromium.chromium": "Chromium",
+            "google-chrome": "Google Chrome",
+            "google-chrome-stable": "Google Chrome",
+            "code": "Visual Studio Code",
+            "code-oss": "Visual Studio Code",
+            "com.spotify.client": "Spotify",
+            "spotify": "Spotify",
+            "org.telegram.desktop": "Telegram",
+            "com.discordapp.discord": "Discord",
+            "discord": "Discord",
+            "org.quickshell": "Nimbush",
+            "quickshell": "Nimbush",
+            "kitty": "Kitty",
+            "foot": "Foot",
+            "footclient": "Foot",
+            "alacritty": "Alacritty",
+            "wezterm": "WezTerm",
+            "xterm": "XTerm"
+        }
+        if (aliases[key]) return aliases[key]
+
+        let name = raw.split(/[./]/).pop().replace(/[-_]+/g, " ").trim()
+        if (!name) return "Desktop"
+        return name.replace(/\b[a-z]/g, c => c.toUpperCase())
     }
 
     // OS Logo & Workspaces Pill
     Rectangle {
         id: wsPill
         implicitHeight: wsRoot.pillHeight
-        implicitWidth: wsPillLayout.implicitWidth + (wsRoot.isMinimal ? 12 : 20)
+        implicitWidth: wsPillLayout.implicitWidth + (wsRoot.isMinimal || wsRoot.isMacMenuBar ? 8 : 20)
         radius: wsRoot.pillRadius
         color: wsRoot.getPillBg(wsPillMouse.containsMouse)
         border.color: wsRoot.getPillBorder(wsPillMouse.containsMouse)
-        border.width: wsRoot.isMinimal ? 0 : 1
+        border.width: (wsRoot.isMinimal || wsRoot.isMacMenuBar) ? 0 : 1
 
         Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
         Behavior on border.color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
@@ -70,8 +120,10 @@ RowLayout {
                     anchors.centerIn: parent
                     text: Services.OsInfo.logoGlyph
                     font.family: Services.Theme.fontSymbols
-                    font.pixelSize: wsRoot.isMinimal ? Services.Theme.fontSizeXl : Services.Theme.fontSize3xl
-                    color: logoMouse.containsMouse ? Qt.lighter(Services.Theme.accent, 1.2) : Services.Theme.accent
+                    font.pixelSize: wsRoot.isMinimal ? Services.Theme.fontSizeXl : (wsRoot.isMacMenuBar ? Math.round(Services.Theme.fontSizeXl * 1.2) : Services.Theme.fontSize3xl)
+                    color: wsRoot.isMacMenuBar
+                        ? (logoMouse.containsMouse ? Services.Theme.accent : Services.Theme.textPrimary)
+                        : (logoMouse.containsMouse ? Qt.lighter(Services.Theme.accent, 1.2) : Services.Theme.accent)
                     scale: logoMouse.containsMouse ? 1.1 : 1.0
 
                     Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
@@ -95,12 +147,27 @@ RowLayout {
                 }
             }
 
+            // Active application name, replacing the raw window-title/path pill.
+            // The app id is supplied by Workspaces.qml from Hyprland class or Niri app_id.
+            Text {
+                id: activeAppName
+                visible: wsRoot.isMacMenuBar
+                Layout.alignment: Qt.AlignVCenter
+                Layout.maximumWidth: 150
+                text: wsRoot.getAppDisplayName(Services.Workspaces.activeWindowAppId)
+                font.family: Services.Theme.fontFamily
+                font.pixelSize: Services.Theme.fontSizeLg
+                font.weight: Font.DemiBold
+                color: Services.Theme.textPrimary
+                elide: Text.ElideRight
+            }
+
             // Divider
             Rectangle {
                 width: 1
                 height: wsRoot.isMinimal ? 10 : 12
-                color: Services.Theme.border
-                opacity: 0.8
+                color: wsRoot.isMacMenuBar ? Services.Theme.textDisabled : Services.Theme.border
+                opacity: wsRoot.isMacMenuBar ? 0.42 : 0.8
                 Layout.alignment: Qt.AlignVCenter
             }
 
@@ -269,12 +336,12 @@ RowLayout {
     Rectangle {
         id: titlePill
         implicitHeight: wsRoot.pillHeight
-        implicitWidth: titleText.implicitWidth + (wsRoot.isMinimal ? 12 : 20)
+        implicitWidth: titleText.implicitWidth + (wsRoot.isMinimal || wsRoot.isMacMenuBar ? 8 : 20)
         radius: wsRoot.pillRadius
         color: wsRoot.getPillBg(false)
         border.color: wsRoot.getPillBorder(false)
-        border.width: wsRoot.isMinimal ? 0 : 1
-        visible: Services.Workspaces.activeWindowTitle.length > 0
+        border.width: (wsRoot.isMinimal || wsRoot.isMacMenuBar) ? 0 : 1
+        visible: !wsRoot.isMacMenuBar && Services.Workspaces.activeWindowTitle.length > 0
         Layout.maximumWidth: wsRoot.isMinimal ? 220 : 280
 
         Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
@@ -283,11 +350,12 @@ RowLayout {
         Text {
             id: titleText
             anchors.centerIn: parent
-            width: parent.width - (wsRoot.isMinimal ? 12 : 20)
+            width: parent.width - (wsRoot.isMinimal || wsRoot.isMacMenuBar ? 8 : 20)
             text: Services.Workspaces.activeWindowTitle
-            font.family: Services.Theme.fontMono
-            font.pixelSize: wsRoot.isMinimal ? Services.Theme.fontSizeMd : Services.Theme.fontSizeLg
-            color: Services.Theme.textSecondary
+            font.family: wsRoot.isMacMenuBar ? Services.Theme.fontFamily : Services.Theme.fontMono
+            font.pixelSize: wsRoot.isMinimal ? Services.Theme.fontSizeMd : (wsRoot.isMacMenuBar ? Services.Theme.fontSizeMd : Services.Theme.fontSizeLg)
+            font.weight: wsRoot.isMacMenuBar ? Font.DemiBold : Font.Normal
+            color: wsRoot.isMacMenuBar ? Services.Theme.textPrimary : Services.Theme.textSecondary
             elide: Text.ElideRight
         }
     }

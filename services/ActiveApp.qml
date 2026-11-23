@@ -1,0 +1,254 @@
+pragma Singleton
+import QtQuick
+import Quickshell
+import Quickshell.Io
+import "." as Services
+
+Singleton {
+    id: root
+
+    property int pid: 0
+    property string windowAddress: ""
+    property string windowClass: ""
+    property string windowTitle: ""
+    property string appName: "Desktop"
+    property var desktopEntry: null
+    property var actions: []
+    property string icon: ""
+    property bool hasWindow: false
+    property bool isFullscreen: false
+    property bool isFloating: false
+
+    readonly property string detectedCompositor: Services.Compositor ? Services.Compositor.activeCompositor : "hyprland"
+
+    function cleanClassName(rawClass) {
+        if (!rawClass) return ""
+        let s = String(rawClass).trim()
+        // Strip common reverse-DNS prefixes if heuristic didn't catch it
+        if (s.startsWith("org.") || s.startsWith("com.") || s.startsWith("io.") || s.startsWith("net.")) {
+            const parts = s.split(".")
+            s = parts[parts.length - 1]
+        }
+        // Normalize dashes and underscores
+        s = s.replace(/[-_]+/g, " ")
+        // Capitalize words
+        return s.replace(/\b[a-z]/g, c => c.toUpperCase())
+    }
+
+    function resolveDesktopEntry(cls) {
+        if (!cls) return null
+        const raw = String(cls).trim()
+        const leaf = raw.split(/[\\/]/).pop()
+        const plain = leaf.replace(/\.desktop$/i, "")
+        const candidates = [raw, leaf, plain, plain.toLowerCase(), raw.toLowerCase()]
+
+        for (let i = 0; i < candidates.length; i++) {
+            if (!candidates[i]) continue
+            try {
+                const entry = DesktopEntries.byId(candidates[i])
+                if (entry) return entry
+            } catch (e) {}
+        }
+
+        for (let j = 0; j < candidates.length; j++) {
+            if (!candidates[j]) continue
+            try {
+                const entry = DesktopEntries.heuristicLookup(candidates[j])
+                if (entry) return entry
+            } catch (e) {}
+        }
+        return null
+    }
+
+    function updateWindowInfo(data) {
+        // Reject if no data or no pid
+        if (!data || data.pid === undefined || data.pid === null || data.pid <= 0) {
+            root.pid = 0
+            root.windowAddress = ""
+            root.windowClass = ""
+            root.windowTitle = ""
+            root.appName = "Desktop"
+            root.desktopEntry = null
+            root.actions = []
+            root.icon = ""
+            root.hasWindow = false
+            root.isFullscreen = false
+            root.isFloating = false
+            return
+        }
+
+        const cls = String(data.class || "").trim()
+        const lowerCls = cls.toLowerCase()
+
+        // If class is empty, still accept window if it has a title or pid — use title as app name fallback
+        const hasUsableClass = cls.length > 0
+
+        // Ignore quickshell overlay windows
+        if (lowerCls.includes("quickshell") || lowerCls === "org.quickshell") {
+            return
+        }
+
+        root.pid = parseInt(data.pid) || 0
+        root.windowAddress = data.address || ""
+        root.windowClass = cls
+        root.windowTitle = data.title || ""
+        root.hasWindow = true
+        root.isFullscreen = Boolean(data.fullscreen && data.fullscreen > 0)
+        root.isFloating = Boolean(data.floating)
+
+        // Lookup desktop entry (only if class is non-empty)
+        const entry = hasUsableClass ? resolveDesktopEntry(cls) : null
+        root.desktopEntry = entry
+
+        if (entry) {
+            root.appName = entry.name || cleanClassName(cls)
+            root.icon = entry.icon || ""
+            let acts = []
+            if (entry.actions) {
+                // entry.actions can be a list of action objects
+                for (let k = 0; k < entry.actions.length; k++) {
+                    acts.push(entry.actions[k])
+                }
+            }
+            root.actions = acts
+        } else if (hasUsableClass) {
+            // Well-known overrides
+            const aliases = {
+                "featherpad": "FeatherPad",
+                "kitty": "Kitty",
+                "foot": "Foot",
+                "alacritty": "Alacritty",
+                "wezterm": "WezTerm",
+                "org.wezfurlong.wezterm": "WezTerm",
+                "org.gnome.nautilus": "Files",
+                "org.gnome.terminal": "Terminal",
+                "code": "Visual Studio Code",
+                "code-oss": "Visual Studio Code",
+                "firefox": "Firefox",
+                "org.mozilla.firefox": "Firefox",
+                "chromium": "Chromium",
+                "google-chrome": "Google Chrome",
+                "helium": "Helium",
+                "vlc": "VLC Media Player",
+                "spotify": "Spotify"
+            }
+            root.appName = aliases[lowerCls] || cleanClassName(cls) || cls
+            root.icon = ""
+            root.actions = []
+        } else {
+            // No class — use window title as app name (e.g. nix-shell launched apps)
+            const title = String(data.title || "").trim()
+            root.appName = title.length > 0 ? title : "App"
+            root.icon = ""
+            root.actions = []
+        }
+    }
+
+    function refresh() {
+        if (root.detectedCompositor === "hyprland") {
+            windowProc.running = true
+        } else if (root.detectedCompositor === "niri") {
+            niriWindowProc.running = true
+        }
+    }
+
+    Process {
+        id: windowProc
+        command: ["hyprctl", "activewindow", "-j"]
+        property string output: ""
+        stdout: SplitParser {
+            onRead: data => windowProc.output += data
+        }
+        onExited: {
+            try {
+                const text = windowProc.output.trim()
+                if (text && text !== "{}") {
+                    const data = JSON.parse(text)
+                    root.updateWindowInfo(data)
+                } else {
+                    root.updateWindowInfo(null)
+                }
+            } catch (e) {
+                root.updateWindowInfo(null)
+            }
+            windowProc.output = ""
+        }
+    }
+
+    // Hyprland live event socket connection
+    Process {
+        id: socatProc
+        command: ["sh", "-c", "socat -U - UNIX-CONNECT:$XDG_RUNTIME_DIR/hypr/$HYPRLAND_INSTANCE_SIGNATURE/.socket2.sock"]
+        running: root.detectedCompositor === "hyprland"
+        stdout: SplitParser {
+            splitMarker: "\n"
+            onRead: data => {
+                const line = data.trim()
+                if (!line) return
+                if (line.startsWith("activewindow>>") || line.startsWith("activewindowv2>>") || line.startsWith("closewindow>>")) {
+                    debounceTimer.restart()
+                }
+            }
+        }
+        stderr: SplitParser { onRead: data => {} }
+        onExited: (code) => {
+            // Restart after brief delay if hyprland is active
+            if (root.detectedCompositor === "hyprland") {
+                reconnectTimer.restart()
+            }
+        }
+    }
+
+    // Niri active window process
+    Process {
+        id: niriWindowProc
+        command: ["niri", "msg", "-j", "focused-window"]
+        property string output: ""
+        stdout: SplitParser {
+            onRead: data => niriWindowProc.output += data
+        }
+        onExited: {
+            try {
+                const text = niriWindowProc.output.trim()
+                if (text && text !== "null") {
+                    const data = JSON.parse(text)
+                    root.updateWindowInfo({
+                        pid: data.pid,
+                        class: data.app_id || data.application_id || "",
+                        title: data.title || "",
+                        address: data.id ? String(data.id) : "",
+                        floating: data.is_floating || false,
+                        fullscreen: data.is_fullscreen ? 1 : 0
+                    })
+                } else {
+                    root.updateWindowInfo(null)
+                }
+            } catch (e) {
+                root.updateWindowInfo(null)
+            }
+            niriWindowProc.output = ""
+        }
+    }
+
+    Timer {
+        id: debounceTimer
+        interval: 60
+        repeat: false
+        onTriggered: root.refresh()
+    }
+
+    Timer {
+        id: reconnectTimer
+        interval: 1000
+        repeat: false
+        onTriggered: {
+            if (root.detectedCompositor === "hyprland") {
+                socatProc.running = true
+            }
+        }
+    }
+
+    Component.onCompleted: {
+        root.refresh()
+    }
+}

@@ -3,7 +3,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 
-// Tracks active workspace, full workspace list, and active window title.
+// Tracks active workspace, focused-window identity and title.
 // Supports both Hyprland and Niri compositors automatically.
 Singleton {
     id: root
@@ -12,6 +12,7 @@ Singleton {
     property string activeWorkspaceName: "1"
     property var workspaceIds: []       // sorted array of int workspace ids currently open
     property string activeWindowTitle: ""
+    property string activeWindowAppId: ""
     property bool isFullscreen: false
 
     // "hyprland", "niri", or "auto"
@@ -147,9 +148,11 @@ Singleton {
             try {
                 const data = JSON.parse(windowProc.output)
                 root.activeWindowTitle = data.title || ""
+                root.activeWindowAppId = data.class || ""
                 root.isFullscreen = Boolean(data.fullscreen && data.fullscreen > 0)
             } catch (e) {
                 root.activeWindowTitle = ""
+                root.activeWindowAppId = ""
                 root.isFullscreen = false
             }
             windowProc.output = ""
@@ -191,6 +194,7 @@ Singleton {
                 } else if (line.startsWith("activewindow>>")) {
                     const rest = line.substring("activewindow>>".length)
                     const commaIdx = rest.indexOf(",")
+                    root.activeWindowAppId = commaIdx >= 0 ? rest.substring(0, commaIdx).trim() : rest.trim()
                     root.activeWindowTitle = commaIdx >= 0 ? rest.substring(commaIdx + 1) : ""
                 } else if (line.startsWith("activewindowv2>>")) {
                     root.refreshActiveWindow()
@@ -245,11 +249,13 @@ Singleton {
             try {
                 const data = JSON.parse(niriWindowProc.output)
                 root.activeWindowTitle = (data && data.title) ? data.title : ""
+                root.activeWindowAppId = (data && (data.app_id || data.application_id)) ? (data.app_id || data.application_id) : ""
                 if (data && data.is_fullscreen !== undefined) {
                     root.isFullscreen = Boolean(data.is_fullscreen)
                 }
             } catch (e) {
                 root.activeWindowTitle = ""
+                root.activeWindowAppId = ""
                 root.isFullscreen = false
             }
             niriWindowProc.output = ""
@@ -290,4 +296,3 @@ Singleton {
         onExited: (exitCode) => console.warn("[Workspaces] Niri event-stream process exited, code:", exitCode)
     }
 }
-

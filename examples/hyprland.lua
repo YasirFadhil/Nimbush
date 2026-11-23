@@ -44,4 +44,6 @@ hl.layer_rule({ match = { namespace = "quickshell:calendar" },          blur = t
 hl.layer_rule({ match = { namespace = "quickshell:hud" },               blur = true, ignore_alpha = 0.5 })
 hl.layer_rule({ match = { namespace = "quickshell:traymenu" },          blur = true, ignore_alpha = 0.5 })
 hl.layer_rule({ match = { namespace = "quickshell:trayoverflow" },      blur = true, ignore_alpha = 0.5 })
+hl.layer_rule({ match = { namespace = "quickshell:appmenu" },           blur = true, ignore_alpha = 0.5 })
+hl.layer_rule({ match = { namespace = "quickshell:dockmenu" },          blur = true, ignore_alpha = 0.5 })
 hl.layer_rule({ match = { namespace = "^quickshell:.*$" },              blur = true, ignore_alpha = 0.5 })

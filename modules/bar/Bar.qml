@@ -27,9 +27,11 @@ Variants {
     readonly property bool showDynamicIsland: root.isIslands && ((Services.Config ? Services.Config.islandStyle : "expanded") !== "hidden")
 
     readonly property int barHeight: isMinimal ? 30 : (isUnified ? 38 : 36)
-    readonly property int barYOffset: isFloating 
-        ? (isBottom ? (root.height - barHeight - 6) : 6) 
-        : (isIslands ? (isBottom ? (root.height - barHeight - 4) : 4) : (isBottom ? (root.height - barHeight) : 0))
+    // The islands layout doubles as a macOS-style menu bar: flush to the top
+    // edge, with the Dynamic Island remaining independently layered above it.
+    readonly property int barYOffset: isFloating
+        ? (isBottom ? (root.height - barHeight - 6) : 6)
+        : (isIslands ? (isBottom ? (root.height - barHeight - 4) : 0) : (isBottom ? (root.height - barHeight) : 0))
 
     anchors {
         top: !root.isBottom

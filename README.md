@@ -8,6 +8,7 @@ A sleek, modern, and highly modular Wayland desktop environment shell built with
 
 - **Dual Compositor Compatibility**: Seamless support for **Hyprland** (Lua & Classic `.conf` format) and **Niri** scrollable tiling compositor.
 - **Strict Modular Tree Structure**: Clean separation of configs (`conf/autostart`, `conf/keybinds`, `conf/rules`, `conf/quickshell`).
+- **Global Application Menu (AT-SPI Bridge)**: macOS-style application menu bar displaying the active window's native menus (`File`, `Edit`, `View`...) with full keyboard shortcuts and action forwarding.
 - **Interactive App Launcher**: Fast, focused application runner with instant fuzzy search (`Super + Space`).
 - **Wallpaper Manager**: Dynamic visual wallpaper selector powered by `awww` / `swww` and Material You palette generator (`Super + Shift + W`).
 - **Emoji Picker**: Quick Unicode emoji search & clipboard inserter (`Super + Shift + E`).
@@ -150,6 +151,16 @@ Nimbush follows a clean, isolated directory structure for both Hyprland and Niri
 | **Notification Center** | `Super + N` | `qs ipc call notifCenter toggle` |
 | **Control Center** | `Super + C` | `qs ipc call controlCenter toggle` |
 | **Battery & Power** | `Super + B` | `qs ipc call battery toggle` |
+
+---
+
+## Global Application Menu Configuration
+
+Nimbush reads native application menus via the Linux accessibility interface (AT-SPI2). To expose menus to the top bar:
+- Enable AT-SPI in your desktop session (Nimbush automatically verifies and enables `org.a11y.Status.IsEnabled` at start).
+- For Qt applications: ensure `QT_ACCESSIBILITY=1` is set in your session environment (e.g. in your shell profile, Hyprland env, or NixOS `environment.sessionVariables`).
+- For GTK applications: ensure `GTK_A11Y=atspi` is set if needed by your GTK distribution.
+- **Note:** Applications must be launched after accessibility is enabled, or restarted once the flag is active. If an application does not expose an accessible menu, Nimbush gracefully presents quick desktop actions and window management controls.
 
 ---
 

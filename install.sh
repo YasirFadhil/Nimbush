@@ -337,6 +337,7 @@ DEPENDENCIES_DB=(
 
     # Python & Dialog Tools
     "python3|Python|python|python3|python3|python3|Python 3 runtime for helper scripts|req"
+    "at-spi-bus-launcher|A11y|at-spi2-core|at-spi2-core|at-spi2-core|at-spi2-core|AT-SPI accessibility D-Bus core daemon for global app menu|opt"
     "zenity|GUI|zenity|zenity|zenity|zenity|XDG File Picker Dialog (fallback for wallpaper)|opt"
     "fastfetch|System|fastfetch|fastfetch|fastfetch|fastfetch|Fast system hardware & OS information tool|opt"
 
@@ -507,6 +508,21 @@ run_dependency_diagnostics() {
     else
         MISSING_COUNT=$((MISSING_COUNT + 1))
         printf "  %-22s %-12s ${YELLOW}%-14s${NC} ${YELLOW}%s${NC}\n" "faceid-models" "[Biometric]" "[! WARNING]" "YuNet/SFace ONNX models missing in assets/"
+    fi
+
+    # Check Global Menu (PyGObject & AT-SPI bridge)
+    if python3 -c "import gi; gi.require_version('Atspi', '2.0')" &>/dev/null; then
+        INSTALLED_COUNT=$((INSTALLED_COUNT + 1))
+        printf "  %-22s %-12s ${GREEN}%-14s${NC} ${DIM}%s${NC}\n" "atspi-bridge" "[GlobalMenu]" "[✔ INSTALLED]" "PyGObject & AT-SPI2 typelib ready"
+    else
+        MISSING_COUNT=$((MISSING_COUNT + 1))
+        case "$PKG_MGR" in
+            yay|paru|pacman)   MISSING_PKGS+=("python-gobject" "at-spi2-core") ;;
+            apt)               MISSING_PKGS+=("python3-gi" "at-spi2-core") ;;
+            dnf)               MISSING_PKGS+=("python3-gobject" "at-spi2-core") ;;
+            *)                 MISSING_PKGS+=("python-gobject" "at-spi2-core") ;;
+        esac
+        printf "  %-22s %-12s ${YELLOW}%-14s${NC} ${DIM}%s${NC}\n" "atspi-bridge" "[GlobalMenu]" "[○ OPTIONAL]" "python-gobject & at-spi2-core for macOS-style global menu"
     fi
 
     echo -e "  ${DIM}────────────────────────────────────────────────────────────────────────────────${NC}"

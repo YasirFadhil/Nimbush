@@ -51,6 +51,7 @@
             dbus-python
           ]))
           gobject-introspection
+          at-spi2-core
           gtk3
           fontconfig
           dconf
@@ -78,6 +79,7 @@
               --add-flags "-c $out/share/quickshell" \
               --set FACEID_PYTHON ${faceIdPython}/bin/python \
               --prefix PATH : ${pkgs.lib.makeBinPath (runtimeDependencies ++ extraPkgs)} \
+              --prefix GI_TYPELIB_PATH : "${pkgs.at-spi2-core}/lib/girepository-1.0" \
               --prefix XDG_DATA_DIRS : "${pkgs.gsettings-desktop-schemas}/share/gsettings-schemas/${pkgs.gsettings-desktop-schemas.name}:${pkgs.gtk3}/share/gsettings-schemas/${pkgs.gtk3.name}"
           '';
 

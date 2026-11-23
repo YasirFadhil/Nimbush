@@ -10,6 +10,7 @@ Rectangle {
     readonly property bool isMinimal: barStyle === "minimal"
     readonly property bool isFloating: barStyle === "floating"
     readonly property bool isUnified: barStyle === "unified"
+    readonly property bool isMacMenuBar: isIslands
 
     readonly property bool isActive: Services.OverlayManager ? Services.OverlayManager.sysmonPanelVisible : false
 
@@ -18,7 +19,7 @@ Rectangle {
     property bool trayYielded: false
     property int hPadOverride: -1
 
-    readonly property int baseHPad: isMinimal ? 12 : 20
+    readonly property int baseHPad: isMinimal ? 12 : (isMacMenuBar ? 8 : 20)
     readonly property int hPad: hPadOverride >= 0 ? hPadOverride : baseHPad
     readonly property int innerSpacing: isMinimal ? 4 : 6
 
@@ -32,7 +33,7 @@ Rectangle {
         id: mPct
         font.family: Services.Theme.fontMono
         font.pixelSize: sysmonPill.isMinimal ? Services.Theme.fontSizeSm : Services.Theme.fontSizeMd
-        // Pakai lebar tetap 3 digit ("100%"), bukan nilai live, agar tidak recompute tiap detik
+        // Pakai lebar tetap 3 digit ("100%"), bukan nilai live, agar tidak recompute tiap detik.
         text: "100%"
     }
 
@@ -41,19 +42,23 @@ Rectangle {
 
     implicitHeight: isMinimal ? 24 : 28
     implicitWidth: trayCompact ? trayWidthCompact : trayWidthFull
-    radius: isMinimal ? 6 : (isIslands ? 14 : 10)
+    radius: isMinimal ? 6 : (isMacMenuBar ? 7 : 10)
 
     readonly property bool glassDark: Services.Theme.isDark
     readonly property bool lit: sysmonMouse.containsMouse || isActive
-    // Dock glass material
-    color: isMinimal ? (lit ? Services.Theme.bgHover : "transparent")
-         : (lit ? (glassDark ? Qt.rgba(1, 1, 1, 0.20) : Qt.rgba(1, 1, 1, 0.65))
-                : (glassDark ? Qt.rgba(0.11, 0.11, 0.12, 0.55) : Qt.rgba(1, 1, 1, 0.48)))
+    color: isMacMenuBar
+        ? (lit ? (glassDark ? Qt.rgba(1, 1, 1, 0.13) : Qt.rgba(0, 0, 0, 0.08)) : "transparent")
+        : (isMinimal
+            ? (lit ? Services.Theme.bgHover : "transparent")
+            : (lit ? (glassDark ? Qt.rgba(1, 1, 1, 0.20) : Qt.rgba(1, 1, 1, 0.65))
+                   : (glassDark ? Qt.rgba(0.11, 0.11, 0.12, 0.55) : Qt.rgba(1, 1, 1, 0.48))))
 
-    border.color: isMinimal ? (lit ? Services.Theme.borderHighlight : "transparent")
-         : (lit ? (glassDark ? Qt.rgba(1, 1, 1, 0.38) : Qt.rgba(1, 1, 1, 0.85))
-                : (glassDark ? Qt.rgba(1, 1, 1, 0.28) : Qt.rgba(1, 1, 1, 0.65)))
-    border.width: isMinimal ? 0 : 1
+    border.color: isMacMenuBar ? "transparent"
+        : (isMinimal
+            ? (lit ? Services.Theme.borderHighlight : "transparent")
+            : (lit ? (glassDark ? Qt.rgba(1, 1, 1, 0.38) : Qt.rgba(1, 1, 1, 0.85))
+                   : (glassDark ? Qt.rgba(1, 1, 1, 0.28) : Qt.rgba(1, 1, 1, 0.65))))
+    border.width: (isMinimal || isMacMenuBar) ? 0 : 1
 
     Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
     Behavior on border.color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
@@ -62,7 +67,7 @@ Rectangle {
         id: sysmonIconBox
         anchors.verticalCenter: parent.verticalCenter
         anchors.left: parent.left
-        anchors.leftMargin: sysmonPill.isMinimal ? 6 : 10
+        anchors.leftMargin: sysmonPill.isMinimal ? 6 : (sysmonPill.isMacMenuBar ? 4 : 10)
         width: sysmonIconText.implicitWidth
         height: sysmonIconText.implicitHeight
 

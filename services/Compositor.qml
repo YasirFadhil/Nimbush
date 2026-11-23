@@ -1414,4 +1414,93 @@ Singleton {
             autostartRunProc.qOutput = ""
         }
     }
+
+    // ── Window & Action Dispatcher ────────────────────────────────────────────
+    function dispatch(action, arg) {
+        if (!action) return
+        var act = String(action).toLowerCase().trim()
+
+        if (activeCompositor === "hyprland") {
+            var luaExpr = ""
+            switch (act) {
+                case "closewindow":
+                case "close":
+                    luaExpr = (arg && arg !== "activewindow") ? ('hl.dsp.window.close({ window = "address:' + arg + '" })') : 'hl.dsp.window.close()'
+                    break
+                case "killactive":
+                case "kill":
+                case "quit":
+                    luaExpr = 'hl.dsp.window.kill()'
+                    break
+                case "fullscreen":
+                    luaExpr = 'hl.dsp.window.fullscreen()'
+                    break
+                case "togglefloating":
+                case "float":
+                    luaExpr = 'hl.dsp.window.float()'
+                    break
+                case "centerwindow":
+                case "center":
+                    luaExpr = 'hl.dsp.window.center()'
+                    break
+                case "togglespecialworkspace":
+                case "minimize":
+                    luaExpr = 'hl.dsp.workspace.toggle_special("minimized")'
+                    break
+                case "cyclenext":
+                    luaExpr = 'hl.dsp.window.cycle_next()'
+                    break
+                case "pin":
+                    luaExpr = 'hl.dsp.window.pin()'
+                    break
+                default:
+                    if (action.startsWith("hl.dsp")) {
+                        luaExpr = action
+                    } else if (arg && arg.length > 0) {
+                        luaExpr = 'hl.dispatch("' + action + '", "' + arg + '")'
+                    } else {
+                        luaExpr = 'hl.dispatch("' + action + '")'
+                    }
+                    break
+            }
+
+            if (luaExpr.length > 0) {
+                var p = Qt.createQmlObject(
+                    'import Quickshell.Io; Process { property string out: ""; stdout: SplitParser { onRead: d => parent.out += d } stderr: SplitParser { onRead: d => parent.out += d } }',
+                    root)
+                p.command = ["hyprctl", "dispatch", luaExpr]
+                p.onExited.connect((code) => {
+                    p.destroy()
+                })
+                p.running = true
+            }
+        } else if (activeCompositor === "niri") {
+            var niriAction = act
+            if (act === "closewindow" || act === "close") niriAction = "close-window"
+            else if (act === "fullscreen") niriAction = "fullscreen-window"
+            else if (act === "togglefloating" || act === "float") niriAction = "toggle-window-floating"
+            else if (act === "centerwindow" || act === "center") niriAction = "center-column"
+
+            var pNiri = Qt.createQmlObject('import Quickshell.Io; Process {}', root)
+            pNiri.command = ["niri", "msg", "action", niriAction]
+            pNiri.onExited.connect(() => pNiri.destroy())
+            pNiri.running = true
+        }
+    }
+
+    // Key stroke simulation (e.g. for Cut, Copy, Paste, Select All)
+    function sendKey(key, mods) {
+        var cmd = ["wtype"]
+        if (mods && mods.includes("ctrl")) {
+            cmd.push("-M", "ctrl")
+            cmd.push(key)
+            cmd.push("-m", "ctrl")
+        } else {
+            cmd.push(key)
+        }
+        var p = Qt.createQmlObject('import Quickshell.Io; Process {}', root)
+        p.command = cmd
+        p.onExited.connect(() => p.destroy())
+        p.running = true
+    }
 }
