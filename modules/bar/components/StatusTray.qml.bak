@@ -36,20 +36,26 @@ RowLayout {
     readonly property bool isMinimal: barStyle === "minimal"
     readonly property bool isFloating: barStyle === "floating"
     readonly property bool isUnified: barStyle === "unified"
+    readonly property bool isMacMenuBar: isIslands
 
     readonly property int pillHeight: isMinimal ? 24 : 28
-    readonly property int pillRadius: isMinimal ? 6 : (isIslands ? 14 : 10)
+    readonly property int pillRadius: isMinimal ? 6 : (isMacMenuBar ? 7 : 10)
     readonly property int innerSpacing: isMinimal ? 4 : 6
 
     // Dock glass material (Dock.qml): neutral low-alpha fill, white hairline border.
     readonly property bool glassDark: Services.Theme.isDark
     function getPillBg(hovered) {
+        if (isMacMenuBar)
+            return hovered
+                ? (glassDark ? Qt.rgba(1, 1, 1, 0.13) : Qt.rgba(0, 0, 0, 0.08))
+                : "transparent"
         if (isMinimal) return hovered ? Services.Theme.bgHover : "transparent"
         if (hovered) return glassDark ? Qt.rgba(1, 1, 1, 0.20) : Qt.rgba(1, 1, 1, 0.65)
         return glassDark ? Qt.rgba(0.11, 0.11, 0.12, 0.55) : Qt.rgba(1, 1, 1, 0.48)
     }
 
     function getPillBorder(hovered) {
+        if (isMacMenuBar) return "transparent"
         if (isMinimal) return hovered ? Services.Theme.borderHighlight : "transparent"
         if (hovered) return glassDark ? Qt.rgba(1, 1, 1, 0.38) : Qt.rgba(1, 1, 1, 0.85)
         return glassDark ? Qt.rgba(1, 1, 1, 0.28) : Qt.rgba(1, 1, 1, 0.65)
@@ -75,7 +81,7 @@ RowLayout {
     }
 
     // ── Tier Spacing & Width ──────────────────────────────────────
-    readonly property int itemSpacing: isMinimal ? 4 : 8
+    readonly property int itemSpacing: isMinimal ? 4 : (isMacMenuBar ? 10 : 8)
 
     function widthAtTier(tier) {
         // tier 0 = full
@@ -255,7 +261,8 @@ RowLayout {
         }
 
         readonly property real trayWidthCompact: Math.ceil(mVolIcon.width) + baseHPad
-        readonly property real trayWidthFull: trayWidthCompact + innerSpacing + Math.ceil(mVolPct.width)
+        // macOS-style menu extras show the volume glyph, not a permanent percentage.
+        readonly property real trayWidthFull: trayWidthCompact + (root.isMacMenuBar ? 0 : innerSpacing + Math.ceil(mVolPct.width))
 
         implicitHeight: root.pillHeight
         implicitWidth: trayWidthFull
@@ -341,7 +348,7 @@ RowLayout {
             font.family: Services.Theme.fontMono
             font.pixelSize: root.isMinimal ? Services.Theme.fontSizeSm : Services.Theme.fontSizeMd
             color: (volMouse.containsMouse || Services.OverlayManager.volumePanelVisible) ? Services.Theme.accent : Services.Theme.textSecondary
-            opacity: volPill.trayCompact ? 0.0 : 1.0
+            opacity: (root.isMacMenuBar || volPill.trayCompact) ? 0.0 : 1.0
             visible: opacity > 0.01
             clip: true
             Behavior on opacity { NumberAnimation { duration: volPill.trayCompact ? 160 : 260; easing.type: Easing.OutCubic } }
@@ -496,8 +503,8 @@ RowLayout {
         Layout.alignment: Qt.AlignVCenter
         clip: true
         radius: root.pillRadius
-        color: root.getPillBg(Services.OverlayManager.controlCenterVisible || Services.Notifications.centerVisible)
-        border.color: root.getPillBorder(Services.OverlayManager.controlCenterVisible || Services.Notifications.centerVisible)
+        color: root.getPillBg(networkStatusMouse.containsMouse || Services.OverlayManager.controlCenterVisible || Services.Notifications.centerVisible)
+        border.color: root.getPillBorder(networkStatusMouse.containsMouse || Services.OverlayManager.controlCenterVisible || Services.Notifications.centerVisible)
         border.width: root.isMinimal ? 0 : 1
 
         opacity: isYielded ? 0.0 : 1.0
@@ -518,15 +525,15 @@ RowLayout {
             Components.NotificationIndicator {}
 
             Rectangle {
+                visible: !root.isMacMenuBar
                 width: 1
                 height: root.isMinimal ? 10 : 12
                 color: Services.Theme.border
                 opacity: 0.8
             }
 
-            // Network status replaces the control-center/settings glyph.
-            // Keep the whole group clickable so the existing control-center
-            // interaction remains available without adding another icon.
+            // Network and Control Center menu extras. The existing click target
+            // still opens the same Nimbush Control Center overlay.
             Item {
                 id: networkStatusToggle
                 implicitWidth: networkStatusRow.implicitWidth
@@ -574,9 +581,20 @@ RowLayout {
                             : Math.round(Services.Theme.fontSizeXl * 1.25)
                         color: Services.Theme.accent
                     }
+
+                    Text {
+                        text: Services.Icons.controlcenter
+                        font.family: Services.Theme.fontSymbols
+                        font.pixelSize: root.isMinimal ? Services.Theme.fontSizeLg : Services.Theme.fontSizeXl
+                        color: Services.OverlayManager.controlCenterVisible || networkStatusMouse.containsMouse
+                            ? Services.Theme.accent
+                            : Services.Theme.textPrimary
+                        Layout.alignment: Qt.AlignVCenter
+                    }
                 }
 
                 MouseArea {
+                    id: networkStatusMouse
                     anchors.fill: parent
                     anchors.margins: -4
                     hoverEnabled: true

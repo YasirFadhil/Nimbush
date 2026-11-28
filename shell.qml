@@ -23,6 +23,7 @@ import "modules/volume" as VolumeModule
 import "modules/emoji" as EmojiModule
 import "modules/sysmon" as SysmonModule
 import "modules/dock" as DockModule
+import "modules/screenshot" as ScreenshotModule
 
 ShellRoot {
     // Native QML wallpaper layer (serves as wallpaper renderer and fallback for swww)
@@ -306,6 +307,48 @@ ShellRoot {
         }
         function toggle() {
             if (visible) hide()
+            else show()
+        }
+    }
+
+    // Screenshot UI
+    Loader {
+        id: screenshotLoader
+        active: false
+        sourceComponent: ScreenshotModule.ScreenshotOverlay {
+            onVisibleChanged: {
+                if (!visible && !busy) screenshotUnloadTimer.restart()
+                else screenshotUnloadTimer.stop()
+            }
+            onBusyChanged: {
+                if (!visible && !busy) screenshotUnloadTimer.restart()
+                else screenshotUnloadTimer.stop()
+            }
+        }
+    }
+    Timer {
+        id: screenshotUnloadTimer
+        interval: 2000
+        repeat: false
+        onTriggered: {
+            if (!screenshotWindow.visible && !screenshotWindow.busy) screenshotLoader.active = false
+        }
+    }
+    QtObject {
+        id: screenshotWindow
+        readonly property bool visible: screenshotLoader.active && screenshotLoader.item && screenshotLoader.item.visible
+        readonly property bool busy: screenshotLoader.active && screenshotLoader.item && screenshotLoader.item.busy
+
+        function show() {
+            screenshotUnloadTimer.stop()
+            if (!screenshotLoader.active) screenshotLoader.active = true
+            if (screenshotLoader.item) screenshotLoader.item.show()
+        }
+        function hide() {
+            if (screenshotLoader.item) screenshotLoader.item.hide()
+        }
+        function toggle() {
+            if (visible || busy) hide()
             else show()
         }
     }
@@ -675,6 +718,15 @@ ShellRoot {
         function toggle(): void { if (!Services.OverlayManager.isLocked && !Services.OverlayManager.isWizardActive) clipboardWindow.toggle() }
         function show():   void { if (!Services.OverlayManager.isLocked && !Services.OverlayManager.isWizardActive) clipboardWindow.show() }
         function hide():   void { clipboardWindow.hide() }
+    }
+
+    // ── Screenshot ───────────────────────────────────────────────────────────
+    IpcHandler {
+        target: "screenshot"
+        function region(): void { if (!Services.OverlayManager.isLocked && !Services.OverlayManager.isWizardActive) screenshotWindow.show() }
+        function show():   void { if (!Services.OverlayManager.isLocked && !Services.OverlayManager.isWizardActive) screenshotWindow.show() }
+        function hide():   void { screenshotWindow.hide() }
+        function toggle(): void { if (!Services.OverlayManager.isLocked && !Services.OverlayManager.isWizardActive) screenshotWindow.toggle() }
     }
 
     // ── Power menu ───────────────────────────────────────────────────────────

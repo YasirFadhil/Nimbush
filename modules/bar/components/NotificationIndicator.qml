@@ -27,8 +27,12 @@ Item {
             id: bellText
             text: Services.Notifications.doNotDisturb ? "󰂛" : "󰂚"
             font.family: Services.Theme.fontSymbols
-            font.pixelSize: Services.Theme.fontSize2xl
-            color: (notifMouse.containsMouse || Services.Notifications.centerVisible) ? Services.Theme.accent : Services.Theme.textPrimary
+            font.pixelSize: Services.Config && Services.Config.barStyle === "islands"
+                ? Services.Theme.fontSizeXl
+                : Services.Theme.fontSize2xl
+            color: (notifMouse.containsMouse || Services.Notifications.centerVisible)
+                ? Services.Theme.accent
+                : ((Services.Config && Services.Config.barStyle === "islands") ? "#f6f6f9" : Services.Theme.textPrimary)
 
             scale: bellScale
             property real bellScale: 1.0

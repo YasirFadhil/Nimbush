@@ -54,6 +54,10 @@ PanelWindow {
         id: screenshotProc
         command: ["sh", "-c", "mkdir -p ~/Pictures/Screenshots && sleep 0.2 && (hyprshot -m region -o ~/Pictures/Screenshots || (GEOM=$(slurp) && [ -n \"$GEOM\" ] && FILE=\"$HOME/Pictures/Screenshots/Screenshot_$(date +'%Y%m%d_%H%M%S').png\" && grim -g \"$GEOM\" \"$FILE\" && wl-copy < \"$FILE\"))"]
     }
+    Process {
+        id: pavuProc
+        command: ["pavucontrol"]
+    }
 
     // ── KDE Connect (Phone panel) ──
     // Parsed from `kdeconnect-cli -l`, polled while Control Center is open.
@@ -1530,7 +1534,9 @@ PanelWindow {
                                     Local.VSlider {
                                         icon: Services.Icons.volumeIcon(Services.Audio.volume, Services.Audio.muted, Services.Audio.isHeadphone, Services.Audio.isTws)
                                         value: Services.Audio.volume
+                                        isMuted: Services.Audio.muted
                                         onMoved: (v) => Services.Audio.setVolume(v)
+                                        onIconClicked: Services.Audio.toggleMute()
                                     }
                                     }
 
@@ -1999,7 +2005,7 @@ PanelWindow {
                                   : (Services.OverlayManager.btPanelVisible
                                      ? "Bluetooth Devices"
                                      : (Services.OverlayManager.audioPanelVisible
-                                        ? "Audio Output Devices"
+                                        ? "Sound & Devices"
                                         : (Services.OverlayManager.phonePanelVisible
                                            ? "Phone"
                                            : "Shell Updates & Branches")))
@@ -2377,58 +2383,538 @@ PanelWindow {
                                 }
                             }
 
-                            // ── Audio Section ──
+                            // ── Audio Section (Output, Input, Streams & Mixer) ──
                             ColumnLayout {
                                 visible: Services.OverlayManager.audioPanelVisible
                                 Layout.fillWidth: true
-                                spacing: 8
+                                spacing: 14
 
-                                Repeater {
-                                    model: Services.Audio.sinks
-                                    delegate: Rectangle {
-                                        id: audioSinkRow
-                                        required property var modelData
+                                // ── 1. Master Output Section ──
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 8
+
+                                    RowLayout {
                                         Layout.fillWidth: true
-                                        implicitHeight: 44
-                                        radius: Services.Theme.radiusMd
-                                        color: audioSinkRow.modelData.isCurrent ? Services.Theme.accent : (audioSinkRowArea.containsMouse ? (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.10)) : (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)))
+                                        spacing: 6
 
-                                        MouseArea {
-                                            id: audioSinkRowArea
-                                            anchors.fill: parent
-                                            hoverEnabled: true
-                                            cursorShape: Qt.PointingHandCursor
-                                            onClicked: Services.Audio.setSink(audioSinkRow.modelData.name)
+                                        Text {
+                                            text: Services.Icons.speaker
+                                            font.family: Services.Theme.fontSymbols
+                                            font.pixelSize: 12
+                                            color: Services.Audio.muted ? Services.Theme.danger : Services.Theme.accent
+                                        }
+
+                                        Text {
+                                            text: "Output Volume"
+                                            font.bold: true
+                                            font.pixelSize: 12
+                                            color: Services.Theme.textPrimary
+                                            Layout.fillWidth: true
+                                        }
+
+                                        Text {
+                                            text: Services.Audio.muted ? "Muted" : (Math.round(Services.Audio.volume * 100) + "%")
+                                            font.family: Services.Theme.fontMono
+                                            font.bold: true
+                                            font.pixelSize: 11
+                                            color: Services.Audio.muted ? Services.Theme.danger : Services.Theme.textSecondary
+                                        }
+                                    }
+
+                                    // Master Output Slider Bar
+                                    Rectangle {
+                                        id: outSliderBar
+                                        Layout.fillWidth: true
+                                        implicitHeight: 34
+                                        radius: Services.Theme.radiusMd
+                                        color: outSliderMouse.containsMouse ? (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.12) : Qt.rgba(0, 0, 0, 0.08)) : (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.05))
+                                        border.color: outSliderMouse.containsMouse ? (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.12)) : (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.05))
+                                        border.width: 1
+                                        clip: true
+
+                                        Rectangle {
+                                            id: outSliderFill
+                                            height: parent.height
+                                            radius: parent.radius
+                                            color: Services.Audio.muted ? Services.Theme.textDisabled : (outSliderMouse.containsMouse ? Qt.lighter(Services.Theme.accent, 1.08) : Services.Theme.accent)
+                                            width: Math.max(34, Math.min(parent.width, (Services.Audio.muted ? 0 : Services.Audio.volume) * parent.width))
+                                            Behavior on width { NumberAnimation { duration: 60 } }
+                                            Behavior on color { ColorAnimation { duration: 150; easing.type: Easing.OutCubic } }
                                         }
 
                                         RowLayout {
                                             anchors.fill: parent
-                                            anchors.margins: 10
-                                            spacing: 10
+                                            anchors.leftMargin: 10
+                                            anchors.rightMargin: 10
+                                            spacing: 8
 
                                             Text {
-                                                text: Services.Icons.sinkIcon(audioSinkRow.modelData.description)
+                                                text: Services.Icons.volumeIcon(Services.Audio.volume, Services.Audio.muted, Services.Audio.isHeadphone, Services.Audio.isTws)
                                                 font.family: Services.Theme.fontSymbols
-                                                font.pixelSize: 14
-                                                color: audioSinkRow.modelData.isCurrent ? Services.Theme.bgDeep : Services.Theme.textPrimary
+                                                font.pixelSize: 13
+                                                color: (outSliderFill.width > 28) ? Services.Theme.bgOnAccent : Services.Theme.textPrimary
                                             }
 
                                             Text {
-                                                text: audioSinkRow.modelData.description
-                                                color: audioSinkRow.modelData.isCurrent ? Services.Theme.bgDeep : Services.Theme.textPrimary
-                                                font.bold: audioSinkRow.modelData.isCurrent
-                                                font.pixelSize: 11
-                                                Layout.fillWidth: true
+                                                text: Services.Audio.sinkDescription
+                                                font.pixelSize: 10
+                                                font.bold: true
                                                 elide: Text.ElideRight
+                                                color: (outSliderFill.width > 120) ? Services.Theme.bgOnAccent : Services.Theme.textSecondary
+                                                Layout.fillWidth: true
+                                            }
+
+                                            // Mute Button
+                                            Rectangle {
+                                                width: 22; height: 22; radius: 11
+                                                color: Services.Audio.muted ? Qt.rgba(Services.Theme.danger.r, Services.Theme.danger.g, Services.Theme.danger.b, 0.3) : (outMuteBtnArea.containsMouse ? Qt.rgba(0, 0, 0, 0.2) : "transparent")
+
+                                                Text {
+                                                    anchors.centerIn: parent
+                                                    text: Services.Audio.muted ? Services.Icons.volMute : Services.Icons.speaker
+                                                    font.family: Services.Theme.fontSymbols
+                                                    font.pixelSize: 10
+                                                    color: Services.Audio.muted ? Services.Theme.danger : ((outSliderFill.width > parent.x) ? Services.Theme.bgOnAccent : Services.Theme.textPrimary)
+                                                }
+
+                                                MouseArea {
+                                                    id: outMuteBtnArea
+                                                    anchors.fill: parent
+                                                    hoverEnabled: true
+                                                    cursorShape: Qt.PointingHandCursor
+                                                    onClicked: Services.Audio.toggleMute()
+                                                }
+                                            }
+                                        }
+
+                                        MouseArea {
+                                            id: outSliderMouse
+                                            anchors.fill: parent
+                                            anchors.rightMargin: 30
+                                            hoverEnabled: true
+                                            cursorShape: Qt.PointingHandCursor
+                                            onPressed: (mouse) => Services.Audio.setVolume(Math.max(0, Math.min(1, mouse.x / width)))
+                                            onPositionChanged: (mouse) => {
+                                                if (pressed) Services.Audio.setVolume(Math.max(0, Math.min(1, mouse.x / width)))
+                                            }
+                                            onWheel: (wheel) => {
+                                                const step = wheel.angleDelta.y > 0 ? 0.05 : -0.05
+                                                Services.Audio.setVolume(Math.max(0, Math.min(1, Services.Audio.volume + step)))
+                                            }
+                                        }
+                                    }
+
+                                    // Output Sinks List
+                                    Text {
+                                        text: "Output Devices"
+                                        font.pixelSize: 10
+                                        font.bold: true
+                                        color: Services.Theme.textDisabled
+                                        Layout.topMargin: 4
+                                    }
+
+                                    Repeater {
+                                        model: Services.Audio.sinks
+                                        delegate: Rectangle {
+                                            id: audioSinkRow
+                                            required property var modelData
+                                            Layout.fillWidth: true
+                                            implicitHeight: 38
+                                            radius: Services.Theme.radiusSm
+                                            readonly property bool isCurrent: audioSinkRow.modelData.isCurrent
+                                            color: isCurrent ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.22) : (audioSinkRowArea.containsMouse ? (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.12) : Qt.rgba(0, 0, 0, 0.08)) : (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.06) : Qt.rgba(0, 0, 0, 0.04)))
+                                            border.color: isCurrent ? Services.Theme.accent : "transparent"
+                                            border.width: 1
+
+                                            MouseArea {
+                                                id: audioSinkRowArea
+                                                anchors.fill: parent
+                                                hoverEnabled: true
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: Services.Audio.setSink(audioSinkRow.modelData.name)
+                                            }
+
+                                            RowLayout {
+                                                anchors.fill: parent
+                                                anchors.margins: 9
+                                                spacing: 8
+
+                                                Text {
+                                                    text: Services.Icons.sinkIcon(audioSinkRow.modelData.description)
+                                                    font.family: Services.Theme.fontSymbols
+                                                    font.pixelSize: 12
+                                                    color: audioSinkRow.isCurrent ? Services.Theme.accent : Services.Theme.textSecondary
+                                                }
+
+                                                Text {
+                                                    text: audioSinkRow.modelData.nick || audioSinkRow.modelData.description
+                                                    color: Services.Theme.textPrimary
+                                                    font.bold: audioSinkRow.isCurrent
+                                                    font.pixelSize: 11
+                                                    Layout.fillWidth: true
+                                                    elide: Text.ElideRight
+                                                }
+
+                                                Text {
+                                                    visible: audioSinkRow.isCurrent
+                                                    text: Services.Icons.check
+                                                    font.family: Services.Theme.fontSymbols
+                                                    font.pixelSize: 11
+                                                    color: Services.Theme.accent
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // ── 2. Input / Microphone Section ──
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 8
+
+                                    Rectangle { Layout.fillWidth: true; height: 1; color: Services.Theme.border; opacity: 0.3 }
+
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 6
+
+                                        Text {
+                                            text: Services.Icons.mic
+                                            font.family: Services.Theme.fontSymbols
+                                            font.pixelSize: 12
+                                            color: Services.Audio.sourceMuted ? Services.Theme.danger : Services.Theme.accent
+                                        }
+
+                                        Text {
+                                            text: "Microphone / Input"
+                                            font.bold: true
+                                            font.pixelSize: 12
+                                            color: Services.Theme.textPrimary
+                                            Layout.fillWidth: true
+                                        }
+
+                                        Text {
+                                            text: Services.Audio.sourceMuted ? "Muted" : (Math.round(Services.Audio.sourceVolume * 100) + "%")
+                                            font.family: Services.Theme.fontMono
+                                            font.bold: true
+                                            font.pixelSize: 11
+                                            color: Services.Audio.sourceMuted ? Services.Theme.danger : Services.Theme.textSecondary
+                                        }
+                                    }
+
+                                    // Input Slider Bar
+                                    Rectangle {
+                                        id: inSliderBar
+                                        Layout.fillWidth: true
+                                        implicitHeight: 34
+                                        radius: Services.Theme.radiusMd
+                                        color: inSliderMouse.containsMouse ? (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.12) : Qt.rgba(0, 0, 0, 0.08)) : (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.05))
+                                        border.color: inSliderMouse.containsMouse ? (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.12)) : (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.05))
+                                        border.width: 1
+                                        clip: true
+
+                                        Rectangle {
+                                            id: inSliderFill
+                                            height: parent.height
+                                            radius: parent.radius
+                                            color: Services.Audio.sourceMuted ? Services.Theme.textDisabled : (inSliderMouse.containsMouse ? Qt.lighter(Services.Theme.accent, 1.08) : Services.Theme.accent)
+                                            width: Math.max(34, Math.min(parent.width, (Services.Audio.sourceMuted ? 0 : Services.Audio.sourceVolume) * parent.width))
+                                            Behavior on width { NumberAnimation { duration: 60 } }
+                                            Behavior on color { ColorAnimation { duration: 150; easing.type: Easing.OutCubic } }
+                                        }
+
+                                        RowLayout {
+                                            anchors.fill: parent
+                                            anchors.leftMargin: 10
+                                            anchors.rightMargin: 10
+                                            spacing: 8
+
+                                            Text {
+                                                text: Services.Audio.sourceMuted ? Services.Icons.micMute : Services.Icons.mic
+                                                font.family: Services.Theme.fontSymbols
+                                                font.pixelSize: 13
+                                                color: (inSliderFill.width > 28) ? Services.Theme.bgOnAccent : Services.Theme.textPrimary
                                             }
 
                                             Text {
-                                                visible: audioSinkRow.modelData.isCurrent
-                                                text: Services.Icons.check
-                                                font.family: Services.Theme.fontSymbols
-                                                font.pixelSize: 11
-                                                color: Services.Theme.bgDeep
+                                                text: Services.Audio.sourceDescription
+                                                font.pixelSize: 10
+                                                font.bold: true
+                                                elide: Text.ElideRight
+                                                color: (inSliderFill.width > 120) ? Services.Theme.bgOnAccent : Services.Theme.textSecondary
+                                                Layout.fillWidth: true
                                             }
+
+                                            // Mic Mute Button
+                                            Rectangle {
+                                                width: 22; height: 22; radius: 11
+                                                color: Services.Audio.sourceMuted ? Qt.rgba(Services.Theme.danger.r, Services.Theme.danger.g, Services.Theme.danger.b, 0.3) : (inMuteBtnArea.containsMouse ? Qt.rgba(0, 0, 0, 0.2) : "transparent")
+
+                                                Text {
+                                                    anchors.centerIn: parent
+                                                    text: Services.Audio.sourceMuted ? Services.Icons.micMute : Services.Icons.mic
+                                                    font.family: Services.Theme.fontSymbols
+                                                    font.pixelSize: 10
+                                                    color: Services.Audio.sourceMuted ? Services.Theme.danger : ((inSliderFill.width > parent.x) ? Services.Theme.bgOnAccent : Services.Theme.textPrimary)
+                                                }
+
+                                                MouseArea {
+                                                    id: inMuteBtnArea
+                                                    anchors.fill: parent
+                                                    hoverEnabled: true
+                                                    cursorShape: Qt.PointingHandCursor
+                                                    onClicked: Services.Audio.toggleSourceMute()
+                                                }
+                                            }
+                                        }
+
+                                        MouseArea {
+                                            id: inSliderMouse
+                                            anchors.fill: parent
+                                            anchors.rightMargin: 30
+                                            hoverEnabled: true
+                                            cursorShape: Qt.PointingHandCursor
+                                            onPressed: (mouse) => Services.Audio.setSourceVolume(Math.max(0, Math.min(1, mouse.x / width)))
+                                            onPositionChanged: (mouse) => {
+                                                if (pressed) Services.Audio.setSourceVolume(Math.max(0, Math.min(1, mouse.x / width)))
+                                            }
+                                            onWheel: (wheel) => {
+                                                const step = wheel.angleDelta.y > 0 ? 0.05 : -0.05
+                                                Services.Audio.setSourceVolume(Math.max(0, Math.min(1, Services.Audio.sourceVolume + step)))
+                                            }
+                                        }
+                                    }
+
+                                    // Input Sources List
+                                    Text {
+                                        text: "Input Devices"
+                                        font.pixelSize: 10
+                                        font.bold: true
+                                        color: Services.Theme.textDisabled
+                                        Layout.topMargin: 4
+                                    }
+
+                                    Repeater {
+                                        model: Services.Audio.sources
+                                        delegate: Rectangle {
+                                            id: audioSourceRow
+                                            required property var modelData
+                                            Layout.fillWidth: true
+                                            implicitHeight: 38
+                                            radius: Services.Theme.radiusSm
+                                            readonly property bool isCurrent: audioSourceRow.modelData.isCurrent
+                                            color: isCurrent ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.22) : (audioSourceRowArea.containsMouse ? (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.12) : Qt.rgba(0, 0, 0, 0.08)) : (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.06) : Qt.rgba(0, 0, 0, 0.04)))
+                                            border.color: isCurrent ? Services.Theme.accent : "transparent"
+                                            border.width: 1
+
+                                            MouseArea {
+                                                id: audioSourceRowArea
+                                                anchors.fill: parent
+                                                hoverEnabled: true
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: Services.Audio.setSource(audioSourceRow.modelData.name)
+                                            }
+
+                                            RowLayout {
+                                                anchors.fill: parent
+                                                anchors.margins: 9
+                                                spacing: 8
+
+                                                Text {
+                                                    text: Services.Icons.sourceIcon(audioSourceRow.modelData.description)
+                                                    font.family: Services.Theme.fontSymbols
+                                                    font.pixelSize: 12
+                                                    color: audioSourceRow.isCurrent ? Services.Theme.accent : Services.Theme.textSecondary
+                                                }
+
+                                                Text {
+                                                    text: audioSourceRow.modelData.nick || audioSourceRow.modelData.description
+                                                    color: Services.Theme.textPrimary
+                                                    font.bold: audioSourceRow.isCurrent
+                                                    font.pixelSize: 11
+                                                    Layout.fillWidth: true
+                                                    elide: Text.ElideRight
+                                                }
+
+                                                Text {
+                                                    visible: audioSourceRow.isCurrent
+                                                    text: Services.Icons.check
+                                                    font.family: Services.Theme.fontSymbols
+                                                    font.pixelSize: 11
+                                                    color: Services.Theme.accent
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // ── 3. App Volumes (Streams) ──
+                                ColumnLayout {
+                                    visible: (Services.Audio.streams?.length ?? 0) > 0
+                                    Layout.fillWidth: true
+                                    spacing: 8
+
+                                    Rectangle { Layout.fillWidth: true; height: 1; color: Services.Theme.border; opacity: 0.3 }
+
+                                    Text {
+                                        text: "Apps (" + (Services.Audio.streams?.length ?? 0) + ")"
+                                        font.bold: true
+                                        font.pixelSize: 12
+                                        color: Services.Theme.textPrimary
+                                    }
+
+                                    Repeater {
+                                        model: Services.Audio.streams
+                                        delegate: Rectangle {
+                                            id: streamItem
+                                            required property var modelData
+                                            Layout.fillWidth: true
+                                            implicitHeight: 46
+                                            radius: Services.Theme.radiusSm
+                                            color: Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.06) : Qt.rgba(0, 0, 0, 0.04)
+                                            border.color: Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.06) : Qt.rgba(0, 0, 0, 0.04)
+                                            border.width: 1
+
+                                            property real streamSliderDraft: streamItem.modelData.volume
+                                            property bool streamSliderDragging: false
+
+                                            RowLayout {
+                                                anchors.fill: parent
+                                                anchors.margins: 8
+                                                spacing: 8
+
+                                                ColumnLayout {
+                                                    Layout.fillWidth: true
+                                                    spacing: 4
+
+                                                    RowLayout {
+                                                        Layout.fillWidth: true
+                                                        spacing: 6
+
+                                                        Text {
+                                                            text: streamItem.modelData.name || "Application"
+                                                            color: Services.Theme.textPrimary
+                                                            font.bold: true
+                                                            font.pixelSize: 11
+                                                            elide: Text.ElideRight
+                                                            Layout.fillWidth: true
+                                                        }
+
+                                                        Text {
+                                                            text: streamItem.modelData.muted ? "Muted" : (Math.round((streamItem.streamSliderDragging ? streamItem.streamSliderDraft : streamItem.modelData.volume) * 100) + "%")
+                                                            font.family: Services.Theme.fontMono
+                                                            font.pixelSize: 9
+                                                            color: streamItem.modelData.muted ? Services.Theme.danger : Services.Theme.textSecondary
+                                                        }
+                                                    }
+
+                                                    // Slider
+                                                    Rectangle {
+                                                        id: appSliderBar
+                                                        Layout.fillWidth: true
+                                                        implicitHeight: 12
+                                                        radius: 6
+                                                        color: Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.10) : Qt.rgba(0, 0, 0, 0.08)
+                                                        clip: true
+
+                                                        Rectangle {
+                                                            height: parent.height
+                                                            radius: parent.radius
+                                                            width: Math.max(0, Math.min(parent.width, (streamItem.modelData.muted ? 0 : (streamItem.streamSliderDragging ? streamItem.streamSliderDraft : streamItem.modelData.volume)) * parent.width))
+                                                            color: streamItem.modelData.muted ? Services.Theme.textDisabled : Services.Theme.accent
+                                                        }
+
+                                                        MouseArea {
+                                                            anchors.fill: parent
+                                                            hoverEnabled: true
+                                                            cursorShape: Qt.PointingHandCursor
+                                                            function calcVol(mx) { return Math.max(0, Math.min(1, mx / width)) }
+                                                            onPressed: (mouse) => {
+                                                                streamItem.streamSliderDragging = true
+                                                                streamItem.streamSliderDraft = calcVol(mouse.x)
+                                                                Services.Audio.setStreamVolume(streamItem.modelData.index, streamItem.streamSliderDraft, false)
+                                                            }
+                                                            onPositionChanged: (mouse) => {
+                                                                if (pressed) {
+                                                                    streamItem.streamSliderDraft = calcVol(mouse.x)
+                                                                    Services.Audio.setStreamVolume(streamItem.modelData.index, streamItem.streamSliderDraft, false)
+                                                                }
+                                                            }
+                                                            onReleased: {
+                                                                streamItem.streamSliderDragging = false
+                                                                Services.Audio.setStreamVolume(streamItem.modelData.index, streamItem.streamSliderDraft, true)
+                                                            }
+                                                            onWheel: (wheel) => {
+                                                                const step = wheel.angleDelta.y > 0 ? 0.05 : -0.05
+                                                                const nv = Math.max(0, Math.min(1, streamItem.modelData.volume + step))
+                                                                Services.Audio.setStreamVolume(streamItem.modelData.index, nv, true)
+                                                            }
+                                                        }
+                                                    }
+                                                }
+
+                                                // Mute button
+                                                Rectangle {
+                                                    width: 24; height: 24; radius: 6
+                                                    color: streamItem.modelData.muted ? Qt.rgba(Services.Theme.danger.r, Services.Theme.danger.g, Services.Theme.danger.b, 0.25) : (appMuteArea.containsMouse ? (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.12) : Qt.rgba(0, 0, 0, 0.08)) : "transparent")
+
+                                                    Text {
+                                                        anchors.centerIn: parent
+                                                        text: streamItem.modelData.muted ? Services.Icons.volMute : Services.Icons.speaker
+                                                        font.family: Services.Theme.fontSymbols
+                                                        font.pixelSize: 11
+                                                        color: streamItem.modelData.muted ? Services.Theme.danger : Services.Theme.textSecondary
+                                                    }
+
+                                                    MouseArea {
+                                                        id: appMuteArea
+                                                        anchors.fill: parent
+                                                        hoverEnabled: true
+                                                        cursorShape: Qt.PointingHandCursor
+                                                        onClicked: Services.Audio.toggleStreamMute(streamItem.modelData.index)
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // ── 4. Open Mixer Button ──
+                                Rectangle {
+                                    Layout.fillWidth: true
+                                    implicitHeight: 32
+                                    radius: Services.Theme.radiusSm
+                                    color: pavuBtnArea.containsMouse ? (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.12) : Qt.rgba(0, 0, 0, 0.08)) : (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.06) : Qt.rgba(0, 0, 0, 0.04))
+                                    border.color: pavuBtnArea.containsMouse ? Services.Theme.accent : "transparent"
+                                    border.width: 1
+
+                                    RowLayout {
+                                        anchors.centerIn: parent
+                                        spacing: 6
+
+                                        Text {
+                                            text: Services.Icons.settings
+                                            font.family: Services.Theme.fontSymbols
+                                            font.pixelSize: 11
+                                            color: Services.Theme.accent
+                                        }
+
+                                        Text {
+                                            text: "Open System Audio Mixer"
+                                            font.pixelSize: 11
+                                            color: Services.Theme.textPrimary
+                                        }
+                                    }
+
+                                    MouseArea {
+                                        id: pavuBtnArea
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: {
+                                            pavuProc.running = true
+                                            root.close()
                                         }
                                     }
                                 }

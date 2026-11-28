@@ -65,6 +65,7 @@
   "lockscreenShowQuickPower": true,
   "lockscreenShowStatusPill": true,
   "lockscreenGenieUnlock": true,
+  "lockscreenDisablePassword": false,
   "faceIdEnabled": false,
   "faceIdCameraDevice": "/dev/video0",
   "faceIdConfidence": 98.0,
@@ -98,13 +99,7 @@
   "dockShowSeparator": true,
   "dockFloatingDistance": 6,
   "dockMonitorMode": "all",
-  "dockPinnedApps": [
-    "kitty.desktop",
-    "org.gnome.Nautilus.desktop",
-    "zen.desktop",
-    "org.gnome.Snapshot.desktop",
-    "org.gnome.DiskUtility.desktop"
-  ],
+  "dockPinnedApps": null,
   "firstRunCompleted": false,
   "customAvatar": "",
   "customSettingsVersion": 2

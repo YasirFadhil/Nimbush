@@ -26,10 +26,12 @@ Rectangle {
     implicitWidth: trayLayout.implicitWidth + 16
     radius: 14
     readonly property bool glassDark: Services.Theme.isDark
-    // Dock glass material
-    color: glassDark ? Qt.rgba(0.11, 0.11, 0.12, 0.38) : Qt.rgba(1, 1, 1, 0.30)
-    border.color: glassDark ? Qt.rgba(1, 1, 1, 0.18) : Qt.rgba(1, 1, 1, 0.50)
-    border.width: 1
+    readonly property bool isMacMenuBar: Services.Config ? Services.Config.barStyle === "islands" : true
+    // In the menu-bar layout, individual icons provide their own hover feedback.
+    // Other bar styles keep the existing glass capsule around the tray group.
+    color: isMacMenuBar ? "transparent" : (glassDark ? Qt.rgba(0.11, 0.11, 0.12, 0.38) : Qt.rgba(1, 1, 1, 0.30))
+    border.color: isMacMenuBar ? "transparent" : (glassDark ? Qt.rgba(1, 1, 1, 0.18) : Qt.rgba(1, 1, 1, 0.50))
+    border.width: isMacMenuBar ? 0 : 1
     visible: allItems.length > 0
 
     RowLayout {

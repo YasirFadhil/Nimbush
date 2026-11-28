@@ -1490,16 +1490,41 @@ Singleton {
 
     // Key stroke simulation (e.g. for Cut, Copy, Paste, Select All)
     function sendKey(key, mods) {
+        // wtype syntax: -M mod ... -k key -m mod ...
         var cmd = ["wtype"]
-        if (mods && mods.includes("ctrl")) {
-            cmd.push("-M", "ctrl")
-            cmd.push(key)
-            cmd.push("-m", "ctrl")
-        } else {
-            cmd.push(key)
+        var modList = mods ? (Array.isArray(mods) ? mods : [mods]) : []
+
+        // Map modifier names to wtype-understood modifiers
+        var wtypeMods = modList.map(function(m) {
+            var ml = m.toLowerCase()
+            if (ml === "ctrl" || ml === "control") return "ctrl"
+            if (ml === "shift") return "shift"
+            if (ml === "alt") return "alt"
+            if (ml === "super" || ml === "logo" || ml === "win") return "logo"
+            if (ml === "altgr") return "altgr"
+            return ml
+        })
+
+        for (var i = 0; i < wtypeMods.length; i++) {
+            cmd.push("-M", wtypeMods[i])
         }
+        cmd.push("-k", key)
+        for (var j = 0; j < wtypeMods.length; j++) {
+            cmd.push("-m", wtypeMods[j])
+        }
+
         var p = Qt.createQmlObject('import Quickshell.Io; Process {}', root)
         p.command = cmd
+        p.onExited.connect(() => p.destroy())
+        p.running = true
+    }
+
+    function launchApp(exec) {
+        if (!exec || exec.length === 0) return
+        var p = Qt.createQmlObject('import Quickshell.Io; Process {}', root)
+        // Strip %U, %F, etc. field codes
+        var cleanExec = exec.replace(/%[a-zA-Z]/g, "").trim()
+        p.command = ["sh", "-c", cleanExec + " &"]
         p.onExited.connect(() => p.destroy())
         p.running = true
     }

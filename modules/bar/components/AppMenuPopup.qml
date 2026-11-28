@@ -118,6 +118,58 @@ PanelWindow {
         }
     }
 
+    property var pendingKeyCombo: null
+
+    Timer {
+        id: pendingKeyTimer
+        interval: 60
+        repeat: false
+        onTriggered: {
+            if (root.pendingKeyCombo && Services.Compositor) {
+                var kc = root.pendingKeyCombo
+                root.pendingKeyCombo = null
+                Services.Compositor.sendKey(kc.key, kc.mods || [])
+            }
+        }
+    }
+
+    function executeMenuItem(item) {
+        if (!item) return
+        // 1. Compositor built-in actions
+        if (item.actionType) {
+            root.handleStandardAction(item.actionType)
+            return
+        }
+        // 2. .desktop file action (via ActiveApp.actions[idx].execute())
+        if (item.desktopActionIndex !== undefined) {
+            var acts = Services.ActiveApp ? Services.ActiveApp.actions : null
+            if (acts && acts[item.desktopActionIndex]) {
+                var act = acts[item.desktopActionIndex]
+                if (act && act.execute) {
+                    act.execute()
+                    return
+                }
+            }
+        }
+        // 3. Key combo via wtype-backed Compositor.sendKey
+        if (item.keyCombo) {
+            root.pendingKeyCombo = item.keyCombo
+            root.close() // close first so focus returns to target window
+            pendingKeyTimer.restart()
+            return
+        }
+        // 4. AT-SPI / D-Bus native backend trigger (new action object)
+        if (item.action && Services.AppMenu) {
+            Services.AppMenu.trigger(item)
+            return
+        }
+        // 5. Legacy AT-SPI path array
+        if (item.path && Array.isArray(item.path) && item.path.length > 0 && Services.AppMenu) {
+            Services.AppMenu.trigger(item)
+            return
+        }
+    }
+
     function openAt(menuData, xPos, fallback) {
         if (Services.OverlayManager) Services.OverlayManager.closeAllExcept(root)
         activeMenuData = menuData
@@ -157,7 +209,12 @@ PanelWindow {
             x: Math.max(12, Math.min(parent.width - width - 12, root.targetX))
             y: root.isBottom ? (parent.height - height - 12) : 12
             width: Math.max(224, menuColumn.implicitWidth + 12)
-            height: menuColumn.implicitHeight + 12
+            height: Math.min(menuColumn.implicitHeight + 12, Math.max(200, parent.height - 48))
+            clip: true
+
+            Behavior on x { enabled: root.isOpen; NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
+            Behavior on width { enabled: root.isOpen; NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
+            Behavior on height { enabled: root.isOpen; NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
             radius: 11
             color: root.menuFill
             border.color: root.menuBorder
@@ -177,13 +234,18 @@ PanelWindow {
                 onClicked: (mouse) => mouse.accepted = true
             }
 
-            ColumnLayout {
-                id: menuColumn
-                anchors.top: parent.top
-                anchors.left: parent.left
-                anchors.right: parent.right
+            Flickable {
+                anchors.fill: parent
                 anchors.margins: 6
-                spacing: 2
+                contentWidth: width
+                contentHeight: menuColumn.implicitHeight
+                clip: true
+                boundsBehavior: Flickable.StopAtBounds
+
+                ColumnLayout {
+                    id: menuColumn
+                    width: parent.width
+                    spacing: 2
 
                 // ── Case 1: Real AT-SPI or Standard Fallback Menu Items ──────
                 Repeater {
@@ -233,12 +295,9 @@ PanelWindow {
                                     root.activeSubmenuItem = itemDelegate.item
                                     root.activeSubmenuY = popupCard.y + itemDelegate.y
                                 } else {
-                                    if (itemDelegate.item.actionType) {
-                                        root.handleStandardAction(itemDelegate.item.actionType)
-                                    } else if (itemDelegate.item.path && Services.AppMenu) {
-                                        Services.AppMenu.trigger(itemDelegate.item.path)
-                                    }
-                                    root.close()
+                                    var needsClose = !itemDelegate.item.keyCombo
+                                    root.executeMenuItem(itemDelegate.item)
+                                    if (needsClose) root.close()
                                 }
                             }
                         }
@@ -422,6 +481,7 @@ PanelWindow {
                     }
                 }
             }
+            }
         }
 
         // ── Submenu Popup Card (Cascading, Identical Styling) ────────────────
@@ -431,7 +491,8 @@ PanelWindow {
             x: Math.min(parent.width - width - 12, popupCard.x + popupCard.width + 4)
             y: Math.max(12, Math.min(parent.height - height - 12, root.activeSubmenuY))
             width: Math.max(200, submenuColumn.implicitWidth + 12)
-            height: submenuColumn.implicitHeight + 12
+            height: Math.min(submenuColumn.implicitHeight + 12, Math.max(180, parent.height - 48))
+            clip: true
             radius: 11
             color: root.menuFill
             border.color: root.menuBorder
@@ -449,13 +510,18 @@ PanelWindow {
                 onClicked: (mouse) => mouse.accepted = true
             }
 
-            ColumnLayout {
-                id: submenuColumn
-                anchors.top: parent.top
-                anchors.left: parent.left
-                anchors.right: parent.right
+            Flickable {
+                anchors.fill: parent
                 anchors.margins: 6
-                spacing: 2
+                contentWidth: width
+                contentHeight: submenuColumn.implicitHeight
+                clip: true
+                boundsBehavior: Flickable.StopAtBounds
+
+                ColumnLayout {
+                    id: submenuColumn
+                    width: parent.width
+                    spacing: 2
 
                 Repeater {
                     model: (root.activeSubmenuItem && root.activeSubmenuItem.children) ? root.activeSubmenuItem.children : []
@@ -489,16 +555,14 @@ PanelWindow {
                             glyph: subItemDelegate.item.checked ? "\uf00c" : ""
 
                             onTriggered: {
-                                if (subItemDelegate.item.actionType) {
-                                    root.handleStandardAction(subItemDelegate.item.actionType)
-                                } else if (subItemDelegate.item.path && Services.AppMenu) {
-                                    Services.AppMenu.trigger(subItemDelegate.item.path)
-                                }
-                                root.close()
+                                var needsClose = !subItemDelegate.item.keyCombo
+                                root.executeMenuItem(subItemDelegate.item)
+                                if (needsClose) root.close()
                             }
                         }
                     }
                 }
+            }
             }
         }
     }

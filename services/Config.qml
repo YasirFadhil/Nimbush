@@ -48,6 +48,10 @@ Singleton {
     property string clockDateFormat: "short"      // "short" | "full"
     property string islandStyle: "expanded"       // "expanded" | "compact" | "minimal" | "hidden"
     property bool islandCavaWave: true            // Live CAVA audio spectrum visualizer
+    property bool islandSysHud: true              // System HUD alerts (volume, mute, charging, camera)
+    property bool islandNotifs: true              // Notification popups in the island
+    property bool islandDropSend: true            // Drag-and-drop file sharing onto the island
+    property bool islandAllowOnLockscreen: true   // Keep island active on lockscreen
     property string workspaceStyle: "pills"       // "pills" | "numbers" | "dots" | "icons"
     property bool workspaceShowAll: true
     property string barMonitorMode: "all"         // "all" | "primary" | "custom"
@@ -156,13 +160,8 @@ Singleton {
     property bool dockShowSeparator: true
     property int dockFloatingDistance: 6          // 0 | 6 | 12 | 18
     property string dockMonitorMode: "all"        // "all" | "primary"
-    property var dockPinnedApps: [
-        "kitty.desktop",
-        "org.gnome.Nautilus.desktop",
-        "zen.desktop",
-        "org.gnome.Snapshot.desktop",
-        "org.gnome.DiskUtility.desktop"
-    ]
+    property var dockPinnedApps: []
+    property bool _dockPinnedAppsLoadedFromUser: false
 
     // ── Lockscreen & System ──────────────────────────────────────────────────
     property string lockscreenClockStyle: "hero"  // "hero" | "modern" | "compact" | "minimal" | "vertical" | "typographic" | "radial" | "cyber"
@@ -188,6 +187,7 @@ Singleton {
     property bool lockscreenShowQuickPower: true
     property bool lockscreenShowStatusPill: true
     property bool lockscreenGenieUnlock: true
+    property bool lockscreenDisablePassword: false
     property bool faceIdEnabled: false
     property string faceIdCameraDevice: "/dev/video0"
     property real faceIdConfidence: 98.0
@@ -247,6 +247,7 @@ Singleton {
                     var parsed = JSON.parse(raw.trim())
                     root.applyData(parsed)
                     root.isLoaded = true
+                    root._ensureDefaultDockApps()
                     var wasFirstRun = (parsed.firstRunCompleted !== true)
                     root.initialLoadFinished(wasFirstRun)
                 }
@@ -320,6 +321,10 @@ Singleton {
         if (data.clockDateFormat !== undefined) clockDateFormat = data.clockDateFormat
         if (data.islandStyle !== undefined) islandStyle = data.islandStyle
         if (data.islandCavaWave !== undefined) islandCavaWave = Boolean(data.islandCavaWave)
+        if (data.islandSysHud !== undefined) islandSysHud = Boolean(data.islandSysHud)
+        if (data.islandNotifs !== undefined) islandNotifs = Boolean(data.islandNotifs)
+        if (data.islandDropSend !== undefined) islandDropSend = Boolean(data.islandDropSend)
+        if (data.islandAllowOnLockscreen !== undefined) islandAllowOnLockscreen = Boolean(data.islandAllowOnLockscreen)
         if (data.workspaceStyle !== undefined) workspaceStyle = data.workspaceStyle
         if (data.workspaceShowAll !== undefined) workspaceShowAll = Boolean(data.workspaceShowAll)
         if (data.barMonitorMode !== undefined) barMonitorMode = data.barMonitorMode
@@ -367,6 +372,7 @@ Singleton {
         if (data.lockscreenShowQuickPower !== undefined) lockscreenShowQuickPower = Boolean(data.lockscreenShowQuickPower)
         if (data.lockscreenShowStatusPill !== undefined) lockscreenShowStatusPill = Boolean(data.lockscreenShowStatusPill)
         if (data.lockscreenGenieUnlock !== undefined) lockscreenGenieUnlock = Boolean(data.lockscreenGenieUnlock)
+        if (data.lockscreenDisablePassword !== undefined) lockscreenDisablePassword = Boolean(data.lockscreenDisablePassword)
         if (data.faceIdEnabled !== undefined) faceIdEnabled = Boolean(data.faceIdEnabled)
         if (data.faceIdCameraDevice !== undefined) faceIdCameraDevice = String(data.faceIdCameraDevice)
         if (data.faceIdConfidence !== undefined) faceIdConfidence = Number(data.faceIdConfidence)
@@ -393,7 +399,10 @@ Singleton {
         if (data.dockShowSeparator !== undefined) dockShowSeparator = Boolean(data.dockShowSeparator)
         if (data.dockFloatingDistance !== undefined) dockFloatingDistance = Number(data.dockFloatingDistance)
         if (data.dockMonitorMode !== undefined) dockMonitorMode = String(data.dockMonitorMode)
-        if (data.dockPinnedApps !== undefined && Array.isArray(data.dockPinnedApps)) dockPinnedApps = data.dockPinnedApps
+        if (data.dockPinnedApps !== undefined && Array.isArray(data.dockPinnedApps)) {
+            dockPinnedApps = data.dockPinnedApps
+            _dockPinnedAppsLoadedFromUser = true
+        }
 
         if (data.dashboardWidget !== undefined) dashboardWidget = data.dashboardWidget
         if (data.weatherLocationMode !== undefined) weatherLocationMode = data.weatherLocationMode
@@ -418,8 +427,7 @@ Singleton {
         onTriggered: {
             var data = root.serializeData()
             var jsonStr = JSON.stringify(data, null, 2)
-            saveConfigProc.payload = jsonStr
-            saveConfigProc.running = true
+            root._enqueueSave(jsonStr)
         }
     }
 
@@ -456,6 +464,10 @@ Singleton {
             clockDateFormat: clockDateFormat,
             islandStyle: islandStyle,
             islandCavaWave: islandCavaWave,
+            islandSysHud: islandSysHud,
+            islandNotifs: islandNotifs,
+            islandDropSend: islandDropSend,
+            islandAllowOnLockscreen: islandAllowOnLockscreen,
             workspaceStyle: workspaceStyle,
             workspaceShowAll: workspaceShowAll,
             barMonitorMode: barMonitorMode,
@@ -497,6 +509,7 @@ Singleton {
             lockscreenShowQuickPower: lockscreenShowQuickPower,
             lockscreenShowStatusPill: lockscreenShowStatusPill,
             lockscreenGenieUnlock: lockscreenGenieUnlock,
+            lockscreenDisablePassword: lockscreenDisablePassword,
             faceIdEnabled: faceIdEnabled,
             faceIdCameraDevice: faceIdCameraDevice,
             faceIdConfidence: faceIdConfidence,
@@ -549,9 +562,18 @@ Singleton {
         saveDebounceTimer.stop()
         var data = root.serializeData()
         var jsonStr = JSON.stringify(data, null, 2)
+        root._enqueueSave(jsonStr)
+        root.configChanged()
+    }
+
+    function _enqueueSave(jsonStr) {
+        if (saveConfigProc.running) {
+            saveConfigProc.pendingPayload = jsonStr
+            saveConfigProc.hasPendingSave = true
+            return
+        }
         saveConfigProc.payload = jsonStr
         saveConfigProc.running = true
-        root.configChanged()
     }
 
     function resetToDefaults() {
@@ -582,6 +604,10 @@ Singleton {
         clockDateFormat = "short"
         islandStyle = "expanded"
         islandCavaWave = true
+        islandSysHud = true
+        islandNotifs = true
+        islandDropSend = true
+        islandAllowOnLockscreen = true
         workspaceStyle = "pills"
         workspaceShowAll = true
 
@@ -621,6 +647,7 @@ Singleton {
         lockscreenShowQuickPower = true
         lockscreenShowStatusPill = true
         lockscreenGenieUnlock = true
+        lockscreenDisablePassword = false
         batteryShowWarnings = true
         batteryLowThreshold = 20
         batteryChargeLimitEnabled = false
@@ -654,9 +681,10 @@ Singleton {
         dockFloatingDistance = 6
         dockMonitorMode = "all"
         dockPinnedApps = resolveDefaultPinnedApps()
+        _dockPinnedAppsLoadedFromUser = (dockPinnedApps.length > 0)
 
         firstRunCompleted = true
-        saveConfig()
+        saveConfigImmediately()
     }
 
     function generateMatugen(wallpaperPath) {
@@ -770,6 +798,10 @@ Singleton {
     function setClockDateFormat(fmt) { clockDateFormat = fmt; saveConfig() }
     function setIslandStyle(style) { islandStyle = style; saveConfig() }
     function setIslandCavaWave(val) { islandCavaWave = val; saveConfig() }
+    function setIslandSysHud(val) { islandSysHud = val; saveConfig() }
+    function setIslandNotifs(val) { islandNotifs = val; saveConfig() }
+    function setIslandDropSend(val) { islandDropSend = val; saveConfig() }
+    function setIslandAllowOnLockscreen(val) { islandAllowOnLockscreen = val; saveConfig() }
     function setWorkspaceStyle(style) { workspaceStyle = style; saveConfig() }
     function setWorkspaceShowAll(val) { workspaceShowAll = val; saveConfig() }
     function setBarMonitorMode(mode) { barMonitorMode = mode; saveConfig() }
@@ -845,6 +877,7 @@ Singleton {
     function setLockscreenShowQuickPower(val) { lockscreenShowQuickPower = val; saveConfig() }
     function setLockscreenShowStatusPill(val) { lockscreenShowStatusPill = val; saveConfig() }
     function setLockscreenGenieUnlock(val) { lockscreenGenieUnlock = val; saveConfig() }
+    function setLockscreenDisablePassword(val) { lockscreenDisablePassword = val; saveConfig() }
     function setFaceIdEnabled(val) { faceIdEnabled = val; saveConfig() }
     function setFaceIdCameraDevice(path) { faceIdCameraDevice = path; saveConfig() }
     function setFaceIdConfidence(val) { faceIdConfidence = val; saveConfig() }
@@ -872,80 +905,175 @@ Singleton {
     function setDockShowSeparator(val) { dockShowSeparator = val; saveConfig() }
     function setDockFloatingDistance(val) { dockFloatingDistance = val; saveConfig() }
     function setDockMonitorMode(val) { dockMonitorMode = val; saveConfig() }
-    function setDockPinnedApps(apps) { dockPinnedApps = apps; saveConfig() }
+    function setDockPinnedApps(apps) {
+        dockPinnedApps = apps
+        _dockPinnedAppsLoadedFromUser = true
+        saveConfigImmediately()
+    }
+
+    Connections {
+        target: DesktopEntries.applications || null
+        function onValuesChanged() { root._ensureDefaultDockApps() }
+        function onRowsInserted() { root._ensureDefaultDockApps() }
+    }
+
+    function _ensureDefaultDockApps() {
+        if (!root.isLoaded || root._dockPinnedAppsLoadedFromUser) return
+        const raw = (DesktopEntries.applications && DesktopEntries.applications.values) ? DesktopEntries.applications.values : []
+        if (!raw || raw.length === 0) return
+
+        const resolved = root.resolveDefaultPinnedApps()
+        if (resolved.length > 0) {
+            root.dockPinnedApps = resolved
+            root._dockPinnedAppsLoadedFromUser = true
+            root.saveConfigImmediately()
+        }
+    }
 
     function resolveDefaultPinnedApps() {
         const raw = (DesktopEntries.applications && DesktopEntries.applications.values) ? DesktopEntries.applications.values : []
+        if (!raw || raw.length === 0) return []
 
-        const terminalCandidates = [
-            "kitty.desktop", "ghostty.desktop", "com.mitchellh.ghostty.desktop",
-            "foot.desktop", "org.gnome.Console.desktop", "gnome-terminal.desktop",
-            "alacritty.desktop", "wezterm.desktop", "org.kde.konsole.desktop", "konsole.desktop",
-            "com.system76.CosmicTerm.desktop", "xterm.desktop"
-        ]
-        const fileManagerCandidates = [
-            "org.gnome.Nautilus.desktop", "nautilus.desktop", "thunar.desktop",
-            "org.kde.dolphin.desktop", "dolphin.desktop", "com.system76.CosmicFiles.desktop",
-            "nemo.desktop", "pcmanfm.desktop", "caja.desktop"
-        ]
-        const browserCandidates = [
-            "zen.desktop", "firefox.desktop", "org.mozilla.firefox.desktop",
-            "google-chrome.desktop", "chromium.desktop", "brave-browser.desktop",
-            "microsoft-edge.desktop", "helium.desktop", "org.gnome.Epiphany.desktop"
-        ]
-        const cameraCandidates = [
-            "org.gnome.Snapshot.desktop", "snapshot.desktop", "cheese.desktop",
-            "org.gnome.Cheese.desktop", "kamoso.desktop", "org.kde.kamoso.desktop",
-            "io.github.cameractrls.desktop", "cameractrls.desktop", "qv4l2.desktop", "qvidcap.desktop"
-        ]
-        const diskCandidates = [
-            "org.gnome.DiskUtility.desktop", "gnome-disk-utility.desktop",
-            "gparted.desktop", "partitionmanager.desktop", "org.kde.partitionmanager.desktop",
-            "org.gnome.baobab.desktop", "baobab.desktop"
-        ]
-
-        function findMatch(candidates, categoryName, keywordList) {
-            for (let c = 0; c < candidates.length; c++) {
-                const targetClean = candidates[c].toLowerCase().replace(/\.desktop$/, '')
-                for (let i = 0; i < raw.length; i++) {
-                    const app = raw[i]
-                    if (!app || !app.id) continue
-                    const appIdClean = app.id.toLowerCase().replace(/\.desktop$/, '')
-                    if (appIdClean === targetClean) {
-                        return app.id.endsWith(".desktop") ? app.id : (app.id + ".desktop")
-                    }
-                }
-            }
-            if (categoryName) {
-                for (let i = 0; i < raw.length; i++) {
-                    const app = raw[i]
-                    if (!app || !app.id) continue
-                    const cats = (app.categories || []).map(cat => String(cat).toLowerCase())
-                    if (cats.includes(categoryName.toLowerCase())) {
-                        return app.id.endsWith(".desktop") ? app.id : (app.id + ".desktop")
-                    }
-                }
-            }
-            if (keywordList && keywordList.length > 0) {
-                for (let i = 0; i < raw.length; i++) {
-                    const app = raw[i]
-                    if (!app || !app.id) continue
-                    const text = ((app.id || "") + " " + (app.name || "") + " " + (app.description || "")).toLowerCase()
-                    if (keywordList.some(k => text.includes(k.toLowerCase()))) {
-                        return app.id.endsWith(".desktop") ? app.id : (app.id + ".desktop")
-                    }
-                }
-            }
-            return null
+        const availableApps = []
+        const seenClean = {}
+        for (let i = 0; i < raw.length; i++) {
+            const app = raw[i]
+            if (!app || !app.id) continue
+            if (app.noDisplay === true) continue
+            const idStr = String(app.id)
+            const idClean = idStr.toLowerCase().replace(/\.desktop$/, '')
+            if (!idClean || idClean === "quickshell-settings" || idClean === "org.quickshell") continue
+            if (seenClean[idClean]) continue
+            seenClean[idClean] = true
+            availableApps.push({
+                app: app,
+                desktopId: idStr.endsWith(".desktop") ? idStr : (idStr + ".desktop"),
+                idClean: idClean,
+                nameLower: String(app.name || "").toLowerCase(),
+                descLower: String(app.description || app.comment || "").toLowerCase(),
+                cats: (app.categories || []).map(c => String(c).toLowerCase())
+            })
         }
 
-        const term = findMatch(terminalCandidates, "TerminalEmulator", ["terminal", "console"]) || "kitty.desktop"
-        const fm = findMatch(fileManagerCandidates, "FileManager", ["filemanager", "files", "nautilus", "thunar"]) || "org.gnome.Nautilus.desktop"
-        const browser = findMatch(browserCandidates, "WebBrowser", ["browser", "firefox", "chrome", "zen"]) || "zen.desktop"
-        const cam = findMatch(cameraCandidates, null, ["camera", "snapshot", "webcam", "kamera"]) || "org.gnome.Snapshot.desktop"
-        const disk = findMatch(diskCandidates, null, ["disk", "partition", "gparted", "diskutility"]) || "org.gnome.DiskUtility.desktop"
+        if (availableApps.length === 0) return []
 
-        return [term, fm, browser, cam, disk]
+        const pickedIds = []
+        const usedClean = {}
+
+        function pickRandomFromCategory(candidates, categories, keywords) {
+            const matches = []
+            const matchSeen = {}
+
+            function addMatch(entry) {
+                if (usedClean[entry.idClean] || matchSeen[entry.idClean]) return
+                matchSeen[entry.idClean] = true
+                matches.push(entry)
+            }
+
+            const candidateSet = {}
+            for (let c = 0; c < candidates.length; c++) {
+                candidateSet[candidates[c].toLowerCase().replace(/\.desktop$/, '')] = true
+            }
+
+            for (let i = 0; i < availableApps.length; i++) {
+                const entry = availableApps[i]
+                if (candidateSet[entry.idClean]) {
+                    addMatch(entry)
+                    continue
+                }
+                if (categories && categories.length > 0) {
+                    if (categories.some(cat => entry.cats.includes(cat.toLowerCase()))) {
+                        addMatch(entry)
+                        continue
+                    }
+                }
+                if (keywords && keywords.length > 0) {
+                    const text = entry.idClean + " " + entry.nameLower + " " + entry.descLower
+                    if (keywords.some(k => text.includes(k.toLowerCase()))) {
+                        addMatch(entry)
+                    }
+                }
+            }
+
+            if (matches.length === 0) return null
+            const chosen = matches[Math.floor(Math.random() * matches.length)]
+            usedClean[chosen.idClean] = true
+            return chosen.desktopId
+        }
+
+        const slotSpecs = [
+            {
+                candidates: [
+                    "kitty.desktop", "ghostty.desktop", "com.mitchellh.ghostty.desktop",
+                    "foot.desktop", "org.gnome.Console.desktop", "gnome-terminal.desktop",
+                    "alacritty.desktop", "wezterm.desktop", "org.wezfurlong.wezterm.desktop",
+                    "org.kde.konsole.desktop", "konsole.desktop", "com.system76.CosmicTerm.desktop",
+                    "xterm.desktop", "rio.desktop"
+                ],
+                categories: ["TerminalEmulator"],
+                keywords: ["terminal", "console"]
+            },
+            {
+                candidates: [
+                    "org.gnome.Nautilus.desktop", "nautilus.desktop", "thunar.desktop",
+                    "org.kde.dolphin.desktop", "dolphin.desktop", "com.system76.CosmicFiles.desktop",
+                    "nemo.desktop", "pcmanfm.desktop", "pcmanfm-qt.desktop", "caja.desktop"
+                ],
+                categories: ["FileManager"],
+                keywords: ["file manager", "filemanager", "nautilus", "thunar", "dolphin"]
+            },
+            {
+                candidates: [
+                    "zen.desktop", "app.zen_browser.zen.desktop", "firefox.desktop",
+                    "org.mozilla.firefox.desktop", "librewolf.desktop", "google-chrome.desktop",
+                    "chromium.desktop", "brave-browser.desktop", "vivaldi-stable.desktop",
+                    "microsoft-edge.desktop", "helium.desktop", "org.gnome.Epiphany.desktop",
+                    "floorp.desktop", "qutebrowser.desktop"
+                ],
+                categories: ["WebBrowser"],
+                keywords: ["browser", "firefox", "chrome", "chromium"]
+            },
+            {
+                candidates: [
+                    "spotify.desktop", "vlc.desktop", "mpv.desktop", "org.gnome.Totem.desktop",
+                    "rhythmbox.desktop", "elisa.desktop", "amberol.desktop", "audacious.desktop",
+                    "celluloid.desktop", "io.github.celluloid_player.Celluloid.desktop",
+                    "org.kde.gwenview.desktop", "org.gnome.Loupe.desktop"
+                ],
+                categories: ["AudioVideo", "Audio", "Video", "Player", "Music"],
+                keywords: ["media player", "music", "video"]
+            },
+            {
+                candidates: [
+                    "code.desktop", "dev.zed.Zed.desktop", "codium.desktop", "neovide.desktop",
+                    "org.gnome.TextEditor.desktop", "org.kde.kate.desktop",
+                    "org.gnome.DiskUtility.desktop", "org.gnome.Snapshot.desktop",
+                    "gnome-system-monitor.desktop", "org.gnome.SystemMonitor.desktop",
+                    "org.gnome.Calculator.desktop", "com.obsproject.Studio.desktop"
+                ],
+                categories: ["TextEditor", "Development", "Utility", "System"],
+                keywords: ["editor", "disk", "camera", "calculator", "monitor"]
+            }
+        ]
+
+        for (let s = 0; s < slotSpecs.length; s++) {
+            const spec = slotSpecs[s]
+            const picked = pickRandomFromCategory(spec.candidates, spec.categories, spec.keywords)
+            if (picked) pickedIds.push(picked)
+        }
+
+        // Top up to 5 items with random available apps if any categories had no installed apps
+        if (pickedIds.length < 5) {
+            const remaining = availableApps.filter(entry => !usedClean[entry.idClean])
+            while (pickedIds.length < 5 && remaining.length > 0) {
+                const idx = Math.floor(Math.random() * remaining.length)
+                const extra = remaining.splice(idx, 1)[0]
+                usedClean[extra.idClean] = true
+                pickedIds.push(extra.desktopId)
+            }
+        }
+
+        return pickedIds
     }
 
     function setDashboardWidget(val) { dashboardWidget = val; saveConfig() }
@@ -1064,6 +1192,7 @@ Singleton {
                 root.isLoaded = true
                 wasFirstRun = true
             }
+            root._ensureDefaultDockApps()
             root.initialLoadFinished(wasFirstRun)
         }
     }
@@ -1071,11 +1200,21 @@ Singleton {
     Process {
         id: saveConfigProc
         property string payload: ""
+        property bool hasPendingSave: false
+        property string pendingPayload: ""
         command: ["sh", "-c",
             "mkdir -p \"" + root.cacheDir + "\" \"" + root.configDir + "\" && " +
-            "printf '%s' \"$1\" > \"" + root.cacheConfigPath + "\" && " +
-            "printf '%s' \"$1\" > \"" + root.declConfigPath + "\"",
+            "printf '%s' \"$1\" > \"" + root.cacheConfigPath + ".tmp\" && mv -f \"" + root.cacheConfigPath + ".tmp\" \"" + root.cacheConfigPath + "\" && " +
+            "printf '%s' \"$1\" > \"" + root.declConfigPath + ".tmp\" && mv -f \"" + root.declConfigPath + ".tmp\" \"" + root.declConfigPath + "\"",
             "sh", payload]
+        onExited: (exitCode) => {
+            if (saveConfigProc.hasPendingSave) {
+                saveConfigProc.hasPendingSave = false
+                saveConfigProc.payload = saveConfigProc.pendingPayload
+                saveConfigProc.pendingPayload = ""
+                saveConfigProc.running = true
+            }
+        }
     }
 
     Process {

@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Layouts
+import QtQuick.Effects
 import Quickshell
 import Quickshell.Wayland
 import "components" as Components
@@ -247,6 +248,17 @@ Variants {
                         }
                     ]
                     opacity: Math.min(1.0, Math.max(0.0, root.barTransitionState * 1.35))
+                    layer.enabled: root.isIslands
+                    layer.samples: 4
+                    layer.smooth: true
+                    layer.effect: MultiEffect {
+                        shadowEnabled: true
+                        shadowColor: Services.Theme.isDark ? Qt.rgba(0, 0, 0, 0.62) : Qt.rgba(0, 0, 0, 0.72)
+                        shadowBlur: 0.90
+                        shadowHorizontalOffset: 0
+                        shadowVerticalOffset: 1
+                        autoPaddingEnabled: true
+                    }
                 }
 
                 Item {
@@ -281,6 +293,17 @@ Variants {
                         }
                     ]
                     opacity: Math.min(1.0, Math.max(0.0, root.barTransitionState * 1.35))
+                    layer.enabled: root.isIslands
+                    layer.samples: 4
+                    layer.smooth: true
+                    layer.effect: MultiEffect {
+                        shadowEnabled: true
+                        shadowColor: Services.Theme.isDark ? Qt.rgba(0, 0, 0, 0.62) : Qt.rgba(0, 0, 0, 0.72)
+                        shadowBlur: 0.90
+                        shadowHorizontalOffset: 0
+                        shadowVerticalOffset: 1
+                        autoPaddingEnabled: true
+                    }
                 }
             }
         }

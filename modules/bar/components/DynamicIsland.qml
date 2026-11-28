@@ -288,14 +288,15 @@ Item {
             const re = /\[(\d{1,2}):(\d{2})(?:[.:](\d{1,3}))?\]/g
             for (const rawLine of synced.split(/\r?\n/)) {
                 const text = rawLine.replace(/^\s*(?:\[\d{1,2}:\d{2}(?:[.:]\d{1,3})?\])+\s*/, "").trim()
-                if (!text) continue
                 re.lastIndex = 0
                 let match
                 while ((match = re.exec(rawLine)) !== null) {
                     const fraction = match[3] ? Number("0." + match[3]) : 0
+                    // A timestamp with no text marks a vocal pause (instrumental break / outro).
                     lines.push({
                         time: Number(match[1]) * 60 + Number(match[2]) + fraction,
-                        text: text
+                        text: text,
+                        gap: !text
                     })
                 }
             }
@@ -306,11 +307,48 @@ Item {
         }
 
         lines.sort((a, b) => a.time - b.time)
+
+        // Turn vocal pauses (intro, instrumental break, outro) into "music note" entries.
+        let finalLines = lines
+        if (synced) {
+            const gapMin = 4      // shortest silence (s) worth showing a music icon for
+            const gapAuto = 12    // gap between two sung lines (s) that implies an instrumental part
+            const totalLen = Number(root.activePlayer?.length ?? 0)
+            const out = []
+            const pushGap = (t) => {
+                if (out.length && out[out.length - 1].gap) return
+                out.push({ time: t, text: "", gap: true })
+            }
+            const firstSung = lines.find(l => !l.gap)
+            if (firstSung && firstSung.time >= gapMin) pushGap(0)
+
+            for (let i = 0; i < lines.length; i++) {
+                const l = lines[i]
+                let nextSung = null
+                for (let j = i + 1; j < lines.length; j++) {
+                    if (!lines[j].gap) { nextSung = lines[j]; break }
+                }
+                if (l.gap) {
+                    // Ignore blanks that only mark the end of a phrase (next line follows right away).
+                    if (nextSung && nextSung.time - l.time < gapMin) continue
+                    if (!nextSung && totalLen > 0 && totalLen - l.time < gapMin) continue
+                    pushGap(l.time)
+                    continue
+                }
+                out.push(l)
+                const nxt = lines[i + 1]
+                // No explicit blank in the LRC: infer an instrumental part from a long silence.
+                if (nxt && !nxt.gap && nxt.time - l.time > gapAuto) pushGap(l.time + 7)
+                if (!nxt && totalLen > 0 && totalLen - l.time > gapAuto) pushGap(l.time + 7)
+            }
+            finalLines = out
+        }
+
         root.mediaLyricsRaw = source
-        root.mediaLyricsLines = lines
+        root.mediaLyricsLines = finalLines
         root.mediaLyricsIndex = 0
         root.mediaLyricsDisplayIndex = 0
-        root.mediaLyricsError = lines.length ? "" : "No readable lyrics"
+        root.mediaLyricsError = finalLines.length ? "" : "No readable lyrics"
         root.updateMediaLyricsIndex()
     }
 
@@ -783,7 +821,7 @@ Item {
     readonly property int islandHeight: island.height
 
     // Lockscreen compatibility
-    property bool allowOnLockscreen: true
+    property bool allowOnLockscreen: Services.Config ? Services.Config.islandAllowOnLockscreen : true
     readonly property bool lockBlocked: Boolean(Services.OverlayManager && (Services.OverlayManager.isLocked || Services.OverlayManager.isLockAbsorbing))
     property bool isUnlockHoldActive: false
     property bool isUnlockGlideActive: false
@@ -801,7 +839,7 @@ Item {
     // Notification model shortcuts
     readonly property var popupList: Services.Notifications.popupList
     readonly property int notifCount: popupList ? popupList.count : 0
-    readonly property bool notifActive: !(Services.Workspaces && Services.Workspaces.isFullscreen) && (notifCount > 0)
+    readonly property bool notifActive: (!Services.Config || Services.Config.islandNotifs) && !(Services.Workspaces && Services.Workspaces.isFullscreen) && (notifCount > 0)
     property int previousNotifCount: 0
     // Briefly hold a new notification so the privacy dot can begin its
     // satellite handoff before the notification takes over the main island.
@@ -1500,7 +1538,7 @@ Item {
     }
 
     function showSysHud(icon, title, detail, iconColor, customDuration) {
-        if (root.wallpaperMode) return
+        if (root.wallpaperMode || (Services.Config && !Services.Config.islandSysHud)) return
         sysHudIcon = icon
         sysHudTitle = title
         sysHudDetail = detail || ""
@@ -2282,7 +2320,7 @@ Item {
         if (wallpaperMode) return 120
         if (slot0Activity === "syshud") return 54
         if (isMediaPeek) return 54
-        if (hasMedia) return mediaLyricsVisible ? 196 : 144
+        if (hasMedia) return mediaLyricsVisible ? 210 : 144
         return 52
     }
 
@@ -2663,6 +2701,7 @@ Item {
             id: islandDropArea
             anchors.fill: parent
             z: 5
+            enabled: !Services.Config || Services.Config.islandDropSend
             onEntered: (drag) => {
                 dropExitDebounceTimer.stop()
                 root.extractDropDetails(drag.urls)
@@ -3959,7 +3998,7 @@ Item {
                 : 336
             height: (root.isMediaPeek || (root.mediaWasPeek && !root.expanded))
                 ? 34
-                : (root.mediaLyricsVisible ? 172 : 120)
+                : (root.mediaLyricsVisible ? 186 : 120)
             Behavior on height {
                 // Keep in sync with the island shell morph (340ms InOutSine) so mediaView
                 // never exceeds the island boundary mid-animation and gets clipped.
@@ -4644,7 +4683,7 @@ Item {
                         // Full card width (not the narrow lane beside the cover) so the active
                         // line sits on the island's centre line. Height follows the same eased
                         // timeline as the header / mediaView, so the sum never drifts mid-morph.
-                        Layout.preferredHeight: root.mediaLyricsVisible ? 78 : 0
+                        Layout.preferredHeight: root.mediaLyricsVisible ? 92 : 0
                         Behavior on Layout.preferredHeight {
                             NumberAnimation { duration: root.mediaFlightMs; easing.type: Easing.InOutSine }
                         }
@@ -4670,8 +4709,10 @@ Item {
                             readonly property real lineH: 22
                             highlightFollowsCurrentItem: true
                             highlightRangeMode: ListView.StrictlyEnforceRange
-                            preferredHighlightBegin: Math.max(0, (height - lineH) / 2)
-                            preferredHighlightEnd: Math.min(height, (height + lineH) / 2)
+                            // Active line may wrap onto several rows, so centre using its real height.
+                            readonly property real activeH: currentItem ? currentItem.height : lineH
+                            preferredHighlightBegin: Math.max(0, (height - activeH) / 2)
+                            preferredHighlightEnd: Math.min(height, (height + activeH) / 2)
                             highlightMoveDuration: 420
                             highlightMoveVelocity: -1
 
@@ -4679,15 +4720,25 @@ Item {
                                 id: lyricsLineDelegate
                                 required property int index
                                 width: lyricsLineView.width
-                                height: lyricsLineView.lineH
+                                // Height follows the wrapped text (fixed once the width is known,
+                                // never animated), so long lyrics stack downwards instead of being cut.
+                                height: Math.max(lyricsLineView.lineH, lyricText.implicitHeight + 4)
                                 readonly property int lineDistance: Math.abs(index - lyricsLineView.currentIndex)
 
                                 Text {
-                                    anchors.fill: parent
+                                    id: lyricText
+                                    anchors.left: parent.left
+                                    anchors.right: parent.right
+                                    anchors.leftMargin: 6
+                                    anchors.rightMargin: 6
+                                    anchors.verticalCenter: parent.verticalCenter
                                     horizontalAlignment: Text.AlignHCenter
                                     verticalAlignment: Text.AlignVCenter
-                                    text: String(root.mediaLyricsLines[lyricsLineDelegate.index]
-                                        ? root.mediaLyricsLines[lyricsLineDelegate.index].text : "")
+                                    text: {
+                                        const l = root.mediaLyricsLines[lyricsLineDelegate.index]
+                                        if (!l) return ""
+                                        return l.gap ? "♪ ♪ ♪" : String(l.text)
+                                    }
                                     color: lyricsLineDelegate.lineDistance === 0
                                         ? Services.Theme.textPrimary : Services.Theme.textSecondary
                                     opacity: lyricsLineDelegate.lineDistance === 0
@@ -4696,8 +4747,9 @@ Item {
                                     // every frame and make it shimmer. Scale does the emphasis instead.
                                     font.pixelSize: 13
                                     font.weight: Font.DemiBold
+                                    wrapMode: Text.Wrap
+                                    maximumLineCount: 3
                                     elide: Text.ElideRight
-                                    wrapMode: Text.NoWrap
                                     transformOrigin: Item.Center
                                     scale: lyricsLineDelegate.lineDistance === 0 ? 1.0 : 0.78
 

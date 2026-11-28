@@ -17,14 +17,16 @@ RowLayout {
     readonly property bool isMacMenuBar: isIslands
 
     readonly property int pillHeight: isMinimal ? 24 : 28
-    readonly property int pillRadius: isMinimal ? 6 : (isIslands ? 7 : 10)
+    readonly property int pillRadius: isMinimal ? 6 : (isIslands ? 14 : 10)
 
-    // Hover background for macOS-style pills
+    // Hover background & bare light foreground for macOS-style pills
     readonly property bool glassDark: Services.Theme.isDark
+    readonly property color barTextPrimary: isMacMenuBar ? "#f6f6f9" : Services.Theme.textPrimary
+    readonly property color barTextSecondary: isMacMenuBar ? "#d8d8e4" : Services.Theme.textSecondary
     function getPillBg(hovered) {
         if (isMacMenuBar)
             return hovered
-                ? (glassDark ? Qt.rgba(1, 1, 1, 0.13) : Qt.rgba(0, 0, 0, 0.08))
+                ? Qt.rgba(1, 1, 1, glassDark ? 0.14 : 0.22)
                 : "transparent"
         if (isMinimal) return hovered ? Services.Theme.bgHover : "transparent"
         if (hovered) return glassDark ? Qt.rgba(1, 1, 1, 0.20) : Qt.rgba(1, 1, 1, 0.65)
@@ -99,55 +101,312 @@ RowLayout {
         return wsRoot.getAppDisplayName(Services.Workspaces ? Services.Workspaces.activeWindowAppId : "")
     }
 
-    // ── AT-SPI native menu model ─────────────────────────────────────────────
+    // ── AT-SPI / D-Bus native menu model ─────────────────────────────────────
     readonly property bool hasNativeMenu: Boolean(Services.AppMenu && Services.AppMenu.available && Services.AppMenu.model && Services.AppMenu.model.length > 0)
     readonly property var nativeMenuModel: (Services.AppMenu && Services.AppMenu.model) ? Services.AppMenu.model : []
 
-    // ── Standard macOS Menu Bar (Always persistent for apps without AT-SPI) ──
-    readonly property var standardFallbackMenu: [
-        {
-            label: "File",
-            children: [
-                { label: "New Window", shortcut: "Ctrl+Shift+N", actionType: "newWindow" },
+    // ── App class detection helpers ───────────────────────────────────────────
+    readonly property string activeAppClass: (Services.ActiveApp && Services.ActiveApp.windowClass) ? Services.ActiveApp.windowClass.toLowerCase() : ""
+    readonly property bool isBrowserApp:    /(firefox|chrome|chromium|helium|brave|vivaldi|zen|librewolf|epiphany|midori|falkon|qutebrowser)/.test(activeAppClass)
+    readonly property bool isChromiumApp:   /(chrome|chromium|helium|brave|vivaldi|zen|librewolf)/.test(activeAppClass)
+    readonly property bool isFirefoxApp:    /(firefox|librewolf|zen)/.test(activeAppClass)
+    readonly property bool isTerminalApp:   /(kitty|foot|footclient|alacritty|wezterm|konsole|gnome-terminal|gnome-console|xterm|rio|ghostty|blackbox|terminator)/.test(activeAppClass)
+    readonly property bool isZedApp:        /^(dev\.zed\.zed|zed)$/.test(activeAppClass)
+    readonly property bool isVSCodeApp:     /(code|codium|cursor)/.test(activeAppClass)
+    readonly property bool isEditorApp:     isZedApp || isVSCodeApp || /(subl|kate|gedit|featherpad|obsidian|mousepad|xed)/.test(activeAppClass)
+    readonly property bool isFileManager:   /(nautilus|dolphin|thunar|nemo|pcmanfm)/.test(activeAppClass)
+    readonly property bool isSpotifyApp:    /spotify/.test(activeAppClass)
+    readonly property bool isMediaApp:      isSpotifyApp || /(vlc|mpv|celluloid|clementine|rhythmbox|lollypop)/.test(activeAppClass)
+
+    // ── Context-Aware Smart Fallback Menu ─────────────────────────────────────
+    readonly property var standardFallbackMenu: {
+        var appName = currentAppName
+        var fs = Services.ActiveApp && Services.ActiveApp.isFullscreen
+        var fl = Services.ActiveApp && Services.ActiveApp.isFloating
+        var deskActions = (Services.ActiveApp && Services.ActiveApp.actions) ? Services.ActiveApp.actions : []
+
+        // ── FILE MENU ──────────────────────────────────────────────────────
+        var fileItems = []
+        if (isBrowserApp) {
+            fileItems = [
+                { label: "New Window",          shortcut: "Ctrl+N",         keyCombo: { key: "n",   mods: ["ctrl"] } },
+                { label: "New Private Window",  shortcut: "Ctrl+Shift+N",   keyCombo: { key: "n",   mods: ["ctrl", "shift"] } },
+                { label: "New Tab",             shortcut: "Ctrl+T",         keyCombo: { key: "t",   mods: ["ctrl"] } },
+                { label: "Reopen Closed Tab",   shortcut: "Ctrl+Shift+T",   keyCombo: { key: "t",   mods: ["ctrl", "shift"] } },
+                { label: "Open Location...",    shortcut: "Ctrl+L",         keyCombo: { key: "l",   mods: ["ctrl"] } },
                 { separator: true },
-                { label: "Close Window", shortcut: "Super+Q", actionType: "closeWindow" },
-                { label: "Quit " + currentAppName, shortcut: "Super+Shift+Q", actionType: "quitApp" }
-            ]
-        },
-        {
-            label: "Edit",
-            children: [
-                { label: "Cut", shortcut: "Ctrl+X", actionType: "cut" },
-                { label: "Copy", shortcut: "Ctrl+C", actionType: "copy" },
-                { label: "Paste", shortcut: "Ctrl+V", actionType: "paste" },
+                { label: "Save Page As...",     shortcut: "Ctrl+S",         keyCombo: { key: "s",   mods: ["ctrl"] } },
+                { label: "Print...",            shortcut: "Ctrl+P",         keyCombo: { key: "p",   mods: ["ctrl"] } },
                 { separator: true },
-                { label: "Select All", shortcut: "Ctrl+A", actionType: "selectAll" }
+                { label: "Close Tab",           shortcut: "Ctrl+W",         keyCombo: { key: "w",   mods: ["ctrl"] } },
+                { label: "Close Window",        shortcut: "Super+Q",        actionType: "closeWindow" },
+                { label: "Quit " + appName,     shortcut: "Super+Shift+Q",  actionType: "quitApp" }
             ]
-        },
-        {
-            label: "View",
-            children: [
-                { label: (Services.ActiveApp && Services.ActiveApp.isFullscreen) ? "Exit Fullscreen" : "Toggle Fullscreen", shortcut: "Super+F", actionType: "fullscreen" },
-                { label: (Services.ActiveApp && Services.ActiveApp.isFloating) ? "Tile Window" : "Float Window", shortcut: "Super+T", actionType: "float" },
-                { label: "Center Window", actionType: "center" }
+        } else if (isZedApp) {
+            fileItems = [
+                { label: "New File",            shortcut: "Ctrl+N",         keyCombo: { key: "n",     mods: ["ctrl"] } },
+                { label: "New Window",          shortcut: "Ctrl+Shift+N",   keyCombo: { key: "n",     mods: ["ctrl", "shift"] } },
+                { label: "Open...",             shortcut: "Ctrl+O",         keyCombo: { key: "o",     mods: ["ctrl"] } },
+                { label: "Open Recent...",      shortcut: "Ctrl+Alt+O",     keyCombo: { key: "o",     mods: ["ctrl", "alt"] } },
+                { separator: true },
+                { label: "Save",                shortcut: "Ctrl+S",         keyCombo: { key: "s",     mods: ["ctrl"] } },
+                { label: "Save As...",          shortcut: "Ctrl+Shift+S",   keyCombo: { key: "s",     mods: ["ctrl", "shift"] } },
+                { label: "Save All",            shortcut: "Ctrl+Alt+S",     keyCombo: { key: "s",     mods: ["ctrl", "alt"] } },
+                { separator: true },
+                { label: "Settings",            shortcut: "Ctrl+,",         keyCombo: { key: "comma", mods: ["ctrl"] } },
+                { separator: true },
+                { label: "Close Editor",        shortcut: "Ctrl+W",         keyCombo: { key: "w",     mods: ["ctrl"] } },
+                { label: "Close Window",        shortcut: "Ctrl+Shift+W",   keyCombo: { key: "w",     mods: ["ctrl", "shift"] } },
+                { label: "Quit " + appName,     shortcut: "Ctrl+Q",         keyCombo: { key: "q",     mods: ["ctrl"] } }
             ]
-        },
-        {
-            label: "Window",
-            children: [
-                { label: "Minimize", shortcut: "Super+H", actionType: "minimize" },
-                { label: "Next Window", shortcut: "Super+Tab", actionType: "nextWindow" },
-                { label: "Pin on All Workspaces", actionType: "pin" }
+        } else if (isVSCodeApp) {
+            fileItems = [
+                { label: "New File",            shortcut: "Ctrl+N",         keyCombo: { key: "n",   mods: ["ctrl"] } },
+                { label: "New Window",          shortcut: "Ctrl+Shift+N",   keyCombo: { key: "n",   mods: ["ctrl", "shift"] } },
+                { label: "Open File...",        shortcut: "Ctrl+O",         keyCombo: { key: "o",   mods: ["ctrl"] } },
+                { separator: true },
+                { label: "Save",                shortcut: "Ctrl+S",         keyCombo: { key: "s",   mods: ["ctrl"] } },
+                { label: "Save All",            shortcut: "Ctrl+K S",       keyCombo: { key: "s",   mods: ["ctrl"] } },
+                { separator: true },
+                { label: "Close Editor",        shortcut: "Ctrl+W",         keyCombo: { key: "w",   mods: ["ctrl"] } },
+                { label: "Close Window",        shortcut: "Super+Q",        actionType: "closeWindow" },
+                { label: "Quit " + appName,     shortcut: "Super+Shift+Q",  actionType: "quitApp" }
             ]
-        },
-        {
-            label: "Help",
-            children: [
-                { label: currentAppName + " Help", actionType: "aboutApp" },
-                { label: "Keybindings", actionType: "keybinds" }
+        } else if (isTerminalApp) {
+            fileItems = [
+                { label: "New Window",          shortcut: "Ctrl+Shift+N",   keyCombo: { key: "n",   mods: ["ctrl", "shift"] } },
+                { label: "New Tab",             shortcut: "Ctrl+Shift+T",   keyCombo: { key: "t",   mods: ["ctrl", "shift"] } },
+                { separator: true },
+                { label: "Close Tab",           shortcut: "Ctrl+Shift+W",   keyCombo: { key: "w",   mods: ["ctrl", "shift"] } },
+                { label: "Close Window",        shortcut: "Super+Q",        actionType: "closeWindow" },
+                { label: "Quit " + appName,     shortcut: "Super+Shift+Q",  actionType: "quitApp" }
+            ]
+        } else if (isFileManager) {
+            fileItems = [
+                { label: "New Window",          shortcut: "Ctrl+N",         keyCombo: { key: "n",   mods: ["ctrl"] } },
+                { label: "New Tab",             shortcut: "Ctrl+T",         keyCombo: { key: "t",   mods: ["ctrl"] } },
+                { label: "New Folder",          shortcut: "Ctrl+Shift+N",   keyCombo: { key: "n",   mods: ["ctrl", "shift"] } },
+                { separator: true },
+                { label: "Close Tab",           shortcut: "Ctrl+W",         keyCombo: { key: "w",   mods: ["ctrl"] } },
+                { label: "Close Window",        shortcut: "Super+Q",        actionType: "closeWindow" }
+            ]
+        } else if (isSpotifyApp) {
+            fileItems = [
+                { label: "New Playlist",        shortcut: "Ctrl+N",         keyCombo: { key: "n",   mods: ["ctrl"] } },
+                { label: "New Playlist Folder", shortcut: "Ctrl+Shift+N",   keyCombo: { key: "n",   mods: ["ctrl", "shift"] } },
+                { separator: true },
+                { label: "Settings...",         shortcut: "Ctrl+P",         keyCombo: { key: "p",   mods: ["ctrl"] } },
+                { separator: true },
+                { label: "Close Window",        shortcut: "Super+Q",        actionType: "closeWindow" },
+                { label: "Quit Spotify",        shortcut: "Super+Shift+Q",  actionType: "quitApp" }
+            ]
+        } else {
+            fileItems = [
+                { label: "New Window",          shortcut: "Ctrl+Shift+N",   actionType: "newWindow" },
+                { separator: true },
+                { label: "Close Window",        shortcut: "Super+Q",        actionType: "closeWindow" },
+                { label: "Quit " + appName,     shortcut: "Super+Shift+Q",  actionType: "quitApp" }
             ]
         }
-    ]
+
+        // Inject .desktop entry actions
+        if (deskActions.length > 0) {
+            fileItems.push({ separator: true })
+            for (var di = 0; di < deskActions.length; di++) {
+                var da = deskActions[di]
+                if (da && da.name) fileItems.push({ label: da.name, desktopActionIndex: di })
+            }
+        }
+
+        // ── EDIT MENU ──────────────────────────────────────────────────────
+        var editItems = []
+        if (isTerminalApp) {
+            editItems = [
+                { label: "Copy",                shortcut: "Ctrl+Shift+C",   keyCombo: { key: "c",   mods: ["ctrl", "shift"] } },
+                { label: "Paste",               shortcut: "Ctrl+Shift+V",   keyCombo: { key: "v",   mods: ["ctrl", "shift"] } },
+                { separator: true },
+                { label: "Find...",             shortcut: "Ctrl+Shift+H",   keyCombo: { key: "h",   mods: ["ctrl", "shift"] } },
+                { label: "Select All",          shortcut: "Ctrl+A",         keyCombo: { key: "a",   mods: ["ctrl"] } }
+            ]
+        } else if (isZedApp) {
+            editItems = [
+                { label: "Undo",                shortcut: "Ctrl+Z",         keyCombo: { key: "z",     mods: ["ctrl"] } },
+                { label: "Redo",                shortcut: "Ctrl+Shift+Z",   keyCombo: { key: "z",     mods: ["ctrl", "shift"] } },
+                { separator: true },
+                { label: "Cut",                 shortcut: "Ctrl+X",         keyCombo: { key: "x",     mods: ["ctrl"] } },
+                { label: "Copy",                shortcut: "Ctrl+C",         keyCombo: { key: "c",     mods: ["ctrl"] } },
+                { label: "Paste",               shortcut: "Ctrl+Shift+V",   keyCombo: { key: "v",     mods: ["ctrl", "shift"] } },
+                { separator: true },
+                { label: "Toggle Line Comment", shortcut: "Ctrl+/",         keyCombo: { key: "slash", mods: ["ctrl"] } },
+                { label: "Format Document",     shortcut: "Ctrl+Shift+I",   keyCombo: { key: "i",     mods: ["ctrl", "shift"] } },
+                { separator: true },
+                { label: "Find in File...",     shortcut: "Ctrl+F",         keyCombo: { key: "f",     mods: ["ctrl"] } },
+                { label: "Find in Project...",  shortcut: "Ctrl+Shift+F",   keyCombo: { key: "f",     mods: ["ctrl", "shift"] } }
+            ]
+        } else {
+            editItems = [
+                { label: "Undo",                shortcut: "Ctrl+Z",         keyCombo: { key: "z",   mods: ["ctrl"] } },
+                { label: "Redo",                shortcut: "Ctrl+Shift+Z",   keyCombo: { key: "z",   mods: ["ctrl", "shift"] } },
+                { separator: true },
+                { label: "Cut",                 shortcut: "Ctrl+X",         actionType: "cut" },
+                { label: "Copy",                shortcut: "Ctrl+C",         actionType: "copy" },
+                { label: "Paste",               shortcut: "Ctrl+V",         actionType: "paste" },
+                { separator: true },
+                { label: "Select All",          shortcut: "Ctrl+A",         actionType: "selectAll" },
+                { label: "Find...",             shortcut: "Ctrl+F",         keyCombo: { key: "f",   mods: ["ctrl"] } }
+            ]
+        }
+
+        // ── VIEW MENU ──────────────────────────────────────────────────────
+        var viewItems = [
+            { label: fs ? "Exit Fullscreen" : "Enter Fullscreen", shortcut: "Super+F", actionType: "fullscreen" },
+            { label: fl ? "Tile Window"     : "Float Window",     shortcut: "Super+T", actionType: "float" },
+            { label: "Center Window",                              shortcut: "Super+C", actionType: "center" }
+        ]
+        if (isBrowserApp) {
+            viewItems = viewItems.concat([
+                { separator: true },
+                { label: "Reload Page",         shortcut: "Ctrl+R",         keyCombo: { key: "r",       mods: ["ctrl"] } },
+                { label: "Hard Reload",         shortcut: "Ctrl+Shift+R",   keyCombo: { key: "r",       mods: ["ctrl", "shift"] } },
+                { label: "Zoom In",             shortcut: "Ctrl++",         keyCombo: { key: "equal",   mods: ["ctrl"] } },
+                { label: "Zoom Out",            shortcut: "Ctrl+-",         keyCombo: { key: "minus",   mods: ["ctrl"] } },
+                { label: "Reset Zoom",          shortcut: "Ctrl+0",         keyCombo: { key: "0",       mods: ["ctrl"] } },
+                { separator: true },
+                { label: "Developer Tools",     shortcut: "Ctrl+Shift+I",   keyCombo: { key: "i",       mods: ["ctrl", "shift"] } },
+                { label: "View Source",         shortcut: "Ctrl+U",         keyCombo: { key: "u",       mods: ["ctrl"] } }
+            ])
+        } else if (isZedApp) {
+            viewItems = viewItems.concat([
+                { separator: true },
+                { label: "Command Palette...",  shortcut: "Ctrl+Shift+P",   keyCombo: { key: "p",       mods: ["ctrl", "shift"] } },
+                { label: "Project Panel",       shortcut: "Ctrl+Shift+E",   keyCombo: { key: "e",       mods: ["ctrl", "shift"] } },
+                { label: "Git Panel",           shortcut: "Ctrl+Shift+G",   keyCombo: { key: "g",       mods: ["ctrl", "shift"] } },
+                { label: "Toggle Left Dock",    shortcut: "Ctrl+Shift+B",   keyCombo: { key: "b",       mods: ["ctrl", "shift"] } },
+                { label: "Toggle Bottom Dock",  shortcut: "Ctrl+J",         keyCombo: { key: "j",       mods: ["ctrl"] } },
+                { label: "Toggle Terminal",     shortcut: "Ctrl+`",         keyCombo: { key: "grave",   mods: ["ctrl"] } },
+                { separator: true },
+                { label: "Zoom In",             shortcut: "Ctrl+=",         keyCombo: { key: "equal",   mods: ["ctrl"] } },
+                { label: "Zoom Out",            shortcut: "Ctrl+-",         keyCombo: { key: "minus",   mods: ["ctrl"] } },
+                { label: "Reset Zoom",          shortcut: "Ctrl+0",         keyCombo: { key: "0",       mods: ["ctrl"] } }
+            ])
+        } else if (isVSCodeApp) {
+            viewItems = viewItems.concat([
+                { separator: true },
+                { label: "Command Palette...",  shortcut: "Ctrl+Shift+P",   keyCombo: { key: "p",       mods: ["ctrl", "shift"] } },
+                { label: "Toggle Sidebar",      shortcut: "Ctrl+B",         keyCombo: { key: "b",       mods: ["ctrl"] } },
+                { label: "Toggle Terminal",     shortcut: "Ctrl+`",         keyCombo: { key: "grave",   mods: ["ctrl"] } }
+            ])
+        } else if (isTerminalApp) {
+            viewItems = viewItems.concat([
+                { separator: true },
+                { label: "Zoom In",             shortcut: "Ctrl++",         keyCombo: { key: "equal",   mods: ["ctrl"] } },
+                { label: "Zoom Out",            shortcut: "Ctrl+-",         keyCombo: { key: "minus",   mods: ["ctrl"] } },
+                { label: "Reset Zoom",          shortcut: "Ctrl+0",         keyCombo: { key: "0",       mods: ["ctrl"] } }
+            ])
+        } else if (isSpotifyApp) {
+            viewItems = viewItems.concat([
+                { separator: true },
+                { label: "Search",              shortcut: "Ctrl+L",         keyCombo: { key: "l",       mods: ["ctrl"] } },
+                { label: "Filter",              shortcut: "Ctrl+F",         keyCombo: { key: "f",       mods: ["ctrl"] } },
+                { separator: true },
+                { label: "Zoom In",             shortcut: "Ctrl+=",         keyCombo: { key: "equal",   mods: ["ctrl"] } },
+                { label: "Zoom Out",            shortcut: "Ctrl+-",         keyCombo: { key: "minus",   mods: ["ctrl"] } },
+                { label: "Reset Zoom",          shortcut: "Ctrl+0",         keyCombo: { key: "0",       mods: ["ctrl"] } }
+            ])
+        }
+
+        // ── SELECTION / PLAYBACK / GO / TERMINAL (app-specific) ────────────
+        var selectionItems = null
+        var playbackItems = null
+        var goItems = null
+        var terminalItems = null
+        if (isBrowserApp) {
+            goItems = [
+                { label: "Back",                shortcut: "Alt+Left",           keyCombo: { key: "Left",    mods: ["alt"] } },
+                { label: "Forward",             shortcut: "Alt+Right",          keyCombo: { key: "Right",   mods: ["alt"] } },
+                { separator: true },
+                { label: "Home",                shortcut: "Alt+Home",           keyCombo: { key: "Home",    mods: ["alt"] } },
+                { separator: true },
+                { label: "Next Tab",            shortcut: "Ctrl+Tab",           keyCombo: { key: "Tab",     mods: ["ctrl"] } },
+                { label: "Previous Tab",        shortcut: "Ctrl+Shift+Tab",     keyCombo: { key: "Tab",     mods: ["ctrl", "shift"] } }
+            ]
+        } else if (isZedApp) {
+            selectionItems = [
+                { label: "Select All",          shortcut: "Ctrl+Shift+A",       keyCombo: { key: "a",       mods: ["ctrl", "shift"] } },
+                { label: "Expand Selection",    shortcut: "Alt+Up",             keyCombo: { key: "Up",      mods: ["alt"] } },
+                { label: "Shrink Selection",    shortcut: "Alt+Down",           keyCombo: { key: "Down",    mods: ["alt"] } },
+                { separator: true },
+                { label: "Add Cursor Above",    shortcut: "Ctrl+Alt+Up",        keyCombo: { key: "Up",      mods: ["ctrl", "alt"] } },
+                { label: "Add Cursor Below",    shortcut: "Ctrl+Alt+Down",      keyCombo: { key: "Down",    mods: ["ctrl", "alt"] } },
+                { label: "Select Next Occurrence", shortcut: "Ctrl+D",          keyCombo: { key: "d",       mods: ["ctrl"] } }
+            ]
+            goItems = [
+                { label: "Go to File...",       shortcut: "Ctrl+P",             keyCombo: { key: "p",       mods: ["ctrl"] } },
+                { label: "Go to Symbol...",     shortcut: "Ctrl+Shift+O",       keyCombo: { key: "o",       mods: ["ctrl", "shift"] } },
+                { label: "Workspace Symbols...", shortcut: "Ctrl+T",            keyCombo: { key: "t",       mods: ["ctrl"] } },
+                { label: "Go to Line...",       shortcut: "Ctrl+G",             keyCombo: { key: "g",       mods: ["ctrl"] } },
+                { separator: true },
+                { label: "Go to Definition",    shortcut: "F12",                keyCombo: { key: "F12",     mods: [] } },
+                { label: "Back",                shortcut: "Alt+Left",           keyCombo: { key: "Left",    mods: ["alt"] } },
+                { label: "Forward",             shortcut: "Alt+Right",          keyCombo: { key: "Right",   mods: ["alt"] } }
+            ]
+            terminalItems = [
+                { label: "Toggle Terminal",     shortcut: "Ctrl+`",             keyCombo: { key: "grave",   mods: ["ctrl"] } },
+                { label: "Split Right",         shortcut: "Ctrl+Shift+5",       keyCombo: { key: "5",       mods: ["ctrl", "shift"] } }
+            ]
+        } else if (isSpotifyApp) {
+            playbackItems = [
+                { label: "Play / Pause",        shortcut: "Space",              keyCombo: { key: "space",   mods: [] } },
+                { label: "Next Track",          shortcut: "Ctrl+Right",         keyCombo: { key: "Right",   mods: ["ctrl"] } },
+                { label: "Previous Track",      shortcut: "Ctrl+Left",          keyCombo: { key: "Left",    mods: ["ctrl"] } },
+                { separator: true },
+                { label: "Seek Forward",        shortcut: "Shift+Right",        keyCombo: { key: "Right",   mods: ["shift"] } },
+                { label: "Seek Backward",       shortcut: "Shift+Left",         keyCombo: { key: "Left",    mods: ["shift"] } },
+                { separator: true },
+                { label: "Shuffle",             shortcut: "Ctrl+S",             keyCombo: { key: "s",       mods: ["ctrl"] } },
+                { label: "Repeat",              shortcut: "Ctrl+R",             keyCombo: { key: "r",       mods: ["ctrl"] } },
+                { separator: true },
+                { label: "Volume Up",           shortcut: "Ctrl+Up",            keyCombo: { key: "Up",      mods: ["ctrl"] } },
+                { label: "Volume Down",         shortcut: "Ctrl+Down",          keyCombo: { key: "Down",    mods: ["ctrl"] } },
+                { label: "Mute",                shortcut: "Ctrl+Shift+Down",    keyCombo: { key: "Down",    mods: ["ctrl", "shift"] } }
+            ]
+            goItems = [
+                { label: "Back",                shortcut: "Alt+Left",           keyCombo: { key: "Left",    mods: ["alt"] } },
+                { label: "Forward",             shortcut: "Alt+Right",          keyCombo: { key: "Right",   mods: ["alt"] } },
+                { separator: true },
+                { label: "Home",                shortcut: "Alt+Shift+H",        keyCombo: { key: "h",       mods: ["alt", "shift"] } },
+                { label: "Search",              shortcut: "Ctrl+L",             keyCombo: { key: "l",       mods: ["ctrl"] } },
+                { label: "Your Library",        shortcut: "Alt+Shift+L",        keyCombo: { key: "l",       mods: ["alt", "shift"] } },
+                { label: "Liked Songs",         shortcut: "Alt+Shift+S",        keyCombo: { key: "s",       mods: ["alt", "shift"] } }
+            ]
+        }
+
+        // ── WINDOW MENU ───────────────────────────────────────────────────
+        var windowItems = [
+            { label: "Minimize",        shortcut: "Super+H",    actionType: "minimize" },
+            { label: "Next Window",     shortcut: "Super+Tab",  actionType: "nextWindow" },
+            { label: "Pin on All",      actionType: "pin" }
+        ]
+
+        // ── HELP MENU ─────────────────────────────────────────────────────
+        var helpItems = [
+            { label: appName + " Help", actionType: "aboutApp" },
+            { label: "Keybindings",     actionType: "keybinds" }
+        ]
+
+        var menu = [
+            { label: "File",    children: fileItems },
+            { label: "Edit",    children: editItems }
+        ]
+        if (selectionItems) menu.push({ label: "Selection", children: selectionItems })
+        menu.push({ label: "View", children: viewItems })
+        if (playbackItems) menu.push({ label: "Playback", children: playbackItems })
+        if (goItems) menu.push({ label: "Go", children: goItems })
+        if (terminalItems) menu.push({ label: "Terminal", children: terminalItems })
+        menu.push({ label: "Window",  children: windowItems })
+        menu.push({ label: "Help",    children: helpItems })
+        return menu
+    }
 
     readonly property var activeMenuModel: hasNativeMenu ? nativeMenuModel : standardFallbackMenu
 
@@ -206,7 +465,7 @@ RowLayout {
                     font.family: Services.Theme.fontSymbols
                     font.pixelSize: wsRoot.isMinimal ? Services.Theme.fontSizeXl : (wsRoot.isMacMenuBar ? Math.round(Services.Theme.fontSizeXl * 1.2) : Services.Theme.fontSize3xl)
                     color: wsRoot.isMacMenuBar
-                        ? (logoMouse.containsMouse ? Services.Theme.accent : Services.Theme.textPrimary)
+                        ? (logoMouse.containsMouse ? Services.Theme.accent : wsRoot.barTextPrimary)
                         : (logoMouse.containsMouse ? Qt.lighter(Services.Theme.accent, 1.2) : Services.Theme.accent)
                     scale: logoMouse.containsMouse ? 1.1 : 1.0
 
@@ -401,91 +660,131 @@ RowLayout {
     }
 
     // ── 2. macOS-style Global Application Menu (islands mode) ─────────────────
-    // 2a. Active App Name Pill (macOS style: bold, click for window controls / fallback menu)
-    Rectangle {
-        id: appNamePill
-        visible: wsRoot.isMacMenuBar
-        implicitHeight: wsRoot.pillHeight
-        implicitWidth: appNameText.implicitWidth + 14
-        radius: wsRoot.pillRadius
-
-        readonly property bool isCurrentOpen: Boolean(appMenuPopup && appMenuPopup.isOpen && appMenuPopup.isFallback)
-        color: (isCurrentOpen || appNameMouse.containsMouse) ? wsRoot.getPillBg(true) : "transparent"
-        Behavior on color { ColorAnimation { duration: 150 } }
-
-        Text {
-            id: appNameText
-            anchors.centerIn: parent
-            text: wsRoot.currentAppName
-            font.family: Services.Theme.fontFamily
-            font.pixelSize: Services.Theme.fontSizeMd
-            font.weight: Font.Bold
-            color: appNamePill.isCurrentOpen ? Services.Theme.accent : Services.Theme.textPrimary
-            elide: Text.ElideRight
-        }
-
-        MouseArea {
-            id: appNameMouse
-            anchors.fill: parent
-            hoverEnabled: true
-            cursorShape: Qt.PointingHandCursor
-            onClicked: {
-                if (appNamePill.isCurrentOpen) {
-                    wsRoot.closeMenu()
-                } else {
-                    wsRoot.openMenu(null, true, appNamePill)
-                }
-            }
-        }
+    readonly property bool showGlobalMenu: wsRoot.isMacMenuBar && Boolean(Services.ActiveApp && Services.ActiveApp.hasWindow)
+    onShowGlobalMenuChanged: {
+        if (!showGlobalMenu) closeMenu()
     }
 
-    // 2b. Real AT-SPI or Standard macOS Menu Bar Items
-    Repeater {
-        id: menuItemRepeater
-        model: wsRoot.isMacMenuBar ? wsRoot.activeMenuModel : []
+    Item {
+        id: globalMenuContainer
+        visible: wsRoot.isMacMenuBar && (opacity > 0.01 || wsRoot.showGlobalMenu)
+        clip: true
+        opacity: wsRoot.showGlobalMenu ? 1.0 : 0.0
+        Layout.alignment: Qt.AlignVCenter
+        Layout.preferredHeight: wsRoot.pillHeight
+        Layout.preferredWidth: wsRoot.showGlobalMenu ? globalMenuRow.implicitWidth : 0
 
-        Rectangle {
-            id: menuPill
-            required property var modelData
-            required property int index
+        Behavior on opacity {
+            NumberAnimation { duration: 220; easing.type: Easing.OutCubic }
+        }
+        Behavior on Layout.preferredWidth {
+            NumberAnimation { duration: 260; easing.type: Easing.OutCubic }
+        }
 
-            visible: wsRoot.isMacMenuBar
-            implicitHeight: wsRoot.pillHeight
-            implicitWidth: menuPillText.implicitWidth + 12
-            radius: wsRoot.pillRadius
+        RowLayout {
+            id: globalMenuRow
+            anchors.verticalCenter: parent.verticalCenter
+            x: wsRoot.showGlobalMenu ? 0 : -8
+            spacing: wsRoot.spacing
 
-            readonly property bool isCurrentOpen: Boolean(appMenuPopup && appMenuPopup.isOpen && !appMenuPopup.isFallback && appMenuPopup.activeMenuData === modelData)
-            color: (isCurrentOpen || menuPillMouse.containsMouse) ? wsRoot.getPillBg(true) : "transparent"
-            Behavior on color { ColorAnimation { duration: 120 } }
-
-            Text {
-                id: menuPillText
-                anchors.centerIn: parent
-                text: menuPill.modelData.label || ""
-                font.family: Services.Theme.fontFamily
-                font.pixelSize: Services.Theme.fontSizeSm
-                font.weight: Font.Medium
-                color: menuPill.isCurrentOpen ? Services.Theme.accent : Services.Theme.textPrimary
+            Behavior on x {
+                NumberAnimation { duration: 240; easing.type: Easing.OutCubic }
             }
 
-            MouseArea {
-                id: menuPillMouse
-                anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
+            // 2a. Active App Name Pill (macOS style: bold, click for window controls / fallback menu)
+            Rectangle {
+                id: appNamePill
+                implicitHeight: wsRoot.pillHeight
+                implicitWidth: Math.ceil(appNameText.implicitWidth) + 14
+                radius: wsRoot.pillRadius
 
-                onEntered: {
-                    // macOS scrub: if any menu is already open, hovering another menu switches instantly!
-                    if (appMenuPopup && appMenuPopup.isOpen && !appMenuPopup.isFallback && appMenuPopup.activeMenuData !== menuPill.modelData) {
-                        wsRoot.openMenu(menuPill.modelData, false, menuPill)
-                    }
+                Behavior on implicitWidth {
+                    NumberAnimation { duration: 220; easing.type: Easing.OutCubic }
                 }
 
-                onClicked: {
-                    if (menuPill.isCurrentOpen) {
-                        wsRoot.closeMenu()
-                    } else {
-                        wsRoot.openMenu(menuPill.modelData, false, menuPill)
+                readonly property bool isCurrentOpen: Boolean(appMenuPopup && appMenuPopup.isOpen && appMenuPopup.isFallback)
+                color: (isCurrentOpen || appNameMouse.containsMouse) ? wsRoot.getPillBg(true) : "transparent"
+                Behavior on color { ColorAnimation { duration: 150 } }
+
+                Text {
+                    id: appNameText
+                    anchors.centerIn: parent
+                    text: wsRoot.currentAppName
+                    font.family: Services.Theme.fontFamily
+                    font.pixelSize: Services.Theme.fontSizeMd
+                    font.weight: Font.Bold
+                    color: appNamePill.isCurrentOpen ? Services.Theme.accent : wsRoot.barTextPrimary
+                    elide: Text.ElideRight
+                }
+
+                MouseArea {
+                    id: appNameMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: {
+                        if (appNamePill.isCurrentOpen) {
+                            wsRoot.closeMenu()
+                        } else {
+                            wsRoot.openMenu(null, true, appNamePill)
+                        }
+                    }
+                }
+            }
+
+            // 2b. Real AT-SPI or Standard macOS Menu Bar Items
+            Repeater {
+                id: menuItemRepeater
+                model: globalMenuContainer.visible ? wsRoot.activeMenuModel : []
+
+                Rectangle {
+                    id: menuPill
+                    required property var modelData
+                    required property int index
+
+                    visible: !Boolean(modelData.separator) && Boolean(modelData.label && modelData.label.length > 0)
+                    implicitHeight: wsRoot.pillHeight
+                    implicitWidth: Math.ceil(menuPillText.implicitWidth) + 12
+                    radius: wsRoot.pillRadius
+
+                    Behavior on implicitWidth {
+                        NumberAnimation { duration: 200; easing.type: Easing.OutCubic }
+                    }
+
+                    readonly property bool isCurrentOpen: Boolean(appMenuPopup && appMenuPopup.isOpen && !appMenuPopup.isFallback && appMenuPopup.activeMenuData === modelData)
+                    color: (isCurrentOpen || menuPillMouse.containsMouse) ? wsRoot.getPillBg(true) : "transparent"
+                    Behavior on color { ColorAnimation { duration: 120 } }
+
+                    Text {
+                        id: menuPillText
+                        anchors.centerIn: parent
+                        text: menuPill.modelData.label || ""
+                        font.family: Services.Theme.fontFamily
+                        font.pixelSize: Services.Theme.fontSizeMd
+                        font.weight: Font.Medium
+                        color: menuPill.isCurrentOpen ? Services.Theme.accent : wsRoot.barTextPrimary
+                    }
+
+                    MouseArea {
+                        id: menuPillMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+
+                        onEntered: {
+                            // macOS scrub: if any menu is already open, hovering another menu switches instantly!
+                            if (appMenuPopup && appMenuPopup.isOpen && !appMenuPopup.isFallback && appMenuPopup.activeMenuData !== menuPill.modelData) {
+                                wsRoot.openMenu(menuPill.modelData, false, menuPill)
+                            }
+                        }
+
+                        onClicked: {
+                            if (menuPill.isCurrentOpen) {
+                                wsRoot.closeMenu()
+                            } else {
+                                wsRoot.openMenu(menuPill.modelData, false, menuPill)
+                            }
+                        }
                     }
                 }
             }

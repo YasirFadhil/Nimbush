@@ -34,6 +34,7 @@ Scope {
     property bool lockscreenCcOpen: false
     property bool lockscreenPwrOpen: false
     property bool userRevealedInput: false
+    readonly property bool disablePasswordTyping: Services.Config ? Services.Config.lockscreenDisablePassword : false
 
     property bool isFaceVerified: false
     property bool isFaceContracted: false
@@ -136,7 +137,7 @@ Scope {
             root.isLocked = true
             sessionLock.locked = true
             root.isRevealed = true
-            if (typeof pwTextInput !== "undefined" && pwTextInput) {
+            if (!root.disablePasswordTyping && typeof pwTextInput !== "undefined" && pwTextInput) {
                 pwTextInput.forceActiveFocus()
             }
         }
@@ -148,7 +149,7 @@ Scope {
             deviceLockedPeekStartTimer.restart()
             lockTopBarEjectAnim.restart()
             lockGenieAnim.restart()
-            if (typeof pwTextInput !== "undefined" && pwTextInput) {
+            if (!root.disablePasswordTyping && typeof pwTextInput !== "undefined" && pwTextInput) {
                 pwTextInput.forceActiveFocus()
             }
         } else {
@@ -575,6 +576,20 @@ Scope {
         dateStr = Qt.formatDateTime(now, "dddd, MMMM d")
     }
 
+    function handleNoPasswordAction() {
+        if ((Services.FaceId && Services.FaceId.status === "success") || root.isFaceVerified) {
+            root.unlockSuccess()
+            return
+        }
+        if (Services.FaceId && Services.FaceId.isEnabled && Services.FaceId.isEnrolled) {
+            if (!Services.FaceId.isScanning) {
+                root.triggerFaceIdScan()
+            }
+            return
+        }
+        root.unlockSuccess()
+    }
+
     function authenticate() {
         if (isAuthenticating) return
         const pw = passwordInput.trim()
@@ -778,12 +793,21 @@ Scope {
                             event.accepted = true
                             return
                         }
+                        if (root.disablePasswordTyping) {
+                            event.accepted = true
+                            return
+                        }
                         root.passwordInput = ""
                         root.userRevealedInput = false
                         if (typeof pwTextInput !== "undefined" && pwTextInput) pwTextInput.text = ""
                         root.triggerShake("Password required")
                         event.accepted = true
                     } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+                        if (root.disablePasswordTyping) {
+                            root.handleNoPasswordAction()
+                            event.accepted = true
+                            return
+                        }
                         if (typeof pwTextInput !== "undefined" && pwTextInput) root.passwordInput = pwTextInput.text
                         if (root.passwordInput.length === 0) {
                             if ((Services.FaceId && Services.FaceId.status === "success") || root.isFaceVerified) {
@@ -803,7 +827,12 @@ Scope {
                         }
                         root.authenticate()
                         event.accepted = true
-                    } else if (event.key === Qt.Key_Space && (!pwTextInput || pwTextInput.text.length === 0)) {
+                    } else if (event.key === Qt.Key_Space && (root.disablePasswordTyping || !pwTextInput || pwTextInput.text.length === 0)) {
+                        if (root.disablePasswordTyping) {
+                            root.handleNoPasswordAction()
+                            event.accepted = true
+                            return
+                        }
                         if ((Services.FaceId && Services.FaceId.status === "success") || root.isFaceVerified) {
                             root.unlockSuccess()
                             event.accepted = true
@@ -822,6 +851,10 @@ Scope {
                         root.capsLockOn = !root.capsLockOn
                         event.accepted = true
                     } else {
+                        if (root.disablePasswordTyping) {
+                            event.accepted = true
+                            return
+                        }
                         // Intelligent CapsLock auto-detection heuristic based on typed character casing vs Shift key
                         if (event.text && event.text.length === 1) {
                             const c = event.text
@@ -1546,6 +1579,10 @@ Scope {
                     anchors.fill: parent
                     enabled: !root.lockscreenCcOpen
                     onClicked: {
+                        if (root.disablePasswordTyping) {
+                            root.handleNoPasswordAction()
+                            return
+                        }
                         root.userRevealedInput = true
                         pwTextInput.forceActiveFocus()
                     }
@@ -2012,7 +2049,7 @@ Scope {
                             readonly property string avatarShape: Services.Config ? Services.Config.lockscreenAvatarShape : "squircle"
                             readonly property bool showAvatarRing: Services.Config ? Services.Config.lockscreenAvatarRing : false
                             readonly property string inputStyle: root.isMinimal ? "underline" : (Services.Config ? Services.Config.lockscreenInputStyle : "pill")
-                            readonly property bool showPasswordBox: root.userRevealedInput || (root.passwordInput.length > 0) || root.isError || root.isAuthenticating || root.isCompact
+                            readonly property bool showPasswordBox: !root.disablePasswordTyping && (root.userRevealedInput || (root.passwordInput.length > 0) || root.isError || root.isAuthenticating || root.isCompact)
                             // Keep the idle field compact. Only grow it when the masked text
                             // reaches the usable width, and cap the expansion at 5%.
                             readonly property real normalInputWidth: inputStyle === "underline" ? 180 : 190
@@ -2106,7 +2143,7 @@ Scope {
 
                             // Modern PIN Dots Indicator Bar
                             RowLayout {
-                                visible: !root.isCompact && centerAuthCard.inputStyle === "dots"
+                                visible: !root.disablePasswordTyping && !root.isCompact && centerAuthCard.inputStyle === "dots"
                                 anchors.horizontalCenter: parent.horizontalCenter
                                 y: 2
                                 spacing: 10
@@ -2285,7 +2322,7 @@ Scope {
                                             clip: true
                                             focus: false
                                             cursorVisible: activeFocus
-                                            enabled: !root.isAuthenticating
+                                            enabled: !root.isAuthenticating && !root.disablePasswordTyping
 
                                             onAccepted: {
                                                 root.passwordInput = text
@@ -2424,8 +2461,8 @@ Scope {
                             Item {
                                 id: authPrompt
                                 visible: opacity > 0.01
-                                opacity: (!centerAuthCard.showPasswordBox && !root.isCompact) ? 0.85 : 0.0
-                                scale: (!centerAuthCard.showPasswordBox && !root.isCompact) ? 1.0 : 0.82
+                                opacity: (!centerAuthCard.showPasswordBox && (!root.isCompact || root.disablePasswordTyping)) ? 0.85 : 0.0
+                                scale: (!centerAuthCard.showPasswordBox && (!root.isCompact || root.disablePasswordTyping)) ? 1.0 : 0.82
                                 anchors.horizontalCenter: parent.horizontalCenter
                                 y: usernameText.visible ? 175 : 164
                                 width: promptLabel.implicitWidth + 20
@@ -2445,9 +2482,9 @@ Scope {
                                             if (Services.FaceId.status === "detected") return "Verifying Face..."
                                             if (Services.FaceId.status === "scanning") return "Looking for Face..."
                                             if (Services.FaceId.status === "timeout") return "Face not matched (Click to retry)"
-                                            return "Face ID or Enter Password"
+                                            return root.disablePasswordTyping ? "Face ID to unlock" : "Face ID or Enter Password"
                                         }
-                                        return "Touch ID or Enter Password"
+                                        return root.disablePasswordTyping ? "Click or Press Enter to unlock" : "Touch ID or Enter Password"
                                     }
                                     color: (Services.FaceId && (Services.FaceId.status === "success" || root.isFaceVerified)) ? Services.Theme.success : Services.Theme.textSecondary
                                     font.pixelSize: 11
@@ -2471,6 +2508,10 @@ Scope {
                                     anchors.fill: parent
                                     cursorShape: Qt.PointingHandCursor
                                     onClicked: {
+                                        if (root.disablePasswordTyping) {
+                                            root.handleNoPasswordAction()
+                                            return
+                                        }
                                         if ((Services.FaceId && Services.FaceId.status === "success") || root.isFaceVerified) {
                                             root.unlockSuccess()
                                             return

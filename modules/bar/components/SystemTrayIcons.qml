@@ -19,16 +19,16 @@ Rectangle {
     property bool trayCompact: false
     property bool trayYielded: false
 
-    readonly property real trayWidthFull: trayLayout.implicitWidth + 16
+    readonly property bool isMacMenuBar: Services.Config ? Services.Config.barStyle === "islands" : true
+    readonly property real trayPadding: isMacMenuBar ? 10 : 16
+    readonly property real trayWidthFull: trayLayout.implicitWidth + trayPadding
     readonly property real trayWidthCompact: trayWidthFull
 
     implicitHeight: 28
-    implicitWidth: trayLayout.implicitWidth + 16
+    implicitWidth: trayLayout.implicitWidth + trayPadding
     radius: 14
     readonly property bool glassDark: Services.Theme.isDark
-    readonly property bool isMacMenuBar: Services.Config ? Services.Config.barStyle === "islands" : true
-    // In the menu-bar layout, individual icons provide their own hover feedback.
-    // Other bar styles keep the existing glass capsule around the tray group.
+    // In macOS menu-bar mode the group is visually unboxed; each icon owns its hover feedback.
     color: isMacMenuBar ? "transparent" : (glassDark ? Qt.rgba(0.11, 0.11, 0.12, 0.38) : Qt.rgba(1, 1, 1, 0.30))
     border.color: isMacMenuBar ? "transparent" : (glassDark ? Qt.rgba(1, 1, 1, 0.18) : Qt.rgba(1, 1, 1, 0.50))
     border.width: isMacMenuBar ? 0 : 1
@@ -62,7 +62,11 @@ Rectangle {
                     id: itemBg
                     anchors.fill: parent
                     radius: Services.Theme.radiusSm
-                    color: itemArea.containsMouse ? (trayPill.glassDark ? Qt.rgba(1, 1, 1, 0.16) : Qt.rgba(1, 1, 1, 0.55)) : "transparent"
+                    color: itemArea.containsMouse
+                        ? (trayPill.isMacMenuBar
+                            ? Qt.rgba(1, 1, 1, trayPill.glassDark ? 0.14 : 0.22)
+                            : (trayPill.glassDark ? Qt.rgba(1, 1, 1, 0.16) : Qt.rgba(1, 1, 1, 0.55)))
+                        : "transparent"
                     border.color: "transparent"
                     border.width: 1
 
@@ -102,7 +106,7 @@ Rectangle {
                     text: "󰍹"
                     font.family: Services.Theme.fontSymbols
                     font.pixelSize: Services.Theme.fontSizeLg
-                    color: Services.Theme.textSecondary
+                    color: trayPill.isMacMenuBar ? "#d8d8e4" : Services.Theme.textSecondary
                 }
 
                 MouseArea {

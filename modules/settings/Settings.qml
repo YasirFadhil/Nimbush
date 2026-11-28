@@ -1,21 +1,25 @@
 import Quickshell
-import Quickshell.Wayland
 import Quickshell.Io
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
-import QtQuick.Effects
 import "../../services" as Services
 
+// ─────────────────────────────────────────────────────────────────────────────
+//  Settings  ·  compact / minimalist rewrite
+//  - public API unchanged: show/hide/toggle/open/close, overlayId, currentTab, compSubTab
+//  - tab indices unchanged: 0 Appearance · 1 Bar&Dock · 2 Notifications · 3 Sound
+//                           4 Lock&Power · 5 Compositor · 6 Keybindings · 7 Backup · 8 About
+// ─────────────────────────────────────────────────────────────────────────────
 FloatingWindow {
     id: rootWindow
 
     title: "Quickshell Settings"
     visible: false
-    implicitWidth: 980
-    implicitHeight: 680
-    minimumSize: Qt.size(480, 400)
-    color: Services.Theme.isDark ? "#16161a" : "#f4f5f8"
+    implicitWidth: 820
+    implicitHeight: 580
+    minimumSize: Qt.size(460, 380)
+    color: ui.bg
 
     property string overlayId: "settings"
     property int currentTab: 0
@@ -37,6 +41,8 @@ FloatingWindow {
     property string keyCategory: "all"
     property string keyBehaviourFilter: "all" // "all", "repeat", "locked", "mouse", "passthrough"
     property string sidebarSearchQuery: ""
+    property bool sidebarCollapsed: false
+    readonly property bool sidebarCompact: sidebarCollapsed || rootWindow.width < 580
     property bool isAddingKeybind: false
     property var editingBindId: ""
     property int editingBindLine: -1
@@ -617,119 +623,674 @@ FloatingWindow {
         }
     }
 
-    Item {
-        id: keyFocus
-        anchors.fill: parent
-        focus: true
-        Keys.onEscapePressed: (event) => {
-            rootWindow.hide()
-            event.accepted = true
-        }
+    // ═════════════════════════════════════════════════════════════════════════
+    //  DESIGN TOKENS  ·  flat, hairline-ruled, 12px base, 24px controls
+    // ═════════════════════════════════════════════════════════════════════════
+    QtObject {
+        id: ui
+
+        readonly property bool dark: Services.Theme.isDark
+        readonly property color bg: Services.Theme.bg
+        readonly property color fg: Services.Theme.textPrimary
+        readonly property color dim: Services.Theme.textSecondary
+        readonly property color faint: Services.Theme.textDisabled
+        readonly property color accent: Services.Theme.accent
+        readonly property color onAccent: Services.Theme.bgOnAccent || "#ffffff"
+        readonly property color danger: Services.Theme.danger
+        readonly property color ok: Services.Theme.success || "#34c759"
+        readonly property color warn: Services.Theme.warning || "#f5a524"
+
+        function tone(a) { return Qt.rgba(fg.r, fg.g, fg.b, a) }
+        function wash(a) { return Qt.rgba(accent.r, accent.g, accent.b, a) }
+        function dng(a)  { return Qt.rgba(danger.r, danger.g, danger.b, a) }
+
+        readonly property color line: tone(0.08)
+        readonly property color fill: tone(0.06)
+        readonly property color fillHi: tone(0.12)
+        readonly property color rail: Qt.tint(bg, tone(0.035))
+
+        readonly property int rowH: 34
+        readonly property int ctlH: 24
+        readonly property int r: 6
     }
 
     // ═════════════════════════════════════════════════════════════════════════
-    // REUSABLE BALANCED "MEDIUM" SETTINGS COMPONENTS
+    //  PRIMITIVES
     // ═════════════════════════════════════════════════════════════════════════
 
-    // ── 1. Section Header & Inset Grouped Card ───────────────────────────────
-    component SettingsSection: ColumnLayout {
-        id: secRoot
-        property string title: ""
-        property string icon: ""
-        default property alias content: cardContent.data
+    // Toggle: 30x16 pill
+    component Tgl: Rectangle {
+        id: tg
+        property bool on: false
+        property bool interactive: true
+        signal flipped(bool v)
 
-        Layout.fillWidth: true
-        spacing: 6
-
-        RowLayout {
-            visible: secRoot.title.length > 0
-            spacing: 6
-            Layout.leftMargin: 2
-
-            Text {
-                visible: secRoot.icon.length > 0
-                text: secRoot.icon
-                font.family: Services.Theme.fontSymbols
-                font.pixelSize: 11
-                color: Services.Theme.accent
-                Layout.alignment: Qt.AlignVCenter
-            }
-
-            Text {
-                text: secRoot.title.toUpperCase()
-                font.pixelSize: 10
-                font.weight: Font.DemiBold
-                font.letterSpacing: 0.8
-                color: Services.Theme.textSecondary
-                Layout.alignment: Qt.AlignVCenter
-            }
-        }
+        implicitWidth: 30
+        implicitHeight: 16
+        radius: 8
+        color: on ? ui.accent : ui.tone(0.20)
+        Behavior on color { ColorAnimation { duration: 110 } }
 
         Rectangle {
-            Layout.fillWidth: true
-            implicitHeight: cardContent.implicitHeight + 8
-            radius: 12
-            color: Services.Theme.isDark ? "#1c1c22" : "#ffffff"
-            border.color: Services.Theme.isDark ? "#282832" : "#e2e8f0"
-            border.width: 1
+            width: 12; height: 12; radius: 6
+            y: 2
+            x: tg.on ? tg.width - width - 2 : 2
+            color: tg.on ? ui.onAccent : ui.tone(0.65)
+            Behavior on x { NumberAnimation { duration: 110; easing.type: Easing.OutCubic } }
+        }
+        TapHandler { enabled: tg.interactive; onTapped: tg.flipped(!tg.on) }
+        HoverHandler { enabled: tg.interactive; cursorShape: Qt.PointingHandCursor }
+    }
 
-            ColumnLayout {
-                id: cardContent
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.top: parent.top
-                anchors.margins: 4
-                spacing: 0
+    // Segmented control (<= 5 short options)
+    component Seg: Rectangle {
+        id: seg
+        property var options: []
+        property var current: null
+        signal picked(var val)
+
+        implicitHeight: ui.ctlH
+        implicitWidth: segRow.implicitWidth + 4
+        radius: ui.r
+        color: ui.fill
+
+        Row {
+            id: segRow
+            x: 2; y: 2
+            spacing: 0
+            Repeater {
+                model: seg.options
+                delegate: Rectangle {
+                    id: sg
+                    required property var modelData
+                    readonly property bool sel: sg.modelData.id === seg.current
+                    height: seg.height - 4
+                    width: sgText.implicitWidth + 16
+                    radius: ui.r - 2
+                    color: sg.sel ? ui.wash(0.20) : (sgMa.containsMouse ? ui.tone(0.06) : "transparent")
+                    Behavior on color { ColorAnimation { duration: 90 } }
+                    Text {
+                        id: sgText
+                        anchors.centerIn: parent
+                        text: sg.modelData.label
+                        font.pixelSize: 11
+                        font.weight: sg.sel ? Font.DemiBold : Font.Normal
+                        color: sg.sel ? ui.accent : ui.dim
+                    }
+                    MouseArea {
+                        id: sgMa
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: seg.picked(sg.modelData.id)
+                    }
+                }
             }
         }
     }
 
-    // ── 2. Settings Row (Clean Typography on Left, Control on Right) ──────────
-    component SettingsRow: Rectangle {
-        id: rowRoot
-        property string title: ""
-        property string subtitle: ""
-        default property alias control: controlSlot.data
+    // Dropdown (long lists / searchable)
+    component Pick: Rectangle {
+        id: pk
+        property var model: []
+        property var current: null
+        property bool searchable: false
+        property int minW: 96
+        property int maxW: 190
+        property int popH: 230
+        property string query: ""
+        property bool up: false
+        property real gx: 0
+        signal picked(var val)
 
-        Layout.fillWidth: true
-        implicitHeight: Math.max(46, textCol.implicitHeight + 18)
-        radius: 8
-        color: "transparent"
+        readonly property var cur: {
+            for (let i = 0; i < model.length; i++) {
+                if (model[i].id === current) return model[i]
+            }
+            return model.length > 0 ? model[0] : { label: "—" }
+        }
+        readonly property var shown: {
+            if (!searchable || query.trim().length === 0) return model
+            const q = query.toLowerCase().trim()
+            return model.filter(function(it) { return (it.label || "").toLowerCase().indexOf(q) !== -1 })
+        }
+
+        function openPop() {
+            query = ""
+            const gp = pk.mapToItem(rootWindow.contentItem, 0, 0)
+            const h = Math.min(popH, (searchable ? 32 : 0) + Math.max(1, shown.length) * 26 + 8)
+            gx = gp ? gp.x : 0
+            up = gp ? ((rootWindow.height - (gp.y + pk.height) < h + 12) && gp.y > h + 12) : false
+            pop.open()
+        }
+
+        implicitHeight: ui.ctlH
+        implicitWidth: Math.min(maxW, Math.max(minW, pkLabel.implicitWidth + 32))
+        radius: ui.r
+        color: pop.visible ? ui.wash(0.16) : (pkMa.containsMouse ? ui.fillHi : ui.fill)
+        Behavior on color { ColorAnimation { duration: 90 } }
+
+        Text {
+            id: pkLabel
+            anchors.left: parent.left
+            anchors.leftMargin: 9
+            anchors.right: pkArrow.left
+            anchors.rightMargin: 4
+            anchors.verticalCenter: parent.verticalCenter
+            text: pk.cur ? (pk.cur.label || "") : ""
+            font.pixelSize: 11
+            color: ui.fg
+            elide: Text.ElideRight
+        }
+        Text {
+            id: pkArrow
+            anchors.right: parent.right
+            anchors.rightMargin: 8
+            anchors.verticalCenter: parent.verticalCenter
+            text: "▾"
+            font.pixelSize: 9
+            color: pop.visible ? ui.accent : ui.dim
+        }
+        MouseArea {
+            id: pkMa
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onClicked: { if (pop.visible) pop.close(); else pk.openPop() }
+        }
+
+        Popup {
+            id: pop
+            width: Math.max(pk.width, 168)
+            height: Math.min(pk.popH, (pk.searchable ? 32 : 0) + Math.max(1, pk.shown.length) * 26 + 8)
+            x: Math.max(6 - pk.gx, pk.width - width)
+            y: pk.up ? -height - 4 : pk.height + 4
+            padding: 4
+            modal: false
+            focus: true
+            closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutsideParent
+            enter: Transition { NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 90 } }
+            exit: Transition { NumberAnimation { property: "opacity"; to: 0; duration: 60 } }
+            onOpened: if (pk.searchable) pkSearch.forceActiveFocus()
+
+            background: Rectangle {
+                radius: 8
+                color: ui.dark ? Qt.tint(ui.bg, ui.tone(0.10)) : ui.bg
+                border.width: 1
+                border.color: ui.tone(0.14)
+            }
+
+            contentItem: ColumnLayout {
+                spacing: 4
+
+                Rectangle {
+                    visible: pk.searchable
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 26
+                    radius: 5
+                    color: ui.fill
+                    TextInput {
+                        id: pkSearch
+                        anchors.fill: parent
+                        anchors.leftMargin: 8
+                        anchors.rightMargin: 8
+                        verticalAlignment: TextInput.AlignVCenter
+                        font.pixelSize: 11
+                        color: ui.fg
+                        clip: true
+                        selectByMouse: true
+                        onTextChanged: pk.query = text
+                        Keys.onEscapePressed: pop.close()
+                        Text {
+                            visible: pkSearch.text.length === 0
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: "Search…"
+                            font.pixelSize: 11
+                            color: ui.faint
+                        }
+                    }
+                }
+
+                ListView {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    clip: true
+                    model: pk.shown
+                    spacing: 0
+                    boundsBehavior: Flickable.StopAtBounds
+                    delegate: Rectangle {
+                        id: po
+                        required property var modelData
+                        readonly property bool isCur: po.modelData.id === pk.current
+                        width: ListView.view.width
+                        height: 26
+                        radius: 5
+                        color: po.isCur ? ui.wash(0.16) : (poMa.containsMouse ? ui.fill : "transparent")
+                        Text {
+                            anchors.left: parent.left
+                            anchors.leftMargin: 8
+                            anchors.right: parent.right
+                            anchors.rightMargin: 8
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: po.modelData.label || ""
+                            font.pixelSize: 11
+                            font.weight: po.isCur ? Font.DemiBold : Font.Normal
+                            color: po.isCur ? ui.accent : ui.fg
+                            elide: Text.ElideRight
+                        }
+                        MouseArea {
+                            id: poMa
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: { pk.picked(po.modelData.id); pop.close() }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Inline slider: thin track + value readout
+    component Sld: Item {
+        id: sl
+        property real from: 0
+        property real to: 1
+        property real step: 0.01
+        property int decimals: 0
+        property string suffix: ""
+        property real value: 0
+        property real _drag: 0
+        property real _last: NaN
+        property bool _active: false
+        signal moved(real v)
+
+        implicitWidth: 190
+        implicitHeight: 22
+
+        readonly property real shown: _active ? _drag : value
+        readonly property real ratio: to > from ? Math.max(0, Math.min(1, (shown - from) / (to - from))) : 0
+
+        function snap(v) {
+            const st = step > 0 ? step : 0.01
+            const n = Math.round((v - from) / st)
+            return Math.max(from, Math.min(to, from + n * st))
+        }
+
+        Timer { id: slHold; interval: 380; onTriggered: sl._active = false }
 
         RowLayout {
             anchors.fill: parent
-            anchors.leftMargin: 12
-            anchors.rightMargin: 12
-            spacing: 12
+            spacing: 8
 
-            ColumnLayout {
-                id: textCol
+            Item {
+                id: slTrack
                 Layout.fillWidth: true
-                Layout.minimumWidth: 0
-                Layout.alignment: Qt.AlignVCenter
-                spacing: 1
+                Layout.fillHeight: true
 
-                Text {
-                    Layout.fillWidth: true
-                    text: rowRoot.title
-                    font.pixelSize: Services.Theme.fontSizeMd
-                    font.weight: Font.Medium
-                    color: Services.Theme.textPrimary
-                    elide: Text.ElideRight
+                Rectangle {
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: parent.width
+                    height: 3
+                    radius: 1.5
+                    color: ui.tone(0.14)
+                    Rectangle {
+                        width: parent.width * sl.ratio
+                        height: parent.height
+                        radius: 1.5
+                        color: ui.accent
+                    }
                 }
-
-                Text {
-                    visible: rowRoot.subtitle.length > 0
-                    Layout.fillWidth: true
-                    text: rowRoot.subtitle
-                    font.pixelSize: Services.Theme.fontSizeXs
-                    color: Services.Theme.textSecondary
-                    elide: Text.ElideRight
+                Rectangle {
+                    width: 10; height: 10; radius: 5
+                    anchors.verticalCenter: parent.verticalCenter
+                    x: sl.ratio * (parent.width - width)
+                    color: ui.accent
+                    scale: slMa.pressed ? 1.3 : (slMa.containsMouse ? 1.15 : 1.0)
+                    Behavior on scale { NumberAnimation { duration: 90 } }
+                }
+                MouseArea {
+                    id: slMa
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    function upd(mx) {
+                        const r = Math.max(0, Math.min(1, (mx - 5) / Math.max(1, width - 10)))
+                        const v = sl.snap(sl.from + r * (sl.to - sl.from))
+                        sl._drag = v
+                        if (v !== sl._last) { sl._last = v; sl.moved(v) }
+                    }
+                    onPressed: (m) => { slHold.stop(); sl._last = NaN; sl._active = true; upd(m.x) }
+                    onPositionChanged: (m) => { if (pressed) upd(m.x) }
+                    onReleased: slHold.restart()
                 }
             }
 
+            Text {
+                Layout.preferredWidth: 44
+                horizontalAlignment: Text.AlignRight
+                text: sl.shown.toFixed(sl.decimals) + sl.suffix
+                font.family: Services.Theme.fontMono
+                font.pixelSize: 10
+                color: ui.dim
+            }
+        }
+    }
+
+    // Small button
+    component Btn: Rectangle {
+        id: btn
+        property string text: ""
+        property string glyph: ""
+        property string kind: "plain"   // plain | accent | danger
+        property bool enabledState: true
+        signal clicked()
+
+        implicitHeight: ui.ctlH
+        implicitWidth: Math.max(ui.ctlH, bRow.implicitWidth + 16)
+        radius: ui.r
+        opacity: enabledState ? 1.0 : 0.4
+        scale: bMa.pressed ? 0.96 : 1.0
+        Behavior on scale { NumberAnimation { duration: 80 } }
+        color: kind === "accent"
+            ? (bMa.containsMouse ? Qt.lighter(ui.accent, 1.1) : ui.accent)
+            : (kind === "danger"
+                ? ui.dng(bMa.containsMouse ? 0.26 : 0.14)
+                : (bMa.containsMouse ? ui.fillHi : ui.fill))
+
+        RowLayout {
+            id: bRow
+            anchors.centerIn: parent
+            spacing: 5
+            Text {
+                visible: btn.glyph.length > 0
+                text: btn.glyph
+                font.family: Services.Theme.fontSymbols
+                font.pixelSize: 12
+                color: btn.kind === "accent" ? ui.onAccent : (btn.kind === "danger" ? ui.danger : ui.accent)
+            }
+            Text {
+                visible: btn.text.length > 0
+                text: btn.text
+                font.pixelSize: 11
+                color: btn.kind === "accent" ? ui.onAccent : (btn.kind === "danger" ? ui.danger : ui.fg)
+            }
+        }
+        MouseArea {
+            id: bMa
+            anchors.fill: parent
+            hoverEnabled: true
+            enabled: btn.enabledState
+            cursorShape: Qt.PointingHandCursor
+            onClicked: btn.clicked()
+        }
+    }
+
+    // Text input
+    component Inp: Rectangle {
+        id: inp
+        property alias text: ti.text
+        property alias input: ti
+        property string placeholder: ""
+        property bool mono: false
+        signal accepted(string value)
+        signal edited(string value)
+
+        implicitHeight: ui.ctlH
+        implicitWidth: 170
+        radius: ui.r
+        color: ti.activeFocus ? ui.wash(0.12) : ui.fill
+        border.width: ti.activeFocus ? 1 : 0
+        border.color: ui.accent
+
+        TextInput {
+            id: ti
+            anchors.fill: parent
+            anchors.leftMargin: 8
+            anchors.rightMargin: 8
+            verticalAlignment: TextInput.AlignVCenter
+            font.pixelSize: 11
+            font.family: inp.mono ? Services.Theme.fontMono : Qt.application.font.family
+            color: ui.fg
+            clip: true
+            selectByMouse: true
+            onAccepted: inp.accepted(text)
+            onTextEdited: inp.edited(text)
+            Text {
+                visible: ti.text.length === 0
+                anchors.verticalCenter: parent.verticalCenter
+                text: inp.placeholder
+                font.pixelSize: 11
+                color: ui.faint
+            }
+        }
+    }
+
+    // Toggle pill (multi-select chips, filters, presets)
+    component Chip: Rectangle {
+        id: chip
+        property string text: ""
+        property string glyph: ""
+        property bool on: false
+        property bool dimmed: false
+        signal clicked()
+
+        implicitHeight: 24
+        implicitWidth: cRow.implicitWidth + 18
+        radius: 12
+        opacity: dimmed ? 0.55 : 1.0
+        color: on ? ui.wash(0.20) : (cMa.containsMouse ? ui.fillHi : ui.fill)
+        Behavior on color { ColorAnimation { duration: 90 } }
+
+        RowLayout {
+            id: cRow
+            anchors.centerIn: parent
+            spacing: 5
+            Text {
+                visible: chip.glyph.length > 0
+                text: chip.glyph
+                font.family: Services.Theme.fontSymbols
+                font.pixelSize: 11
+                color: chip.on ? ui.accent : ui.dim
+            }
+            Text {
+                text: chip.text
+                font.pixelSize: 11
+                font.weight: chip.on ? Font.DemiBold : Font.Normal
+                color: chip.on ? ui.accent : ui.fg
+            }
+        }
+        MouseArea {
+            id: cMa
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onClicked: chip.clicked()
+        }
+    }
+
+    // − value +  stepper
+    component Stepper: Rectangle {
+        id: stp
+        property string label: ""
+        property string valueText: ""
+        signal dec()
+        signal inc()
+
+        implicitHeight: ui.ctlH
+        implicitWidth: 112
+        radius: ui.r
+        color: ui.fill
+
+        RowLayout {
+            anchors.fill: parent
+            anchors.leftMargin: 8
+            anchors.rightMargin: 2
+            spacing: 4
+            Text { text: stp.label; font.family: Services.Theme.fontMono; font.pixelSize: 10; color: ui.faint }
+            Text {
+                Layout.fillWidth: true
+                horizontalAlignment: Text.AlignHCenter
+                text: stp.valueText
+                font.family: Services.Theme.fontMono
+                font.pixelSize: 10
+                color: ui.fg
+            }
+            Rectangle {
+                Layout.preferredWidth: 20; Layout.preferredHeight: 20; radius: 4
+                color: mMa.containsMouse ? ui.fillHi : "transparent"
+                Text { anchors.centerIn: parent; text: "−"; font.pixelSize: 12; color: ui.fg }
+                MouseArea { id: mMa; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: stp.dec() }
+            }
+            Rectangle {
+                Layout.preferredWidth: 20; Layout.preferredHeight: 20; radius: 4
+                color: pMa.containsMouse ? ui.fillHi : "transparent"
+                Text { anchors.centerIn: parent; text: "+"; font.pixelSize: 12; color: ui.fg }
+                MouseArea { id: pMa; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: stp.inc() }
+            }
+        }
+    }
+
+    // Tiny status label
+    component Tag: Rectangle {
+        id: tag
+        property string text: ""
+        property color tint: ui.dim
+        implicitHeight: 16
+        implicitWidth: tagT.implicitWidth + 10
+        radius: 4
+        color: Qt.rgba(tint.r, tint.g, tint.b, 0.14)
+        Text {
+            id: tagT
+            anchors.centerIn: parent
+            text: tag.text
+            font.pixelSize: 9
+            font.weight: Font.DemiBold
+            color: tag.tint
+        }
+    }
+
+    // Keyboard keycap
+    component Cap: Rectangle {
+        id: cap
+        property string text: ""
+        implicitHeight: 18
+        implicitWidth: Math.max(18, capT.implicitWidth + 10)
+        radius: 4
+        color: "transparent"
+        border.width: 1
+        border.color: ui.tone(0.22)
+        Text {
+            id: capT
+            anchors.centerIn: parent
+            text: cap.text
+            font.family: Services.Theme.fontMono
+            font.pixelSize: 10
+            color: ui.fg
+        }
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    //  LAYOUT BLOCKS
+    // ═════════════════════════════════════════════════════════════════════════
+
+    // Titled group of rules
+    component SettingsGroup: ColumnLayout {
+        id: grp
+        property string title: ""
+        default property alias content: grpBody.data
+        Layout.fillWidth: true
+        Layout.topMargin: 8
+        spacing: 2
+
+        Text {
+            visible: grp.title.length > 0
+            text: grp.title
+            font.pixelSize: 10
+            font.weight: Font.DemiBold
+            font.letterSpacing: 0.9
+            font.capitalization: Font.AllUppercase
+            color: ui.faint
+            Layout.leftMargin: 4
+            Layout.bottomMargin: 2
+        }
+        ColumnLayout {
+            id: grpBody
+            Layout.fillWidth: true
+            spacing: 0
+        }
+    }
+
+    // Base row: label (+hint) on the left, control slot on the right
+    component Opt: Item {
+        id: opt
+        property string label: ""
+        property string hint: ""
+        property string glyph: ""
+        property bool clickable: false
+        signal clicked()
+        default property alias control: optSlot.data
+
+        Layout.fillWidth: true
+        implicitHeight: Math.max(ui.rowH, optText.implicitHeight + 14)
+
+        Rectangle {
+            anchors.fill: parent
+            anchors.topMargin: 1
+            anchors.bottomMargin: 1
+            radius: ui.r
+            color: ui.fill
+            opacity: (opt.clickable && optHover.hovered) ? 1 : 0
+            Behavior on opacity { NumberAnimation { duration: 90 } }
+        }
+        Rectangle {
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.bottom: parent.bottom
+            height: 1
+            color: ui.line
+        }
+        HoverHandler { id: optHover; enabled: opt.clickable; cursorShape: Qt.PointingHandCursor }
+        TapHandler { enabled: opt.clickable; onTapped: opt.clicked() }
+
+        RowLayout {
+            anchors.fill: parent
+            anchors.leftMargin: 4
+            anchors.rightMargin: 4
+            spacing: 10
+
+            Text {
+                visible: opt.glyph.length > 0
+                Layout.preferredWidth: 16
+                horizontalAlignment: Text.AlignHCenter
+                text: opt.glyph
+                font.family: Services.Theme.fontSymbols
+                font.pixelSize: 13
+                color: ui.dim
+            }
+            ColumnLayout {
+                id: optText
+                Layout.fillWidth: true
+                Layout.minimumWidth: 0
+                spacing: 1
+                Text {
+                    Layout.fillWidth: true
+                    text: opt.label
+                    font.pixelSize: 12
+                    color: ui.fg
+                    elide: Text.ElideRight
+                }
+                Text {
+                    visible: opt.hint.length > 0
+                    Layout.fillWidth: true
+                    text: opt.hint
+                    font.pixelSize: 10
+                    color: ui.dim
+                    elide: Text.ElideRight
+                }
+            }
             Item {
-                id: controlSlot
+                id: optSlot
                 Layout.alignment: Qt.AlignVCenter | Qt.AlignRight
                 implicitWidth: childrenRect.width
                 implicitHeight: childrenRect.height
@@ -737,1405 +1298,249 @@ FloatingWindow {
         }
     }
 
-    // ── 3. Settings Dropdown / ComboBox (Native Popover) ─────────────────────
-    component SettingsDropdown: Item {
-        id: dropRoot
-        property var model: [] // [{ id, label }]
-        property var currentValue: null
+    component OptSwitch: Item {
+        id: osw
+        property alias label: ob.label
+        property alias hint: ob.hint
+        property alias glyph: ob.glyph
+        property bool checked: false
+        signal toggled(bool v)
+        Layout.fillWidth: true
+        implicitHeight: ob.implicitHeight
+        Opt {
+            id: ob
+            anchors.left: parent.left
+            anchors.right: parent.right
+            clickable: true
+            onClicked: osw.toggled(!osw.checked)
+            Tgl { on: osw.checked; interactive: false }
+        }
+    }
+
+    component OptSeg: Item {
+        id: osg
+        property alias label: ob.label
+        property alias hint: ob.hint
+        property alias glyph: ob.glyph
+        property var options: []
+        property var current: null
+        signal picked(var val)
+        Layout.fillWidth: true
+        implicitHeight: ob.implicitHeight
+        Opt {
+            id: ob
+            anchors.left: parent.left
+            anchors.right: parent.right
+            Seg { options: osg.options; current: osg.current; onPicked: (v) => osg.picked(v) }
+        }
+    }
+
+    component OptPick: Item {
+        id: opk
+        property alias label: ob.label
+        property alias hint: ob.hint
+        property alias glyph: ob.glyph
+        property var model: []
+        property var current: null
         property bool searchable: false
-        property string searchPlaceholder: "Search..."
-        property int maxPopupHeight: 240
-        property int minButtonWidth: 90
-        property int maxButtonWidth: 175
-        property int buttonHeight: 26
-        property string searchQuery: ""
-        property bool openUpwards: false
-        signal selected(var val)
-
-        function checkOpenDirection() {
-            var globalPos = dropBtn.mapToItem(rootWindow.contentItem || null, 0, 0)
-            if (globalPos) {
-                var spaceBelow = rootWindow.height - (globalPos.y + dropBtn.height)
-                var popupH = Math.min(dropRoot.maxPopupHeight, (dropRoot.searchable ? 36 : 0) + 160)
-                openUpwards = (spaceBelow < popupH + 20) && (globalPos.y > popupH + 20)
-            } else {
-                openUpwards = false
+        property int minW: 110
+        property int maxW: 200
+        signal picked(var val)
+        Layout.fillWidth: true
+        implicitHeight: ob.implicitHeight
+        Opt {
+            id: ob
+            anchors.left: parent.left
+            anchors.right: parent.right
+            Pick {
+                model: opk.model
+                current: opk.current
+                searchable: opk.searchable
+                minW: opk.minW
+                maxW: opk.maxW
+                onPicked: (v) => opk.picked(v)
             }
         }
+    }
 
-        readonly property var currentItem: {
-            for (let i = 0; i < model.length; i++) {
-                if (model[i].id === currentValue) return model[i]
+    component OptSlide: Item {
+        id: osl
+        property alias label: ob.label
+        property alias hint: ob.hint
+        property alias glyph: ob.glyph
+        property real from: 0
+        property real to: 1
+        property real step: 0.01
+        property int decimals: 0
+        property string suffix: ""
+        property real value: 0
+        signal moved(real v)
+        Layout.fillWidth: true
+        implicitHeight: ob.implicitHeight
+        Opt {
+            id: ob
+            anchors.left: parent.left
+            anchors.right: parent.right
+            Sld {
+                from: osl.from; to: osl.to; step: osl.step
+                decimals: osl.decimals; suffix: osl.suffix
+                value: osl.value
+                onMoved: (v) => osl.moved(v)
             }
-            return model.length > 0 ? model[0] : { label: "Select..." }
         }
+    }
 
-        readonly property var filteredModel: {
-            if (!searchable || !searchQuery || searchQuery.trim().length === 0) return model
-            const q = searchQuery.toLowerCase().trim()
-            return model.filter(function(item) {
-                return (item.label || "").toLowerCase().indexOf(q) !== -1 || String(item.id || "").toLowerCase().indexOf(q) !== -1
-            })
-        }
-
-        implicitWidth: dropBtn.implicitWidth
-        implicitHeight: dropBtn.height
-
-        Rectangle {
-            id: dropBtn
-            implicitWidth: Math.min(dropRoot.maxButtonWidth, Math.max(dropRoot.minButtonWidth, dropBtnText.implicitWidth + 28))
-            width: (dropRoot.width > 0 && dropRoot.width > implicitWidth) ? dropRoot.width : implicitWidth
-            height: dropRoot.buttonHeight
-            radius: 6
-            color: (dropMenu.visible && !dropMenu.isClosing) 
-                ? (Services.Theme.isDark ? "#32323e" : "#e8e8ed")
-                : (dropArea.containsMouse 
-                    ? (Services.Theme.isDark ? "#2e2e3a" : "#eaebee") 
-                    : (Services.Theme.isDark ? "#262630" : "#f2f2f7"))
-            border.color: (dropMenu.visible && !dropMenu.isClosing) 
-                ? Services.Theme.accent 
-                : (Services.Theme.isDark ? "#3c3c4a" : "#d0d0d8")
-            border.width: 1
-
-            // Liquid press scale
-            scale: dropArea.pressed ? 0.96 : (dropArea.containsMouse ? 1.01 : 1.0)
-            Behavior on scale { NumberAnimation { duration: 120; easing.type: Easing.OutQuad } }
-            Behavior on color { ColorAnimation { duration: 150 } }
-            Behavior on border.color { ColorAnimation { duration: 150 } }
-
+    // family + size pair
+    component OptFont: Item {
+        id: ofn
+        property alias label: ob.label
+        property var famModel: []
+        property var fam: null
+        property var size: 11
+        signal famPicked(var val)
+        signal sizePicked(var val)
+        Layout.fillWidth: true
+        implicitHeight: ob.implicitHeight
+        Opt {
+            id: ob
+            anchors.left: parent.left
+            anchors.right: parent.right
             RowLayout {
-                anchors.fill: parent
-                anchors.leftMargin: 8
-                anchors.rightMargin: 8
                 spacing: 6
-
-                Text {
-                    id: dropBtnText
-                    Layout.fillWidth: true
-                    text: dropRoot.currentItem ? dropRoot.currentItem.label : ""
-                    font.pixelSize: Services.Theme.fontSizeSm
-                    font.weight: Font.Normal
-                    color: Services.Theme.textPrimary
-                    elide: Text.ElideRight
-
-                    Behavior on opacity { NumberAnimation { duration: 120 } }
+                Pick {
+                    model: ofn.famModel
+                    current: ofn.fam
+                    searchable: true
+                    minW: 120
+                    maxW: 190
+                    onPicked: (v) => ofn.famPicked(v)
                 }
-
-                Text {
-                    text: "▾"
-                    font.pixelSize: 8
-                    color: (dropMenu.visible && !dropMenu.isClosing) ? Services.Theme.accent : Services.Theme.textSecondary
-                    rotation: (dropMenu.visible && !dropMenu.isClosing) ? 180 : 0
-                    transformOrigin: Item.Center
-                    Behavior on rotation {
-                        NumberAnimation {
-                            duration: 200
-                            easing.type: Easing.OutBack
-                            easing.overshoot: 1.25
-                        }
-                    }
-                    Behavior on color { ColorAnimation { duration: 150 } }
+                Pick {
+                    model: rootWindow.fontSizes
+                    current: ofn.size
+                    minW: 58
+                    maxW: 70
+                    onPicked: (v) => ofn.sizePicked(v)
                 }
             }
+        }
+    }
 
+    // Full-width custom content row (no label column)
+    component Block: Item {
+        id: blk
+        default property alias content: blkBody.data
+        property bool ruled: true
+        Layout.fillWidth: true
+        implicitHeight: blkBody.implicitHeight + 14
+        Rectangle {
+            visible: blk.ruled
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.bottom: parent.bottom
+            height: 1
+            color: ui.line
+        }
+        ColumnLayout {
+            id: blkBody
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.top: parent.top
+            anchors.leftMargin: 4
+            anchors.rightMargin: 4
+            anchors.topMargin: 7
+            spacing: 6
+        }
+    }
+
+    // Horizontal wallpaper thumbnails
+    component WpStrip: ListView {
+        id: wp
+        property string current: ""
+        property bool deletable: false
+        signal chosen(string path)
+
+        orientation: ListView.Horizontal
+        spacing: 6
+        clip: true
+        implicitHeight: 54
+        boundsBehavior: Flickable.StopAtBounds
+        model: Services.Wallpaper ? Services.Wallpaper.allWallpapers : []
+
+        WheelHandler {
+            onWheel: (ev) => {
+                const d = ev.angleDelta.y !== 0 ? ev.angleDelta.y : ev.angleDelta.x
+                wp.contentX = Math.max(0, Math.min(Math.max(0, wp.contentWidth - wp.width), wp.contentX - d))
+            }
+        }
+
+        delegate: Rectangle {
+            id: wc
+            required property var modelData
+            readonly property bool isCur: wp.current === wc.modelData.path
+            width: 88
+            height: 50
+            radius: 6
+            color: ui.fill
+            border.width: wc.isCur ? 2 : 0
+            border.color: ui.accent
+            clip: true
+
+            Image {
+                anchors.fill: parent
+                anchors.margins: wc.isCur ? 2 : 0
+                source: wc.modelData.path.startsWith("/") ? ("file://" + wc.modelData.path) : wc.modelData.path
+                fillMode: Image.PreserveAspectCrop
+                sourceSize.width: 176
+                sourceSize.height: 100
+                asynchronous: true
+                smooth: true
+                opacity: wcMa.containsMouse ? 0.85 : 1.0
+            }
+            Rectangle {
+                visible: wp.deletable && wc.modelData.isCustom === true && (wcMa.containsMouse || delMa.containsMouse)
+                anchors.top: parent.top
+                anchors.right: parent.right
+                anchors.margins: 3
+                width: 16; height: 16; radius: 8
+                color: delMa.containsMouse ? ui.danger : Qt.rgba(0, 0, 0, 0.6)
+                Text { anchors.centerIn: parent; text: "✕"; font.pixelSize: 8; color: "#ffffff" }
+                MouseArea {
+                    id: delMa
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: { if (Services.Wallpaper) Services.Wallpaper.removeCustomWallpaper(wc.modelData.path) }
+                }
+            }
             MouseArea {
-                id: dropArea
+                id: wcMa
                 anchors.fill: parent
                 hoverEnabled: true
+                z: -1
                 cursorShape: Qt.PointingHandCursor
-                onClicked: {
-                    if (dropMenu.visible && !dropMenu.isClosing) {
-                        dropMenu.requestClose()
-                    } else if (!dropMenu.visible) {
-                        dropRoot.searchQuery = ""
-                        dropRoot.checkOpenDirection()
-                        dropMenu.open()
-                    }
-                }
-            }
-
-            Popup {
-                id: dropMenu
-                readonly property real fullHeight: {
-                    var targetH = (dropRoot.searchable ? 36 : 0) + menuCol.implicitHeight + 12
-                    var maxH = dropRoot.maxPopupHeight
-                    var globalPos = dropBtn.mapToItem(rootWindow.contentItem || null, 0, 0)
-                    if (globalPos) {
-                        var space = dropRoot.openUpwards ? (globalPos.y - 12) : (rootWindow.height - (globalPos.y + dropBtn.height) - 12)
-                        if (space > 60) maxH = Math.min(maxH, space)
-                    }
-                    return Math.max(40, Math.min(maxH, targetH))
-                }
-
-                width: Math.max(dropBtn.width, 175)
-                height: fullHeight
-                y: dropRoot.openUpwards ? (-fullHeight - 8) : (dropBtn.height + 6)
-                x: {
-                    var globalPos = dropBtn.mapToItem(rootWindow.contentItem || null, 0, 0)
-                    var targetW = Math.max(dropBtn.width, 175)
-                    if (globalPos) {
-                        var rightEdge = globalPos.x + targetW
-                        if (rightEdge > (rootWindow.width - 16)) {
-                            return -(rightEdge - (rootWindow.width - 16))
-                        }
-                    }
-                    return Math.min(0, dropBtn.width - targetW)
-                }
-                padding: 0
-                background: null
-                closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutsideParent
-                modal: false
-                focus: true
-                enter: null
-
-                // Liquid Panel Growth Progress (0.0 -> 1.0)
-                property real panelProgress: 0.0
-                property bool isClosing: false
-
-                function requestClose() {
-                    if (!dropMenu.visible || isClosing) return
-                    isClosing = true
-                    panelBloomAnim.stop()
-                    menuCol.reverseCascade()
-                    dropMenu.close()
-                }
-
-                NumberAnimation {
-                    id: panelBloomAnim
-                    target: dropMenu
-                    property: "panelProgress"
-                    from: 0.0
-                    to: 1.0
-                    duration: 220
-                    easing.type: Easing.OutCubic
-                }
-
-                onAboutToShow: {
-                    dropRoot.checkOpenDirection()
-                    isClosing = false
-                    panelProgress = 0.0
-                    panelBloomAnim.restart()
-                    menuCol.startCascade()
-                }
-
-                onAboutToHide: {
-                    isClosing = true
-                    panelBloomAnim.stop()
-                    menuCol.reverseCascade()
-                }
-
-                onClosed: {
-                    isClosing = false
-                    panelProgress = 0.0
-                    menuCol.resetAll()
-                }
-
-                exit: Transition {
-                    NumberAnimation {
-                        target: dropMenu
-                        property: "panelProgress"
-                        to: 0.0
-                        duration: 180
-                        easing.type: Easing.InOutQuad
-                    }
-                }
-
-                Timer {
-                    id: selectCloseTimer
-                    interval: 75
-                    onTriggered: dropMenu.requestClose()
-                }
-
-                contentItem: Item {
-                    id: popupContainer
-                    implicitWidth: Math.max(dropBtn.width, 175)
-                    implicitHeight: dropMenu.fullHeight
-
-                    // Ambient Shadow that tracks the growing card
-                    Rectangle {
-                        anchors.fill: menuCard
-                        anchors.margins: -4
-                        anchors.verticalCenterOffset: dropRoot.openUpwards ? -2 : 4
-                        radius: menuCard.radius + 2
-                        color: Qt.rgba(0, 0, 0, 0.30)
-                        opacity: dropMenu.panelProgress
-                        visible: menuCard.height > 6
-                        z: -1
-                    }
-
-                    // The Card that GROWS out of the dropdown button
-                    Rectangle {
-                        id: menuCard
-                        anchors.bottom: dropRoot.openUpwards ? parent.bottom : undefined
-                        anchors.top: dropRoot.openUpwards ? undefined : parent.top
-                        anchors.left: parent.left
-                        anchors.right: parent.right
-                        height: Math.max(0, parent.height * dropMenu.panelProgress)
-                        clip: true
-                        radius: 10
-                        color: Services.Theme.isDark ? "#1c1c24" : "#fbfbfd"
-                        border.color: Services.Theme.isDark ? Qt.rgba(255, 255, 255, 0.12) : Qt.rgba(0, 0, 0, 0.10)
-                        border.width: 1
-
-                        // Soft Inner Specular Rim
-                        Rectangle {
-                            anchors.fill: parent
-                            anchors.margins: 1
-                            radius: 9
-                            color: "transparent"
-                            border.color: Services.Theme.isDark ? Qt.rgba(255, 255, 255, 0.06) : Qt.rgba(255, 255, 255, 0.60)
-                            border.width: 1
-                            z: 2
-                        }
-
-                        ColumnLayout {
-                            anchors.fill: parent
-                            anchors.margins: 4
-                            spacing: 4
-                            opacity: Math.min(1.0, dropMenu.panelProgress * 1.5)
-
-                    // Optional Search Bar for Large Lists (e.g. Fonts, Themes)
-                    Rectangle {
-                        visible: dropRoot.searchable
-                        opacity: dropMenu.panelProgress
-                        Layout.fillWidth: true
-                        height: 26
-                        radius: 5
-                        color: Services.Theme.isDark ? "#282834" : "#f1f2f6"
-                        border.color: searchInput.activeFocus ? Services.Theme.accent : (Services.Theme.isDark ? "#3e3e4e" : "#d8d8e2")
-                        border.width: 1
-
-                        RowLayout {
-                            anchors.fill: parent
-                            anchors.leftMargin: 6
-                            anchors.rightMargin: 6
-                            spacing: 4
-
-                            Text {
-                                text: Services.Icons.search || "🔍"
-                                font.family: Services.Theme.fontSymbols
-                                font.pixelSize: 9
-                                color: Services.Theme.textSecondary
-                            }
-
-                            TextInput {
-                                id: searchInput
-                                Layout.fillWidth: true
-                                text: dropRoot.searchQuery
-                                font.pixelSize: 11
-                                color: Services.Theme.textPrimary
-                                selectByMouse: true
-                                onTextChanged: dropRoot.searchQuery = text
-                                Component.onCompleted: {
-                                    if (dropRoot.searchable && dropMenu.visible) forceActiveFocus()
-                                }
-                            }
-
-                            Text {
-                                visible: dropRoot.searchQuery.length > 0
-                                text: "✕"
-                                font.pixelSize: 9
-                                color: Services.Theme.textSecondary
-                                MouseArea {
-                                    anchors.fill: parent
-                                    cursorShape: Qt.PointingHandCursor
-                                    onClicked: { dropRoot.searchQuery = ""; searchInput.text = "" }
-                                }
-                            }
-                        }
-                    }
-
-                    Flickable {
-                        Layout.fillWidth: true
-                        Layout.fillHeight: true
-                        contentHeight: menuCol.implicitHeight
-                        clip: contentHeight > height
-                        boundsBehavior: Flickable.StopAtBounds
-                        ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
-
-                        ColumnLayout {
-                            id: menuCol
-                            width: parent.width
-                            spacing: 3
-
-                            function startCascade() {
-                                for (let i = 0; i < itemRepeater.count; i++) {
-                                    let item = itemRepeater.itemAt(i)
-                                    if (item && item.triggerEntrance) {
-                                        item.triggerEntrance(i)
-                                    }
-                                }
-                            }
-
-                            function reverseCascade() {
-                                let total = itemRepeater.count
-                                for (let i = 0; i < total; i++) {
-                                    let item = itemRepeater.itemAt(i)
-                                    if (item && item.triggerExit) {
-                                        let rev = dropRoot.openUpwards ? i : (total - 1 - i)
-                                        item.triggerExit(rev)
-                                    }
-                                }
-                            }
-
-                            function resetAll() {
-                                for (let i = 0; i < itemRepeater.count; i++) {
-                                    let item = itemRepeater.itemAt(i)
-                                    if (item && item.resetItem) {
-                                        item.resetItem()
-                                    }
-                                }
-                            }
-
-                            Repeater {
-                                id: itemRepeater
-                                model: dropRoot.filteredModel
-                                delegate: Rectangle {
-                                    id: itemRow
-                                    required property var modelData
-                                    required property int index
-                                    Layout.fillWidth: true
-                                    height: 28
-                                    radius: 5
-                                    readonly property bool isSelected: dropRoot.currentValue === modelData.id
-                                    property bool isPressed: itemArea.pressed
-
-                                    // Staggered Cascade Waterfall Entrance & Reverse Exit
-                                    property real animProgress: 0.0
-
-                                    SequentialAnimation {
-                                        id: itemEntrance
-                                        property int staggerIndex: 0
-                                        PauseAnimation {
-                                            duration: Math.min(180, itemEntrance.staggerIndex * 22)
-                                        }
-                                        NumberAnimation {
-                                            target: itemRow
-                                            property: "animProgress"
-                                            from: 0.0
-                                            to: 1.0
-                                            duration: 200
-                                            easing.type: Easing.OutCubic
-                                        }
-                                    }
-
-                                    SequentialAnimation {
-                                        id: itemExit
-                                        property int staggerIndex: 0
-                                        PauseAnimation {
-                                            duration: Math.min(80, itemExit.staggerIndex * 12)
-                                        }
-                                        NumberAnimation {
-                                            target: itemRow
-                                            property: "animProgress"
-                                            to: 0.0
-                                            duration: 140
-                                            easing.type: Easing.InCubic
-                                        }
-                                    }
-
-                                    function triggerEntrance(idx) {
-                                        itemExit.stop()
-                                        itemEntrance.stop()
-                                        itemEntrance.staggerIndex = (idx !== undefined ? idx : itemRow.index)
-                                        animProgress = 0.0
-                                        itemEntrance.restart()
-                                    }
-
-                                    function triggerExit(idx) {
-                                        itemEntrance.stop()
-                                        itemExit.stop()
-                                        itemExit.staggerIndex = (idx !== undefined ? idx : 0)
-                                        itemExit.restart()
-                                    }
-
-                                    function resetItem() {
-                                        itemEntrance.stop()
-                                        itemExit.stop()
-                                        animProgress = 0.0
-                                    }
-
-                                    Component.onCompleted: {
-                                        if (dropMenu.visible) {
-                                             triggerEntrance(itemRow.index)
-                                        } else {
-                                             animProgress = 0.0
-                                        }
-                                    }
-
-                                    opacity: itemRow.animProgress
-                                    scale: isPressed ? 0.96 : 1.0
-                                    transform: Translate {
-                                        y: (1.0 - itemRow.animProgress) * (dropRoot.openUpwards ? 8 : -8)
-                                    }
-
-                                    color: isSelected 
-                                        ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.16)
-                                        : (itemArea.containsMouse 
-                                            ? (Services.Theme.isDark ? "#2a2a36" : "#f0f0f6") 
-                                            : "transparent")
-                                    border.color: isSelected 
-                                        ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.35) 
-                                        : (itemArea.containsMouse ? (Services.Theme.isDark ? "#383848" : "#e0e0ea") : "transparent")
-                                    border.width: 1
-                                    Behavior on color { ColorAnimation { duration: 120 } }
-                                    Behavior on border.color { ColorAnimation { duration: 120 } }
-
-                                    RowLayout {
-                                        anchors.fill: parent
-                                        anchors.leftMargin: itemArea.containsMouse ? 10 : 8
-                                        anchors.rightMargin: 8
-                                        spacing: 6
-                                        Behavior on anchors.leftMargin { NumberAnimation { duration: 120; easing.type: Easing.OutQuad } }
-
-                                        Text {
-                                            Layout.fillWidth: true
-                                            text: modelData.label
-                                            font.pixelSize: Services.Theme.fontSizeSm
-                                            font.weight: isSelected ? Font.DemiBold : Font.Normal
-                                            color: isSelected ? Services.Theme.accent : (Services.Theme.isDark ? "#e4e4ec" : "#1c1c24")
-                                            elide: Text.ElideRight
-                                        }
-
-                                        Text {
-                                            visible: isSelected
-                                            text: Services.Icons.check || "✓"
-                                            font.family: Services.Theme.fontSymbols
-                                            font.pixelSize: 10
-                                            font.bold: true
-                                            color: Services.Theme.accent
-                                            scale: isSelected ? 1.0 : 0.0
-                                            Behavior on scale {
-                                                NumberAnimation {
-                                                    duration: 180
-                                                    easing.type: Easing.OutBack
-                                                    easing.overshoot: 1.40
-                                                }
-                                            }
-                                        }
-                                    }
-
-                                    MouseArea {
-                                        id: itemArea
-                                        anchors.fill: parent
-                                        hoverEnabled: true
-                                        cursorShape: Qt.PointingHandCursor
-                                        onClicked: {
-                                            dropRoot.selected(modelData.id)
-                                            selectCloseTimer.restart()
-                                        }
-                                    }
-                                }
-                            }
-
-                            Text {
-                                visible: dropRoot.filteredModel.length === 0
-                                Layout.fillWidth: true
-                                Layout.topMargin: 12
-                                Layout.bottomMargin: 12
-                                horizontalAlignment: Text.AlignHCenter
-                                text: "No matching items"
-                                font.pixelSize: 11
-                                color: Services.Theme.textSecondary
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-}
-
-    // ── 4. Settings Switch (Liquid Glass Bloom, Stretch & Impact Toggle) ───────────
-    component SettingsSwitch: Rectangle {
-        id: switchRoot
-        property string title: ""
-        property string subtitle: ""
-        property bool checked: false
-        signal toggled(bool newState)
-
-        onCheckedChanged: {
-            if (swTrack.isDragging) return
-            slideAndJiggle.stop()
-            const targetX = switchRoot.checked ? 24 : 2
-            slideAndJiggle.destX = targetX
-            slideAndJiggle.direction = targetX > swTrack.currentX ? 1.0 : -1.0
-            slideAndJiggle.restart()
-        }
-
-        Layout.fillWidth: true
-        implicitHeight: Math.max(44, switchTextCol.implicitHeight + 16)
-        radius: Services.Theme.radiusSm
-        color: "transparent"
-
-        RowLayout {
-            anchors.fill: parent
-            anchors.leftMargin: 12
-            anchors.rightMargin: 12
-            spacing: 12
-
-            ColumnLayout {
-                id: switchTextCol
-                Layout.fillWidth: true
-                Layout.minimumWidth: 0
-                Layout.alignment: Qt.AlignVCenter
-                spacing: 1
-
-                Text {
-                    Layout.fillWidth: true
-                    text: switchRoot.title
-                    font.pixelSize: Services.Theme.fontSizeMd
-                    font.weight: Font.Medium
-                    color: Services.Theme.textPrimary
-                    elide: Text.ElideRight
-                }
-
-                Text {
-                    visible: switchRoot.subtitle.length > 0
-                    Layout.fillWidth: true
-                    text: switchRoot.subtitle
-                    font.pixelSize: Services.Theme.fontSizeXs
-                    color: Services.Theme.textSecondary
-                    elide: Text.ElideRight
-                }
-            }
-
-            // Capsule Track
-            Rectangle {
-                id: swTrack
-                width: 46
-                height: 24
-                Layout.preferredWidth: 46
-                Layout.preferredHeight: 24
-                Layout.alignment: Qt.AlignVCenter | Qt.AlignRight
-                radius: 12
-
-                color: switchRoot.checked 
-                    ? Services.Theme.accent 
-                    : (swDragArea.containsMouse 
-                        ? (Services.Theme.isDark ? "#40404c" : "#dadade") 
-                        : (Services.Theme.isDark ? "#35353f" : "#e2e2e7"))
-                border.color: switchRoot.checked 
-                    ? Services.Theme.accent 
-                    : (Services.Theme.isDark ? "#4c4c5a" : "#ceced6")
-                border.width: 1
-                Behavior on color { ColorAnimation { duration: 180 } }
-                Behavior on border.color { ColorAnimation { duration: 180 } }
-
-                readonly property real minX: 2
-                readonly property real maxX: 24
-                property real currentX: 2
-                property real dragX: 2
-                property bool isDragging: false
-                property real pressStartX: 0
-                property real expansion: 0.0
-
-                Component.onCompleted: {
-                    currentX = switchRoot.checked ? 24 : 2
-                    dragX = currentX
-                }
-
-                Behavior on expansion {
-                    enabled: !slideAndJiggle.running && !swTrack.isDragging
-                    NumberAnimation {
-                        duration: 160
-                        easing.type: Easing.OutBack
-                        easing.overshoot: 1.25
-                    }
-                }
-
-                SequentialAnimation {
-                    id: slideAndJiggle
-                    property real destX: switchRoot.checked ? 24 : 2
-                    property real direction: destX > swTrack.currentX ? 1.0 : -1.0
-
-                    onStopped: {
-                        swTrack.currentX = slideAndJiggle.destX
-                        swThumb.squashX = 1.0
-                        swThumb.squashY = 1.0
-                        swTrack.expansion = 0.0
-                    }
-
-                    // Phase 1: Ngembang, Geser & Stretch (Slide, Bloom into Liquid Glass & Stretch) (160ms)
-                    ParallelAnimation {
-                        NumberAnimation {
-                            target: swTrack
-                            property: "currentX"
-                            to: slideAndJiggle.destX
-                            duration: 160
-                            easing.type: Easing.InOutQuad
-                        }
-                        NumberAnimation {
-                            target: swTrack
-                            property: "expansion"
-                            to: 1.0
-                            duration: 120
-                            easing.type: Easing.OutQuad
-                        }
-                        NumberAnimation {
-                            target: swThumb
-                            property: "squashX"
-                            to: 1.30
-                            duration: 140
-                            easing.type: Easing.OutQuad
-                        }
-                        NumberAnimation {
-                            target: swThumb
-                            property: "squashY"
-                            to: 0.86
-                            duration: 140
-                            easing.type: Easing.OutQuad
-                        }
-                    }
-
-                    // Phase 2: Gel Impact Cushion ("Kepentok Gel Natural") (85ms)
-                    ParallelAnimation {
-                        NumberAnimation {
-                            target: swThumb
-                            property: "squashX"
-                            to: 0.85
-                            duration: 85
-                            easing.type: Easing.OutQuad
-                        }
-                        NumberAnimation {
-                            target: swThumb
-                            property: "squashY"
-                            to: 1.14
-                            duration: 85
-                            easing.type: Easing.OutQuad
-                        }
-                    }
-
-                    // Phase 3: Soft Gel Rebound ("Membal Gel Organik") (75ms)
-                    ParallelAnimation {
-                        NumberAnimation {
-                            target: swThumb
-                            property: "squashX"
-                            to: 1.04
-                            duration: 75
-                            easing.type: Easing.InOutQuad
-                        }
-                        NumberAnimation {
-                            target: swThumb
-                            property: "squashY"
-                            to: 0.98
-                            duration: 75
-                            easing.type: Easing.InOutQuad
-                        }
-                    }
-
-                    // Phase 4: Balik Normal (Settle back to Normal Round Porcelain Knob) (130ms)
-                    ParallelAnimation {
-                        NumberAnimation {
-                            target: swThumb
-                            property: "squashX"
-                            to: 1.0
-                            duration: 130
-                            easing.type: Easing.OutQuad
-                        }
-                        NumberAnimation {
-                            target: swThumb
-                            property: "squashY"
-                            to: 1.0
-                            duration: 130
-                            easing.type: Easing.OutQuad
-                        }
-                        NumberAnimation {
-                            target: swTrack
-                            property: "expansion"
-                            to: 0.0
-                            duration: 130
-                            easing.type: Easing.OutQuad
-                        }
-                    }
-                }
-
-                // Liquid Glass Knob (Enlarged 40x26px Liquid Drop)
-                Rectangle {
-                    id: swThumb
-                    readonly property bool isActive: swTrack.expansion > 0.01 || swDragArea.pressed || slideAndJiggle.running
-                    width: 20 + swTrack.expansion * 20
-                    height: 20 + swTrack.expansion * 6
-                    radius: height / 2
-                    anchors.verticalCenter: parent.verticalCenter
-                    x: (swTrack.isDragging ? swTrack.dragX : swTrack.currentX) - (width - 20) / 2
-
-                    property real squashX: 1.0
-                    property real squashY: 1.0
-                    transform: Scale {
-                        origin.x: swThumb.width / 2
-                        origin.y: swThumb.height / 2
-                        xScale: swThumb.squashX
-                        yScale: swThumb.squashY
-                    }
-
-                    // Fluid Cross-Fade from White Porcelain (#ffffff) to Translucent Frosted Glass
-                    color: Services.Theme.isDark 
-                        ? Qt.rgba(1.0, 1.0, 1.0, 1.0 - swTrack.expansion * 0.70)
-                        : Qt.rgba(1.0, 1.0, 1.0, 1.0 - swTrack.expansion * 0.30)
-                    border.color: swTrack.expansion > 0.01
-                        ? (Services.Theme.isDark ? Qt.rgba(255, 255, 255, 0.55) : Qt.rgba(255, 255, 255, 0.90))
-                        : Qt.rgba(0, 0, 0, 0.08)
-                    border.width: swTrack.expansion > 0.01 ? 1.2 : 1
-
-                    // ── Optical Refraction Chamber (Pembiasan & Pembengkokan Pensil Dalam Air) ──
-                    Item {
-                        anchors.fill: parent
-                        anchors.margins: 1.5
-                        clip: true
-                        opacity: swTrack.expansion
-
-                        // Refracted Track Core (Bent upwards with convex lens curvature & optical shift)
-                        Rectangle {
-                            anchors.verticalCenter: parent.verticalCenter
-                            anchors.verticalCenterOffset: -2.2 // Optical Refraction Shift
-                            anchors.left: parent.left
-                            anchors.right: parent.right
-                            anchors.margins: -1
-                            height: parent.height * 0.78
-                            radius: height / 2
-                            color: switchRoot.checked ? Services.Theme.accent : (Services.Theme.isDark ? "#3c3c4a" : "#d2d2da")
-                            opacity: 0.80
-                        }
-                    }
-
-                    // Soft Inner Glass Refraction Bevel
-                    Rectangle {
-                        anchors.fill: parent
-                        anchors.margins: 1
-                        radius: parent.radius - 1
-                        color: "transparent"
-                        border.color: Services.Theme.isDark ? Qt.rgba(255, 255, 255, 0.22) : Qt.rgba(255, 255, 255, 0.45)
-                        border.width: 1
-                        opacity: swTrack.expansion
-                    }
-
-                    // Top Specular Glass Crescent Flare
-                    Rectangle {
-                        anchors.left: parent.left
-                        anchors.right: parent.right
-                        anchors.top: parent.top
-                        anchors.margins: 1.5
-                        height: Math.max(2, parent.height * 0.45)
-                        radius: height / 2
-                        opacity: swTrack.expansion
-                        gradient: Gradient {
-                            GradientStop { 
-                                position: 0.0
-                                color: Services.Theme.isDark ? Qt.rgba(255, 255, 255, 0.55) : Qt.rgba(255, 255, 255, 0.80)
-                            }
-                            GradientStop { 
-                                position: 1.0
-                                color: "transparent"
-                            }
-                        }
-                    }
-
-                    // ── Background Optical Refraction Distortion Halo (Distorsi Latar Belakang) ──
-                    Rectangle {
-                        anchors.centerIn: parent
-                        width: parent.width + 4
-                        height: parent.height + 4
-                        radius: height / 2
-                        color: switchRoot.checked ? Services.Theme.accent : (Services.Theme.isDark ? "#4a4a5e" : "#c6c6d2")
-                        opacity: swTrack.expansion * 0.40
-                        z: -1
-                    }
-
-                    // Natural Soft Drop Shadow
-                    Rectangle {
-                        anchors.centerIn: parent
-                        anchors.verticalCenterOffset: 1.5
-                        width: parent.width
-                        height: parent.height
-                        radius: parent.radius
-                        color: Qt.rgba(0, 0, 0, 0.20)
-                        opacity: 1.0 - swTrack.expansion * 0.45
-                        z: -2
-                    }
-                }
-
-                MouseArea {
-                    id: swDragArea
-                    anchors.fill: parent
-                    anchors.margins: -10
-                    preventStealing: true
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-
-                    onPressed: (mouse) => {
-                        swTrack.pressStartX = mouse.x
-                        swTrack.isDragging = false
-                        swTrack.expansion = 1.0
-                    }
-
-                    onPositionChanged: (mouse) => {
-                        if (!pressed) return
-                        if (Math.abs(mouse.x - swTrack.pressStartX) > 3) {
-                            swTrack.isDragging = true
-                        }
-                        if (swTrack.isDragging) {
-                            slideAndJiggle.stop()
-                            const trackX = mouse.x - 10
-                            const rawX = trackX - 10
-                            swTrack.dragX = Math.max(swTrack.minX, Math.min(swTrack.maxX, rawX))
-                            swTrack.currentX = swTrack.dragX
-                            swTrack.expansion = 1.0
-
-                            const dragDelta = mouse.x - swTrack.pressStartX
-                            swThumb.squashX = Math.min(1.30, Math.max(0.85, 1.0 + Math.abs(dragDelta) * 0.012))
-                            swThumb.squashY = Math.max(0.88, Math.min(1.15, 1.0 - Math.abs(dragDelta) * 0.006))
-                        }
-                    }
-
-                    onReleased: (mouse) => {
-                        const wasDragging = swTrack.isDragging
-                        swTrack.isDragging = false
-                        
-                        if (wasDragging) {
-                            const midX = (swTrack.minX + swTrack.maxX) / 2
-                            const targetState = swTrack.currentX > midX
-                            if (targetState !== switchRoot.checked) {
-                                switchRoot.toggled(targetState)
-                            } else {
-                                slideAndJiggle.destX = switchRoot.checked ? swTrack.maxX : swTrack.minX
-                                slideAndJiggle.direction = slideAndJiggle.destX > swTrack.currentX ? 1.0 : -1.0
-                                slideAndJiggle.restart()
-                            }
-                        } else {
-                            switchRoot.toggled(!switchRoot.checked)
-                        }
-                    }
-
-                    onCanceled: {
-                        swTrack.isDragging = false
-                        slideAndJiggle.destX = switchRoot.checked ? swTrack.maxX : swTrack.minX
-                        slideAndJiggle.direction = slideAndJiggle.destX > swTrack.currentX ? 1.0 : -1.0
-                        slideAndJiggle.restart()
-                    }
-                }
+                onClicked: wp.chosen(wc.modelData.path)
             }
         }
     }
 
-    // ── 5. Settings Slider (Inset Grouped Slider Row) ────────────────────────
-    component SettingsSlider: RowLayout {
-        id: sliderRoot
-        property string title: ""
-        property string subtitle: ""
-        property real from: 0
-        property real to: 100
-        property real stepSize: 1
-        property real value: 0
-        property string valuePrefix: ""
-        property string valueSuffix: ""
-        property int decimals: 0
-        signal moved(real newValue)
-
-        Layout.fillWidth: true
-        spacing: 12
-        Layout.leftMargin: 12
-        Layout.rightMargin: 12
-        Layout.topMargin: 4
-        Layout.bottomMargin: 4
-
-        // Left: Title & Subtitle
-        ColumnLayout {
-            Layout.fillWidth: true
-            Layout.minimumWidth: 0
-            Layout.alignment: Qt.AlignVCenter
-            spacing: 1
-
-            Text {
-                Layout.fillWidth: true
-                text: sliderRoot.title
-                font.pixelSize: Services.Theme.fontSizeMd
-                font.weight: Font.Medium
-                color: Services.Theme.textPrimary
-                elide: Text.ElideRight
-            }
-            Text {
-                visible: sliderRoot.subtitle.length > 0
-                Layout.fillWidth: true
-                text: sliderRoot.subtitle
-                font.pixelSize: Services.Theme.fontSizeXs
-                color: Services.Theme.textSecondary
-                elide: Text.ElideRight
-            }
-        }
-
-        // Right: Value Badge + Compact Tahoe Slider
-        RowLayout {
-            Layout.alignment: Qt.AlignVCenter | Qt.AlignRight
-            Layout.fillWidth: false
-            spacing: 8
-
-            // Value Badge
-            Text {
-                Layout.preferredWidth: 36
-                horizontalAlignment: Text.AlignRight
-                text: sliderRoot.valuePrefix + (sliderRoot.decimals > 0 ? Number(sliderRoot.value).toFixed(sliderRoot.decimals) : Math.round(sliderRoot.value)) + sliderRoot.valueSuffix
-                font.family: Services.Theme.fontMono
-                font.pixelSize: 11
-                font.weight: Font.Medium
-                color: sDrag.pressed ? Services.Theme.accent : Services.Theme.textSecondary
-            }
-
-            // Compact Tahoe Track Container
-            Item {
-                id: trackContainer
-                Layout.preferredWidth: 120
-                Layout.minimumWidth: 60
-                Layout.maximumWidth: 150
-                height: 24
-
-                readonly property real valRatio: Math.max(0, Math.min(1, (sliderRoot.value - sliderRoot.from) / Math.max(0.0001, sliderRoot.to - sliderRoot.from)))
-                property real displayRatio: valRatio
-                Binding {
-                    target: trackContainer
-                    property: "displayRatio"
-                    value: trackContainer.valRatio
-                    when: !slideGlideAnim.running
-                }
-
-                readonly property real normalWidth: 20
-                readonly property real centerPos: normalWidth / 2 + displayRatio * (trackContainer.width - normalWidth)
-                
-                property real rubberBandOffset: 0
-                Behavior on rubberBandOffset {
-                    NumberAnimation {
-                        duration: 240
-                        easing.type: Easing.OutBack
-                        easing.overshoot: 1.40
-                    }
-                }
-
-                property real expansion: (sDrag.pressed || slideGlideAnim.running) ? 1.0 : 0.0
-                Behavior on expansion {
-                    NumberAnimation {
-                        duration: 160
-                        easing.type: Easing.OutBack
-                        easing.overshoot: 1.25
-                    }
-                }
-
-                // Click-to-Jump Smooth Glide & Fluid Stretch Animation
-                SequentialAnimation {
-                    id: slideGlideAnim
-                    property real startRatio: 0
-                    property real targetRatio: 0
-                    property real targetVal: 0
-
-                    onStopped: {
-                        knob.squashX = 1.0
-                        knob.squashY = 1.0
-                        sliderRoot.moved(slideGlideAnim.targetVal)
-                    }
-
-                    // Phase 1: Ngembang, Geser & Stretch (Slide, Bloom into Liquid Glass & Stretch) (160ms)
-                    ParallelAnimation {
-                        NumberAnimation {
-                            target: trackContainer
-                            property: "displayRatio"
-                            from: slideGlideAnim.startRatio
-                            to: slideGlideAnim.targetRatio
-                            duration: 160
-                            easing.type: Easing.InOutQuad
-                        }
-                        NumberAnimation {
-                            target: knob
-                            property: "squashX"
-                            to: 1.30
-                            duration: 140
-                            easing.type: Easing.OutQuad
-                        }
-                        NumberAnimation {
-                            target: knob
-                            property: "squashY"
-                            to: 0.86
-                            duration: 140
-                            easing.type: Easing.OutQuad
-                        }
-                    }
-
-                    // Phase 2: Gel Impact Cushion ("Kepentok Gel Natural") (85ms)
-                    ParallelAnimation {
-                        NumberAnimation {
-                            target: knob
-                            property: "squashX"
-                            to: 0.85
-                            duration: 85
-                            easing.type: Easing.OutQuad
-                        }
-                        NumberAnimation {
-                            target: knob
-                            property: "squashY"
-                            to: 1.14
-                            duration: 85
-                            easing.type: Easing.OutQuad
-                        }
-                    }
-
-                    // Phase 3: Soft Gel Rebound ("Membal Gel Organik") (75ms)
-                    ParallelAnimation {
-                        NumberAnimation {
-                            target: knob
-                            property: "squashX"
-                            to: 1.04
-                            duration: 75
-                            easing.type: Easing.InOutQuad
-                        }
-                        NumberAnimation {
-                            target: knob
-                            property: "squashY"
-                            to: 0.98
-                            duration: 75
-                            easing.type: Easing.InOutQuad
-                        }
-                    }
-
-                    // Phase 4: Balik Normal (Settle back to Normal Round Porcelain Knob) (130ms)
-                    ParallelAnimation {
-                        NumberAnimation {
-                            target: knob
-                            property: "squashX"
-                            to: 1.0
-                            duration: 130
-                            easing.type: Easing.OutQuad
-                        }
-                        NumberAnimation {
-                            target: knob
-                            property: "squashY"
-                            to: 1.0
-                            duration: 130
-                            easing.type: Easing.OutQuad
-                        }
-                    }
-                }
-
-                // Boundary Impact Squash Animation (Natural Gel Cushion)
-                SequentialAnimation {
-                    id: sliderJiggleAnim
-                    // Phase 1: Viscous Gel Impact Cushion (85ms)
-                    ParallelAnimation {
-                        NumberAnimation { target: knob; property: "squashX"; to: 0.85; duration: 85; easing.type: Easing.OutQuad }
-                        NumberAnimation { target: knob; property: "squashY"; to: 1.14; duration: 85; easing.type: Easing.OutQuad }
-                    }
-                    // Phase 2: Soft Gel Rebound (75ms)
-                    ParallelAnimation {
-                        NumberAnimation { target: knob; property: "squashX"; to: 1.04; duration: 75; easing.type: Easing.InOutQuad }
-                        NumberAnimation { target: knob; property: "squashY"; to: 0.98; duration: 75; easing.type: Easing.InOutQuad }
-                    }
-                    // Phase 3: Settle Normal (130ms)
-                    ParallelAnimation {
-                        NumberAnimation { target: knob; property: "squashX"; to: 1.0; duration: 130; easing.type: Easing.OutQuad }
-                        NumberAnimation { target: knob; property: "squashY"; to: 1.0; duration: 130; easing.type: Easing.OutQuad }
-                    }
-                }
-
-                // Track Groove (Thin 4px Capsule)
-                Rectangle {
-                    id: trackGroove
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                    anchors.verticalCenter: parent.verticalCenter
-                    height: 4
-                    radius: 2
-                    color: Services.Theme.isDark ? "#2a2a34" : "#e0e2e8"
-                    border.color: Services.Theme.isDark ? Qt.rgba(255, 255, 255, 0.04) : Qt.rgba(0, 0, 0, 0.04)
-                    border.width: 1
-
-                    // Active Filled Progress Bar
-                    Rectangle {
-                        height: parent.height
-                        radius: parent.radius
-                        color: Services.Theme.accent
-                        width: Math.max(0, Math.min(parent.width, trackContainer.centerPos + trackContainer.rubberBandOffset))
-                    }
-                }
-
-                // Liquid Glass Knob (Enlarged 40x26px Liquid Drop - Identical to SettingsSwitch)
-                Rectangle {
-                    id: knob
-                    readonly property bool isActive: trackContainer.expansion > 0.01 || sDrag.pressed || sliderJiggleAnim.running || slideGlideAnim.running
-                    width: 20 + trackContainer.expansion * 20
-                    height: 20 + trackContainer.expansion * 6
-                    radius: height / 2
-                    anchors.verticalCenter: trackGroove.verticalCenter
-                    x: Math.max(-4, Math.min(trackContainer.width - width + 4, trackContainer.centerPos - width / 2 + trackContainer.rubberBandOffset))
-
-                    property real targetSquashX: 1.0
-                    property real targetSquashY: 1.0
-                    property real squashX: targetSquashX
-                    property real squashY: targetSquashY
-
-                    Behavior on squashX {
-                        enabled: !sliderJiggleAnim.running && !slideGlideAnim.running
-                        NumberAnimation { duration: 80; easing.type: Easing.OutQuad }
-                    }
-                    Behavior on squashY {
-                        enabled: !sliderJiggleAnim.running && !slideGlideAnim.running
-                        NumberAnimation { duration: 80; easing.type: Easing.OutQuad }
-                    }
-
-                    transform: Scale {
-                        origin.x: knob.width / 2
-                        origin.y: knob.height / 2
-                        xScale: knob.squashX
-                        yScale: knob.squashY
-                    }
-
-                    // Fluid Cross-Fade from White Porcelain (#ffffff) to Translucent Frosted Glass
-                    color: Services.Theme.isDark 
-                        ? Qt.rgba(1.0, 1.0, 1.0, 1.0 - trackContainer.expansion * 0.70)
-                        : Qt.rgba(1.0, 1.0, 1.0, 1.0 - trackContainer.expansion * 0.30)
-                    border.color: trackContainer.expansion > 0.01
-                        ? (Services.Theme.isDark ? Qt.rgba(255, 255, 255, 0.55) : Qt.rgba(255, 255, 255, 0.90))
-                        : Qt.rgba(0, 0, 0, 0.08)
-                    border.width: trackContainer.expansion > 0.01 ? 1.2 : 1
-
-                    // ── Optical Refraction Chamber (Pembiasan & Pembengkokan Pensil Dalam Air) ──
-                    Item {
-                        anchors.fill: parent
-                        anchors.margins: 1.5
-                        clip: true
-                        opacity: trackContainer.expansion
-
-                        // Refracted Track Core (Bent upwards with convex lens curvature & optical shift, exactly like SettingsSwitch)
-                        Rectangle {
-                            anchors.verticalCenter: parent.verticalCenter
-                            anchors.verticalCenterOffset: -2.2
-                            anchors.left: parent.left
-                            anchors.right: parent.right
-                            anchors.margins: -1
-                            height: parent.height * 0.78
-                            radius: height / 2
-                            color: Services.Theme.accent
-                            opacity: 0.85
-                        }
-                    }
-
-                    // Soft Inner Glass Refraction Bevel
-                    Rectangle {
-                        anchors.fill: parent
-                        anchors.margins: 1
-                        radius: parent.radius - 1
-                        color: "transparent"
-                        border.color: Services.Theme.isDark ? Qt.rgba(255, 255, 255, 0.22) : Qt.rgba(255, 255, 255, 0.45)
-                        border.width: 1
-                        opacity: trackContainer.expansion
-                    }
-
-                    // Top Specular Glass Crescent Flare
-                    Rectangle {
-                        anchors.left: parent.left
-                        anchors.right: parent.right
-                        anchors.top: parent.top
-                        anchors.margins: 1.5
-                        height: Math.max(2, parent.height * 0.45)
-                        radius: height / 2
-                        opacity: trackContainer.expansion
-                        gradient: Gradient {
-                            GradientStop { 
-                                position: 0.0
-                                color: Services.Theme.isDark ? Qt.rgba(255, 255, 255, 0.55) : Qt.rgba(255, 255, 255, 0.80)
-                            }
-                            GradientStop { 
-                                position: 1.0
-                                color: "transparent"
-                            }
-                        }
-                    }
-
-                    // ── Background Optical Refraction Distortion Halo (Distorsi Latar Belakang) ──
-                    Rectangle {
-                        anchors.centerIn: parent
-                        width: parent.width + 4
-                        height: parent.height + 4
-                        radius: height / 2
-                        color: Services.Theme.accent
-                        opacity: trackContainer.expansion * 0.40
-                        z: -1
-                    }
-
-                    // Natural Soft Drop Shadow
-                    Rectangle {
-                        anchors.centerIn: parent
-                        anchors.verticalCenterOffset: 1.5
-                        width: parent.width
-                        height: parent.height
-                        radius: parent.radius
-                        color: Qt.rgba(0, 0, 0, 0.20)
-                        opacity: 1.0 - trackContainer.expansion * 0.45
-                        z: -2
-                    }
-                }
-
-                MouseArea {
-                    id: sDrag
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                    anchors.top: parent.top
-                    anchors.bottom: parent.bottom
-                    anchors.topMargin: -8
-                    anchors.bottomMargin: -8
-                    preventStealing: true
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-
-                    property bool wasAtLimit: false
-                    property real lastMouseX: 0
-                    property real pressStartX: 0
-                    property bool isDragging: false
-
-                    function calcVal(mouseX) {
-                        const pad = trackContainer.normalWidth / 2
-                        const available = trackContainer.width - trackContainer.normalWidth
-                        if (available <= 0) return sliderRoot.value
-
-                        const ratio = Math.max(0, Math.min(1, (mouseX - pad) / available))
-                        let raw = sliderRoot.from + ratio * (sliderRoot.to - sliderRoot.from)
-                        if (sliderRoot.stepSize > 0) {
-                            raw = Math.round((raw - sliderRoot.from) / sliderRoot.stepSize) * sliderRoot.stepSize + sliderRoot.from
-                        }
-                        return Math.max(sliderRoot.from, Math.min(sliderRoot.to, raw))
-                    }
-
-                    function updateVal(mouseX) {
-                        const pad = trackContainer.normalWidth / 2
-                        const available = trackContainer.width - trackContainer.normalWidth
-                        if (available <= 0) return
-
-                        // Calm Liquid Rubber-Band Edge Resistance
-                        let atLimit = false
-                        if (mouseX < pad) {
-                            trackContainer.rubberBandOffset = (mouseX - pad) * 0.20
-                            atLimit = true
-                        } else if (mouseX > pad + available) {
-                            trackContainer.rubberBandOffset = (mouseX - (pad + available)) * 0.20
-                            atLimit = true
-                        } else {
-                            trackContainer.rubberBandOffset = 0
-                        }
-
-                        if (atLimit && !wasAtLimit) {
-                            sliderJiggleAnim.restart()
-                        }
-                        wasAtLimit = atLimit
-
-                        const raw = calcVal(mouseX)
-                        sliderRoot.moved(raw)
-                    }
-
-                    onPressed: (mouse) => {
-                        wasAtLimit = false
-                        pressStartX = mouse.x
-                        lastMouseX = mouse.x
-                        isDragging = false
-
-                        const currentPos = trackContainer.centerPos
-                        // If clicking away from knob (more than 14px away), smoothly glide with liquid gel stretch!
-                        if (Math.abs(mouse.x - currentPos) > 14) {
-                            const pad = trackContainer.normalWidth / 2
-                            const available = trackContainer.width - trackContainer.normalWidth
-                            const targetRatio = Math.max(0, Math.min(1, (mouse.x - pad) / available))
-                            const targetVal = calcVal(mouse.x)
-
-                            slideGlideAnim.stop()
-                            sliderJiggleAnim.stop()
-                            slideGlideAnim.startRatio = trackContainer.displayRatio
-                            slideGlideAnim.targetRatio = targetRatio
-                            slideGlideAnim.targetVal = targetVal
-                            slideGlideAnim.restart()
-                        } else {
-                            slideGlideAnim.stop()
-                            updateVal(mouse.x)
-                        }
-                    }
-
-                    onPositionChanged: (mouse) => {
-                        if (!pressed) return
-                        if (Math.abs(mouse.x - pressStartX) > 4) {
-                            isDragging = true
-                            slideGlideAnim.stop()
-                        }
-                        if (isDragging) {
-                            const deltaX = mouse.x - lastMouseX
-                            lastMouseX = mouse.x
-                            const speed = Math.abs(deltaX)
-                            knob.targetSquashX = Math.min(1.28, 1.0 + speed * 0.025)
-                            knob.targetSquashY = Math.max(0.88, 1.0 - speed * 0.012)
-                            updateVal(mouse.x)
-                        }
-                    }
-
-                    onReleased: {
-                        isDragging = false
-                        knob.targetSquashX = 1.0
-                        knob.targetSquashY = 1.0
-                        if (trackContainer.rubberBandOffset !== 0) {
-                            sliderJiggleAnim.restart()
-                        }
-                        trackContainer.rubberBandOffset = 0
-                        wasAtLimit = false
-                    }
-
-                    onCanceled: {
-                        isDragging = false
-                        knob.targetSquashX = 1.0
-                        knob.targetSquashY = 1.0
-                        trackContainer.rubberBandOffset = 0
-                        wasAtLimit = false
-                    }
-
-                    onWheel: (wheel) => {
-                        slideGlideAnim.stop()
-                        let delta = (wheel.angleDelta.y > 0 ? 1 : -1) * (sliderRoot.stepSize || 1)
-                        let raw = Math.max(sliderRoot.from, Math.min(sliderRoot.to, sliderRoot.value + delta))
-                        if (raw === sliderRoot.from || raw === sliderRoot.to) {
-                            sliderJiggleAnim.restart()
-                        }
-                        sliderRoot.moved(raw)
-                    }
-                }
-            }
-        }
-    }
-
-    // ── 6. Hairline Divider ──────────────────────────────────────────────────
-    component SettingsDivider: Rectangle {
-        Layout.fillWidth: true
-        height: 1
-        color: Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.05) : Qt.rgba(0, 0, 0, 0.06)
-    }
-
-    // ── 7. Settings Key Recorder (Interactive Keyboard Shortcut Grabber) ──────
-    component KeyRecorder: Rectangle {
+    // Key recorder (click → press combo). Writes "SUPER + SHIFT + Q" style strings.
+    component KeyRec: Rectangle {
         id: recRoot
         property string value: ""
         property bool isRecording: false
         property var heldModifiers: []
-        property string placeholder: "Click to record shortcut..."
-        property bool showClearButton: true
-        property bool compact: false
         signal recorded(string keys)
         signal cleared()
 
-        implicitHeight: compact ? 32 : 36
-        radius: compact ? 6 : Services.Theme.radiusSm
-        color: isRecording 
-            ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.08)
-            : (recMouse.containsMouse ? Services.Theme.surfaceVariant : Services.Theme.bgDeep)
-        border.color: isRecording 
-            ? Services.Theme.accent 
-            : (recMouse.containsMouse ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.45) : Services.Theme.border)
-        border.width: isRecording ? 1.5 : 1
+        onIsRecordingChanged: rootWindow.recording = isRecording
 
-        Behavior on color { ColorAnimation { duration: 150 } }
-        Behavior on border.color { ColorAnimation { duration: 150 } }
+        implicitHeight: 28
+        radius: ui.r
+        color: isRecording ? ui.wash(0.12) : (recMa.containsMouse ? ui.fillHi : ui.fill)
+        border.width: isRecording ? 1 : 0
+        border.color: ui.accent
 
-        // Invisible key event receiver
         Item {
             id: keyReceiver
             anchors.fill: parent
@@ -2143,16 +1548,12 @@ FloatingWindow {
 
             Keys.onPressed: (event) => {
                 if (!recRoot.isRecording) return
-
-                // Check for cancel with Escape (only when no modifiers held)
                 if (event.key === Qt.Key_Escape && event.modifiers === Qt.NoModifier) {
                     recRoot.isRecording = false
                     recRoot.heldModifiers = []
                     event.accepted = true
                     return
                 }
-
-                // Check for Backspace/Delete to clear
                 if ((event.key === Qt.Key_Backspace || event.key === Qt.Key_Delete) && event.modifiers === Qt.NoModifier) {
                     recRoot.value = ""
                     recRoot.isRecording = false
@@ -2161,26 +1562,21 @@ FloatingWindow {
                     event.accepted = true
                     return
                 }
-
                 const mods = []
                 if ((event.modifiers & Qt.MetaModifier) || event.key === Qt.Key_Super_L || event.key === Qt.Key_Super_R || event.key === Qt.Key_Meta) mods.push("SUPER")
                 if ((event.modifiers & Qt.ControlModifier) || event.key === Qt.Key_Control) mods.push("CTRL")
                 if ((event.modifiers & Qt.AltModifier) || event.key === Qt.Key_Alt) mods.push("ALT")
                 if ((event.modifiers & Qt.ShiftModifier) || event.key === Qt.Key_Shift) mods.push("SHIFT")
 
-                // If purely a modifier key was pressed, update held modifiers preview
                 if (event.key === Qt.Key_Super_L || event.key === Qt.Key_Super_R || event.key === Qt.Key_Meta ||
                     event.key === Qt.Key_Control || event.key === Qt.Key_Alt || event.key === Qt.Key_Shift) {
                     recRoot.heldModifiers = mods
                     event.accepted = true
                     return
                 }
-
-                // Main non-modifier key pressed
                 const keyName = recRoot.resolveKeyName(event.key, event.text)
                 if (keyName && keyName.length > 0) {
-                    const allParts = [...mods, keyName]
-                    const resultStr = allParts.join(" + ")
+                    const resultStr = [...mods, keyName].join(" + ")
                     recRoot.value = resultStr
                     recRoot.isRecording = false
                     recRoot.heldModifiers = []
@@ -2280,5325 +1676,2372 @@ FloatingWindow {
         }
 
         function startRecording() {
-            recRoot.heldModifiers = []
-            recRoot.isRecording = true
-            Qt.callLater(() => keyReceiver.forceActiveFocus())
-        }
-
-        function stopRecording() {
-            recRoot.isRecording = false
-            recRoot.heldModifiers = []
+            heldModifiers = []
+            isRecording = true
+            Qt.callLater(function() { keyReceiver.forceActiveFocus() })
         }
 
         RowLayout {
             anchors.fill: parent
-            anchors.leftMargin: recRoot.compact ? 8 : 12
-            anchors.rightMargin: recRoot.compact ? 8 : 12
-            spacing: 8
+            anchors.leftMargin: 10
+            anchors.rightMargin: 6
+            spacing: 6
 
-            // Recording Pulsing Dot / Keyboard Icon
-            Item {
-                Layout.preferredWidth: recRoot.compact ? 16 : 20
-                Layout.preferredHeight: recRoot.compact ? 16 : 20
-                Layout.alignment: Qt.AlignVCenter
-
-                Rectangle {
-                    anchors.centerIn: parent
-                    width: recRoot.isRecording ? 10 : 16
-                    height: width
-                    radius: width / 2
-                    color: recRoot.isRecording ? Services.Theme.danger : "transparent"
-                    visible: recRoot.isRecording
-
-                    SequentialAnimation on scale {
-                        running: recRoot.isRecording
-                        loops: Animation.Infinite
-                        NumberAnimation { from: 1.0; to: 1.4; duration: 550; easing.type: Easing.InOutSine }
-                        NumberAnimation { from: 1.4; to: 1.0; duration: 550; easing.type: Easing.InOutSine }
-                    }
-                }
-
-                Text {
-                    anchors.centerIn: parent
-                    visible: !recRoot.isRecording
-                    text: Services.Icons.keyboard || "󰌌"
-                    font.family: Services.Theme.fontSymbols
-                    font.pixelSize: recRoot.compact ? 11 : 13
-                    color: recRoot.value.length > 0 ? Services.Theme.accent : Services.Theme.textDisabled
+            Rectangle {
+                visible: recRoot.isRecording
+                Layout.preferredWidth: 8; Layout.preferredHeight: 8; radius: 4
+                color: ui.danger
+                SequentialAnimation on opacity {
+                    running: recRoot.isRecording
+                    loops: Animation.Infinite
+                    NumberAnimation { to: 0.25; duration: 480 }
+                    NumberAnimation { to: 1.0; duration: 480 }
                 }
             }
-
-            // Key Badges / Recording Status Area
-            Item {
+            Text {
                 Layout.fillWidth: true
-                Layout.fillHeight: true
-                clip: true
+                text: recRoot.isRecording
+                    ? (recRoot.heldModifiers.length > 0 ? recRoot.heldModifiers.join(" + ") + " + …" : "Press a combo…  (Esc cancel · ⌫ clear)")
+                    : (recRoot.value.length > 0 ? recRoot.value : "Click to record")
+                font.family: recRoot.value.length > 0 || recRoot.isRecording ? Services.Theme.fontMono : Qt.application.font.family
+                font.pixelSize: 11
+                color: recRoot.isRecording ? ui.accent : (recRoot.value.length > 0 ? ui.fg : ui.faint)
+                elide: Text.ElideRight
+            }
+            Text {
+                visible: recRoot.value.length > 0 && !recRoot.isRecording
+                text: "✕"
+                font.pixelSize: 10
+                color: clrMa.containsMouse ? ui.danger : ui.dim
+                MouseArea {
+                    id: clrMa
+                    anchors.fill: parent
+                    anchors.margins: -6
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: { recRoot.value = ""; recRoot.cleared() }
+                }
+            }
+        }
+        MouseArea {
+            id: recMa
+            anchors.fill: parent
+            hoverEnabled: true
+            z: -1
+            cursorShape: Qt.PointingHandCursor
+            onClicked: { if (recRoot.isRecording) recRoot.isRecording = false; else recRoot.startRecording() }
+        }
+    }
 
-                // Active Recording Mode
-                Row {
-                    anchors.left: parent.left
-                    anchors.verticalCenter: parent.verticalCenter
-                    visible: recRoot.isRecording
-                    spacing: 4
+    // ═════════════════════════════════════════════════════════════════════════
+    //  SHELL STATE
+    // ═════════════════════════════════════════════════════════════════════════
+    property bool recording: false
 
-                    Repeater {
-                        model: recRoot.heldModifiers
-                        delegate: Rectangle {
-                            height: recRoot.compact ? 20 : 24
-                            width: hModTxt.implicitWidth + 12
-                            radius: 4
-                            color: Services.Theme.accent
-                            Text {
-                                id: hModTxt
-                                anchors.centerIn: parent
-                                text: modelData
-                                font.family: Services.Theme.fontMono
-                                font.pixelSize: recRoot.compact ? 8 : 9
-                                font.bold: true
-                                color: "#ffffff"
-                            }
-                        }
-                    }
+    readonly property var fontSizes: [8, 9, 10, 11, 12, 13, 14, 15, 16, 18, 20].map(function(s) { return { id: s, label: s + " pt" } })
+
+    readonly property var navItems: [
+        { id: 0, title: "Appearance",    cat: 0, icon: Services.Icons.palette || "",       kw: "appearance theme dark light wallpaper accent color font gtk icon cursor scale radius matugen typography hinting antialiasing" },
+        { id: 1, title: "Bar & Dock",    cat: 0, icon: Services.Icons.controlcenter || "", kw: "bar dock pinned magnification island notch workspaces clock date pills dashboard weather widgets" },
+        { id: 2, title: "Notifications", cat: 0, icon: Services.Icons.bell || "",          kw: "notifications dnd do not disturb timeout retention banner history" },
+        { id: 3, title: "Sound",         cat: 0, icon: Services.Icons.speaker || "",       kw: "sound audio volume microphone mixer feedback mute output input" },
+        { id: 4, title: "Lock & Power",  cat: 1, icon: Services.Icons.power || "",         kw: "lock screen power battery profile avatar faceid biometric face camera clock blur" },
+        { id: 5, title: "Compositor",    cat: 1, icon: Services.Icons.display || "",       kw: "compositor window blur borders animations displays monitors scaling input touchpad gestures gaming autostart startup" },
+        { id: 6, title: "Keybindings",   cat: 1, icon: Services.Icons.keyboard || "",      kw: "keybindings shortcuts hotkeys binds super mod" },
+        { id: 7, title: "Backup",        cat: 2, icon: Services.Icons.undo || "",          kw: "backup restore reset defaults export import config wizard" },
+        { id: 8, title: "About",         cat: 2, icon: Services.Icons.info || "",          kw: "about system os kernel version distro info" }
+    ]
+    readonly property var curNav: navItems[currentTab] || navItems[0]
+
+    readonly property var searchHits: {
+        const q = (sidebarSearchQuery || "").toLowerCase().trim()
+        if (q.length === 0) return []
+        return navItems.filter(function(n) {
+            return n.title.toLowerCase().indexOf(q) !== -1 || n.kw.indexOf(q) !== -1
+        })
+    }
+
+    function gotoTab(i) {
+        if (currentTab !== i) currentTab = i
+        if (i === 5 && Services.Compositor) {
+            Services.Compositor.refreshState()
+            Services.Compositor.loadAutostart()
+        }
+        if (i === 6 && Services.Compositor) Services.Compositor.loadKeybinds()
+        sidebarSearchQuery = ""
+        keyFocus.forceActiveFocus()
+    }
+
+    function pageFor(i) {
+        const list = [pgAppearance, pgBar, pgNotif, pgSound, pgLock, pgComp, pgKeys, pgBackup, pgAbout]
+        return list[i] || pgAppearance
+    }
+
+    function appIconSource(appObj) {
+        const raw = appObj ? (typeof appObj.icon === "string" ? appObj.icon : (appObj.icon ? appObj.icon.name : "")) : ""
+        if (!raw) return ""
+        if (Services.SystemTheme) {
+            const res = Services.SystemTheme.getIcon(raw)
+            if (res && res.length > 0) return res
+        }
+        const qp = Quickshell.iconPath(raw, true)
+        return (qp && qp.startsWith("/")) ? ("file://" + qp) : (qp || "")
+    }
+
+    Item {
+        id: keyFocus
+        anchors.fill: parent
+        focus: true
+        Keys.onEscapePressed: (event) => {
+            if (rootWindow.sidebarSearchQuery.length > 0) rootWindow.sidebarSearchQuery = ""
+            else rootWindow.hide()
+            event.accepted = true
+        }
+        TapHandler { onTapped: keyFocus.forceActiveFocus() }
+    }
+
+    RowLayout {
+        anchors.fill: parent
+        spacing: 0
+
+        // ── Floating Island Sidebar ──────────────────────────────────────
+        Rectangle {
+            id: sidebarRail
+            Layout.fillHeight: true
+            Layout.topMargin: 10
+            Layout.bottomMargin: 10
+            Layout.leftMargin: 10
+            Layout.rightMargin: 2
+            Layout.preferredWidth: rootWindow.sidebarCompact ? 50 : 176
+            radius: 14
+            color: ui.rail
+            border.width: 1
+            border.color: ui.tone(0.10)
+            z: 5
+
+            Behavior on Layout.preferredWidth {
+                NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
+            }
+
+            ColumnLayout {
+                anchors.fill: parent
+                anchors.topMargin: 8
+                anchors.bottomMargin: 10
+                spacing: 2
+
+                // Sidebar toggle header
+                RowLayout {
+                    Layout.fillWidth: true
+                    Layout.leftMargin: 7
+                    Layout.rightMargin: 7
+                    Layout.bottomMargin: 4
+                    spacing: 6
 
                     Text {
-                        anchors.verticalCenter: parent.verticalCenter
-                        text: recRoot.heldModifiers.length > 0 ? "+ press key..." : "Press key combination on keyboard..."
-                        font.pixelSize: recRoot.compact ? 9 : 11
-                        font.weight: Font.Medium
-                        color: Services.Theme.accent
+                        visible: !rootWindow.sidebarCompact
+                        Layout.fillWidth: true
+                        Layout.leftMargin: 6
+                        text: "Settings"
+                        font.pixelSize: 12
+                        font.weight: Font.DemiBold
+                        color: ui.dim
                         elide: Text.ElideRight
+                    }
+
+                    Rectangle {
+                        id: railToggleBtn
+                        Layout.alignment: rootWindow.sidebarCompact ? Qt.AlignHCenter : Qt.AlignRight
+                        Layout.preferredWidth: 34
+                        Layout.preferredHeight: 28
+                        radius: 8
+                        color: railToggleMa.containsMouse ? ui.tone(0.08) : "transparent"
+
+                        Text {
+                            anchors.centerIn: parent
+                            text: rootWindow.sidebarCompact ? "›" : "‹"
+                            font.pixelSize: 16
+                            font.weight: Font.Medium
+                            color: railToggleMa.containsMouse ? ui.fg : ui.dim
+                        }
+
+                        MouseArea {
+                            id: railToggleMa
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: rootWindow.sidebarCollapsed = !rootWindow.sidebarCollapsed
+                        }
                     }
                 }
 
-                // Idle with Value: Physical-style Keycaps
-                Row {
-                    anchors.left: parent.left
-                    anchors.verticalCenter: parent.verticalCenter
-                    visible: !recRoot.isRecording && recRoot.value.length > 0
-                    spacing: 4
+                Repeater {
+                    model: rootWindow.navItems
+                    delegate: Item {
+                        id: nv
+                        required property var modelData
+                        required property int index
+                        readonly property bool isCur: rootWindow.currentTab === nv.modelData.id
+                        readonly property bool newCat: nv.index > 0 && rootWindow.navItems[nv.index - 1].cat !== nv.modelData.cat
+                        Layout.fillWidth: true
+                        Layout.leftMargin: 7
+                        Layout.rightMargin: 7
+                        Layout.preferredHeight: 34 + (nv.newCat ? 12 : 0)
 
-                    readonly property var tokens: {
-                        const raw = (recRoot.value || "").trim()
-                        if (!raw) return []
-                        return raw.split("+").map(s => s.trim()).filter(s => s.length > 0)
-                    }
+                        Rectangle {
+                            id: nvBox
+                            anchors.bottom: parent.bottom
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            height: 34
+                            radius: 9
+                            color: nv.isCur ? ui.wash(0.20) : (nvMa.containsMouse ? ui.tone(0.07) : "transparent")
+                            Behavior on color { ColorAnimation { duration: 100 } }
 
-                    Repeater {
-                        model: parent.tokens
-                        delegate: Row {
-                            id: tokRow
-                            required property string modelData
-                            required property int index
-                            spacing: 4
-                            anchors.verticalCenter: parent.verticalCenter
-
-                            readonly property bool isMod: (tokRow.modelData.toUpperCase() === "SUPER" || tokRow.modelData.toUpperCase() === "CTRL" || tokRow.modelData.toUpperCase() === "ALT" || tokRow.modelData.toUpperCase() === "SHIFT")
-
-                            Rectangle {
-                                height: recRoot.compact ? 20 : 24
-                                width: Math.max(22, tokTxt.implicitWidth + (recRoot.compact ? 8 : 12))
-                                radius: 4
-                                color: Services.Theme.bgElevated
-                                border.color: tokRow.isMod ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.45) : Services.Theme.border
-                                border.width: 1
+                            RowLayout {
+                                anchors.fill: parent
+                                anchors.leftMargin: rootWindow.sidebarCompact ? 0 : 10
+                                anchors.rightMargin: rootWindow.sidebarCompact ? 0 : 8
+                                spacing: 10
 
                                 Text {
-                                    id: tokTxt
-                                    anchors.centerIn: parent
-                                    text: tokRow.modelData
-                                    font.family: Services.Theme.fontMono
-                                    font.pixelSize: recRoot.compact ? 8 : 9
-                                    font.bold: true
-                                    color: tokRow.isMod ? Services.Theme.accent : Services.Theme.textPrimary
+                                    Layout.preferredWidth: rootWindow.sidebarCompact ? parent.width : 18
+                                    horizontalAlignment: Text.AlignHCenter
+                                    text: nv.modelData.icon
+                                    font.family: Services.Theme.fontSymbols
+                                    font.pixelSize: 15
+                                    color: nv.isCur ? ui.accent : ui.dim
+                                }
+
+                                Text {
+                                    visible: !rootWindow.sidebarCompact
+                                    Layout.fillWidth: true
+                                    text: nv.modelData.title
+                                    font.pixelSize: 12
+                                    font.weight: nv.isCur ? Font.DemiBold : Font.Normal
+                                    color: nv.isCur ? ui.accent : ui.fg
+                                    elide: Text.ElideRight
                                 }
                             }
 
+                            MouseArea {
+                                id: nvMa
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: rootWindow.gotoTab(nv.modelData.id)
+                            }
+                        }
+
+                        Rectangle {
+                            visible: rootWindow.sidebarCompact && nvMa.containsMouse
+                            x: nv.width + 14
+                            anchors.verticalCenter: nvBox.verticalCenter
+                            width: tipT.implicitWidth + 16
+                            height: 22
+                            radius: 5
+                            color: ui.dark ? Qt.tint(ui.bg, ui.tone(0.16)) : ui.fg
+                            z: 20
                             Text {
-                                anchors.verticalCenter: parent.verticalCenter
-                                visible: tokRow.index < (parent.parent.tokens.length - 1)
-                                text: "+"
-                                font.pixelSize: recRoot.compact ? 8 : 9
-                                font.bold: true
-                                color: Services.Theme.textDisabled
+                                id: tipT
+                                anchors.centerIn: parent
+                                text: nv.modelData.title
+                                font.pixelSize: 11
+                                color: ui.dark ? ui.fg : ui.bg
                             }
                         }
                     }
                 }
 
-                // Idle Empty State
-                Text {
-                    anchors.fill: parent
-                    verticalAlignment: Text.AlignVCenter
-                    visible: !recRoot.isRecording && recRoot.value.length === 0
-                    text: recRoot.placeholder
-                    font.pixelSize: recRoot.compact ? 9 : 11
-                    color: Services.Theme.textDisabled
-                    elide: Text.ElideRight
-                }
-            }
-
-            // Right Buttons (Record / Stop / Clear)
-            RowLayout {
-                spacing: 4
-                Layout.alignment: Qt.AlignVCenter
+                Item { Layout.fillHeight: true }
 
                 Rectangle {
-                    height: recRoot.compact ? 22 : 26
-                    implicitWidth: rBtnTxt.implicitWidth + (recRoot.compact ? 10 : 16)
-                    radius: 4
-                    color: recRoot.isRecording 
-                        ? Services.Theme.danger
-                        : (rBtnMouse.containsMouse ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.18) : Services.Theme.surfaceVariant)
-                    border.color: recRoot.isRecording ? Services.Theme.danger : Services.Theme.border
-                    border.width: 1
+                    Layout.fillWidth: true
+                    Layout.leftMargin: 7
+                    Layout.rightMargin: 7
+                    Layout.preferredHeight: 36
+                    radius: 9
+                    color: avMa.containsMouse ? ui.tone(0.07) : "transparent"
 
                     RowLayout {
-                        id: rBtnTxt
-                        anchors.centerIn: parent
-                        spacing: 4
+                        anchors.fill: parent
+                        anchors.leftMargin: rootWindow.sidebarCompact ? 3 : 8
+                        anchors.rightMargin: rootWindow.sidebarCompact ? 3 : 8
+                        spacing: 9
+
+                        Services.AvatarFrame {
+                            Layout.alignment: Qt.AlignVCenter
+                            Layout.preferredWidth: 28
+                            Layout.preferredHeight: 28
+                            source: Services.OsInfo.avatarPath
+                            shapeRadius: 14
+                            backgroundColor: Services.Theme.accent
+                            fallbackText: {
+                                const u = (Services.OsInfo.username || Quickshell.env("USER") || "user").toUpperCase()
+                                return u.length > 0 ? u.charAt(0) : "?"
+                            }
+                            fallbackFontFamily: Services.Theme.fontSymbols
+                            fallbackFontSize: 12
+                            fallbackColor: Services.Theme.bgOnAccent
+                        }
+
                         Text {
-                            text: recRoot.isRecording ? (Services.Icons.close || "✕") : "Record"
-                            font.pixelSize: recRoot.compact ? 8 : 10
-                            font.weight: Font.DemiBold
-                            color: recRoot.isRecording ? "#ffffff" : Services.Theme.textPrimary
+                            visible: !rootWindow.sidebarCompact
+                            Layout.fillWidth: true
+                            text: Services.OsInfo.username || Quickshell.env("USER") || "User"
+                            font.pixelSize: 12
+                            font.weight: Font.Medium
+                            color: ui.fg
+                            elide: Text.ElideRight
                         }
                     }
 
                     MouseArea {
-                        id: rBtnMouse
+                        id: avMa
                         anchors.fill: parent
                         hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
-                        onClicked: {
-                            if (recRoot.isRecording) recRoot.stopRecording()
-                            else recRoot.startRecording()
-                        }
-                    }
-                }
-
-                Rectangle {
-                    visible: recRoot.showClearButton && !recRoot.isRecording && recRoot.value.length > 0
-                    height: recRoot.compact ? 22 : 26
-                    width: height
-                    radius: 4
-                    color: clrBtnMouse.containsMouse ? Qt.rgba(0.9, 0.2, 0.2, 0.15) : "transparent"
-                    border.color: clrBtnMouse.containsMouse ? Services.Theme.danger : "transparent"
-                    border.width: 1
-
-                    Text {
-                        anchors.centerIn: parent
-                        text: "✕"
-                        font.pixelSize: recRoot.compact ? 8 : 10
-                        font.bold: true
-                        color: clrBtnMouse.containsMouse ? Services.Theme.danger : Services.Theme.textDisabled
-                    }
-
-                    MouseArea {
-                        id: clrBtnMouse
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: {
-                            recRoot.value = ""
-                            recRoot.cleared()
-                        }
+                        onClicked: rootWindow.gotoTab(4)
                     }
                 }
             }
         }
 
-        MouseArea {
-            id: recMouse
+        // ── Body ─────────────────────────────────────────────────────────
+        ColumnLayout {
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            spacing: 0
+
+            // header
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 46
+                Layout.leftMargin: 18
+                Layout.rightMargin: 10
+                spacing: 8
+
+                Text {
+                    text: rootWindow.curNav.title
+                    font.pixelSize: 15
+                    font.weight: Font.DemiBold
+                    color: ui.fg
+                }
+                Item { Layout.fillWidth: true }
+
+                Inp {
+                    id: searchBox
+                    Layout.preferredWidth: searchBox.input.activeFocus ? 210 : 150
+                    placeholder: "Search pages"
+                    text: rootWindow.sidebarSearchQuery
+                    onEdited: (v) => { rootWindow.sidebarSearchQuery = v }
+                    onAccepted: { if (rootWindow.searchHits.length > 0) rootWindow.gotoTab(rootWindow.searchHits[0].id) }
+                }
+
+                Rectangle {
+                    Layout.preferredWidth: 24; Layout.preferredHeight: 24; radius: 12
+                    color: xMa.containsMouse ? ui.dng(0.2) : "transparent"
+                    Text {
+                        anchors.centerIn: parent
+                        text: "✕"
+                        font.pixelSize: 11
+                        color: xMa.containsMouse ? ui.danger : ui.dim
+                    }
+                    MouseArea {
+                        id: xMa
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: rootWindow.hide()
+                    }
+                }
+            }
+
+            Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: ui.line }
+
+            // page
+            Flickable {
+                id: contentFlick
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                contentWidth: width
+                contentHeight: pageLoader.height + 36
+                clip: true
+                boundsBehavior: Flickable.StopAtBounds
+
+                ScrollBar.vertical: ScrollBar {
+                    id: vbar
+                    policy: ScrollBar.AsNeeded
+                    implicitWidth: 6
+                    background: null
+                    contentItem: Rectangle {
+                        implicitWidth: 3
+                        radius: 1.5
+                        color: ui.tone(vbar.pressed ? 0.4 : 0.2)
+                    }
+                }
+
+                Loader {
+                    id: pageLoader
+                    width: Math.max(280, Math.min(contentFlick.width - 36, 900))
+                    x: Math.max(18, (contentFlick.width - width) / 2)
+                    y: 2
+                    height: item ? item.implicitHeight : 0
+                    sourceComponent: rootWindow.pageFor(rootWindow.currentTab)
+                }
+            }
+        }
+    }
+
+    // search results (floating under header)
+    Rectangle {
+        visible: rootWindow.sidebarSearchQuery.length > 0
+        z: 50
+        x: parent.width - width - 10
+        y: 46
+        width: 230
+        height: Math.max(30, rootWindow.searchHits.length * 28 + 8)
+        radius: 8
+        color: ui.dark ? Qt.tint(ui.bg, ui.tone(0.10)) : ui.bg
+        border.width: 1
+        border.color: ui.tone(0.14)
+
+        Text {
+            visible: rootWindow.searchHits.length === 0
+            anchors.centerIn: parent
+            text: "No matching pages"
+            font.pixelSize: 11
+            color: ui.faint
+        }
+        Column {
             anchors.fill: parent
-            z: -1
-            hoverEnabled: true
-            cursorShape: Qt.PointingHandCursor
-            onClicked: {
-                if (!recRoot.isRecording) recRoot.startRecording()
+            anchors.margins: 4
+            Repeater {
+                model: rootWindow.searchHits
+                delegate: Rectangle {
+                    id: sh
+                    required property var modelData
+                    required property int index
+                    width: parent.width
+                    height: 28
+                    radius: 5
+                    color: shMa.containsMouse ? ui.fill : (sh.index === 0 ? ui.wash(0.10) : "transparent")
+                    Row {
+                        anchors.verticalCenter: parent.verticalCenter
+                        anchors.left: parent.left
+                        anchors.leftMargin: 8
+                        spacing: 8
+                        Text { text: sh.modelData.icon; font.family: Services.Theme.fontSymbols; font.pixelSize: 12; color: ui.accent }
+                        Text { text: sh.modelData.title; font.pixelSize: 11; color: ui.fg }
+                    }
+                    MouseArea {
+                        id: shMa
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: rootWindow.gotoTab(sh.modelData.id)
+                    }
+                }
             }
         }
     }
 
     // ═════════════════════════════════════════════════════════════════════════
-    // WINDOW ROOT LAYOUT
+    //  PAGE 0 · APPEARANCE
     // ═════════════════════════════════════════════════════════════════════════
+    Component {
+        id: pgAppearance
 
-    ColumnLayout {
-        anchors.fill: parent
-        spacing: 0
+        ColumnLayout {
+            spacing: 0
 
-        // ── WINDOW HEADERBAR ──────────────────────────────────────────────────
-        Rectangle {
-            Layout.fillWidth: true
-            height: 50
-            color: Services.Theme.surfaceVariant
+            SettingsGroup {
+                title: "Theme"
 
-            Rectangle {
-                anchors.bottom: parent.bottom
-                anchors.left: parent.left
-                anchors.right: parent.right
-                height: 1
-                color: Services.Theme.border
+                OptSeg {
+                    label: "Mode"
+                    options: [{ id: "light", label: "Light" }, { id: "dark", label: "Dark" }]
+                    current: Services.Config ? Services.Config.themeMode : "dark"
+                    onPicked: (id) => {
+                        if (Services.Config) Services.Config.setThemeMode(id)
+                        if (Services.SystemTheme) Services.SystemTheme.setColorScheme(id === "light" ? "prefer-light" : "prefer-dark")
+                    }
+                }
+                OptSwitch {
+                    label: "Matugen palette"
+                    hint: "Derive colors from the wallpaper"
+                    checked: Services.Config ? Services.Config.useMatugen : false
+                    onToggled: (v) => {
+                        if (Services.Config) Services.Config.setUseMatugen(v, Services.Wallpaper ? Services.Wallpaper.currentWallpaper : "")
+                    }
+                }
+                Opt {
+                    label: "Accent"
+                    hint: Services.Config ? Services.Config.accentName : ""
+                }
+                Block {
+                    Flow {
+                        Layout.fillWidth: true
+                        spacing: 8
+                        Repeater {
+                            model: Services.Config ? Services.Config.accentPresets : []
+                            delegate: Rectangle {
+                                id: sw
+                                required property var modelData
+                                readonly property bool isCur: Services.Config && Services.Config.accentName === sw.modelData.name
+                                width: 22; height: 22; radius: 11
+                                color: sw.modelData.preview || (Services.Config && Services.Config.themeMode === "light" ? sw.modelData.lightHex : sw.modelData.darkHex)
+                                border.width: sw.isCur ? 2 : 0
+                                border.color: ui.fg
+                                scale: swMa.containsMouse ? 1.12 : 1.0
+                                Behavior on scale { NumberAnimation { duration: 90 } }
+                                Text {
+                                    visible: sw.modelData.isMatugen === true
+                                    anchors.centerIn: parent
+                                    text: "✦"
+                                    font.pixelSize: 10
+                                    color: "#ffffff"
+                                }
+                                MouseArea {
+                                    id: swMa
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: {
+                                        if (!Services.Config) return
+                                        const hex = Services.Config.themeMode === "light" ? sw.modelData.lightHex : sw.modelData.darkHex
+                                        Services.Config.setAccent(hex, sw.modelData.name, sw.modelData.isMatugen)
+                                        if (sw.modelData.isMatugen && Services.Wallpaper) Services.Config.generateMatugen(Services.Wallpaper.currentWallpaper)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
 
-            RowLayout {
-                anchors.fill: parent
-                spacing: 0
-
-                // Left Header (Sidebar Search)
-                Item {
-                    Layout.preferredWidth: 236
-                    Layout.fillHeight: true
-
-                    Rectangle {
-                        anchors.centerIn: parent
-                        width: parent.width - 24
-                        height: 30
-                        radius: 8
-                        color: Services.Theme.isDark ? Qt.rgba(255, 255, 255, 0.06) : Qt.rgba(0, 0, 0, 0.04)
-                        border.color: searchFocus.activeFocus ? Services.Theme.accent : (Services.Theme.isDark ? Qt.rgba(255, 255, 255, 0.08) : Qt.rgba(0, 0, 0, 0.08))
-                        border.width: 1
-
-                        RowLayout {
-                            anchors.fill: parent
-                            anchors.leftMargin: 8
-                            anchors.rightMargin: 8
-                            spacing: 6
-
-                            Text {
-                                text: Services.Icons.search || "󰍉"
-                                font.family: Services.Theme.fontSymbols
-                                font.pixelSize: 12
-                                color: searchFocus.activeFocus ? Services.Theme.accent : Services.Theme.textDisabled
-                                Layout.alignment: Qt.AlignVCenter
-                            }
-
-                            TextInput {
-                                id: searchFocus
-                                Layout.fillWidth: true
-                                Layout.alignment: Qt.AlignVCenter
-                                text: rootWindow.sidebarSearchQuery
-                                font.pixelSize: 12
-                                color: Services.Theme.textPrimary
-                                clip: true
-                                selectByMouse: true
-                                onTextChanged: rootWindow.sidebarSearchQuery = text
-
-                                Text {
-                                    visible: searchFocus.text.length === 0
-                                    text: "Search Settings..."
-                                    font.pixelSize: 12
-                                    color: Services.Theme.textDisabled
-                                    anchors.verticalCenter: parent.verticalCenter
-                                }
-                            }
-
-                            Text {
-                                visible: searchFocus.text.length > 0
-                                text: "✕"
-                                font.pixelSize: 10
-                                color: Services.Theme.textSecondary
-                                Layout.alignment: Qt.AlignVCenter
-
-                                MouseArea {
-                                    anchors.fill: parent
-                                    cursorShape: Qt.PointingHandCursor
-                                    onClicked: searchFocus.text = ""
-                                }
-                            }
+            SettingsGroup {
+                title: "Wallpaper"
+                Block {
+                    WpStrip {
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 54
+                        deletable: true
+                        current: Services.Wallpaper ? Services.Wallpaper.currentWallpaper : ""
+                        onChosen: (path) => {
+                            if (!Services.Wallpaper) return
+                            Services.Wallpaper.setWallpaper(path)
+                            if (Services.Config && Services.Config.useMatugen) Services.Config.generateMatugen(path)
+                        }
+                    }
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Item { Layout.fillWidth: true }
+                        Btn {
+                            glyph: Services.Icons.plus || "+"
+                            text: "Add image"
+                            onClicked: { if (Services.Wallpaper) Services.Wallpaper.pickCustomWallpaper() }
                         }
                     }
                 }
+            }
 
-                // Vertical Header Separator
-                Rectangle {
-                    Layout.preferredWidth: 1
-                    Layout.fillHeight: true
-                    color: Services.Theme.border
+            SettingsGroup {
+                title: "System theme"
+                OptPick {
+                    label: "GTK theme"
+                    searchable: true
+                    model: Services.SystemTheme ? Services.SystemTheme.gtkThemes : []
+                    current: Services.SystemTheme ? Services.SystemTheme.currentGtkTheme : ""
+                    onPicked: (id) => { if (Services.SystemTheme) Services.SystemTheme.setGtkTheme(id) }
                 }
+                OptPick {
+                    label: "Icons"
+                    searchable: true
+                    model: Services.SystemTheme ? Services.SystemTheme.iconThemes : []
+                    current: Services.SystemTheme ? Services.SystemTheme.currentIconTheme : ""
+                    onPicked: (id) => { if (Services.SystemTheme) Services.SystemTheme.setIconTheme(id) }
+                }
+                OptPick {
+                    label: "Cursor"
+                    searchable: true
+                    model: Services.SystemTheme ? Services.SystemTheme.cursorThemes : []
+                    current: Services.SystemTheme ? Services.SystemTheme.currentCursorTheme : ""
+                    onPicked: (id) => { if (Services.SystemTheme) Services.SystemTheme.setCursorTheme(id) }
+                }
+                OptPick {
+                    label: "Cursor size"
+                    minW: 70
+                    model: Services.SystemTheme ? Services.SystemTheme.cursorSizes : []
+                    current: Services.SystemTheme ? Services.SystemTheme.currentCursorSize : 24
+                    onPicked: (id) => { if (Services.SystemTheme) Services.SystemTheme.setCursorSize(id) }
+                }
+            }
 
-                // Right Header (Breadcrumb, Tab Title & Esc Badge)
-                RowLayout {
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
-                    Layout.leftMargin: 16
-                    Layout.rightMargin: 16
-                    spacing: 10
+            SettingsGroup {
+                title: "Shell fonts"
+                OptPick {
+                    label: "UI"
+                    searchable: true
+                    model: Services.SystemTheme ? Services.SystemTheme.systemFonts : []
+                    current: Services.Config ? Services.Config.fontFamily : ""
+                    onPicked: (id) => { if (Services.Config) Services.Config.setFontFamily(id) }
+                }
+                OptPick {
+                    label: "Monospace"
+                    searchable: true
+                    model: Services.SystemTheme ? Services.SystemTheme.monospaceFonts : []
+                    current: Services.Config ? Services.Config.fontMono : ""
+                    onPicked: (id) => { if (Services.Config) Services.Config.setFontMono(id) }
+                }
+                OptPick {
+                    label: "Display"
+                    searchable: true
+                    model: Services.SystemTheme ? Services.SystemTheme.systemFonts : []
+                    current: Services.Config ? Services.Config.fontDisplay : ""
+                    onPicked: (id) => { if (Services.Config) Services.Config.setFontDisplay(id) }
+                }
+            }
 
-                    Text {
-                        text: {
-                            const icons = [
-                                Services.Icons.palette,
-                                Services.Icons.controlcenter,
-                                Services.Icons.bell,
-                                Services.Icons.speaker,
-                                Services.Icons.power,
-                                Services.Icons.display,
-                                Services.Icons.keyboard,
-                                Services.Icons.undo,
-                                Services.Icons.info
-                            ]
-                            return icons[rootWindow.currentTab] || Services.Icons.settings
-                        }
-                        font.family: Services.Theme.fontSymbols
-                        font.pixelSize: 14
-                        color: Services.Theme.accent
-                        Layout.alignment: Qt.AlignVCenter
-                    }
+            SettingsGroup {
+                title: "System fonts"
+                OptFont {
+                    label: "Interface"
+                    famModel: Services.SystemTheme ? Services.SystemTheme.systemFonts : []
+                    fam: Services.SystemTheme ? Services.SystemTheme.currentFontFamily : ""
+                    size: Services.SystemTheme ? Services.SystemTheme.currentFontSize : 11
+                    onFamPicked: (id) => { if (Services.SystemTheme) Services.SystemTheme.setFont("interface", id, Services.SystemTheme.currentFontSize) }
+                    onSizePicked: (id) => { if (Services.SystemTheme) Services.SystemTheme.setFont("interface", Services.SystemTheme.currentFontFamily, id) }
+                }
+                OptFont {
+                    label: "Document"
+                    famModel: Services.SystemTheme ? Services.SystemTheme.systemFonts : []
+                    fam: Services.SystemTheme ? Services.SystemTheme.currentDocFontFamily : ""
+                    size: Services.SystemTheme ? Services.SystemTheme.currentDocFontSize : 12
+                    onFamPicked: (id) => { if (Services.SystemTheme) Services.SystemTheme.setFont("document", id, Services.SystemTheme.currentDocFontSize) }
+                    onSizePicked: (id) => { if (Services.SystemTheme) Services.SystemTheme.setFont("document", Services.SystemTheme.currentDocFontFamily, id) }
+                }
+                OptFont {
+                    label: "Monospace"
+                    famModel: Services.SystemTheme ? Services.SystemTheme.monospaceFonts : []
+                    fam: Services.SystemTheme ? Services.SystemTheme.currentMonoFontFamily : ""
+                    size: Services.SystemTheme ? Services.SystemTheme.currentMonoFontSize : 11
+                    onFamPicked: (id) => { if (Services.SystemTheme) Services.SystemTheme.setFont("monospace", id, Services.SystemTheme.currentMonoFontSize) }
+                    onSizePicked: (id) => { if (Services.SystemTheme) Services.SystemTheme.setFont("monospace", Services.SystemTheme.currentMonoFontFamily, id) }
+                }
+                OptSeg {
+                    label: "Hinting"
+                    options: [{ id: "none", label: "None" }, { id: "slight", label: "Slight" }, { id: "medium", label: "Medium" }, { id: "full", label: "Full" }]
+                    current: Services.SystemTheme ? Services.SystemTheme.currentFontHinting : "slight"
+                    onPicked: (id) => { if (Services.SystemTheme) Services.SystemTheme.setFontHinting(id) }
+                }
+                OptSeg {
+                    label: "Antialiasing"
+                    options: [{ id: "rgba", label: "Subpixel" }, { id: "grayscale", label: "Grayscale" }, { id: "none", label: "None" }]
+                    current: Services.SystemTheme ? Services.SystemTheme.currentFontAntialiasing : "grayscale"
+                    onPicked: (id) => { if (Services.SystemTheme) Services.SystemTheme.setFontAntialiasing(id) }
+                }
+                OptSlide {
+                    label: "Text scale"
+                    from: 0.75; to: 1.75; step: 0.05; decimals: 2; suffix: "x"
+                    value: Services.SystemTheme ? Services.SystemTheme.currentTextScaling : 1.0
+                    onMoved: (v) => { if (Services.SystemTheme) Services.SystemTheme.setTextScaling(Number(v.toFixed(2))) }
+                }
+            }
 
-                    Text {
-                        text: "Settings"
-                        font.pixelSize: 13
-                        font.weight: Font.DemiBold
-                        color: Services.Theme.textPrimary
-                    }
-
-                    Text {
-                        text: "›"
-                        font.pixelSize: 14
-                        color: Services.Theme.textDisabled
-                    }
-
-                    Text {
-                        text: {
-                            const tabs = ["Appearance", "Bar & Dock", "Notifications", "Sound & Audio", "Lock & Power", "Compositor", "Keybindings", "Backup & Reset", "About"]
-                            return tabs[rootWindow.currentTab] || "Preferences"
-                        }
-                        font.pixelSize: 13
-                        font.weight: Font.DemiBold
-                        color: Services.Theme.accent
-                    }
-
-                    Item { Layout.fillWidth: true }
-
-                    // Esc key badge
-                    Rectangle {
-                        implicitHeight: 20
-                        implicitWidth: escText.implicitWidth + 12
-                        radius: 5
-                        color: Services.Theme.bgElevated
-                        border.color: Services.Theme.border
-                        border.width: 1
-                        Text {
-                            id: escText
-                            anchors.centerIn: parent
-                            text: "Esc"
-                            font.family: Services.Theme.fontMono
-                            font.pixelSize: 9
-                            color: Services.Theme.textDisabled
-                        }
-                    }
-
-                    // Minimal Close Button
-                    Rectangle {
-                        width: 26; height: 26; radius: 6
-                        color: closeMouse.containsMouse ? Qt.rgba(0.9, 0.2, 0.2, 0.15) : "transparent"
-                        Text {
-                            anchors.centerIn: parent
-                            text: Services.Icons.close || "✕"
-                            font.family: Services.Theme.fontSymbols
-                            font.pixelSize: 12
-                            color: closeMouse.containsMouse ? Services.Theme.danger : Services.Theme.textSecondary
-                        }
-                        MouseArea {
-                            id: closeMouse
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: rootWindow.hide()
-                        }
-                    }
+            SettingsGroup {
+                title: "Shell shape"
+                OptSlide {
+                    label: "Corner radius"
+                    from: 0; to: 32; step: 1; suffix: "px"
+                    value: Services.Config ? Services.Config.cornerRadius : 16
+                    onMoved: (v) => { if (Services.Config) Services.Config.setCornerRadius(Math.round(v)) }
+                }
+                OptSlide {
+                    label: "Glass opacity"
+                    from: 0.5; to: 1.0; step: 0.05; decimals: 2
+                    value: Services.Config ? Services.Config.glassOpacity : 0.85
+                    onMoved: (v) => { if (Services.Config) Services.Config.setGlassOpacity(Number(v.toFixed(2))) }
+                }
+                OptSlide {
+                    label: "UI scale"
+                    from: 75; to: 135; step: 5; suffix: "%"
+                    value: Services.Config ? Math.round(Services.Config.uiScale * 100) : 100
+                    onMoved: (v) => { if (Services.Config) Services.Config.setUiScale(v / 100) }
                 }
             }
         }
+    }
 
-        // ── MAIN BODY: SIDEBAR + CONTENT PANE ─────────────────────────────────
-        RowLayout {
-            Layout.fillWidth: true
-            Layout.fillHeight: true
+    // ═════════════════════════════════════════════════════════════════════════
+    //  PAGE 1 · BAR & DOCK
+    // ═════════════════════════════════════════════════════════════════════════
+    Component {
+        id: pgBar
+
+        ColumnLayout {
+            id: tab1
+            property int sub: 0
+            property bool adding: false
+            property string appQuery: ""
+
+            readonly property var candidates: {
+                const raw = (DesktopEntries.applications && DesktopEntries.applications.values) ? DesktopEntries.applications.values : []
+                const q = tab1.appQuery.toLowerCase().trim()
+                const res = []
+                for (let i = 0; i < raw.length && res.length < 24; i++) {
+                    const a = raw[i]
+                    if (!a || !a.id) continue
+                    if (Services.DockService && Services.DockService.isPinned(a.id)) continue
+                    if (q.length === 0 || (a.name && a.name.toLowerCase().includes(q)) || a.id.toLowerCase().includes(q)) res.push(a)
+                }
+                return res
+            }
+
             spacing: 0
 
-            // ── LEFT SIDEBAR (Adaptive 190px - 236px) ───────────────────────
-            Rectangle {
-                Layout.preferredWidth: (rootWindow.width < 750) ? 190 : 236
-                Layout.fillHeight: true
-                color: Services.Theme.surfaceVariant
+            RowLayout {
+                Layout.topMargin: 8
+                Seg {
+                    options: [{ id: 0, label: "Bar" }, { id: 1, label: "Dock" }]
+                    current: tab1.sub
+                    onPicked: (id) => { tab1.sub = id }
+                }
+                Item { Layout.fillWidth: true }
+            }
 
-                Rectangle {
-                    anchors.right: parent.right
-                    anchors.top: parent.top
-                    anchors.bottom: parent.bottom
-                    width: 1
-                    color: Services.Theme.border
+            // ── BAR ──
+            ColumnLayout {
+                visible: tab1.sub === 0
+                Layout.fillWidth: true
+                spacing: 0
+
+                SettingsGroup {
+                    title: "Bar"
+                    OptSeg {
+                        label: "Monitors"
+                        options: [{ id: "all", label: "All" }, { id: "primary", label: "Primary" }, { id: "custom", label: "Custom" }]
+                        current: Services.Config ? Services.Config.barMonitorMode : "all"
+                        onPicked: (id) => { if (Services.Config) Services.Config.setBarMonitorMode(id) }
+                    }
+                    Repeater {
+                        model: (Services.Config && Services.Config.barMonitorMode === "custom" && Services.Compositor && Services.Compositor.monitorsList) ? Services.Compositor.monitorsList : []
+                        delegate: OptSwitch {
+                            required property var modelData
+                            label: (modelData.name || "Display") + (modelData.focused ? " · primary" : "")
+                            hint: modelData.width + "×" + modelData.height + " @ " + modelData.refreshRate + "Hz"
+                            checked: Services.Config ? Services.Config.isBarMonitorEnabled(modelData.name) : true
+                            onToggled: (v) => { if (Services.Config) Services.Config.setBarMonitor(modelData.name, v) }
+                        }
+                    }
                 }
 
-                ColumnLayout {
-                    anchors.fill: parent
-                    anchors.margins: 10
-                    spacing: 8
-
-                    // User Profile Banner (Profile Card Style)
-                    Rectangle {
-                        id: sidebarUserBanner
-                        Layout.fillWidth: true
-                        height: 48
-                        radius: 8
-                        color: bannerMouse.containsMouse ? (Services.Theme.isDark ? Qt.rgba(255, 255, 255, 0.08) : Qt.rgba(0, 0, 0, 0.06)) : (Services.Theme.isDark ? Qt.rgba(255, 255, 255, 0.04) : Qt.rgba(0, 0, 0, 0.03))
-                        border.color: bannerMouse.containsMouse ? Services.Theme.accent : Services.Theme.borderSubtle
-                        border.width: 1
-
-                        MouseArea {
-                            id: bannerMouse
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: {
-                                rootWindow.currentTab = 4 // Jump to Lock & Power / User Profile & Avatar
-                            }
-                        }
-
-                        RowLayout {
-                            anchors.fill: parent
-                            anchors.margins: 6
-                            spacing: 8
-
-                            // Avatar Squircle with Live Avatar
-                            Services.AvatarFrame {
-                                Layout.preferredWidth: 34
-                                Layout.preferredHeight: 34
-                                source: Services.OsInfo.avatarPath
-                                shapeRadius: 8
-                                backgroundColor: Services.Theme.accent
-                                fallbackText: {
-                                    const u = (Services.OsInfo.username || Quickshell.env("USER") || "user").toUpperCase()
-                                    return u.length > 0 ? u.charAt(0) : "󰌽"
-                                }
-                                fallbackFontFamily: Services.Theme.fontSymbols
-                                fallbackFontSize: 14
-                                fallbackColor: Services.Theme.bgOnAccent
-                            }
-
-                            ColumnLayout {
-                                Layout.fillWidth: true
-                                Layout.alignment: Qt.AlignVCenter
-                                spacing: 1
-
-                                Text {
-                                    Layout.fillWidth: true
-                                    text: Services.OsInfo.username || Quickshell.env("USER") || "User"
-                                    font.pixelSize: 12
-                                    font.weight: Font.DemiBold
-                                    color: Services.Theme.textPrimary
-                                    elide: Text.ElideRight
-                                }
-
-                                Text {
-                                    Layout.fillWidth: true
-                                    text: Services.OsInfo.distroName || "Quickshell Desktop"
-                                    font.pixelSize: 10
-                                    color: Services.Theme.textSecondary
-                                    elide: Text.ElideRight
-                                }
-                            }
-                        }
+                SettingsGroup {
+                    title: "Dynamic Island"
+                    OptSwitch {
+                        label: "System HUD alerts"
+                        hint: "Volume, mute, charging, and camera activity"
+                        checked: Services.Config ? Services.Config.islandSysHud : true
+                        onToggled: (v) => { if (Services.Config) Services.Config.setIslandSysHud(v) }
                     }
-
-                    // Navigation Category List
-                    ListView {
-                        id: navList
-                        Layout.fillWidth: true
-                        Layout.fillHeight: true
-                        spacing: 3
-                        clip: false
-                        interactive: false
-
-                        readonly property var allNavTabs: [
-                            { id: 0, title: "Appearance",    icon: Services.Icons.palette,       color: "#3b82f6", cat: "Personalization", kw: "appearance theme dark light wallpaper accent color font gtk icon cursor scale radius matugen compositor typography hinting antialiasing" },
-                            { id: 1, title: "Bar & Dock",     icon: Services.Icons.controlcenter, color: "#8b5cf6", cat: "Personalization", kw: "bar dock application running pinned magnification island dynamic island notch workspaces clock date format pills dashboard weather cuaca widgets metrics hardware" },
-                            { id: 2, title: "Notifications",  icon: Services.Icons.bell,          color: "#f97316", cat: "Personalization", kw: "notifications dnd do not disturb timeout retention banner history" },
-                            { id: 3, title: "Sound & Audio",  icon: Services.Icons.speaker,       color: "#ec4899", cat: "Personalization", kw: "sound audio volume feedback clicks effects mute" },
-                            { id: 4, title: "Lock & Power",   icon: Services.Icons.power,         color: "#ef4444", cat: "System",          kw: "lock screen power battery sleep timeout auth media clock blur faceid biometric face camera webcam" },
-                            { id: 5, title: "Compositor",     icon: Services.Icons.display,       color: "#06b6d4", cat: "System",          kw: "compositor window blur borders animations displays monitors scaling input touchpad gestures power gaming" },
-                            { id: 6, title: "Keybindings",    icon: Services.Icons.keyboard,      color: "#eab308", cat: "System",          kw: "keybindings shortcuts hotkeys binds compositor hyprland super mod" },
-                            { id: 7, title: "Backup & Reset", icon: Services.Icons.undo,          color: "#10b981", cat: "Maintenance",     kw: "backup restore reset defaults export import config" },
-                            { id: 8, title: "About",          icon: Services.Icons.info,          color: "#64748b", cat: "Maintenance",     kw: "about system os kernel quickshell version compositor distro info" }
-                        ]
-
-                        model: {
-                            const q = (rootWindow.sidebarSearchQuery || "").toLowerCase().trim()
-                            if (!q || q.length === 0) return allNavTabs
-                            return allNavTabs.filter(item => {
-                                return item.title.toLowerCase().indexOf(q) !== -1 || (item.kw && item.kw.indexOf(q) !== -1)
-                            })
-                        }
-
-                        delegate: Rectangle {
-                            width: navList.width
-                            height: 38
-                            radius: 8
-                            readonly property bool isCur: rootWindow.currentTab === modelData.id
-                            scale: tabMouse.pressed ? 0.98 : 1.0
-                            Behavior on scale { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
-
-                            color: isCur 
-                                ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.18)
-                                : (tabMouse.containsMouse ? Qt.rgba(255, 255, 255, 0.06) : "transparent")
-                            border.color: isCur 
-                                ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.45) 
-                                : (tabMouse.containsMouse ? Qt.rgba(255, 255, 255, 0.08) : "transparent")
-                            border.width: 1
-                            Behavior on color { ColorAnimation { duration: 150 } }
-                            Behavior on border.color { ColorAnimation { duration: 150 } }
-
-                            // Top Specular Glass Highlight Line
-                            Rectangle {
-                                visible: isCur
-                                anchors.top: parent.top
-                                anchors.left: parent.left
-                                anchors.right: parent.right
-                                anchors.topMargin: 1
-                                anchors.leftMargin: 4
-                                anchors.rightMargin: 4
-                                height: 1
-                                radius: 0.5
-                                color: Qt.rgba(1, 1, 1, 0.35)
-                            }
-
-                            RowLayout {
-                                anchors.fill: parent
-                                anchors.leftMargin: 8
-                                anchors.rightMargin: 10
-                                spacing: 10
-
-                                // Squircle Icon Container (Unified Static Styling)
-                                Rectangle {
-                                    Layout.preferredWidth: 26
-                                    Layout.preferredHeight: 26
-                                    Layout.alignment: Qt.AlignVCenter
-                                    radius: 7
-                                    color: isCur ? Services.Theme.accent : Qt.rgba(1, 1, 1, 0.08)
-                                    border.color: isCur ? Services.Theme.accent : Qt.rgba(1, 1, 1, 0.06)
-                                    border.width: 1
-                                    scale: isCur ? 1.06 : 1.0
-                                    Behavior on scale { NumberAnimation { duration: 200; easing.type: Easing.OutBack; easing.overshoot: 1.3 } }
-                                    Behavior on color { ColorAnimation { duration: 180 } }
-
-                                    Text {
-                                        anchors.centerIn: parent
-                                        text: modelData.icon
-                                        font.family: Services.Theme.fontSymbols
-                                        font.pixelSize: 13
-                                        color: isCur ? (Services.Theme.bgOnAccent || "#ffffff") : (tabMouse.containsMouse ? Services.Theme.textPrimary : Services.Theme.textSecondary)
-                                        Behavior on color { ColorAnimation { duration: 180 } }
-                                    }
-                                }
-
-                                Text {
-                                    Layout.fillWidth: true
-                                    Layout.alignment: Qt.AlignVCenter
-                                    text: modelData.title
-                                    font.pixelSize: 13
-                                    font.weight: isCur ? Font.DemiBold : Font.Normal
-                                    color: isCur ? Services.Theme.textPrimary : (tabMouse.containsMouse ? Services.Theme.textPrimary : Services.Theme.textSecondary)
-                                    elide: Text.ElideRight
-                                }
-
-                                Text {
-                                    visible: isCur || tabMouse.containsMouse
-                                    text: "›"
-                                    font.pixelSize: 13
-                                    color: isCur ? Services.Theme.accent : Services.Theme.textDisabled
-                                    Layout.alignment: Qt.AlignVCenter
-                                    scale: isCur ? 1.1 : 1.0
-                                    Behavior on scale { NumberAnimation { duration: 180; easing.type: Easing.OutBack; easing.overshoot: 1.3 } }
-                                }
-                            }
-
-                            MouseArea {
-                                id: tabMouse
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: {
-                                    if (rootWindow.currentTab !== modelData.id) {
-                                        if (modelData.id === 5) rootWindow.compSubTab = 0
-                                        rootWindow.currentTab = modelData.id
-                                    }
-                                    if (modelData.id === 5 && Services.Compositor) {
-                                        Services.Compositor.refreshState()
-                                        Services.Compositor.loadAutostart()
-                                    }
-                                    if (modelData.id === 6 && Services.Compositor) Services.Compositor.loadKeybinds()
-                                }
-                            }
-                        }
+                    OptSwitch {
+                        label: "Notification popups"
+                        hint: "Display live notification alerts inside the island"
+                        checked: Services.Config ? Services.Config.islandNotifs : true
+                        onToggled: (v) => { if (Services.Config) Services.Config.setIslandNotifs(v) }
                     }
+                    OptSwitch {
+                        label: "Drop-to-send"
+                        hint: "Drag files onto the island to share via Device Share"
+                        checked: Services.Config ? Services.Config.islandDropSend : true
+                        onToggled: (v) => { if (Services.Config) Services.Config.setIslandDropSend(v) }
+                    }
+                    OptSwitch {
+                        label: "Show on lockscreen"
+                        hint: "Keep media and status island active when locked"
+                        checked: Services.Config ? Services.Config.islandAllowOnLockscreen : true
+                        onToggled: (v) => { if (Services.Config) Services.Config.setIslandAllowOnLockscreen(v) }
+                    }
+                }
 
-                    // Sidebar Footer: Distro & Protocol Badge
-                    Rectangle {
-                        Layout.fillWidth: true
-                        height: 32
-                        radius: 6
-                        color: Services.Theme.bgElevated
-                        border.color: Services.Theme.border
-                        border.width: 1
+                SettingsGroup {
+                    title: "Workspaces"
+                    OptSeg {
+                        label: "Style"
+                        options: [{ id: "pills", label: "Pills" }, { id: "numbers", label: "Numbers" }, { id: "dots", label: "Dots" }, { id: "icons", label: "Icons" }]
+                        current: Services.Config ? Services.Config.workspaceStyle : "pills"
+                        onPicked: (id) => { if (Services.Config) Services.Config.setWorkspaceStyle(id) }
+                    }
+                    OptSwitch {
+                        label: "Always show 1–5"
+                        checked: Services.Config ? Services.Config.workspaceShowAll : true
+                        onToggled: (v) => { if (Services.Config) Services.Config.setWorkspaceShowAll(v) }
+                    }
+                }
 
-                        RowLayout {
-                            anchors.fill: parent
-                            anchors.leftMargin: 8
-                            anchors.rightMargin: 8
+                SettingsGroup {
+                    title: "Clock"
+                    OptSeg {
+                        label: "Date format"
+                        options: [{ id: "short", label: "Thu, 20 Aug" }, { id: "full", label: "Thursday, 20 August" }]
+                        current: Services.Config ? Services.Config.clockDateFormat : "short"
+                        onPicked: (id) => { if (Services.Config) Services.Config.setClockDateFormat(id) }
+                    }
+                    OptSwitch {
+                        label: "24-hour"
+                        checked: Services.Config ? Services.Config.clock24h : true
+                        onToggled: (v) => { if (Services.Config) Services.Config.setClock24h(v) }
+                    }
+                    OptSwitch {
+                        label: "Seconds"
+                        checked: Services.Config ? Services.Config.clockShowSeconds : false
+                        onToggled: (v) => { if (Services.Config) Services.Config.setClockShowSeconds(v) }
+                    }
+                    OptSwitch {
+                        label: "Show date"
+                        checked: Services.Config ? Services.Config.clockShowDate : true
+                        onToggled: (v) => { if (Services.Config) Services.Config.setClockShowDate(v) }
+                    }
+                }
+
+                SettingsGroup {
+                    title: "Modules"
+                    Block {
+                        Flow {
+                            Layout.fillWidth: true
                             spacing: 6
-
-                            Text {
-                                text: Services.OsInfo.logoGlyph || Services.Icons.kernel || "󰌽"
-                                font.family: Services.Theme.fontSymbols
-                                font.pixelSize: 13
-                                color: Services.Theme.accent
+                            Chip {
+                                text: "Workspaces"
+                                on: Services.Config ? Services.Config.showWorkspaces : true
+                                onClicked: { if (Services.Config) Services.Config.setShowWorkspaces(!on) }
                             }
-
-                            Text {
-                                Layout.fillWidth: true
-                                text: Services.OsInfo.distroName || "Linux"
-                                font.pixelSize: 10
-                                font.weight: Font.Medium
-                                color: Services.Theme.textSecondary
-                                elide: Text.ElideRight
+                            Chip {
+                                text: "Tray"
+                                on: Services.Config ? Services.Config.showSysTray : true
+                                onClicked: { if (Services.Config) Services.Config.setShowSysTray(!on) }
                             }
+                            Chip {
+                                text: "Sysmon"
+                                on: Services.Config ? Services.Config.showSysmonTray : true
+                                onClicked: { if (Services.Config) Services.Config.setShowSysmonTray(!on) }
+                            }
+                            Chip {
+                                text: "Battery"
+                                on: Services.Config ? Services.Config.showBatteryTray : true
+                                onClicked: { if (Services.Config) Services.Config.setShowBatteryTray(!on) }
+                            }
+                            Chip {
+                                text: "Control center"
+                                on: Services.Config ? Services.Config.showControlCenterTray : true
+                                onClicked: { if (Services.Config) Services.Config.setShowControlCenterTray(!on) }
+                            }
+                            Chip {
+                                text: "Clock"
+                                on: Services.Config ? Services.Config.showClockTray : true
+                                onClicked: { if (Services.Config) Services.Config.setShowClockTray(!on) }
+                            }
+                        }
+                    }
+                }
 
-                            Text {
-                                text: "Wayland"
-                                font.pixelSize: 9
-                                font.family: Services.Theme.fontMono
-                                color: Services.Theme.textDisabled
+                SettingsGroup {
+                    title: "Dashboard"
+                    OptSeg {
+                        label: "Main widget"
+                        options: [{ id: "weather", label: "Weather" }, { id: "wallpaper", label: "Wallpapers" }, { id: "both", label: "Both" }]
+                        current: Services.Config ? Services.Config.dashboardWidget : "weather"
+                        onPicked: (id) => { if (Services.Config) Services.Config.setDashboardWidget(id) }
+                    }
+                    OptSeg {
+                        label: "Weather location"
+                        options: [{ id: "auto", label: "Auto (IP)" }, { id: "custom", label: "Custom" }]
+                        current: Services.Config ? Services.Config.weatherLocationMode : "auto"
+                        onPicked: (id) => { if (Services.Config) Services.Config.setWeatherLocationMode(id) }
+                    }
+                    Opt {
+                        visible: Services.Config && Services.Config.weatherLocationMode === "custom"
+                        label: "City or coordinates"
+                        hint: "e.g. Jakarta or -7.55, 110.82"
+                        RowLayout {
+                            spacing: 6
+                            Inp {
+                                id: cityInput
+                                Layout.preferredWidth: 160
+                                placeholder: "City or lat, lon"
+                                text: Services.Config ? Services.Config.weatherCustomCity : ""
+                                onAccepted: (v) => { if (Services.Config) Services.Config.setWeatherCustomCity(v) }
+                            }
+                            Btn {
+                                text: "Apply"
+                                kind: "accent"
+                                onClicked: { if (Services.Config) Services.Config.setWeatherCustomCity(cityInput.text) }
+                            }
+                        }
+                    }
+                    OptSeg {
+                        label: "Temperature"
+                        options: [{ id: "celsius", label: "°C" }, { id: "fahrenheit", label: "°F" }]
+                        current: Services.Config ? Services.Config.weatherUnit : "celsius"
+                        onPicked: (id) => { if (Services.Config) Services.Config.setWeatherUnit(id) }
+                    }
+                    Block {
+                        Flow {
+                            Layout.fillWidth: true
+                            spacing: 6
+                            Chip {
+                                text: "Metrics"
+                                on: Services.Config ? Services.Config.dashboardShowMetrics : true
+                                onClicked: { if (Services.Config) Services.Config.setDashboardShowMetrics(!on) }
+                            }
+                            Chip {
+                                text: "Specs"
+                                on: Services.Config ? Services.Config.dashboardShowSpecs : true
+                                onClicked: { if (Services.Config) Services.Config.setDashboardShowSpecs(!on) }
+                            }
+                            Chip {
+                                text: "Session actions"
+                                on: Services.Config ? Services.Config.dashboardShowActions : true
+                                onClicked: { if (Services.Config) Services.Config.setDashboardShowActions(!on) }
                             }
                         }
                     }
                 }
             }
 
-            // ── RIGHT SETTINGS CONTENT PANE ──────────────────────────────────
-            Rectangle {
+            // ── DOCK ──
+            ColumnLayout {
+                visible: tab1.sub === 1
                 Layout.fillWidth: true
-                Layout.fillHeight: true
-                color: Services.Theme.bg
-                clip: true
+                spacing: 0
 
-                Flickable {
-                    id: contentFlick
-                    anchors.fill: parent
-                    anchors.margins: (rootWindow.width < 750) ? 12 : 18
-                    contentHeight: Math.max(contentFlick.height, tabStack.currentContentHeight + 40)
-                    contentWidth: width
-                    clip: true
-                    boundsBehavior: Flickable.StopAtBounds
+                SettingsGroup {
+                    title: "Dock"
+                    OptSwitch {
+                        label: "Enabled"
+                        checked: Services.Config ? Services.Config.dockEnabled : true
+                        onToggled: (v) => { if (Services.Config) Services.Config.setDockEnabled(v) }
+                    }
+                    OptSeg {
+                        label: "Edge"
+                        options: [{ id: "bottom", label: "Bottom" }, { id: "left", label: "Left" }, { id: "right", label: "Right" }]
+                        current: Services.Config ? Services.Config.dockPosition : "bottom"
+                        onPicked: (id) => { if (Services.Config) Services.Config.setDockPosition(id) }
+                    }
+                    OptSwitch {
+                        label: "Auto-hide"
+                        checked: Services.Config ? Services.Config.dockAutoHide : false
+                        onToggled: (v) => { if (Services.Config) Services.Config.setDockAutoHide(v) }
+                    }
+                    OptSeg {
+                        label: "Monitors"
+                        options: [{ id: "all", label: "All" }, { id: "primary", label: "Primary" }]
+                        current: Services.Config ? Services.Config.dockMonitorMode : "all"
+                        onPicked: (id) => { if (Services.Config) Services.Config.setDockMonitorMode(id) }
+                    }
+                    OptSeg {
+                        label: "Edge gap"
+                        options: [{ id: 0, label: "0" }, { id: 6, label: "6" }, { id: 12, label: "12" }, { id: 18, label: "18" }]
+                        current: Services.Config ? Services.Config.dockFloatingDistance : 6
+                        onPicked: (id) => { if (Services.Config) Services.Config.setDockFloatingDistance(Number(id)) }
+                    }
+                }
 
-                    ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
-
-                    StackLayout {
-                        id: tabStack
-                        width: contentFlick.width - 10
-                        currentIndex: rootWindow.currentTab
-
-                        readonly property var tabItems: [tab0, tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8]
-                        readonly property Item currentItem: (currentIndex >= 0 && currentIndex < tabItems.length) ? tabItems[currentIndex] : null
-                        readonly property real currentContentHeight: currentItem ? currentItem.implicitHeight : implicitHeight
-
-                        height: currentContentHeight
-
-                        // ═════════════════════════════════════════════
-                        // TAB 0: APPEARANCE & THEMING (GNOME 47 / TAHOE PRO STYLE)
-                        // ═════════════════════════════════════════════
-                        ColumnLayout {
-                            id: tab0
+                SettingsGroup {
+                    title: "Look"
+                    OptSeg {
+                        label: "Icon size"
+                        options: [{ id: 36, label: "36" }, { id: 44, label: "44" }, { id: 48, label: "48" }, { id: 56, label: "56" }, { id: 64, label: "64" }]
+                        current: Services.Config ? Services.Config.dockIconSize : 48
+                        onPicked: (id) => { if (Services.Config) Services.Config.setDockIconSize(Number(id)) }
+                    }
+                    OptSwitch {
+                        label: "Magnification"
+                        checked: Services.Config ? Services.Config.dockMagnification : true
+                        onToggled: (v) => { if (Services.Config) Services.Config.setDockMagnification(v) }
+                    }
+                    OptSeg {
+                        visible: Services.Config ? Services.Config.dockMagnification : true
+                        label: "Zoom"
+                        options: [{ id: 1.2, label: "1.2×" }, { id: 1.35, label: "1.35×" }, { id: 1.5, label: "1.5×" }, { id: 1.75, label: "1.75×" }]
+                        current: Services.Config ? Services.Config.dockMagnificationScale : 1.35
+                        onPicked: (id) => { if (Services.Config) Services.Config.setDockMagnificationScale(Number(id)) }
+                    }
+                    OptSwitch {
+                        label: "Running indicators"
+                        checked: Services.Config ? Services.Config.dockShowIndicators : true
+                        onToggled: (v) => { if (Services.Config) Services.Config.setDockShowIndicators(v) }
+                    }
+                    OptSeg {
+                        visible: Services.Config ? Services.Config.dockShowIndicators : true
+                        label: "Indicator"
+                        options: [{ id: "dot", label: "Dot" }, { id: "line", label: "Line" }, { id: "pill", label: "Pill" }, { id: "glow", label: "Glow" }]
+                        current: Services.Config ? Services.Config.dockIndicatorStyle : "dot"
+                        onPicked: (id) => { if (Services.Config) Services.Config.setDockIndicatorStyle(id) }
+                    }
+                    Block {
+                        Flow {
                             Layout.fillWidth: true
-                            spacing: 16
-
-                            // ── 1. Style & Accent Colors (GNOME 47 Style Visual Cards) ──
-                            SettingsSection {
-                                title: "Style & Colors"
-                                icon: Services.Icons.palette || "󰏘"
-
-                                ColumnLayout {
-                                    Layout.fillWidth: true
-                                    Layout.margins: 12
-                                    spacing: 12
-
-                                    // Visual Theme Cards Row
-                                    RowLayout {
-                                        Layout.alignment: Qt.AlignHCenter
-                                        spacing: 24
-
-                                        // Light Mode Mockup Card
-                                        Rectangle {
-                                            Layout.preferredWidth: 136
-                                            Layout.preferredHeight: 114
-                                            color: "transparent"
-
-                                            ColumnLayout {
-                                                id: lightCol
-                                                anchors.fill: parent
-                                                spacing: 8
-                                                Layout.alignment: Qt.AlignHCenter
-
-                                                Rectangle {
-                                                    width: 136
-                                                    height: 84
-                                                    radius: 8
-                                                    color: "#f5f6f9"
-                                                    border.color: (Services.Config && Services.Config.themeMode === "light") ? Services.Theme.accent : (lightMouse.containsMouse ? Services.Theme.borderHighlight : Services.Theme.border)
-                                                    border.width: (Services.Config && Services.Config.themeMode === "light") ? 2 : 1
-                                                    clip: true
-                                                    scale: (Services.Config && Services.Config.themeMode === "light") ? 1.03 : (lightMouse.pressed ? 0.95 : (lightMouse.containsMouse ? 1.02 : 1.0))
-                                                    Behavior on scale { NumberAnimation { duration: 220; easing.type: Easing.OutBack; easing.overshoot: 1.35 } }
-
-                                                    // Mini Window Mockup
-                                                    ColumnLayout {
-                                                        anchors.fill: parent
-                                                        spacing: 0
-
-                                                        // Mockup Titlebar
-                                                        Rectangle {
-                                                            Layout.fillWidth: true
-                                                            height: 18
-                                                            color: "#e8eaef"
-
-                                                            Rectangle {
-                                                                anchors.left: parent.left
-                                                                anchors.leftMargin: 8
-                                                                anchors.verticalCenter: parent.verticalCenter
-                                                                width: 24; height: 4; radius: 2
-                                                                color: "#c8ccd6"
-                                                            }
-                                                        }
-
-                                                        // Mockup Body
-                                                        RowLayout {
-                                                            Layout.fillWidth: true
-                                                            Layout.fillHeight: true
-                                                            spacing: 0
-
-                                                            // Mockup Sidebar
-                                                            Rectangle {
-                                                                Layout.preferredWidth: 36
-                                                                Layout.fillHeight: true
-                                                                color: "#e2e5eb"
-
-                                                                ColumnLayout {
-                                                                    anchors.fill: parent
-                                                                    anchors.margins: 4
-                                                                    spacing: 3
-                                                                    Rectangle { Layout.fillWidth: true; height: 4; radius: 2; color: "#0071e3" }
-                                                                    Rectangle { Layout.fillWidth: true; height: 4; radius: 2; color: "#cbd1db" }
-                                                                    Rectangle { Layout.fillWidth: true; height: 4; radius: 2; color: "#cbd1db" }
-                                                                }
-                                                            }
-
-                                                            // Mockup Content Card
-                                                            Rectangle {
-                                                                Layout.fillWidth: true
-                                                                Layout.fillHeight: true
-                                                                color: "#f5f6f9"
-
-                                                                Rectangle {
-                                                                    anchors.centerIn: parent
-                                                                    width: parent.width - 10
-                                                                    height: parent.height - 10
-                                                                    radius: 4
-                                                                    color: "#ffffff"
-                                                                    border.color: "#e2e5eb"
-                                                                    border.width: 1
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-                                                }
-
-                                                // Radio Selector
-                                                RowLayout {
-                                                    Layout.alignment: Qt.AlignHCenter
-                                                    spacing: 6
-
-                                                    Rectangle {
-                                                        width: 14; height: 14; radius: 7
-                                                        color: "transparent"
-                                                        border.color: (Services.Config && Services.Config.themeMode === "light") ? Services.Theme.accent : Services.Theme.border
-                                                        border.width: 1.5
-
-                                                        Rectangle {
-                                                            anchors.centerIn: parent
-                                                            width: 6; height: 6; radius: 3
-                                                            color: Services.Theme.accent
-                                                            scale: (Services.Config && Services.Config.themeMode === "light") ? 1.0 : 0.0
-                                                            opacity: (Services.Config && Services.Config.themeMode === "light") ? 1.0 : 0.0
-                                                            Behavior on scale { NumberAnimation { duration: 240; easing.type: Easing.OutBack; easing.overshoot: 1.5 } }
-                                                            Behavior on opacity { NumberAnimation { duration: 180 } }
-                                                        }
-                                                    }
-
-                                                    Text {
-                                                        text: "Light"
-                                                        font.pixelSize: 12
-                                                        font.weight: (Services.Config && Services.Config.themeMode === "light") ? Font.DemiBold : Font.Normal
-                                                        color: (Services.Config && Services.Config.themeMode === "light") ? Services.Theme.textPrimary : Services.Theme.textSecondary
-                                                    }
-                                                }
-                                            }
-
-                                            MouseArea {
-                                                id: lightMouse
-                                                anchors.fill: parent
-                                                z: 50
-                                                hoverEnabled: true
-                                                cursorShape: Qt.PointingHandCursor
-                                                onClicked: {
-                                                    if (Services.Config) Services.Config.setThemeMode("light")
-                                                    if (Services.SystemTheme) Services.SystemTheme.setColorScheme("prefer-light")
-                                                }
-                                            }
-                                        }
-
-                                        // Dark Mode Mockup Card
-                                        Rectangle {
-                                            Layout.preferredWidth: 136
-                                            Layout.preferredHeight: 114
-                                            color: "transparent"
-
-                                            ColumnLayout {
-                                                id: darkCol
-                                                anchors.fill: parent
-                                                spacing: 8
-                                                Layout.alignment: Qt.AlignHCenter
-
-                                                Rectangle {
-                                                    width: 136
-                                                    height: 84
-                                                    radius: 8
-                                                    color: "#18181c"
-                                                    border.color: (Services.Config && Services.Config.themeMode === "dark") ? Services.Theme.accent : (darkMouse.containsMouse ? Services.Theme.borderHighlight : Services.Theme.border)
-                                                    border.width: (Services.Config && Services.Config.themeMode === "dark") ? 2 : 1
-                                                    clip: true
-                                                    scale: (Services.Config && Services.Config.themeMode === "dark") ? 1.03 : (darkMouse.pressed ? 0.95 : (darkMouse.containsMouse ? 1.02 : 1.0))
-                                                    Behavior on scale { NumberAnimation { duration: 220; easing.type: Easing.OutBack; easing.overshoot: 1.35 } }
-
-                                                    // Mini Window Mockup
-                                                    ColumnLayout {
-                                                        anchors.fill: parent
-                                                        spacing: 0
-
-                                                        // Mockup Titlebar
-                                                        Rectangle {
-                                                            Layout.fillWidth: true
-                                                            height: 18
-                                                            color: "#222228"
-
-                                                            Rectangle {
-                                                                anchors.left: parent.left
-                                                                anchors.leftMargin: 8
-                                                                anchors.verticalCenter: parent.verticalCenter
-                                                                width: 24; height: 4; radius: 2
-                                                                color: "#383844"
-                                                            }
-                                                        }
-
-                                                        // Mockup Body
-                                                        RowLayout {
-                                                            Layout.fillWidth: true
-                                                            Layout.fillHeight: true
-                                                            spacing: 0
-
-                                                            // Mockup Sidebar
-                                                            Rectangle {
-                                                                Layout.preferredWidth: 36
-                                                                Layout.fillHeight: true
-                                                                color: "#1d1d24"
-
-                                                                ColumnLayout {
-                                                                    anchors.fill: parent
-                                                                    anchors.margins: 4
-                                                                    spacing: 3
-                                                                    Rectangle { Layout.fillWidth: true; height: 4; radius: 2; color: Services.Theme.accent }
-                                                                    Rectangle { Layout.fillWidth: true; height: 4; radius: 2; color: "#32323e" }
-                                                                    Rectangle { Layout.fillWidth: true; height: 4; radius: 2; color: "#32323e" }
-                                                                }
-                                                            }
-
-                                                            // Mockup Content Card
-                                                            Rectangle {
-                                                                Layout.fillWidth: true
-                                                                Layout.fillHeight: true
-                                                                color: "#141418"
-
-                                                                Rectangle {
-                                                                    anchors.centerIn: parent
-                                                                    width: parent.width - 10
-                                                                    height: parent.height - 10
-                                                                    radius: 4
-                                                                    color: "#24242e"
-                                                                    border.color: "#32323e"
-                                                                    border.width: 1
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-                                                }
-
-                                                // Radio Selector
-                                                RowLayout {
-                                                    Layout.alignment: Qt.AlignHCenter
-                                                    spacing: 6
-
-                                                    Rectangle {
-                                                        width: 14; height: 14; radius: 7
-                                                        color: "transparent"
-                                                        border.color: (Services.Config && Services.Config.themeMode === "dark") ? Services.Theme.accent : Services.Theme.border
-                                                        border.width: 1.5
-
-                                                        Rectangle {
-                                                            anchors.centerIn: parent
-                                                            width: 6; height: 6; radius: 3
-                                                            color: Services.Theme.accent
-                                                            scale: (Services.Config && Services.Config.themeMode === "dark") ? 1.0 : 0.0
-                                                            opacity: (Services.Config && Services.Config.themeMode === "dark") ? 1.0 : 0.0
-                                                            Behavior on scale { NumberAnimation { duration: 240; easing.type: Easing.OutBack; easing.overshoot: 1.5 } }
-                                                            Behavior on opacity { NumberAnimation { duration: 180 } }
-                                                        }
-                                                    }
-
-                                                    Text {
-                                                        text: "Dark"
-                                                        font.pixelSize: 12
-                                                        font.weight: (Services.Config && Services.Config.themeMode === "dark") ? Font.DemiBold : Font.Normal
-                                                        color: (Services.Config && Services.Config.themeMode === "dark") ? Services.Theme.textPrimary : Services.Theme.textSecondary
-                                                    }
-                                                }
-                                            }
-
-                                            MouseArea {
-                                                id: darkMouse
-                                                anchors.fill: parent
-                                                z: 50
-                                                hoverEnabled: true
-                                                cursorShape: Qt.PointingHandCursor
-                                                onClicked: {
-                                                    if (Services.Config) Services.Config.setThemeMode("dark")
-                                                    if (Services.SystemTheme) Services.SystemTheme.setColorScheme("prefer-dark")
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-
-                                SettingsDivider {}
-
-                                SettingsSwitch {
-                                    title: "Matugen Dynamic Theme"
-                                    subtitle: "Extract harmonious palette directly from wallpaper"
-                                    checked: Services.Config ? Services.Config.useMatugen : false
-                                    onToggled: (st) => {
-                                        if (Services.Config) {
-                                            Services.Config.setUseMatugen(st, Services.Wallpaper ? Services.Wallpaper.currentWallpaper : "")
-                                        }
-                                    }
-                                }
-
-                                SettingsDivider {}
-
-                                // Accent Colors Sub-Section
-                                ColumnLayout {
-                                    Layout.fillWidth: true
-                                    Layout.margins: 10
-                                    spacing: 10
-
-                                    // Circular Color Chips Row
-                                    RowLayout {
-                                        Layout.fillWidth: true
-                                        Layout.alignment: Qt.AlignHCenter
-                                        spacing: 12
-
-                                        Repeater {
-                                            model: Services.Config ? Services.Config.accentPresets : []
-                                            delegate: Item {
-                                                required property var modelData
-                                                width: 32; height: 32
-                                                readonly property bool isCur: Services.Config && Services.Config.accentName === modelData.name
-                                                scale: isCur ? 1.14 : (dotMouse.pressed ? 0.92 : (dotMouse.containsMouse ? 1.08 : 1.0))
-                                                Behavior on scale { NumberAnimation { duration: 220; easing.type: Easing.OutBack; easing.overshoot: 1.55 } }
-
-                                                // Concentric Selection Ring
-                                                Rectangle {
-                                                    anchors.fill: parent
-                                                    radius: 16
-                                                    color: "transparent"
-                                                    border.color: isCur ? Services.Theme.accent : (dotMouse.containsMouse ? Services.Theme.borderHighlight : "transparent")
-                                                    border.width: isCur ? 2 : 1
-                                                    Behavior on border.color { ColorAnimation { duration: 150 } }
-                                                }
-
-                                                // Color Dot
-                                                Rectangle {
-                                                    anchors.centerIn: parent
-                                                    width: 22; height: 22
-                                                    radius: 11
-                                                    color: modelData.preview || (Services.Config && Services.Config.themeMode === "light" ? modelData.lightHex : modelData.darkHex)
-
-                                                    // Matugen multicolor ring or sparkle icon
-                                                    Text {
-                                                        visible: modelData.isMatugen === true && !isCur
-                                                        anchors.centerIn: parent
-                                                        text: "✦"
-                                                        font.pixelSize: 10
-                                                        color: "#ffffff"
-                                                    }
-
-                                                    // Active Checkmark Icon
-                                                    Text {
-                                                        visible: isCur
-                                                        anchors.centerIn: parent
-                                                        text: Services.Icons.check || "✓"
-                                                        font.family: Services.Theme.fontSymbols
-                                                        font.pixelSize: 10
-                                                        font.bold: true
-                                                        color: Services.Theme.bgOnAccent
-                                                    }
-                                                }
-
-                                                MouseArea {
-                                                    id: dotMouse
-                                                    anchors.fill: parent
-                                                    hoverEnabled: true
-                                                    cursorShape: Qt.PointingHandCursor
-                                                    onClicked: {
-                                                        if (Services.Config) {
-                                                            const hex = (Services.Config.themeMode === "light") ? modelData.lightHex : modelData.darkHex
-                                                            Services.Config.setAccent(hex, modelData.name, modelData.isMatugen)
-                                                            if (modelData.isMatugen && Services.Wallpaper) Services.Config.generateMatugen(Services.Wallpaper.currentWallpaper)
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-
-                                    // Active Palette Subtitle
-                                    RowLayout {
-                                        Layout.alignment: Qt.AlignHCenter
-                                        spacing: 6
-
-                                        Text {
-                                            text: "Current Accent:"
-                                            font.pixelSize: 11
-                                            color: Services.Theme.textSecondary
-                                        }
-
-                                        Text {
-                                            text: Services.Config ? Services.Config.accentName : "Default"
-                                            font.pixelSize: 11
-                                            font.weight: Font.DemiBold
-                                            color: Services.Theme.accent
-                                        }
-                                    }
-                                }
+                            spacing: 6
+                            Chip {
+                                text: "Tooltips"
+                                on: Services.Config ? Services.Config.dockShowTooltips : true
+                                onClicked: { if (Services.Config) Services.Config.setDockShowTooltips(!on) }
                             }
-
-                            // ── 2. Desktop Wallpaper Section ──
-                            SettingsSection {
-                                title: "Desktop Wallpaper"
-                                icon: Services.Icons.image || "󰋩"
-
-                                Item {
-                                    Layout.fillWidth: true
-                                    implicitHeight: 90
-                                    Layout.margins: 10
-
-                                    Flickable {
-                                        anchors.fill: parent
-                                        contentWidth: wpListRow.implicitWidth
-                                        contentHeight: parent.height
-                                        clip: true
-                                        boundsBehavior: Flickable.StopAtBounds
-
-                                        RowLayout {
-                                            id: wpListRow
-                                            spacing: 10
-
-                                            Repeater {
-                                                model: Services.Wallpaper ? Services.Wallpaper.allWallpapers : []
-                                                delegate: Rectangle {
-                                                    required property var modelData
-                                                    width: (rootWindow.width < 750) ? 104 : 116
-                                                    height: (rootWindow.width < 750) ? 68 : 76
-                                                    radius: 8
-                                                    clip: true
-                                                    readonly property bool isCur: Services.Wallpaper && Services.Wallpaper.currentWallpaper === modelData.path
-                                                    color: Services.Theme.bgDeep
-                                                    scale: isCur ? 1.03 : (wCardMouse.pressed ? 0.96 : (wCardMouse.containsMouse ? 1.02 : 1.0))
-                                                    Behavior on scale { NumberAnimation { duration: 200; easing.type: Easing.OutBack; easing.overshoot: 1.35 } }
-
-                                                    Image {
-                                                        anchors.fill: parent
-                                                        source: modelData.path.startsWith("/") ? ("file://" + modelData.path) : modelData.path
-                                                        sourceSize: Qt.size(232, 152)
-                                                        fillMode: Image.PreserveAspectCrop
-                                                        asynchronous: true
-                                                        cache: true
-                                                        smooth: true
-                                                        opacity: isCur || wCardMouse.containsMouse ? 1.0 : 0.8
-                                                    }
-
-                                                    Rectangle {
-                                                        visible: isCur
-                                                        anchors.top: parent.top; anchors.right: parent.right
-                                                        anchors.margins: 5
-                                                        width: 18; height: 18; radius: 9
-                                                        color: Services.Theme.accent
-                                                        Text { anchors.centerIn: parent; text: Services.Icons.check || "✓"; font.family: Services.Theme.fontSymbols; font.pixelSize: 9; color: Services.Theme.bgOnAccent }
-                                                    }
-
-                                                    // Top-level Highlight Border Overlay (Rendered above image)
-                                                    Rectangle {
-                                                        anchors.fill: parent
-                                                        radius: 8
-                                                        color: "transparent"
-                                                        z: 6
-                                                        border.color: isCur ? Services.Theme.accent : (wCardMouse.containsMouse ? Services.Theme.borderHighlight : Qt.rgba(255, 255, 255, 0.12))
-                                                        border.width: isCur ? 2 : (wCardMouse.containsMouse ? 1.5 : 1)
-                                                        Behavior on border.color { ColorAnimation { duration: 150 } }
-                                                        Behavior on border.width { NumberAnimation { duration: 150 } }
-                                                    }
-
-                                                    Rectangle {
-                                                        visible: (modelData.isCustom === true) && (wCardMouse.containsMouse || delMouse.containsMouse)
-                                                        anchors.top: parent.top; anchors.left: parent.left
-                                                        anchors.margins: 5
-                                                        width: 18; height: 18; radius: 9
-                                                        color: delMouse.containsMouse ? Services.Theme.danger : Qt.rgba(0, 0, 0, 0.65)
-                                                        border.color: Qt.rgba(1, 1, 1, 0.2)
-                                                        border.width: 1
-                                                        z: 2
-
-                                                        Text {
-                                                            anchors.centerIn: parent
-                                                            text: Services.Icons.trash || ""
-                                                            font.family: Services.Theme.fontSymbols
-                                                            font.pixelSize: 9
-                                                            color: "#ffffff"
-                                                        }
-
-                                                        MouseArea {
-                                                            id: delMouse
-                                                            anchors.fill: parent
-                                                            hoverEnabled: true
-                                                            cursorShape: Qt.PointingHandCursor
-                                                            onClicked: {
-                                                                if (Services.Wallpaper) {
-                                                                    Services.Wallpaper.removeCustomWallpaper(modelData.path)
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-
-                                                    MouseArea {
-                                                        id: wCardMouse
-                                                        anchors.fill: parent
-                                                        hoverEnabled: true
-                                                        cursorShape: Qt.PointingHandCursor
-                                                        onClicked: {
-                                                            if (Services.Wallpaper) {
-                                                                Services.Wallpaper.setWallpaper(modelData.path)
-                                                                if (Services.Config && Services.Config.useMatugen) Services.Config.generateMatugen(modelData.path)
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-
-                                SettingsDivider {}
-
-                                SettingsRow {
-                                    title: "Custom Wallpaper"
-                                    subtitle: "Add image file from local storage"
-
-                                    Rectangle {
-                                        implicitHeight: 28
-                                        implicitWidth: addBtnText.implicitWidth + 16
-                                        radius: 6
-                                        color: addWpMouse.containsMouse ? Qt.rgba(1, 1, 1, 0.08) : Services.Theme.bgElevated
-                                        border.color: Services.Theme.border
-                                        border.width: 1
-                                        scale: addWpMouse.pressed ? 0.95 : (addWpMouse.containsMouse ? 1.03 : 1.0)
-                                        Behavior on scale { NumberAnimation { duration: 180; easing.type: Easing.OutBack; easing.overshoot: 1.3 } }
-
-                                        Text {
-                                            id: addBtnText
-                                            anchors.centerIn: parent
-                                            text: "+ Add Image..."
-                                            font.pixelSize: 11
-                                            font.weight: Font.Medium
-                                            color: Services.Theme.textPrimary
-                                        }
-
-                                        MouseArea {
-                                            id: addWpMouse
-                                            anchors.fill: parent
-                                            hoverEnabled: true
-                                            cursorShape: Qt.PointingHandCursor
-                                            onClicked: { if (Services.Wallpaper) Services.Wallpaper.pickCustomWallpaper() }
-                                        }
-                                    }
-                                }
+                            Chip {
+                                text: "Window count"
+                                on: Services.Config ? Services.Config.dockShowWindowCount : true
+                                onClicked: { if (Services.Config) Services.Config.setDockShowWindowCount(!on) }
                             }
-
-                            // ── 3. Application & Desktop Themes (GTK, Icons, Cursors) ──
-                            SettingsSection {
-                                title: "Application & Desktop Theming"
-                                icon: Services.Icons.sparkle || "󰮄"
-
-                                SettingsRow {
-                                    title: "GTK Application Theme"
-                                    subtitle: "Visual style applied to GTK3, GTK4 & Libadwaita applications"
-
-                                    SettingsDropdown {
-                                        minButtonWidth: 160
-                                        searchable: true
-                                        currentValue: Services.SystemTheme ? Services.SystemTheme.currentGtkTheme : "Tahoe-Dark"
-                                        model: Services.SystemTheme ? Services.SystemTheme.gtkThemes : []
-                                        onSelected: (val) => {
-                                            if (Services.SystemTheme) Services.SystemTheme.setGtkTheme(val)
-                                        }
-                                    }
-                                }
-
-                                SettingsDivider {}
-
-                                SettingsRow {
-                                    title: "Icon Theme"
-                                    subtitle: "System-wide application and folder icon pack"
-
-                                    SettingsDropdown {
-                                        minButtonWidth: 160
-                                        searchable: true
-                                        currentValue: Services.SystemTheme ? Services.SystemTheme.currentIconTheme : "MacTahoe-dark"
-                                        model: Services.SystemTheme ? Services.SystemTheme.iconThemes : []
-                                        onSelected: (val) => {
-                                            if (Services.SystemTheme) Services.SystemTheme.setIconTheme(val)
-                                        }
-                                    }
-                                }
-
-                                SettingsDivider {}
-
-                                SettingsRow {
-                                    title: "Cursor Theme"
-                                    subtitle: "Mouse pointer theme for Wayland session and apps"
-
-                                    SettingsDropdown {
-                                        minButtonWidth: 160
-                                        searchable: true
-                                        currentValue: Services.SystemTheme ? Services.SystemTheme.currentCursorTheme : "MacTahoe-dark"
-                                        model: Services.SystemTheme ? Services.SystemTheme.cursorThemes : []
-                                        onSelected: (val) => {
-                                            if (Services.SystemTheme) Services.SystemTheme.setCursorTheme(val)
-                                        }
-                                    }
-                                }
-
-                                SettingsDivider {}
-
-                                SettingsRow {
-                                    title: "Cursor Size"
-                                    subtitle: "Physical cursor size in pixels"
-
-                                    SettingsDropdown {
-                                        minButtonWidth: 130
-                                        currentValue: Services.SystemTheme ? Services.SystemTheme.currentCursorSize : 24
-                                        model: Services.SystemTheme ? Services.SystemTheme.cursorSizes : []
-                                        onSelected: (val) => {
-                                            if (Services.SystemTheme) Services.SystemTheme.setCursorSize(val)
-                                        }
-                                    }
-                                }
+                            Chip {
+                                text: "Launch bounce"
+                                on: Services.Config ? Services.Config.dockBounceOnClick : true
+                                onClicked: { if (Services.Config) Services.Config.setDockBounceOnClick(!on) }
                             }
-
-                            // ── 4. Quickshell Desktop Typography ──
-                            SettingsSection {
-                                title: "Quickshell Desktop Typography"
-                                icon: Services.Icons.font || "󰛄"
-
-                                SettingsRow {
-                                    title: "Primary Shell UI Font"
-                                    subtitle: "Typography for panel widgets, menus, launcher, and control center"
-
-                                    SettingsDropdown {
-                                        minButtonWidth: 210
-                                        searchable: true
-                                        currentValue: Services.Config ? Services.Config.fontFamily : "Liga SFMono Nerd Font, monospace"
-                                        model: Services.SystemTheme ? Services.SystemTheme.systemFonts : []
-                                        onSelected: (val) => {
-                                            if (Services.Config) Services.Config.setFontFamily(val)
-                                        }
-                                    }
-                                }
-
-                                SettingsDivider {}
-
-                                SettingsRow {
-                                    title: "Monospace & Metrics Font"
-                                    subtitle: "Fixed-width font for clock, hardware sysmon gauges, and battery"
-
-                                    SettingsDropdown {
-                                        minButtonWidth: 210
-                                        searchable: true
-                                        currentValue: Services.Config ? Services.Config.fontMono : "Liga SFMono Nerd Font, monospace"
-                                        model: Services.SystemTheme ? Services.SystemTheme.monospaceFonts : []
-                                        onSelected: (val) => {
-                                            if (Services.Config) Services.Config.setFontMono(val)
-                                        }
-                                    }
-                                }
-
-                                SettingsDivider {}
-
-                                SettingsRow {
-                                    title: "Display & Header Font"
-                                    subtitle: "Stylized font for hero lockscreen clocks, large widget titles, and card headers"
-
-                                    SettingsDropdown {
-                                        minButtonWidth: 210
-                                        searchable: true
-                                        currentValue: Services.Config ? Services.Config.fontDisplay : "SF Pro Display, Inter, Sans-Serif"
-                                        model: Services.SystemTheme ? Services.SystemTheme.systemFonts : []
-                                        onSelected: (val) => {
-                                            if (Services.Config) Services.Config.setFontDisplay(val)
-                                        }
-                                    }
-                                }
-                            }
-
-                            // ── 5. System & GTK Typography (GNOME & Applications) ──
-                            SettingsSection {
-                                title: "System & GTK Application Typography"
-                                icon: Services.Icons.sliders || "󰛄"
-
-                                SettingsRow {
-                                    title: "Interface Font"
-                                    subtitle: "Primary typography for UI labels, widgets, and clock"
-
-                                    RowLayout {
-                                        spacing: 8
-                                        Layout.alignment: Qt.AlignVCenter
-
-                                        SettingsDropdown {
-                                            minButtonWidth: 155
-                                            searchable: true
-                                            currentValue: Services.SystemTheme ? Services.SystemTheme.currentFontFamily : "Liga SFMonoNerdFont"
-                                            model: Services.SystemTheme ? Services.SystemTheme.systemFonts : []
-                                            onSelected: (val) => {
-                                                if (Services.SystemTheme) Services.SystemTheme.setFont("interface", val, Services.SystemTheme.currentFontSize)
-                                            }
-                                        }
-
-                                        SettingsDropdown {
-                                            minButtonWidth: 70
-                                            currentValue: Services.SystemTheme ? Services.SystemTheme.currentFontSize : 11
-                                            model: [8, 9, 10, 11, 12, 13, 14, 15, 16, 18, 20].map(s => ({ id: s, label: s + " pt" }))
-                                            onSelected: (sz) => {
-                                                if (Services.SystemTheme) Services.SystemTheme.setFont("interface", Services.SystemTheme.currentFontFamily, sz)
-                                            }
-                                        }
-                                    }
-                                }
-
-                                SettingsDivider {}
-
-                                SettingsRow {
-                                    title: "Document Font"
-                                    subtitle: "Standard reading font for documents and previewers"
-
-                                    RowLayout {
-                                        spacing: 8
-                                        Layout.alignment: Qt.AlignVCenter
-
-                                        SettingsDropdown {
-                                            minButtonWidth: 155
-                                            searchable: true
-                                            currentValue: Services.SystemTheme ? Services.SystemTheme.currentDocFontFamily : "Adwaita Sans"
-                                            model: Services.SystemTheme ? Services.SystemTheme.systemFonts : []
-                                            onSelected: (val) => {
-                                                if (Services.SystemTheme) Services.SystemTheme.setFont("document", val, Services.SystemTheme.currentDocFontSize)
-                                            }
-                                        }
-
-                                        SettingsDropdown {
-                                            minButtonWidth: 70
-                                            currentValue: Services.SystemTheme ? Services.SystemTheme.currentDocFontSize : 12
-                                            model: [8, 9, 10, 11, 12, 13, 14, 15, 16, 18, 20].map(s => ({ id: s, label: s + " pt" }))
-                                            onSelected: (sz) => {
-                                                if (Services.SystemTheme) Services.SystemTheme.setFont("document", Services.SystemTheme.currentDocFontFamily, sz)
-                                            }
-                                        }
-                                    }
-                                }
-
-                                SettingsDivider {}
-
-                                SettingsRow {
-                                    title: "Monospace / Terminal Font"
-                                    subtitle: "Fixed-width font for terminals, code editors, and logs"
-
-                                    RowLayout {
-                                        spacing: 8
-                                        Layout.alignment: Qt.AlignVCenter
-
-                                        SettingsDropdown {
-                                            minButtonWidth: 155
-                                            searchable: true
-                                            currentValue: Services.SystemTheme ? Services.SystemTheme.currentMonoFontFamily : "Adwaita Mono"
-                                            model: Services.SystemTheme ? Services.SystemTheme.monospaceFonts : []
-                                            onSelected: (val) => {
-                                                if (Services.SystemTheme) Services.SystemTheme.setFont("monospace", val, Services.SystemTheme.currentMonoFontSize)
-                                            }
-                                        }
-
-                                        SettingsDropdown {
-                                            minButtonWidth: 70
-                                            currentValue: Services.SystemTheme ? Services.SystemTheme.currentMonoFontSize : 11
-                                            model: [8, 9, 10, 11, 12, 13, 14, 15, 16, 18, 20].map(s => ({ id: s, label: s + " pt" }))
-                                            onSelected: (sz) => {
-                                                if (Services.SystemTheme) Services.SystemTheme.setFont("monospace", Services.SystemTheme.currentMonoFontFamily, sz)
-                                            }
-                                        }
-                                    }
-                                }
-
-                                SettingsDivider {}
-
-                                SettingsRow {
-                                    title: "Font Hinting"
-                                    subtitle: "Glyph outline alignment to pixel grid for crisp rendering"
-
-                                    SettingsDropdown {
-                                        minButtonWidth: 140
-                                        currentValue: Services.SystemTheme ? Services.SystemTheme.currentFontHinting : "slight"
-                                        model: [
-                                            { id: "none",   label: "None" },
-                                            { id: "slight", label: "Slight (Default)" },
-                                            { id: "medium", label: "Medium" },
-                                            { id: "full",   label: "Full" }
-                                        ]
-                                        onSelected: (val) => {
-                                            if (Services.SystemTheme) Services.SystemTheme.setFontHinting(val)
-                                        }
-                                    }
-                                }
-
-                                SettingsDivider {}
-
-                                SettingsRow {
-                                    title: "Font Antialiasing"
-                                    subtitle: "Subpixel smoothing technique for display sharpness"
-
-                                    SettingsDropdown {
-                                        minButtonWidth: 155
-                                        currentValue: Services.SystemTheme ? Services.SystemTheme.currentFontAntialiasing : "grayscale"
-                                        model: [
-                                            { id: "rgba",      label: "Subpixel (RGBA / LCD)" },
-                                            { id: "grayscale", label: "Standard (Grayscale)" },
-                                            { id: "none",      label: "None" }
-                                        ]
-                                        onSelected: (val) => {
-                                            if (Services.SystemTheme) Services.SystemTheme.setFontAntialiasing(val)
-                                        }
-                                    }
-                                }
-
-                                SettingsDivider {}
-
-                                SettingsSlider {
-                                    title: "Text Scaling Factor"
-                                    subtitle: "System-wide text size multiplier across GTK and Wayland"
-                                    from: 0.75; to: 1.75; stepSize: 0.05; decimals: 2; valueSuffix: "x"
-                                    value: Services.SystemTheme ? Services.SystemTheme.currentTextScaling : 1.0
-                                    onMoved: (v) => {
-                                        if (Services.SystemTheme) Services.SystemTheme.setTextScaling(Number(v.toFixed(2)))
-                                    }
-                                }
-                            }
-
-                            // ── 6. Shell Geometry & Scaling ──
-                            SettingsSection {
-                                title: "Shell Geometry & Scaling"
-                                icon: Services.Icons.sliders || "󰛄"
-
-                                SettingsSlider {
-                                    title: "Corner Rounding"
-                                    subtitle: "Radius for quickshell panels, widgets, and popup overlays"
-                                    from: 0; to: 32; stepSize: 1; valueSuffix: "px"
-                                    value: Services.Config ? Services.Config.cornerRadius : 16
-                                    onMoved: (v) => { if (Services.Config) Services.Config.setCornerRadius(Math.round(v)) }
-                                }
-
-                                SettingsDivider {}
-
-                                SettingsSlider {
-                                    title: "Surface Glass Opacity"
-                                    subtitle: "Transparency level of quickshell overlay cards and panels"
-                                    from: 0.50; to: 1.00; stepSize: 0.05; decimals: 2
-                                    value: Services.Config ? Services.Config.glassOpacity : 0.85
-                                    onMoved: (v) => { if (Services.Config) Services.Config.setGlassOpacity(Number(v.toFixed(2))) }
-                                }
-
-                                SettingsDivider {}
-
-                                SettingsSlider {
-                                    title: "Quickshell UI Scale"
-                                    subtitle: "Proportional scaling factor for all shell overlays"
-                                    from: 75; to: 135; stepSize: 5; valueSuffix: "%"
-                                    value: Services.Config ? Math.round(Services.Config.uiScale * 100) : 100
-                                    onMoved: (v) => { if (Services.Config) Services.Config.setUiScale(v / 100) }
-                                }
+                            Chip {
+                                text: "Separator"
+                                on: Services.Config ? Services.Config.dockShowSeparator : true
+                                onClicked: { if (Services.Config) Services.Config.setDockShowSeparator(!on) }
                             }
                         }
+                    }
+                }
 
-                        // ═════════════════════════════════════════════
-                        // TAB 1: BAR & DOCK (SEGMENTED)
-                        // ═════════════════════════════════════════════
-                        ColumnLayout {
-                            id: tab1
+                SettingsGroup {
+                    title: "Pinned (" + ((Services.Config && Services.Config.dockPinnedApps) ? Services.Config.dockPinnedApps.length : 0) + ")"
+
+                    Block {
+                        RowLayout {
                             Layout.fillWidth: true
-                            spacing: 14
-
-                            property int barSubTab: 0 // 0: Status Bar & Island, 1: Application Dock
-                            property string appSearchText: ""
-                            property bool isAddingApp: false
-
-                            // ── Segmented Switcher: [ Status Bar & Island | Application Dock ] ──
-                            Rectangle {
-                                id: barSubTabBar
-                                Layout.fillWidth: true
-                                height: 38
-                                radius: 8
-                                color: Services.Theme.isDark ? "#16161c" : "#e8ecf2"
-                                border.color: Services.Theme.border
-                                border.width: 1
-                                clip: true
-
-                                readonly property int subTabCount: 2
-                                readonly property real itemWidth: Math.max(0, (barSubTabBar.width - 6 - (subTabCount - 1) * 3) / subTabCount)
-
-                                Rectangle {
-                                    id: barLiquidPill
-                                    z: 1
-                                    y: 3
-                                    height: parent.height - 6
-                                    radius: 6
-                                    x: 3 + tab1.barSubTab * (barSubTabBar.itemWidth + 3)
-                                    width: barSubTabBar.itemWidth
-                                    color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.22)
-                                    border.color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.55)
-                                    border.width: 1
-
-                                    Behavior on x {
-                                        NumberAnimation { duration: 250; easing.type: Easing.OutCubic }
-                                    }
-                                }
-
-                                Row {
-                                    anchors.fill: parent
-                                    anchors.margins: 3
-                                    spacing: 3
-                                    z: 2
-
-                                    Item {
-                                        width: barSubTabBar.itemWidth
-                                        height: parent.height
-
-                                        RowLayout {
-                                            anchors.centerIn: parent
-                                            spacing: 8
-                                            Text {
-                                                text: Services.Icons.controlcenter || "󰕮"
-                                                font.family: Services.Theme.fontSymbols
-                                                font.pixelSize: 13
-                                                color: tab1.barSubTab === 0 ? Services.Theme.accent : Services.Theme.textSecondary
-                                            }
-                                            Text {
-                                                text: "Status Bar & Island"
-                                                font.pixelSize: 12
-                                                font.weight: tab1.barSubTab === 0 ? Font.DemiBold : Font.Normal
-                                                color: tab1.barSubTab === 0 ? Services.Theme.textPrimary : Services.Theme.textSecondary
-                                            }
-                                        }
-
-                                        MouseArea {
-                                            anchors.fill: parent
-                                            cursorShape: Qt.PointingHandCursor
-                                            onClicked: tab1.barSubTab = 0
-                                        }
-                                    }
-
-                                    Item {
-                                        width: barSubTabBar.itemWidth
-                                        height: parent.height
-
-                                        RowLayout {
-                                            anchors.centerIn: parent
-                                            spacing: 8
-                                            Text {
-                                                text: Services.Icons.pin || "󰤩"
-                                                font.family: Services.Theme.fontSymbols
-                                                font.pixelSize: 13
-                                                color: tab1.barSubTab === 1 ? Services.Theme.accent : Services.Theme.textSecondary
-                                            }
-                                            Text {
-                                                text: "Application Dock"
-                                                font.pixelSize: 12
-                                                font.weight: tab1.barSubTab === 1 ? Font.DemiBold : Font.Normal
-                                                color: tab1.barSubTab === 1 ? Services.Theme.textPrimary : Services.Theme.textSecondary
-                                            }
-                                        }
-
-                                        MouseArea {
-                                            anchors.fill: parent
-                                            cursorShape: Qt.PointingHandCursor
-                                            onClicked: tab1.barSubTab = 1
-                                        }
-                                    }
-                                }
+                            spacing: 6
+                            Item { Layout.fillWidth: true }
+                            Btn {
+                                glyph: Services.Icons.undo || "↺"
+                                text: "Defaults"
+                                onClicked: { if (Services.DockService) Services.DockService.resetToDefaultPinned() }
                             }
-
-                            // ── SUBTAB 0: STATUS BAR & DYNAMIC ISLAND ─────────────────
-                            ColumnLayout {
-                                id: barIslandContent
-                                Layout.fillWidth: true
-                                spacing: 14
-                                visible: tab1.barSubTab === 0
-
-                                SettingsSection {
-                                    title: "Bar Architecture & Position"
-                                    icon: Services.Icons.controlcenter
-
-                                SettingsRow {
-                                    title: "Bar Architecture Preset"
-                                    subtitle: "Overall layout and visual style"
-
-                                    SettingsDropdown {
-                                        currentValue: Services.Config ? Services.Config.barStyle : "islands"
-                                        model: [
-                                            { id: "islands",  label: "Islands" },
-                                            { id: "floating", label: "Floating Bar" },
-                                            { id: "unified",  label: "Unified Full" },
-                                            { id: "minimal",  label: "Minimal" }
-                                        ]
-                                        onSelected: (val) => { if (Services.Config) Services.Config.setBarStyle(val) }
-                                    }
-                                }
-
-                                SettingsDivider {}
-
-                                SettingsRow {
-                                    title: "Screen Placement"
-                                    subtitle: "Dock to top or bottom edge"
-
-                                    SettingsDropdown {
-                                        currentValue: Services.Config ? Services.Config.barPosition : "top"
-                                        model: [
-                                            { id: "top",    label: "Top Status Bar" },
-                                            { id: "bottom", label: "Bottom Dock Bar" }
-                                        ]
-                                        onSelected: (val) => { if (Services.Config) Services.Config.setBarPosition(val) }
-                                    }
-                                }
-                            }
-
-                            SettingsSection {
-                                title: "Display & Monitor Assignment"
-                                icon: Services.Icons.display
-
-                                SettingsRow {
-                                    title: "Target Monitors"
-                                    subtitle: "Choose which connected display(s) render the QuickShell bar"
-
-                                    SettingsDropdown {
-                                        currentValue: Services.Config ? Services.Config.barMonitorMode : "all"
-                                        model: [
-                                            { id: "all",     label: "All Connected Displays" },
-                                            { id: "primary", label: "Primary / Focused Display Only" },
-                                            { id: "custom",  label: "Custom Display Selection" }
-                                        ]
-                                        onSelected: (val) => { if (Services.Config) Services.Config.setBarMonitorMode(val) }
-                                    }
-                                }
-
-                                SettingsDivider {
-                                    visible: (Services.Config ? Services.Config.barMonitorMode : "all") === "custom"
-                                }
-
-                                ColumnLayout {
-                                    Layout.fillWidth: true
-                                    spacing: 8
-                                    visible: (Services.Config ? Services.Config.barMonitorMode : "all") === "custom"
-
-                                    Repeater {
-                                        model: (Services.Compositor && Services.Compositor.monitorsList) ? Services.Compositor.monitorsList : []
-                                        delegate: SettingsSwitch {
-                                            required property var modelData
-                                            title: (modelData.name || "Display") + (modelData.focused ? " (Primary)" : "")
-                                            subtitle: (modelData.width + "×" + modelData.height + " @ " + modelData.refreshRate + "Hz · " + (modelData.description || modelData.model || "Display Output"))
-                                            checked: Services.Config ? Services.Config.isBarMonitorEnabled(modelData.name) : true
-                                            onToggled: (st) => {
-                                                if (Services.Config) Services.Config.setBarMonitor(modelData.name, st)
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-
-                            SettingsSection {
-                                title: "Dynamic Island HUD"
-                                icon: Services.Icons.bell
-
-                                SettingsRow {
-                                    title: "Notch Display Mode"
-                                    subtitle: "Interactive media & status pill in bar center"
-
-                                    SettingsDropdown {
-                                        currentValue: Services.Config ? Services.Config.islandStyle : "expanded"
-                                        model: [
-                                            { id: "expanded", label: "Full Dynamic Island" },
-                                            { id: "compact",  label: "Compact HUD Notch" },
-                                            { id: "hidden",   label: "Hidden / Off" }
-                                        ]
-                                        onSelected: (val) => { if (Services.Config) Services.Config.setIslandStyle(val) }
-                                    }
-                                }
-
-                                SettingsDivider {}
-
-                                SettingsSwitch {
-                                    title: "Live CAVA Wave Visualizer"
-                                    subtitle: "Visualize audio frequencies in real time using CAVA when media is playing"
-                                    checked: Services.Config ? Services.Config.islandCavaWave : true
-                                    onToggled: (st) => { if (Services.Config) Services.Config.setIslandCavaWave(st) }
-                                }
-                            }
-
-                            SettingsSection {
-                                title: "Workspaces Pager"
-                                icon: Services.Icons.grid
-
-                                SettingsRow {
-                                    title: "Pager Style"
-                                    subtitle: "Visual representation of workspaces"
-
-                                    SettingsDropdown {
-                                        currentValue: Services.Config ? Services.Config.workspaceStyle : "pills"
-                                        model: [
-                                            { id: "pills",   label: "Dynamic Pills" },
-                                            { id: "numbers", label: "Numbered (1, 2, 3...)" },
-                                            { id: "dots",    label: "Minimal Dots" },
-                                            { id: "icons",   label: "Context Icons" }
-                                        ]
-                                        onSelected: (val) => { if (Services.Config) Services.Config.setWorkspaceStyle(val) }
-                                    }
-                                }
-
-                                SettingsDivider {}
-
-                                SettingsSwitch {
-                                    title: "Always Show Primary Workspaces (1–5)"
-                                    subtitle: "Keep primary workspaces visible even when inactive"
-                                    checked: Services.Config ? Services.Config.workspaceShowAll : true
-                                    onToggled: (st) => { if (Services.Config) Services.Config.setWorkspaceShowAll(st) }
-                                }
-                            }
-
-                            SettingsSection {
-                                title: "Clock & Date Typography"
-                                icon: Services.Icons.clock
-
-                                SettingsRow {
-                                    title: "Date Format"
-                                    subtitle: "Display format for calendar date"
-
-                                    SettingsDropdown {
-                                        currentValue: Services.Config ? Services.Config.clockDateFormat : "short"
-                                        model: [
-                                            { id: "short", label: "Short (Thu, 20 Aug)" },
-                                            { id: "full",  label: "Full (Thursday, 20 August)" }
-                                        ]
-                                        onSelected: (val) => { if (Services.Config) Services.Config.setClockDateFormat(val) }
-                                    }
-                                }
-
-                                SettingsDivider {}
-
-                                SettingsSwitch {
-                                    title: "24-Hour Time Format"
-                                    subtitle: "Use 24h clock instead of 12h AM/PM"
-                                    checked: Services.Config ? Services.Config.clock24h : true
-                                    onToggled: (st) => { if (Services.Config) Services.Config.setClock24h(st) }
-                                }
-
-                                SettingsDivider {}
-
-                                SettingsSwitch {
-                                    title: "Display Live Seconds"
-                                    subtitle: "Render real-time ticking seconds"
-                                    checked: Services.Config ? Services.Config.clockShowSeconds : false
-                                    onToggled: (st) => { if (Services.Config) Services.Config.setClockShowSeconds(st) }
-                                }
-
-                                SettingsDivider {}
-
-                                SettingsSwitch {
-                                    title: "Display Date Text"
-                                    subtitle: "Show current day and date prefix in the bar"
-                                    checked: Services.Config ? Services.Config.clockShowDate : true
-                                    onToggled: (st) => { if (Services.Config) Services.Config.setClockShowDate(st) }
-                                }
-                            }
-
-                            SettingsSection {
-                                title: "Bar Modules Visibility"
-                                icon: Services.Icons.eyeOpen || Services.Icons.eye
-
-                                SettingsSwitch {
-                                    title: "Workspaces Pager"
-                                    checked: Services.Config ? Services.Config.showWorkspaces : true
-                                    onToggled: (st) => { if (Services.Config) Services.Config.setShowWorkspaces(st) }
-                                }
-                                SettingsDivider {}
-                                SettingsSwitch {
-                                    title: "System Tray (SNI)"
-                                    checked: Services.Config ? Services.Config.showSysTray : true
-                                    onToggled: (st) => { if (Services.Config) Services.Config.setShowSysTray(st) }
-                                }
-                                SettingsDivider {}
-                                SettingsSwitch {
-                                    title: "System Resource Monitor"
-                                    checked: Services.Config ? Services.Config.showSysmonTray : true
-                                    onToggled: (st) => { if (Services.Config) Services.Config.setShowSysmonTray(st) }
-                                }
-                                SettingsDivider {}
-                                SettingsSwitch {
-                                    title: "Volume & Audio Pill"
-                                    checked: Services.Config ? Services.Config.showVolumeTray : true
-                                    onToggled: (st) => { if (Services.Config) Services.Config.setShowVolumeTray(st) }
-                                }
-                                SettingsDivider {}
-                                SettingsSwitch {
-                                    title: "Battery & Power Indicator"
-                                    checked: Services.Config ? Services.Config.showBatteryTray : true
-                                    onToggled: (st) => { if (Services.Config) Services.Config.setShowBatteryTray(st) }
-                                }
-                                SettingsDivider {}
-                                SettingsSwitch {
-                                    title: "Control Center Trigger Pill"
-                                    checked: Services.Config ? Services.Config.showControlCenterTray : true
-                                    onToggled: (st) => { if (Services.Config) Services.Config.setShowControlCenterTray(st) }
-                                }
-                                SettingsDivider {}
-                                SettingsSwitch {
-                                    title: "Clock & Calendar Pill"
-                                    checked: Services.Config ? Services.Config.showClockTray : true
-                                    onToggled: (st) => { if (Services.Config) Services.Config.setShowClockTray(st) }
-                                }
-                            }
-
-                            SettingsSection {
-                                title: "Dashboard & Weather Widgets"
-                                icon: Services.Icons.dashboard || Services.Icons.cloud
-
-                                SettingsRow {
-                                    title: "Dashboard Main Widget"
-                                    subtitle: "Primary module displayed in the dashboard panel"
-
-                                    SettingsDropdown {
-                                        currentValue: Services.Config ? Services.Config.dashboardWidget : "weather"
-                                        model: [
-                                            { id: "weather",   label: "Live Weather Card" },
-                                            { id: "wallpaper", label: "Wallpaper Strip" },
-                                            { id: "both",      label: "Both (Tabbed Switcher)" }
-                                        ]
-                                        onSelected: (val) => { if (Services.Config) Services.Config.setDashboardWidget(val) }
-                                    }
-                                }
-
-                                SettingsDivider {}
-
-                                SettingsRow {
-                                    title: "Weather Location Mode"
-                                    subtitle: "Auto-detect location or enter custom city / coordinates"
-
-                                    SettingsDropdown {
-                                        currentValue: Services.Config ? Services.Config.weatherLocationMode : "auto"
-                                        model: [
-                                            { id: "auto",   label: "Auto (IP Geolocation)" },
-                                            { id: "custom", label: "Custom City / Coordinates" }
-                                        ]
-                                        onSelected: (val) => { if (Services.Config) Services.Config.setWeatherLocationMode(val) }
-                                    }
-                                }
-
-                                SettingsDivider {
-                                    visible: Services.Config && Services.Config.weatherLocationMode === "custom"
-                                }
-
-                                SettingsRow {
-                                    visible: Services.Config && Services.Config.weatherLocationMode === "custom"
-                                    title: "Custom City or Coordinates"
-                                    subtitle: "City name (e.g. Jakarta) or GPS coordinates (e.g. -7.55, 110.82)"
-
-                                    RowLayout {
-                                        spacing: 6
-
-                                        Rectangle {
-                                            width: 195
-                                            height: 30
-                                            radius: 6
-                                            color: Services.Theme.isDark ? "#121216" : "#f1f5f9"
-                                            border.color: cityInput.activeFocus ? Services.Theme.accent : (Services.Theme.isDark ? "#2a2a34" : "#cbd5e1")
-                                            border.width: 1
-
-                                            RowLayout {
-                                                anchors.fill: parent
-                                                anchors.margins: 6
-                                                spacing: 4
-
-                                                TextInput {
-                                                    id: cityInput
-                                                    Layout.fillWidth: true
-                                                    text: Services.Config ? Services.Config.weatherCustomCity : ""
-                                                    font.pixelSize: 11
-                                                    color: Services.Theme.textPrimary
-                                                    selectByMouse: true
-                                                    clip: true
-                                                    onAccepted: {
-                                                        if (Services.Config) Services.Config.setWeatherCustomCity(cityInput.text)
-                                                    }
-
-                                                    Text {
-                                                        visible: cityInput.text.length === 0
-                                                        text: "City or lat, lon..."
-                                                        font.pixelSize: 11
-                                                        color: Services.Theme.textDisabled
-                                                        anchors.verticalCenter: parent.verticalCenter
-                                                    }
-                                                }
-                                            }
-                                        }
-
-                                        Rectangle {
-                                            width: 52
-                                            height: 30
-                                            radius: 6
-                                            color: applyCityMouse.containsMouse ? Services.Theme.bgHover : Services.Theme.surfaceVariant
-                                            border.color: Services.Theme.border
-                                            border.width: 1
-
-                                            Text {
-                                                anchors.centerIn: parent
-                                                text: "Apply"
-                                                font.pixelSize: 10
-                                                font.weight: Font.Medium
-                                                color: Services.Theme.accent
-                                            }
-
-                                            MouseArea {
-                                                id: applyCityMouse
-                                                anchors.fill: parent
-                                                hoverEnabled: true
-                                                cursorShape: Qt.PointingHandCursor
-                                                onClicked: {
-                                                    if (Services.Config) Services.Config.setWeatherCustomCity(cityInput.text)
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-
-                                SettingsDivider {}
-
-                                SettingsRow {
-                                    title: "Temperature Unit"
-                                    subtitle: "Unit scale for weather readings"
-
-                                    SettingsDropdown {
-                                        currentValue: Services.Config ? Services.Config.weatherUnit : "celsius"
-                                        model: [
-                                            { id: "celsius",    label: "Celsius (°C)" },
-                                            { id: "fahrenheit", label: "Fahrenheit (°F)" }
-                                        ]
-                                        onSelected: (val) => { if (Services.Config) Services.Config.setWeatherUnit(val) }
-                                    }
-                                }
-
-                                SettingsDivider {}
-
-                                SettingsSwitch {
-                                    title: "Hardware Resource Monitors"
-                                    subtitle: "Show CPU, RAM, Disk & Temperature meters in Dashboard"
-                                    checked: Services.Config ? Services.Config.dashboardShowMetrics : true
-                                    onToggled: (st) => { if (Services.Config) Services.Config.setDashboardShowMetrics(st) }
-                                }
-
-                                SettingsDivider {}
-
-                                SettingsSwitch {
-                                    title: "System Specifications Bar"
-                                    subtitle: "Show Uptime, Kernel, Shell & Battery capsule bar"
-                                    checked: Services.Config ? Services.Config.dashboardShowSpecs : true
-                                    onToggled: (st) => { if (Services.Config) Services.Config.setDashboardShowSpecs(st) }
-                                }
-
-                                SettingsDivider {}
-
-                                SettingsSwitch {
-                                    title: "Quick Session Actions"
-                                    subtitle: "Show Lock, Reload, and Power buttons in Dashboard"
-                                    checked: Services.Config ? Services.Config.dashboardShowActions : true
-                                    onToggled: (st) => { if (Services.Config) Services.Config.setDashboardShowActions(st) }
-                                }
+                            Btn {
+                                glyph: tab1.adding ? "✕" : (Services.Icons.plus || "+")
+                                text: tab1.adding ? "Close" : "Add app"
+                                kind: tab1.adding ? "plain" : "accent"
+                                onClicked: { tab1.adding = !tab1.adding; tab1.appQuery = "" }
                             }
                         }
-
-                        // ── SUBTAB 1: APPLICATION DOCK ────────────────────────────
-                        ColumnLayout {
-                            id: dockContent
+                        Inp {
+                            visible: tab1.adding
                             Layout.fillWidth: true
-                            spacing: 14
-                            visible: tab1.barSubTab === 1
-
-                            // 1. General & Behavior Section
-                            SettingsSection {
-                                title: "Dock General & Behavior"
-                                icon: Services.Icons.controlcenter
-
-                                SettingsSwitch {
-                                    title: "Enable Application Dock"
-                                    subtitle: "Display floating application dock"
-                                    checked: Services.Config ? Services.Config.dockEnabled : true
-                                    onToggled: (st) => { if (Services.Config) Services.Config.setDockEnabled(st) }
-                                }
-
-                                SettingsDivider {}
-
-                                SettingsRow {
-                                    title: "Screen Placement"
-                                    subtitle: "Position dock along the screen edge"
-
-                                    SettingsDropdown {
-                                        currentValue: Services.Config ? Services.Config.dockPosition : "bottom"
-                                        model: [
-                                            { id: "bottom", label: "Bottom Edge (Default)" },
-                                            { id: "left",   label: "Left Edge" },
-                                            { id: "right",  label: "Right Edge" }
-                                        ]
-                                        onSelected: (val) => { if (Services.Config) Services.Config.setDockPosition(val) }
-                                    }
-                                }
-
-                                SettingsDivider {}
-
-                                SettingsSwitch {
-                                    title: "Auto-Hide Dock"
-                                    subtitle: "Slide dock away when cursor leaves the edge"
-                                    checked: Services.Config ? Services.Config.dockAutoHide : false
-                                    onToggled: (st) => { if (Services.Config) Services.Config.setDockAutoHide(st) }
-                                }
-
-                                SettingsDivider {}
-
-                                SettingsRow {
-                                    title: "Display Assignment"
-                                    subtitle: "Choose which connected monitor(s) render the dock"
-
-                                    SettingsDropdown {
-                                        currentValue: Services.Config ? Services.Config.dockMonitorMode : "all"
-                                        model: [
-                                            { id: "all",     label: "All Connected Displays" },
-                                            { id: "primary", label: "Primary / Focused Display Only" }
-                                        ]
-                                        onSelected: (val) => { if (Services.Config) Services.Config.setDockMonitorMode(val) }
-                                    }
-                                }
-
-                                SettingsDivider {}
-
-                                SettingsRow {
-                                    title: "Screen Edge Distance"
-                                    subtitle: "Margin offset between dock and screen edge"
-
-                                    SettingsDropdown {
-                                        currentValue: Services.Config ? Services.Config.dockFloatingDistance : 6
-                                        model: [
-                                            { id: 0,  label: "0px (Attached / Flush)" },
-                                            { id: 6,  label: "6px (Standard Floating)" },
-                                            { id: 12, label: "12px (Spacious Floating)" },
-                                            { id: 18, label: "18px (High Floating)" }
-                                        ]
-                                        onSelected: (val) => { if (Services.Config) Services.Config.setDockFloatingDistance(Number(val)) }
-                                    }
-                                }
-                            }
-
-                            // 2. Appearance & Magnification Section
-                            SettingsSection {
-                                title: "Appearance & Magnification"
-                                icon: Services.Icons.palette
-
-                                SettingsRow {
-                                    title: "Icon Size"
-                                    subtitle: "Base dimension of application icons in pixels"
-
-                                    SettingsDropdown {
-                                        currentValue: Services.Config ? Services.Config.dockIconSize : 48
-                                        model: [
-                                            { id: 36, label: "36px (Compact)" },
-                                            { id: 44, label: "44px (Medium)" },
-                                            { id: 48, label: "48px (Standard)" },
-                                            { id: 56, label: "56px (Large)" },
-                                            { id: 64, label: "64px (Extra Large)" }
-                                        ]
-                                        onSelected: (val) => { if (Services.Config) Services.Config.setDockIconSize(Number(val)) }
-                                    }
-                                }
-
-                                SettingsDivider {}
-
-                                SettingsSwitch {
-                                    title: "Hover Magnification"
-                                    subtitle: "Smoothly zoom icons as mouse cursor approaches"
-                                    checked: Services.Config ? Services.Config.dockMagnification : true
-                                    onToggled: (st) => { if (Services.Config) Services.Config.setDockMagnification(st) }
-                                }
-
-                                SettingsDivider {
-                                    visible: Services.Config ? Services.Config.dockMagnification : true
-                                }
-
-                                SettingsRow {
-                                    visible: Services.Config ? Services.Config.dockMagnification : true
-                                    title: "Magnification Scale"
-                                    subtitle: "Peak zoom factor on hover"
-
-                                    SettingsDropdown {
-                                        currentValue: Services.Config ? Services.Config.dockMagnificationScale : 1.35
-                                        model: [
-                                            { id: 1.20, label: "1.20x (Subtle)" },
-                                            { id: 1.35, label: "1.35x (Balanced)" },
-                                            { id: 1.50, label: "1.50x (Prominent)" },
-                                            { id: 1.75, label: "1.75x (Dramatic)" }
-                                        ]
-                                        onSelected: (val) => { if (Services.Config) Services.Config.setDockMagnificationScale(Number(val)) }
-                                    }
-                                }
-
-                                SettingsDivider {}
-
-                                SettingsSwitch {
-                                    title: "Running App Indicators"
-                                    subtitle: "Display status marker beneath active applications"
-                                    checked: Services.Config ? Services.Config.dockShowIndicators : true
-                                    onToggled: (st) => { if (Services.Config) Services.Config.setDockShowIndicators(st) }
-                                }
-
-                                SettingsDivider {
-                                    visible: Services.Config ? Services.Config.dockShowIndicators : true
-                                }
-
-                                SettingsRow {
-                                    visible: Services.Config ? Services.Config.dockShowIndicators : true
-                                    title: "Indicator Style"
-                                    subtitle: "Visual style of the active application marker"
-
-                                    SettingsDropdown {
-                                        currentValue: Services.Config ? Services.Config.dockIndicatorStyle : "dot"
-                                        model: [
-                                            { id: "dot",  label: "Dot (Classic Circle)" },
-                                            { id: "line", label: "Line (Horizontal Bar)" },
-                                            { id: "pill", label: "Pill (Rounded Dash)" },
-                                            { id: "glow", label: "Glow (Underglow Bar)" }
-                                        ]
-                                        onSelected: (val) => { if (Services.Config) Services.Config.setDockIndicatorStyle(val) }
-                                    }
-                                }
-
-                                SettingsDivider {}
-
-                                SettingsSwitch {
-                                    title: "Application Name Tooltips"
-                                    subtitle: "Display floating title pill when hovering over an application"
-                                    checked: Services.Config ? Services.Config.dockShowTooltips : true
-                                    onToggled: (st) => { if (Services.Config) Services.Config.setDockShowTooltips(st) }
-                                }
-
-                                SettingsDivider {}
-
-                                SettingsSwitch {
-                                    title: "Window Count Badges"
-                                    subtitle: "Show badge indicator when an app has multiple open windows"
-                                    checked: Services.Config ? Services.Config.dockShowWindowCount : true
-                                    onToggled: (st) => { if (Services.Config) Services.Config.setDockShowWindowCount(st) }
-                                }
-
-                                SettingsDivider {}
-
-                                SettingsSwitch {
-                                    title: "Launch Bounce Animation"
-                                    subtitle: "Tactile spring bounce effect when launching or switching to an app"
-                                    checked: Services.Config ? Services.Config.dockBounceOnClick : true
-                                    onToggled: (st) => { if (Services.Config) Services.Config.setDockBounceOnClick(st) }
-                                }
-
-                                SettingsDivider {}
-
-                                SettingsSwitch {
-                                    title: "Pinned Apps Separator"
-                                    subtitle: "Display hairline divider separating pinned favorites from running apps"
-                                    checked: Services.Config ? Services.Config.dockShowSeparator : true
-                                    onToggled: (st) => { if (Services.Config) Services.Config.setDockShowSeparator(st) }
-                                }
-                            }
-
-                            // 3. Pinned Applications Management Section
-                            SettingsSection {
-                                title: "Pinned Applications (" + ((Services.Config && Services.Config.dockPinnedApps) ? Services.Config.dockPinnedApps.length : 0) + ")"
-                                icon: Services.Icons.pin || "󰤩"
-
-                                ColumnLayout {
-                                    Layout.fillWidth: true
-                                    Layout.margins: 12
-                                    spacing: 8
-
-                                    // Top Action Header
-                                    RowLayout {
-                                        Layout.fillWidth: true
-                                        spacing: 8
-
-                                        Text {
-                                            text: "Manage pinned favorites on your Dock"
-                                            font.pixelSize: Services.Theme.fontSizeSm
-                                            color: Services.Theme.textSecondary
-                                            Layout.fillWidth: true
-                                        }
-
-                                        Rectangle {
-                                            implicitWidth: resetPinnedBtnText.implicitWidth + 20
-                                            height: 28
-                                            radius: 6
-                                            color: resetPinnedMouse.containsMouse ? Services.Theme.bgHover : Services.Theme.surfaceVariant
-                                            border.color: Services.Theme.border
-                                            border.width: 1
-
-                                            RowLayout {
-                                                anchors.centerIn: parent
-                                                spacing: 4
-                                                Text {
-                                                    text: "↺"
-                                                    font.pixelSize: 11
-                                                    color: Services.Theme.textSecondary
-                                                }
-                                                Text {
-                                                    id: resetPinnedBtnText
-                                                    text: "Reset Defaults"
-                                                    font.pixelSize: 11
-                                                    color: Services.Theme.textSecondary
-                                                }
-                                            }
-
-                                            MouseArea {
-                                                id: resetPinnedMouse
-                                                anchors.fill: parent
-                                                hoverEnabled: true
-                                                cursorShape: Qt.PointingHandCursor
-                                                onClicked: {
-                                                    if (Services.DockService) Services.DockService.resetToDefaultPinned()
-                                                }
-                                            }
-                                        }
-
-                                        Rectangle {
-                                            implicitWidth: addAppBtnText.implicitWidth + 24
-                                            height: 28
-                                            radius: 6
-                                            color: tab1.isAddingApp ? Services.Theme.surfaceVariant : Services.Theme.accent
-                                            border.color: Services.Theme.accent
-                                            border.width: 1
-
-                                            RowLayout {
-                                                anchors.centerIn: parent
-                                                spacing: 6
-                                                Text {
-                                                    text: tab1.isAddingApp ? "✕" : "+"
-                                                    font.pixelSize: 12
-                                                    font.bold: true
-                                                    color: tab1.isAddingApp ? Services.Theme.textPrimary : Services.Theme.bgOnAccent
-                                                }
-                                                Text {
-                                                    id: addAppBtnText
-                                                    text: tab1.isAddingApp ? "Close Picker" : "Add Application"
-                                                    font.pixelSize: 11
-                                                    font.weight: Font.DemiBold
-                                                    color: tab1.isAddingApp ? Services.Theme.textPrimary : Services.Theme.bgOnAccent
-                                                }
-                                            }
-
-                                            MouseArea {
-                                                anchors.fill: parent
-                                                cursorShape: Qt.PointingHandCursor
-                                                onClicked: {
-                                                    tab1.isAddingApp = !tab1.isAddingApp
-                                                    tab1.appSearchText = ""
-                                                }
-                                            }
-                                        }
-                                    }
-
-                                    // Quick App Picker Search Box
-                                    Rectangle {
-                                        Layout.fillWidth: true
-                                        implicitHeight: addAppCol.implicitHeight + 16
-                                        visible: tab1.isAddingApp
-                                        radius: 10
-                                        color: Services.Theme.bgElevated
-                                        border.color: Services.Theme.borderHighlight
-                                        border.width: 1
-
-                                        ColumnLayout {
-                                            id: addAppCol
-                                            anchors.fill: parent
-                                            anchors.margins: 10
-                                            spacing: 8
-
-                                            Rectangle {
-                                                Layout.fillWidth: true
-                                                height: 32
-                                                radius: 6
-                                                color: Services.Theme.surface
-                                                border.color: appSearchInput.activeFocus ? Services.Theme.accent : Services.Theme.border
-                                                border.width: 1
-
-                                                RowLayout {
-                                                    anchors.fill: parent
-                                                    anchors.leftMargin: 8; anchors.rightMargin: 8
-                                                    spacing: 6
-
-                                                    Text {
-                                                        text: Services.Icons.search || "🔍"
-                                                        font.family: Services.Theme.fontSymbols
-                                                        font.pixelSize: 11
-                                                        color: Services.Theme.textSecondary
-                                                    }
-
-                                                    TextInput {
-                                                        id: appSearchInput
-                                                        Layout.fillWidth: true
-                                                        text: tab1.appSearchText
-                                                        font.pixelSize: 12
-                                                        color: Services.Theme.textPrimary
-                                                        selectByMouse: true
-                                                        onTextChanged: tab1.appSearchText = text
-                                                    }
-
-                                                    Text {
-                                                        visible: tab1.appSearchText.length > 0
-                                                        text: "✕"
-                                                        font.pixelSize: 10
-                                                        color: Services.Theme.textSecondary
-                                                        MouseArea {
-                                                            anchors.fill: parent
-                                                            cursorShape: Qt.PointingHandCursor
-                                                            onClicked: { tab1.appSearchText = ""; appSearchInput.text = "" }
-                                                        }
-                                                    }
-                                                }
-                                            }
-
-                                            Flow {
-                                                Layout.fillWidth: true
-                                                spacing: 6
-
-                                                readonly property var candidates: {
-                                                    const raw = (DesktopEntries.applications && DesktopEntries.applications.values) ? DesktopEntries.applications.values : []
-                                                    const q = tab1.appSearchText.toLowerCase().trim()
-                                                    const res = []
-                                                    for (let i = 0; i < raw.length && res.length < 24; i++) {
-                                                        const a = raw[i]
-                                                        if (!a || !a.id) continue
-                                                        if (Services.DockService && Services.DockService.isPinned(a.id)) continue
-                                                        if (q.length === 0 || (a.name && a.name.toLowerCase().includes(q)) || (a.id && a.id.toLowerCase().includes(q))) {
-                                                            res.push(a)
-                                                        }
-                                                    }
-                                                    return res
-                                                }
-
-                                                Repeater {
-                                                    model: parent.candidates
-                                                    delegate: Rectangle {
-                                                        required property var modelData
-                                                        implicitWidth: addAppRow.implicitWidth + 16
-                                                        height: 32
-                                                        radius: 6
-                                                        color: candMouse.containsMouse ? Services.Theme.bgHover : Services.Theme.surface
-                                                        border.color: candMouse.containsMouse ? Services.Theme.accent : Services.Theme.border
-                                                        border.width: 1
-
-                                                        RowLayout {
-                                                            id: addAppRow
-                                                            anchors.centerIn: parent
-                                                            spacing: 6
-
-                                                            Text {
-                                                                text: modelData.name || modelData.id
-                                                                font.pixelSize: 11
-                                                                color: Services.Theme.textPrimary
-                                                            }
-
-                                                            Text {
-                                                                text: "+"
-                                                                font.pixelSize: 12
-                                                                font.bold: true
-                                                                color: Services.Theme.accent
-                                                            }
-                                                        }
-
-                                                        MouseArea {
-                                                            id: candMouse
-                                                            anchors.fill: parent
-                                                            hoverEnabled: true
-                                                            cursorShape: Qt.PointingHandCursor
-                                                            onClicked: {
-                                                                if (Services.DockService && modelData.id) {
-                                                                    Services.DockService.pinApp(modelData.id)
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-
-                                    // Visual List of Currently Pinned Apps
-                                    ColumnLayout {
-                                        Layout.fillWidth: true
-                                        spacing: 4
-
-                                        Repeater {
-                                            model: (Services.Config && Services.Config.dockPinnedApps) ? Services.Config.dockPinnedApps : []
-
-                                            delegate: Rectangle {
-                                                id: pinnedCard
-                                                required property var modelData
-                                                required property int index
-                                                Layout.fillWidth: true
-                                                height: 44
-                                                radius: 8
-                                                color: Services.Theme.bgElevated
-                                                border.color: Services.Theme.border
-                                                border.width: 1
-
-                                                readonly property var appObj: Services.DockService ? Services.DockService.findAppByDesktopId(pinnedCard.modelData) : null
-                                                readonly property string appName: appObj ? (appObj.name || pinnedCard.modelData) : pinnedCard.modelData.replace(/\.desktop$/, '')
-
-                                                RowLayout {
-                                                    anchors.fill: parent
-                                                    anchors.leftMargin: 12
-                                                    anchors.rightMargin: 12
-                                                    spacing: 12
-
-                                                    Image {
-                                                        Layout.preferredWidth: 26
-                                                        Layout.preferredHeight: 26
-                                                        source: {
-                                                            const raw = pinnedCard.appObj ? (typeof pinnedCard.appObj.icon === "string" ? pinnedCard.appObj.icon : pinnedCard.appObj.icon?.name) : ""
-                                                            if (!raw) return ""
-                                                            if (Services.SystemTheme) {
-                                                                const res = Services.SystemTheme.getIcon(raw)
-                                                                if (res && res.length > 0) return res
-                                                            }
-                                                            const qp = Quickshell.iconPath(raw, true)
-                                                            return (qp && qp.startsWith("/")) ? ("file://" + qp) : (qp || "")
-                                                        }
-                                                        fillMode: Image.PreserveAspectFit
-                                                        asynchronous: true
-                                                        smooth: true
-                                                    }
-
-                                                    ColumnLayout {
-                                                        Layout.fillWidth: true
-                                                        spacing: 1
-
-                                                        Text {
-                                                            text: pinnedCard.appName
-                                                            font.pixelSize: 12
-                                                            font.weight: Font.Medium
-                                                            color: Services.Theme.textPrimary
-                                                            elide: Text.ElideRight
-                                                            Layout.fillWidth: true
-                                                        }
-
-                                                        Text {
-                                                            text: pinnedCard.modelData
-                                                            font.family: Services.Theme.fontMono
-                                                            font.pixelSize: 10
-                                                            color: Services.Theme.textDisabled
-                                                            elide: Text.ElideRight
-                                                            Layout.fillWidth: true
-                                                        }
-                                                    }
-
-                                                    // Remove / Unpin Button
-                                                    Rectangle {
-                                                        width: 24; height: 24; radius: 5
-                                                        color: unpinMouse.containsMouse ? Qt.rgba(0.9, 0.2, 0.2, 0.15) : "transparent"
-                                                        Text {
-                                                            anchors.centerIn: parent
-                                                            text: "✕"
-                                                            font.pixelSize: 11
-                                                            color: unpinMouse.containsMouse ? Services.Theme.danger : Services.Theme.textSecondary
-                                                        }
-                                                        MouseArea {
-                                                            id: unpinMouse
-                                                            anchors.fill: parent
-                                                            hoverEnabled: true
-                                                            cursorShape: Qt.PointingHandCursor
-                                                            onClicked: {
-                                                                if (Services.DockService) {
-                                                                    Services.DockService.unpinApp(pinnedCard.modelData)
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
+                            placeholder: "Search applications"
+                            onEdited: (v) => { tab1.appQuery = v }
+                        }
+                        Flow {
+                            visible: tab1.adding
+                            Layout.fillWidth: true
+                            spacing: 6
+                            Repeater {
+                                model: tab1.adding ? tab1.candidates : []
+                                delegate: Chip {
+                                    required property var modelData
+                                    text: modelData.name || modelData.id
+                                    glyph: "+"
+                                    onClicked: { if (Services.DockService && modelData.id) Services.DockService.pinApp(modelData.id) }
                                 }
                             }
                         }
                     }
 
-                        // ═════════════════════════════════════════════
-                        // TAB 2: NOTIFICATIONS
-                        // ═════════════════════════════════════════════
-                        ColumnLayout {
-                            id: tab2
-                            Layout.fillWidth: true
-                            spacing: 14
-
-                            SettingsSection {
-                                title: "Notification Alerts"
-                                icon: Services.Icons.bell
-
-                                SettingsSwitch {
-                                    title: "Do Not Disturb"
-                                    subtitle: "Mute all popups and banner alerts"
-                                    checked: Services.Notifications.doNotDisturb
-                                    onToggled: (st) => { Services.Notifications.doNotDisturb = st }
+                    Repeater {
+                        model: (Services.Config && Services.Config.dockPinnedApps) ? Services.Config.dockPinnedApps : []
+                        delegate: Opt {
+                            id: pin
+                            required property var modelData
+                            readonly property var appObj: Services.DockService ? Services.DockService.findAppByDesktopId(pin.modelData) : null
+                            label: pin.appObj ? (pin.appObj.name || pin.modelData) : String(pin.modelData).replace(/\.desktop$/, "")
+                            hint: String(pin.modelData)
+                            RowLayout {
+                                spacing: 8
+                                Image {
+                                    Layout.preferredWidth: 20
+                                    Layout.preferredHeight: 20
+                                    source: rootWindow.appIconSource(pin.appObj)
+                                    fillMode: Image.PreserveAspectFit
+                                    sourceSize.width: 40
+                                    sourceSize.height: 40
+                                    asynchronous: true
                                 }
-
-                                SettingsDivider {}
-
-                                SettingsRow {
-                                    title: "Popup Placement"
-                                    subtitle: "Screen corner for notification toasts"
-
-                                    SettingsDropdown {
-                                        currentValue: Services.Config ? Services.Config.notificationPosition : "top_right"
-                                        model: [
-                                            { id: "top_right",    label: "Top Right Corner" },
-                                            { id: "top_center",   label: "Top Center (Notch)" },
-                                            { id: "top_left",     label: "Top Left Corner" },
-                                            { id: "bottom_right", label: "Bottom Right Corner" }
-                                        ]
-                                        onSelected: (val) => { if (Services.Config) Services.Config.setNotificationPosition(val) }
-                                    }
-                                }
-
-                                SettingsDivider {}
-
-                                SettingsSlider {
-                                    title: "Popup Duration"
-                                    subtitle: "How long bubble popups remain on screen"
-                                    from: 2; to: 15; stepSize: 1; valueSuffix: "s"
-                                    value: Services.Config ? Services.Config.notificationTimeout : 5
-                                    onMoved: (v) => { if (Services.Config) Services.Config.setNotificationTimeout(Math.round(v)) }
-                                }
-
-                                SettingsDivider {}
-
-                                SettingsSlider {
-                                    title: "History Retention"
-                                    subtitle: "Days before history entries expire"
-                                    from: 1; to: 7; stepSize: 1; valueSuffix: " days"
-                                    value: Services.Config ? Services.Config.notificationRetentionDays : 7
-                                    onMoved: (v) => { if (Services.Config) Services.Config.setNotificationRetentionDays(Math.round(v)) }
-                                }
-
-                                SettingsDivider {}
-
-                                SettingsSwitch {
-                                    title: "Show in Fullscreen"
-                                    subtitle: "Display notification popups over fullscreen apps (battery alerts always appear)"
-                                    checked: Services.Config ? Services.Config.notificationShowInFullscreen : false
-                                    onToggled: (st) => { if (Services.Config) Services.Config.setNotificationShowInFullscreen(st) }
-                                }
-
-                                SettingsDivider {}
-
-                                SettingsSwitch {
-                                    title: "Separate KDE Connect Apps"
-                                    subtitle: "Group phone notifications by individual app instead of lumping them under KDE Connect"
-                                    checked: Services.Config ? Services.Config.notificationSplitKdeApps : true
-                                    onToggled: (st) => { if (Services.Config) Services.Config.setNotificationSplitKdeApps(st) }
-                                }
-
-                                SettingsDivider {}
-
-                                SettingsRow {
-                                    title: "Test & Actions"
-
-                                    RowLayout {
-                                        spacing: 8
-
-                                        Rectangle {
-                                            height: 28
-                                            implicitWidth: testNotifTxt.implicitWidth + 16
-                                            radius: 5
-                                            color: tNotifMouse.containsMouse ? Qt.rgba(1, 1, 1, 0.08) : Services.Theme.bgElevated
-                                            border.color: Services.Theme.border
-                                            border.width: 1
-                                            Text { id: testNotifTxt; anchors.centerIn: parent; text: "Send Test"; font.pixelSize: 11; font.weight: Font.Medium; color: Services.Theme.textPrimary }
-                                            MouseArea {
-                                                id: tNotifMouse
-                                                anchors.fill: parent
-                                                hoverEnabled: true
-                                                cursorShape: Qt.PointingHandCursor
-                                                onClicked: testNotifProc.running = true
-                                            }
-                                        }
-
-                                        Rectangle {
-                                            height: 28
-                                            implicitWidth: clrNotifTxt.implicitWidth + 16
-                                            radius: 5
-                                            color: clrNotifMouse.containsMouse ? Qt.rgba(0.9, 0.2, 0.2, 0.15) : Services.Theme.bgElevated
-                                            border.color: Services.Theme.border
-                                            border.width: 1
-                                            Text { id: clrNotifTxt; anchors.centerIn: parent; text: "Clear History"; font.pixelSize: 11; font.weight: Font.Medium; color: Services.Theme.danger }
-                                            MouseArea {
-                                                id: clrNotifMouse
-                                                anchors.fill: parent
-                                                hoverEnabled: true
-                                                cursorShape: Qt.PointingHandCursor
-                                                onClicked: { if (Services.Notifications) Services.Notifications.clearHistory() }
-                                            }
-                                        }
-                                    }
+                                Btn {
+                                    glyph: "✕"
+                                    kind: "danger"
+                                    onClicked: { if (Services.DockService) Services.DockService.unpinApp(pin.modelData) }
                                 }
                             }
                         }
+                    }
+                }
+            }
 
-                        // ═════════════════════════════════════════════
-                        // TAB 3: SOUND & AUDIO
-                        // ═════════════════════════════════════════════
-                        ColumnLayout {
-                            id: tab3
-                            Layout.fillWidth: true
-                            spacing: 14
+            Item { Layout.preferredHeight: 8 }
+        }
+    }
 
-                            SettingsSection {
-                                title: "Audio Feedback"
-                                icon: Services.Icons.speaker
+    // two-step button for destructive actions (click → "Confirm?" → click)
+    component ArmBtn: Item {
+        id: ab
+        property string idle: ""
+        property bool armed: false
+        signal confirmed()
+        implicitWidth: abBtn.implicitWidth
+        implicitHeight: abBtn.implicitHeight
+        Btn {
+            id: abBtn
+            text: ab.armed ? "Confirm?" : ab.idle
+            kind: ab.armed ? "danger" : "plain"
+            onClicked: {
+                if (ab.armed) { ab.armed = false; ab.confirmed() }
+                else { ab.armed = true; armTimer.restart() }
+            }
+        }
+        Timer { id: armTimer; interval: 3000; onTriggered: ab.armed = false }
+    }
 
-                                SettingsSwitch {
-                                    title: "UI Sound Effects"
-                                    subtitle: "Audible feedback for volume adjustments and alerts"
-                                    checked: Services.Config ? Services.Config.soundFeedback : true
-                                    onToggled: (st) => { if (Services.Config) Services.Config.setSoundFeedback(st) }
+    // ═════════════════════════════════════════════════════════════════════════
+    //  PAGE 2 · NOTIFICATIONS
+    // ═════════════════════════════════════════════════════════════════════════
+    Component {
+        id: pgNotif
+
+        ColumnLayout {
+            spacing: 0
+
+            SettingsGroup {
+                title: "Popups"
+                OptSwitch {
+                    label: "Do not disturb"
+                    hint: "Mute all banners"
+                    checked: Services.Notifications ? Services.Notifications.doNotDisturb : false
+                    onToggled: (v) => { if (Services.Notifications) Services.Notifications.doNotDisturb = v }
+                }
+                OptPick {
+                    label: "Position"
+                    minW: 130
+                    model: [
+                        { id: "top_right", label: "Top right" },
+                        { id: "top_center", label: "Top center" },
+                        { id: "top_left", label: "Top left" },
+                        { id: "bottom_right", label: "Bottom right" }
+                    ]
+                    current: Services.Config ? Services.Config.notificationPosition : "top_right"
+                    onPicked: (id) => { if (Services.Config) Services.Config.setNotificationPosition(id) }
+                }
+                OptSlide {
+                    label: "Duration"
+                    from: 2; to: 15; step: 1; suffix: "s"
+                    value: Services.Config ? Services.Config.notificationTimeout : 5
+                    onMoved: (v) => { if (Services.Config) Services.Config.setNotificationTimeout(Math.round(v)) }
+                }
+                OptSwitch {
+                    label: "Show over fullscreen"
+                    hint: "Battery alerts always show"
+                    checked: Services.Config ? Services.Config.notificationShowInFullscreen : false
+                    onToggled: (v) => { if (Services.Config) Services.Config.setNotificationShowInFullscreen(v) }
+                }
+                OptSwitch {
+                    label: "Split KDE Connect by app"
+                    checked: Services.Config ? Services.Config.notificationSplitKdeApps : true
+                    onToggled: (v) => { if (Services.Config) Services.Config.setNotificationSplitKdeApps(v) }
+                }
+            }
+
+            SettingsGroup {
+                title: "History"
+                OptSlide {
+                    label: "Keep for"
+                    from: 1; to: 7; step: 1; suffix: " d"
+                    value: Services.Config ? Services.Config.notificationRetentionDays : 7
+                    onMoved: (v) => { if (Services.Config) Services.Config.setNotificationRetentionDays(Math.round(v)) }
+                }
+                Opt {
+                    label: "Actions"
+                    RowLayout {
+                        spacing: 6
+                        Btn { text: "Send test"; glyph: Services.Icons.bell || ""; onClicked: testNotifProc.running = true }
+                        ArmBtn { idle: "Clear history"; onConfirmed: { if (Services.Notifications) Services.Notifications.clearHistory() } }
+                    }
+                }
+            }
+
+            Item { Layout.preferredHeight: 8 }
+        }
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    //  PAGE 3 · SOUND
+    // ═════════════════════════════════════════════════════════════════════════
+    Component {
+        id: pgSound
+
+        ColumnLayout {
+            spacing: 0
+
+            SettingsGroup {
+                title: "Output"
+                Opt {
+                    label: "Volume"
+                    hint: (Services.Audio && Services.Audio.isMuted) ? "Muted" : ""
+                    RowLayout {
+                        spacing: 8
+                        Btn {
+                            glyph: (Services.Audio && Services.Audio.isMuted) ? (Services.Icons.volMute || "") : (Services.Icons.speaker || "")
+                            kind: (Services.Audio && Services.Audio.isMuted) ? "accent" : "plain"
+                            onClicked: { if (Services.Audio) Services.Audio.toggleMute() }
+                        }
+                        Sld {
+                            from: 0; to: 100; step: 1; suffix: "%"
+                            value: Services.Audio ? Math.round(Math.max(0, Math.min(1, Services.Audio.volume)) * 100) : 0
+                            onMoved: (v) => { if (Services.Audio) Services.Audio.setVolume(v / 100) }
+                        }
+                    }
+                }
+                OptPick {
+                    label: "Device"
+                    searchable: true
+                    minW: 150
+                    maxW: 240
+                    model: {
+                        const arr = []
+                        if (Services.Audio && Services.Audio.sinks) {
+                            for (let i = 0; i < Services.Audio.sinks.length; i++) {
+                                const s = Services.Audio.sinks[i]
+                                arr.push({ id: s.name || String(i), label: s.description || s.name || ("Output " + i) })
+                            }
+                        }
+                        if (arr.length === 0) arr.push({ id: "default", label: "Default output" })
+                        return arr
+                    }
+                    current: Services.Audio && Services.Audio.defaultSink ? (Services.Audio.defaultSink.name || "default") : "default"
+                    onPicked: (id) => {
+                        if (!Services.Audio || !Services.Audio.sinks) return
+                        for (let i = 0; i < Services.Audio.sinks.length; i++) {
+                            if ((Services.Audio.sinks[i].name || String(i)) === id) { Services.Audio.defaultSink = Services.Audio.sinks[i]; break }
+                        }
+                    }
+                }
+            }
+
+            SettingsGroup {
+                title: "Input"
+                Opt {
+                    label: "Mic volume"
+                    hint: (Services.Audio && Services.Audio.isSourceMuted) ? "Muted" : ""
+                    RowLayout {
+                        spacing: 8
+                        Btn {
+                            glyph: (Services.Audio && Services.Audio.isSourceMuted) ? (Services.Icons.micMute || "") : (Services.Icons.mic || "")
+                            kind: (Services.Audio && Services.Audio.isSourceMuted) ? "accent" : "plain"
+                            onClicked: { if (Services.Audio) Services.Audio.toggleSourceMute() }
+                        }
+                        Sld {
+                            from: 0; to: 100; step: 1; suffix: "%"
+                            value: Services.Audio ? Math.round(Math.max(0, Math.min(1, Services.Audio.sourceVolume)) * 100) : 0
+                            onMoved: (v) => { if (Services.Audio) Services.Audio.setSourceVolume(v / 100) }
+                        }
+                    }
+                }
+                OptPick {
+                    label: "Device"
+                    searchable: true
+                    minW: 150
+                    maxW: 240
+                    model: {
+                        const arr = []
+                        if (Services.Audio && Services.Audio.sources) {
+                            for (let i = 0; i < Services.Audio.sources.length; i++) {
+                                const s = Services.Audio.sources[i]
+                                arr.push({ id: s.name || String(i), label: s.description || s.name || ("Input " + i) })
+                            }
+                        }
+                        if (arr.length === 0) arr.push({ id: "default", label: "Default input" })
+                        return arr
+                    }
+                    current: Services.Audio && Services.Audio.defaultSource ? (Services.Audio.defaultSource.name || "default") : "default"
+                    onPicked: (id) => {
+                        if (!Services.Audio || !Services.Audio.sources) return
+                        for (let i = 0; i < Services.Audio.sources.length; i++) {
+                            if ((Services.Audio.sources[i].name || String(i)) === id) { Services.Audio.defaultSource = Services.Audio.sources[i]; break }
+                        }
+                    }
+                }
+            }
+
+            SettingsGroup {
+                title: "Apps"
+                Repeater {
+                    model: Services.Audio ? Services.Audio.streams : []
+                    delegate: Opt {
+                        id: st
+                        required property var modelData
+                        label: st.modelData.name || st.modelData.appName || "App"
+                        hint: st.modelData.appName || ""
+                        RowLayout {
+                            spacing: 8
+                            Btn {
+                                glyph: st.modelData.isMuted ? (Services.Icons.volMute || "") : (Services.Icons.speaker || "")
+                                kind: st.modelData.isMuted ? "accent" : "plain"
+                                onClicked: { if (Services.Audio) Services.Audio.toggleStreamMute(st.modelData) }
+                            }
+                            Sld {
+                                implicitWidth: 150
+                                from: 0; to: 100; step: 1; suffix: "%"
+                                value: Math.round(Math.max(0, Math.min(1, st.modelData.volume || 0)) * 100)
+                                onMoved: (v) => { if (Services.Audio) Services.Audio.setStreamVolume(st.modelData, v / 100) }
+                            }
+                        }
+                    }
+                }
+                Text {
+                    visible: !Services.Audio || !Services.Audio.streams || Services.Audio.streams.length === 0
+                    Layout.leftMargin: 4
+                    Layout.topMargin: 6
+                    text: "Nothing is playing"
+                    font.pixelSize: 11
+                    color: ui.faint
+                }
+            }
+
+            SettingsGroup {
+                title: "Feedback"
+                OptSwitch {
+                    label: "UI sounds"
+                    checked: Services.Config ? Services.Config.soundFeedback : true
+                    onToggled: (v) => { if (Services.Config) Services.Config.setSoundFeedback(v) }
+                }
+                OptSwitch {
+                    label: "Volume tick"
+                    checked: Services.Config ? Services.Config.soundVolumeFeedback : true
+                    onToggled: (v) => { if (Services.Config) Services.Config.setSoundVolumeFeedback(v) }
+                }
+                OptSwitch {
+                    label: "Notification chime"
+                    checked: Services.Config ? Services.Config.soundNotifFeedback : true
+                    onToggled: (v) => { if (Services.Config) Services.Config.setSoundNotifFeedback(v) }
+                }
+                Opt {
+                    label: "Preview"
+                    RowLayout {
+                        spacing: 6
+                        Btn {
+                            text: "Notification"
+                            onClicked: { if (Services.SoundFeedback && typeof Services.SoundFeedback.playNotification === "function") Services.SoundFeedback.playNotification() }
+                        }
+                        Btn {
+                            text: "Volume"
+                            onClicked: { if (Services.SoundFeedback && typeof Services.SoundFeedback.playVolumeChange === "function") Services.SoundFeedback.playVolumeChange() }
+                        }
+                    }
+                }
+                Opt {
+                    label: "Mixer"
+                    hint: "Open pavucontrol"
+                    Btn { glyph: Services.Icons.sliders || ""; text: "Open"; onClicked: pavuProc.running = true }
+                }
+            }
+
+            Item { Layout.preferredHeight: 8 }
+        }
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    //  PAGE 4 · LOCK & POWER
+    // ═════════════════════════════════════════════════════════════════════════
+    Component {
+        id: pgLock
+
+        ColumnLayout {
+            spacing: 0
+
+            Component.onCompleted: { if (Services.FaceId) Services.FaceId.checkStatus() }
+
+            SettingsGroup {
+                title: "Profile"
+                Opt {
+                    label: Services.OsInfo.username || Quickshell.env("USER") || "User"
+                    hint: (Services.OsInfo.hostname || "local") + " · " + (Services.OsInfo.distroName || "Linux")
+                    RowLayout {
+                        spacing: 8
+                        Btn {
+                            visible: Services.OsInfo.isCustomAvatar
+                            text: "Reset"
+                            onClicked: Services.OsInfo.clearCustomAvatar()
+                        }
+                        Btn {
+                            text: Services.OsInfo.isPickingAvatar ? "Opening…" : "Change photo"
+                            onClicked: Services.OsInfo.pickCustomAvatar()
+                        }
+                        Item {
+                            Layout.preferredWidth: 28
+                            Layout.preferredHeight: 28
+                            Services.AvatarFrame {
+                                anchors.fill: parent
+                                source: Services.OsInfo.avatarPath
+                                shapeRadius: 14
+                                backgroundColor: Services.Theme.accent
+                                fallbackText: {
+                                    const u = (Services.OsInfo.username || Quickshell.env("USER") || "user").toUpperCase()
+                                    return u.length > 0 ? u.charAt(0) : "?"
                                 }
+                                fallbackFontFamily: Services.Theme.fontSymbols
+                                fallbackFontSize: 12
+                                fallbackColor: Services.Theme.bgOnAccent
+                            }
+                        }
+                    }
+                }
+            }
 
-                                SettingsDivider {}
-
-                                SettingsSwitch {
-                                    title: "Volume Adjustment Feedback"
-                                    subtitle: "Tick chime on volume step change"
-                                    checked: Services.Config ? Services.Config.soundVolumeFeedback : true
-                                    onToggled: (st) => { if (Services.Config) Services.Config.setSoundVolumeFeedback(st) }
-                                }
-
-                                SettingsDivider {}
-
-                                SettingsSwitch {
-                                    title: "Notification Chime Sound"
-                                    subtitle: "Audible alert on incoming notification"
-                                    checked: Services.Config ? Services.Config.soundNotifFeedback : true
-                                    onToggled: (st) => { if (Services.Config) Services.Config.setSoundNotifFeedback(st) }
-                                }
-
-                                SettingsDivider {}
-
-                                SettingsRow {
-                                    title: "Audition Sounds"
-
-                                    RowLayout {
-                                        spacing: 6
-
-                                        Rectangle {
-                                            height: 26
-                                            implicitWidth: s1Txt.implicitWidth + 12
-                                            radius: 4
-                                            color: s1Mouse.containsMouse ? Qt.rgba(1, 1, 1, 0.08) : Services.Theme.bgElevated
-                                            border.color: Services.Theme.border; border.width: 1
-                                            Text { id: s1Txt; anchors.centerIn: parent; text: "Notification"; font.pixelSize: 10; color: Services.Theme.textPrimary }
-                                            MouseArea {
-                                                id: s1Mouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
-                                                onClicked: { if (Services.SoundFeedback && typeof Services.SoundFeedback.playNotification === "function") Services.SoundFeedback.playNotification() }
-                                            }
-                                        }
-
-                                        Rectangle {
-                                            height: 26
-                                            implicitWidth: s2Txt.implicitWidth + 12
-                                            radius: 4
-                                            color: s2Mouse.containsMouse ? Qt.rgba(1, 1, 1, 0.08) : Services.Theme.bgElevated
-                                            border.color: Services.Theme.border; border.width: 1
-                                            Text { id: s2Txt; anchors.centerIn: parent; text: "Volume Step"; font.pixelSize: 10; color: Services.Theme.textPrimary }
-                                            MouseArea {
-                                                id: s2Mouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
-                                                onClicked: { if (Services.SoundFeedback && typeof Services.SoundFeedback.playVolumeChange === "function") Services.SoundFeedback.playVolumeChange() }
-                                            }
-                                        }
-                                    }
+            SettingsGroup {
+                title: "Face ID"
+                OptSwitch {
+                    label: "Unlock with face"
+                    checked: Services.Config ? Services.Config.faceIdEnabled : true
+                    onToggled: (v) => { if (Services.Config) Services.Config.setFaceIdEnabled(v) }
+                }
+                OptSwitch {
+                    label: "Instant unlock"
+                    hint: "Dismiss the lock screen as soon as a face matches"
+                    checked: Services.Config ? Services.Config.faceIdAutoUnlock : true
+                    onToggled: (v) => { if (Services.Config) Services.Config.setFaceIdAutoUnlock(v) }
+                }
+                OptPick {
+                    label: "Camera"
+                    model: {
+                        const devs = (Services.FaceId && Services.FaceId.availableDevices && Services.FaceId.availableDevices.length > 0)
+                            ? Services.FaceId.availableDevices : ["/dev/video0", "/dev/video1", "/dev/video2"]
+                        const items = []
+                        for (let i = 0; i < devs.length; i++) items.push({ id: devs[i], label: devs[i] })
+                        return items
+                    }
+                    current: Services.Config ? Services.Config.faceIdCameraDevice : "/dev/video0"
+                    onPicked: (id) => { if (Services.Config) Services.Config.setFaceIdCameraDevice(id) }
+                }
+                Opt {
+                    label: {
+                        if (Services.FaceId && Services.FaceId.isEnrolling) {
+                            const n = Services.FaceId.enrollStepName
+                            if (n && n.length > 0) return n === "Confirmation" ? "Confirming…" : ("Step " + Services.FaceId.enrollStepNumber + "/3 · " + n)
+                            return "Enrolling " + Math.round(Services.FaceId.enrollProgress * 100) + "%"
+                        }
+                        return (Services.FaceId && Services.FaceId.isEnrolled) ? "Face enrolled" : "No face enrolled"
+                    }
+                    hint: (Services.FaceId && Services.FaceId.isEnrolling)
+                        ? (Services.FaceId.statusMessage || "")
+                        : (rootWindow.faceIdEnrollmentNotice.length > 0
+                            ? rootWindow.faceIdEnrollmentNotice
+                            : ((Services.FaceId && Services.FaceId.isEnrolled) ? ("For " + (Services.OsInfo.username || "user")) : ""))
+                    RowLayout {
+                        spacing: 6
+                        Btn {
+                            visible: Services.FaceId && Services.FaceId.isEnrolled && !Services.FaceId.isEnrolling
+                            text: "Remove"
+                            kind: "danger"
+                            onClicked: { if (Services.FaceId) Services.FaceId.clearData() }
+                        }
+                        Btn {
+                            visible: !Services.FaceId || !Services.FaceId.isEnrolling
+                            text: (Services.FaceId && Services.FaceId.isEnrolled) ? "Re-enroll" : "Set up"
+                            kind: "accent"
+                            enabledState: Services.FaceId ? Services.FaceId.isEnabled : true
+                            onClicked: {
+                                rootWindow.faceIdEnrollmentNotice = ""
+                                if (Services.FaceId && Services.FaceId.canEnroll) {
+                                    Services.FaceId.startEnroll()
+                                } else if (Services.FaceId) {
+                                    Services.FaceId.checkStatus()
+                                    rootWindow.faceIdEnrollmentNotice = Services.FaceId.enrollBlockReason()
                                 }
                             }
                         }
+                        Btn {
+                            visible: Services.FaceId && Services.FaceId.isEnrolling
+                            text: "Cancel"
+                            onClicked: { if (Services.FaceId) Services.FaceId.cancelEnroll() }
+                        }
+                    }
+                }
+                Rectangle {
+                    visible: Services.FaceId && Services.FaceId.isEnrolling
+                    Layout.fillWidth: true
+                    Layout.topMargin: 4
+                    height: 3
+                    radius: 1.5
+                    color: ui.tone(0.12)
+                    Rectangle {
+                        width: parent.width * (Services.FaceId ? Math.max(0, Math.min(1, Services.FaceId.enrollProgress)) : 0)
+                        height: parent.height
+                        radius: 1.5
+                        color: ui.accent
+                        Behavior on width { NumberAnimation { duration: 160 } }
+                    }
+                }
+            }
 
-                        // ═════════════════════════════════════════════
-                        // TAB 4: LOCKSCREEN & POWER
-                        // ═════════════════════════════════════════════
-                        ColumnLayout {
-                            id: tab4
-                            Layout.fillWidth: true
-                            spacing: 14
+            SettingsGroup {
+                title: "Lock screen"
+                OptPick {
+                    label: "Clock"
+                    model: [
+                        { id: "hero", label: "Hero" }, { id: "modern", label: "Modern stacked" },
+                        { id: "minimal", label: "Minimal" }, { id: "compact", label: "Compact capsule" },
+                        { id: "vertical", label: "Vertical split" }, { id: "typographic", label: "Typographic" },
+                        { id: "radial", label: "Radial ring" }, { id: "cyber", label: "Cyber HUD" }
+                    ]
+                    current: Services.Config ? Services.Config.lockscreenClockStyle : "hero"
+                    onPicked: (id) => { if (Services.Config) Services.Config.setLockscreenClockStyle(id) }
+                }
+                OptSeg {
+                    label: "Backdrop"
+                    options: [{ id: "sync", label: "Sync desktop" }, { id: "custom", label: "Custom image" }]
+                    current: Services.Config ? Services.Config.lockscreenWallpaperMode : "sync"
+                    onPicked: (id) => { if (Services.Config) Services.Config.setLockscreenWallpaperMode(id) }
+                }
+                Block {
+                    visible: Services.Config && Services.Config.lockscreenWallpaperMode === "custom"
+                    WpStrip {
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 54
+                        current: {
+                            const c = Services.Config ? Services.Config.lockscreenCustomWallpaper : ""
+                            return c && c.length > 0 ? c : (Services.Wallpaper ? Services.Wallpaper.currentWallpaper : "")
+                        }
+                        onChosen: (path) => {
+                            if (!Services.Config) return
+                            Services.Config.setLockscreenCustomWallpaper(path)
+                            Services.Config.setLockscreenWallpaperMode("custom")
+                        }
+                    }
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Item { Layout.fillWidth: true }
+                        Btn { text: "Pick file"; onClicked: { if (Services.Wallpaper) Services.Wallpaper.pickLockscreenWallpaper() } }
+                    }
+                }
+                OptSwitch {
+                    label: "Blur backdrop"
+                    checked: Services.Config ? Services.Config.lockscreenBlur : true
+                    onToggled: (v) => { if (Services.Config) Services.Config.setLockscreenBlur(v) }
+                }
+                OptSlide {
+                    label: "Dim"
+                    from: 0.1; to: 0.85; step: 0.05; decimals: 2
+                    value: Services.Config ? Services.Config.lockscreenDim : 0.45
+                    onMoved: (v) => { if (Services.Config) Services.Config.setLockscreenDim(Number(v.toFixed(2))) }
+                }
+                OptSwitch {
+                    label: "Disable password typing"
+                    hint: "Hide password input and prevent typing on lock screen"
+                    checked: Services.Config ? Services.Config.lockscreenDisablePassword : false
+                    onToggled: (v) => { if (Services.Config) Services.Config.setLockscreenDisablePassword(v) }
+                }
+                OptSeg {
+                    visible: !(Services.Config && Services.Config.lockscreenDisablePassword)
+                    label: "Input style"
+                    options: [{ id: "pill", label: "Pill" }, { id: "underline", label: "Underline" }, { id: "box", label: "Box" }, { id: "dots", label: "Dots" }]
+                    current: Services.Config ? Services.Config.lockscreenInputStyle : "pill"
+                    onPicked: (id) => { if (Services.Config) Services.Config.setLockscreenInputStyle(id) }
+                }
+                OptSwitch {
+                    label: "Avatar"
+                    checked: Services.Config ? Services.Config.lockscreenShowAvatar : true
+                    onToggled: (v) => { if (Services.Config) Services.Config.setLockscreenShowAvatar(v) }
+                }
+                OptSeg {
+                    visible: Services.Config ? Services.Config.lockscreenShowAvatar : true
+                    label: "Avatar shape"
+                    options: [{ id: "circle", label: "Circle" }, { id: "squircle", label: "Squircle" }, { id: "rounded", label: "Rounded" }]
+                    current: Services.Config ? Services.Config.lockscreenAvatarShape : "squircle"
+                    onPicked: (id) => { if (Services.Config) Services.Config.setLockscreenAvatarShape(id) }
+                }
+                Block {
+                    Flow {
+                        Layout.fillWidth: true
+                        spacing: 6
+                        Chip {
+                            text: "Avatar ring"
+                            on: Services.Config ? Services.Config.lockscreenAvatarRing : false
+                            onClicked: { if (Services.Config) Services.Config.setLockscreenAvatarRing(!on) }
+                        }
+                        Chip {
+                            text: "Username"
+                            on: Services.Config ? Services.Config.lockscreenShowGreeting : false
+                            onClicked: { if (Services.Config) Services.Config.setLockscreenShowGreeting(!on) }
+                        }
+                        Chip {
+                            text: "Status pill"
+                            on: Services.Config ? Services.Config.lockscreenShowStatusPill : true
+                            onClicked: { if (Services.Config) Services.Config.setLockscreenShowStatusPill(!on) }
+                        }
+                        Chip {
+                            text: "Notifications"
+                            on: Services.Config ? Services.Config.lockscreenShowNotifs : false
+                            onClicked: { if (Services.Config) Services.Config.setLockscreenShowNotifs(!on) }
+                        }
+                        Chip {
+                            text: "Media player"
+                            on: Services.Config ? Services.Config.lockscreenShowMedia : true
+                            onClicked: { if (Services.Config) Services.Config.setLockscreenShowMedia(!on) }
+                        }
+                    }
+                }
+            }
 
-                            // User Profile & Avatar Styling Section (Top Priority)
-                            SettingsSection {
-                                title: "User Profile & Avatar"
-                                icon: Services.Icons.user
+            SettingsGroup {
+                title: "Power"
+                OptSeg {
+                    label: "Profile"
+                    options: [{ id: "power-saver", label: "Saver" }, { id: "balanced", label: "Balanced" }, { id: "performance", label: "Performance" }]
+                    current: Services.PowerProfile ? Services.PowerProfile.currentProfile : "balanced"
+                    onPicked: (id) => { if (Services.PowerProfile) Services.PowerProfile.setProfile(id) }
+                }
+                OptSwitch {
+                    label: "Low battery warnings"
+                    checked: Services.Config ? Services.Config.batteryShowWarnings : true
+                    onToggled: (v) => { if (Services.Config) Services.Config.setBatteryShowWarnings(v) }
+                }
+                OptSlide {
+                    label: "Warn below"
+                    from: 10; to: 35; step: 5; suffix: "%"
+                    value: Services.Config ? Services.Config.batteryLowThreshold : 20
+                    onMoved: (v) => { if (Services.Config) Services.Config.setBatteryLowThreshold(Math.round(v)) }
+                }
+                Opt {
+                    label: "Session"
+                    RowLayout {
+                        spacing: 6
+                        Btn { text: "Lock"; onClicked: { rootWindow.hide(); lockSessionProc.running = true } }
+                        Btn { text: "Suspend"; onClicked: suspendProc.running = true }
+                        ArmBtn { idle: "Reboot"; onConfirmed: rebootProc.running = true }
+                        ArmBtn { idle: "Power off"; onConfirmed: poweroffProc.running = true }
+                    }
+                }
+            }
 
-                                // Interactive Profile Picture Card (Minimal Clean Profile)
-                                Rectangle {
-                                    Layout.fillWidth: true
-                                    Layout.margins: 10
-                                    height: 84
-                                    radius: 8
-                                    color: Services.Theme.bgElevated
-                                    border.color: Services.Theme.border
-                                    border.width: 1
+            Item { Layout.preferredHeight: 8 }
+        }
+    }
 
-                                    RowLayout {
-                                        anchors.fill: parent
-                                        anchors.margins: 12
-                                        spacing: 14
+    // ═════════════════════════════════════════════════════════════════════════
+    //  DISPLAY STAGE · compact drag canvas (math lives in rootWindow.*)
+    // ═════════════════════════════════════════════════════════════════════════
+    component DisplayStage: Rectangle {
+        id: stage
+        implicitHeight: 150
+        radius: 8
+        color: ui.fill
+        clip: true
 
-                                        // Live Avatar Frame with Shape & Camera Hover
-                                        Item {
-                                            id: profilePreviewFrame
-                                            Layout.preferredWidth: 60
-                                            Layout.preferredHeight: 60
-                                            Layout.alignment: Qt.AlignVCenter
+        readonly property real totW: {
+            let mx = 0
+            const L = rootWindow.dispLocalLayout || []
+            for (let i = 0; i < L.length; i++) {
+                if (L[i].disabled) continue
+                mx = Math.max(mx, (L[i].x || 0) + rootWindow.getDisplayLogWidth(L[i]))
+            }
+            return Math.max(800, mx)
+        }
+        readonly property real totH: {
+            let mx = 0
+            const L = rootWindow.dispLocalLayout || []
+            for (let i = 0; i < L.length; i++) {
+                if (L[i].disabled) continue
+                mx = Math.max(mx, (L[i].y || 0) + rootWindow.getDisplayLogHeight(L[i]))
+            }
+            return Math.max(600, mx)
+        }
+        readonly property real sc: {
+            const aw = stage.width - 40
+            const ah = stage.height - 40
+            if (aw <= 0 || ah <= 0) return 0.1
+            return Math.min(aw / totW, ah / totH, 0.35)
+        }
+        readonly property real ox: Math.max(14, (stage.width - totW * sc) / 2)
+        readonly property real oy: Math.max(14, (stage.height - totH * sc) / 2)
 
-                                            Services.AvatarFrame {
-                                                anchors.fill: parent
-                                                source: Services.OsInfo.avatarPath
-                                                shapeRadius: 16
-                                                backgroundColor: Services.Theme.surfaceVariant
-                                                borderColor: Services.Theme.border
-                                                borderWidth: 1
-                                                fallbackText: {
-                                                    const u = (Services.OsInfo.username || Quickshell.env("USER") || "user").toUpperCase()
-                                                    return u.length > 0 ? u.charAt(0) : "󰌽"
-                                                }
-                                                fallbackFontFamily: Services.Theme.fontSymbols
-                                                fallbackFontSize: 24
-                                                fallbackColor: Services.Theme.accent
-                                            }
+        Rectangle {
+            visible: rootWindow.dispShowSnapGuideX
+            x: rootWindow.dispSnapGuideX
+            width: 1; height: parent.height
+            color: ui.accent
+            z: 90
+        }
+        Rectangle {
+            visible: rootWindow.dispShowSnapGuideY
+            y: rootWindow.dispSnapGuideY
+            height: 1; width: parent.width
+            color: ui.accent
+            z: 90
+        }
+        Text {
+            visible: rootWindow.dispIsDragging && rootWindow.dispDockMessage.length > 0
+            anchors.top: parent.top
+            anchors.horizontalCenter: parent.horizontalCenter
+            anchors.topMargin: 6
+            text: rootWindow.dispDockMessage
+            font.pixelSize: 10
+            color: ui.accent
+            z: 95
+        }
+        Text {
+            visible: !rootWindow.dispLocalLayout || rootWindow.dispLocalLayout.length === 0
+            anchors.centerIn: parent
+            text: "No displays detected"
+            font.pixelSize: 11
+            color: ui.faint
+        }
 
-                                            // Camera badge overlay on hover
-                                            Rectangle {
-                                                anchors.fill: parent
-                                                radius: 16
-                                                color: Qt.rgba(0, 0, 0, 0.45)
-                                                visible: previewCardMouse.containsMouse
-                                                antialiasing: true
+        Repeater {
+            model: rootWindow.dispLocalLayout
+            delegate: Item {
+                id: mb
+                required property var modelData
+                required property int index
+                readonly property bool isSel: rootWindow.dispSelectedMonitorName === mb.modelData.name
+                property bool dragged: false
+                property real dvx: 0
+                property real dvy: 0
 
-                                                Text {
-                                                    anchors.centerIn: parent
-                                                    text: "󰄀"
-                                                    font.family: Services.Theme.fontSymbols
-                                                    font.pixelSize: 18
-                                                    color: "white"
-                                                }
-                                            }
+                width: Math.max(58, rootWindow.getDisplayLogWidth(mb.modelData) * stage.sc)
+                height: Math.max(36, rootWindow.getDisplayLogHeight(mb.modelData) * stage.sc)
+                x: mb.dragged ? mb.dvx : stage.ox + mb.modelData.x * stage.sc
+                y: mb.dragged ? mb.dvy : stage.oy + mb.modelData.y * stage.sc
+                z: mb.dragged ? 100 : (mb.isSel ? 20 : 10)
+                Behavior on x { enabled: !mb.dragged; NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
+                Behavior on y { enabled: !mb.dragged; NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
 
+                Rectangle {
+                    anchors.fill: parent
+                    radius: 5
+                    color: mb.isSel ? ui.wash(0.16) : ui.tone(0.08)
+                    border.width: mb.isSel ? 1.5 : 1
+                    border.color: mb.isSel ? ui.accent : ui.tone(0.2)
+                    opacity: mb.modelData.disabled ? 0.4 : 1.0
+                    scale: mb.dragged ? 1.03 : 1.0
+                    Column {
+                        anchors.centerIn: parent
+                        spacing: 1
+                        Text {
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            text: mb.modelData.name + (mb.modelData.focused ? " ★" : "")
+                            font.pixelSize: 10
+                            font.weight: Font.DemiBold
+                            color: mb.isSel ? ui.accent : ui.fg
+                        }
+                        Text {
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            text: mb.modelData.width + "×" + mb.modelData.height
+                            font.family: Services.Theme.fontMono
+                            font.pixelSize: 9
+                            color: ui.dim
+                        }
+                    }
+                }
 
-                                            MouseArea {
-                                                id: previewCardMouse
-                                                anchors.fill: parent
-                                                hoverEnabled: true
-                                                cursorShape: Qt.PointingHandCursor
-                                                onClicked: Services.OsInfo.pickCustomAvatar()
-                                            }
-                                        }
+                MouseArea {
+                    id: mbMa
+                    anchors.fill: parent
+                    cursorShape: pressed ? Qt.ClosedHandCursor : Qt.OpenHandCursor
+                    property real gox: 0
+                    property real goy: 0
+                    onPressed: (m) => {
+                        rootWindow.dispSelectedMonitorName = mb.modelData.name
+                        rootWindow.dispIsDragging = true
+                        mb.dragged = true
+                        gox = m.x; goy = m.y
+                        mb.dvx = mb.x; mb.dvy = mb.y
+                    }
+                    onPositionChanged: (m) => {
+                        if (!pressed) return
+                        const p = mapToItem(stage, m.x, m.y)
+                        let rx = Math.max(6, Math.min(stage.width - mb.width - 6, p.x - gox))
+                        let ry = Math.max(6, Math.min(stage.height - mb.height - 6, p.y - goy))
+                        if (rootWindow.dispLocalLayout.length > 1) {
+                            const s = rootWindow.calcDisplaySnap(mb.index, rx, ry, mb.width, mb.height, stage.ox, stage.oy, stage.sc)
+                            mb.dvx = s.snappedStageX
+                            mb.dvy = s.snappedStageY
+                            rootWindow.dispSnapGuideX = s.guideX
+                            rootWindow.dispShowSnapGuideX = s.hasGuideX
+                            rootWindow.dispSnapGuideY = s.guideY
+                            rootWindow.dispShowSnapGuideY = s.hasGuideY
+                            rootWindow.dispDockMessage = s.dockMessage
+                        } else {
+                            mb.dvx = rx; mb.dvy = ry
+                        }
+                    }
+                    function finish(commit) {
+                        rootWindow.dispIsDragging = false
+                        rootWindow.dispShowSnapGuideX = false
+                        rootWindow.dispShowSnapGuideY = false
+                        rootWindow.dispDockMessage = ""
+                        if (commit && rootWindow.dispLocalLayout.length > 1)
+                            rootWindow.commitDisplayDrop(mb.index, mb.dvx, mb.dvy, stage.ox, stage.oy, stage.sc)
+                        mb.dragged = false
+                    }
+                    onReleased: finish(true)
+                    onCanceled: finish(false)
+                }
+            }
+        }
+    }
 
-                                        // User Info & Status (hugging avatar)
-                                        ColumnLayout {
-                                            spacing: 2
-                                            Layout.alignment: Qt.AlignVCenter
+    // ═════════════════════════════════════════════════════════════════════════
+    //  PAGE 5 · COMPOSITOR
+    // ═════════════════════════════════════════════════════════════════════════
+    Component {
+        id: pgComp
 
-                                            Text {
-                                                text: Services.OsInfo.username || Quickshell.env("USER") || "User"
-                                                font.pixelSize: 15
-                                                font.weight: Font.DemiBold
-                                                color: Services.Theme.textPrimary
-                                            }
+        ColumnLayout {
+            id: tab5
+            spacing: 0
 
-                                            Text {
-                                                text: (Services.OsInfo.username || "user") + "@" + (Services.OsInfo.hostname || "local") + "  ·  " + (Services.OsInfo.shellName || "sh")
-                                                font.pixelSize: 11
-                                                font.weight: Font.Medium
-                                                color: Services.Theme.textSecondary
-                                            }
+            // ── Hero / Status Header Card ─────────────────────────────────────
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.topMargin: 8
+                Layout.preferredHeight: 52
+                radius: ui.r + 2
+                color: ui.fill
+                border.width: 1
+                border.color: ui.line
 
-                                            Text {
-                                                text: (Services.OsInfo.distroName || "Linux") + "  ·  Kernel " + (Services.OsInfo.kernel || "")
-                                                font.family: Services.Theme.fontMono
-                                                font.pixelSize: 9
-                                                color: Services.Theme.textDisabled
-                                            }
-                                        }
+                RowLayout {
+                    anchors.fill: parent
+                    anchors.leftMargin: 12
+                    anchors.rightMargin: 12
+                    spacing: 12
 
-                                        // Spacer pushing content to the left
-                                        Item { Layout.fillWidth: true }
+                    Rectangle {
+                        Layout.preferredWidth: 32
+                        Layout.preferredHeight: 32
+                        Layout.alignment: Qt.AlignVCenter
+                        radius: ui.r
+                        color: ui.accent
 
-                                        // Action Buttons Group
-                                        RowLayout {
-                                            spacing: 8
-                                            Layout.alignment: Qt.AlignVCenter
+                        Text {
+                            anchors.centerIn: parent
+                            text: Services.Icons.display || "󰍹"
+                            font.family: Services.Theme.fontSymbols
+                            font.pixelSize: 16
+                            color: ui.onAccent
+                        }
+                    }
 
-                                            // Choose Photo / Change Avatar Button
-                                            Rectangle {
-                                                implicitHeight: 32
-                                                implicitWidth: chooseAvatarRow.implicitWidth + 24
-                                                radius: 6
-                                                color: chooseAvatarMouse.containsMouse 
-                                                    ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.22)
-                                                    : Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.12)
-                                                border.color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.45)
-                                                border.width: 1
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        Layout.minimumWidth: 0
+                        spacing: 1
+                        Layout.alignment: Qt.AlignVCenter
 
-                                                RowLayout {
-                                                    id: chooseAvatarRow
-                                                    anchors.centerIn: parent
-                                                    spacing: 6
-
-                                                    Text {
-                                                        text: "󰄀"
-                                                        font.family: Services.Theme.fontSymbols
-                                                        font.pixelSize: 13
-                                                        color: Services.Theme.accent
-                                                    }
-
-                                                    Text {
-                                                        text: Services.OsInfo.isPickingAvatar ? "Opening..." : "Choose Image"
-                                                        font.pixelSize: Services.Theme.fontSizeSm
-                                                        font.weight: Font.DemiBold
-                                                        color: Services.Theme.accent
-                                                    }
-                                                }
-
-                                                MouseArea {
-                                                    id: chooseAvatarMouse
-                                                    anchors.fill: parent
-                                                    cursorShape: Qt.PointingHandCursor
-                                                    hoverEnabled: true
-                                                    onClicked: Services.OsInfo.pickCustomAvatar()
-                                                }
-                                            }
-
-                                            // Reset Button (if custom avatar set)
-                                            Rectangle {
-                                                visible: Services.OsInfo.isCustomAvatar
-                                                implicitHeight: 32
-                                                implicitWidth: resetAvatarRow.implicitWidth + 20
-                                                radius: 6
-                                                color: resetAvatarMouse.containsMouse 
-                                                    ? (Services.Theme.isDark ? "#2a1e20" : "#fee2e2")
-                                                    : "transparent"
-                                                border.color: Services.Theme.border
-                                                border.width: 1
-
-                                                RowLayout {
-                                                    id: resetAvatarRow
-                                                    anchors.centerIn: parent
-                                                    spacing: 5
-
-                                                    Text {
-                                                        text: "✕"
-                                                        font.pixelSize: 10
-                                                        color: Services.Theme.textSecondary
-                                                    }
-
-                                                    Text {
-                                                        text: "Reset"
-                                                        font.pixelSize: Services.Theme.fontSizeSm
-                                                        color: Services.Theme.textSecondary
-                                                    }
-                                                }
-
-                                                MouseArea {
-                                                    id: resetAvatarMouse
-                                                    anchors.fill: parent
-                                                    cursorShape: Qt.PointingHandCursor
-                                                    hoverEnabled: true
-                                                    onClicked: Services.OsInfo.clearCustomAvatar()
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
+                        RowLayout {
+                            spacing: 6
+                            Text {
+                                text: Services.Compositor ? Services.Compositor.activeDisplayName : "Hyprland"
+                                font.pixelSize: 13
+                                font.weight: Font.SemiBold
+                                color: ui.fg
                             }
-
-                            // Face ID & Biometrics Section
-                            SettingsSection {
-                                title: "Face ID & Biometrics"
-                                icon: "󰄀"
-                                Component.onCompleted: {
-                                    if (Services.FaceId) Services.FaceId.checkStatus()
-                                }
-
-                                SettingsSwitch {
-                                    title: "Face ID Unlock"
-                                    subtitle: "Unlock your desktop using webcam facial recognition"
-                                    checked: Services.Config ? Services.Config.faceIdEnabled : true
-                                    onToggled: (newState) => {
-                                        if (Services.Config) Services.Config.setFaceIdEnabled(newState)
-                                    }
-                                }
-
-                                SettingsDivider {}
-
-                                SettingsSwitch {
-                                    title: "Instant Auto-Unlock"
-                                    subtitle: "Automatically dismiss lockscreen when face is recognized"
-                                    checked: Services.Config ? Services.Config.faceIdAutoUnlock : true
-                                    onToggled: (newState) => {
-                                        if (Services.Config) Services.Config.setFaceIdAutoUnlock(newState)
-                                    }
-                                }
-
-                                SettingsDivider {}
-
-                                SettingsRow {
-                                    title: "Biometric Data"
-                                    subtitle: (Services.FaceId && Services.FaceId.isEnrolling)
-                                        ? (Services.FaceId.statusMessage || "Enrolling face...")
-                                        : (rootWindow.faceIdEnrollmentNotice.length > 0)
-                                            ? rootWindow.faceIdEnrollmentNotice
-                                        : ((Services.FaceId && Services.FaceId.isEnrolled)
-                                            ? "Face registered for " + (Services.OsInfo.username || Quickshell.env("USER") || "user")
-                                            : "No face registered yet")
-
-                                    RowLayout {
-                                        spacing: 8
-                                        Layout.alignment: Qt.AlignVCenter
-
-                                        // Status Pill Badge
-                                        Rectangle {
-                                            height: 24
-                                            implicitWidth: statusPillTxt.implicitWidth + 14
-                                            radius: 12
-                                            color: (Services.FaceId && Services.FaceId.isEnrolled)
-                                                ? Qt.rgba(48/255, 209/255, 88/255, 0.15)
-                                                : Qt.rgba(1, 1, 1, 0.06)
-                                            border.color: (Services.FaceId && Services.FaceId.isEnrolled)
-                                                ? Qt.rgba(48/255, 209/255, 88/255, 0.4)
-                                                : Services.Theme.border
-                                            border.width: 1
-
-                                            Text {
-                                                id: statusPillTxt
-                                                anchors.centerIn: parent
-                                                text: (Services.FaceId && Services.FaceId.isEnrolling)
-                                                    ? ((Services.FaceId.enrollStepName && Services.FaceId.enrollStepName.length > 0)
-                                                        ? (Services.FaceId.enrollStepName === "Confirmation"
-                                                            ? "Reviewing..."
-                                                            : ("Step " + Services.FaceId.enrollStepNumber + "/3: " + Services.FaceId.enrollStepName))
-                                                        : ("Enrolling " + Math.round((Services.FaceId ? Services.FaceId.enrollProgress : 0) * 100) + "%"))
-                                                    : ((Services.FaceId && Services.FaceId.isEnrolled) ? "Enrolled" : "Not Set Up")
-                                                font.pixelSize: 11
-                                                font.weight: Font.Medium
-                                                color: (Services.FaceId && Services.FaceId.isEnrolling)
-                                                    ? Services.Theme.accent
-                                                    : ((Services.FaceId && Services.FaceId.isEnrolled) ? "#30d158" : Services.Theme.textSecondary)
-                                            }
-                                        }
-
-                                        // Enroll / Re-enroll Button
-                                        Rectangle {
-                                            visible: !Services.FaceId || !Services.FaceId.isEnrolling
-                                            height: 28
-                                            implicitWidth: enrollBtnTxt.implicitWidth + 20
-                                            radius: 6
-                                            color: enrollMouse.containsMouse
-                                                ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.25)
-                                                : Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.14)
-                                            border.color: Services.Theme.accent
-                                            border.width: 1
-                                            opacity: (Services.FaceId && Services.FaceId.canEnroll) ? 1.0 : 0.55
-
-                                            Text {
-                                                id: enrollBtnTxt
-                                                anchors.centerIn: parent
-                                                text: (Services.FaceId && Services.FaceId.isEnrolled) ? "Re-enroll" : "Set Up..."
-                                                font.pixelSize: 11
-                                                font.weight: Font.DemiBold
-                                                color: Services.Theme.accent
-                                            }
-
-                                            MouseArea {
-                                                id: enrollMouse
-                                                anchors.fill: parent
-                                                hoverEnabled: true
-                                                cursorShape: Qt.PointingHandCursor
-                                                enabled: Services.FaceId ? Services.FaceId.isEnabled : true
-                                                onClicked: {
-                                                    rootWindow.faceIdEnrollmentNotice = ""
-                                                    if (Services.FaceId && Services.FaceId.canEnroll) {
-                                                        Services.FaceId.startEnroll()
-                                                    } else if (Services.FaceId) {
-                                                        Services.FaceId.checkStatus()
-                                                        rootWindow.faceIdEnrollmentNotice = Services.FaceId.enrollBlockReason()
-                                                    }
-                                                }
-                                            }
-                                        }
-
-                                        // Cancel Button
-                                        Rectangle {
-                                            visible: Services.FaceId && Services.FaceId.isEnrolling
-                                            height: 28
-                                            implicitWidth: cancelBtnTxt.implicitWidth + 18
-                                            radius: 6
-                                            color: cancelMouse.containsMouse ? Qt.rgba(1, 1, 1, 0.12) : Services.Theme.bgElevated
-                                            border.color: Services.Theme.border
-                                            border.width: 1
-
-                                            Text {
-                                                id: cancelBtnTxt
-                                                anchors.centerIn: parent
-                                                text: "Cancel"
-                                                font.pixelSize: 11
-                                                font.weight: Font.Medium
-                                                color: Services.Theme.textPrimary
-                                            }
-
-                                            MouseArea {
-                                                id: cancelMouse
-                                                anchors.fill: parent
-                                                hoverEnabled: true
-                                                cursorShape: Qt.PointingHandCursor
-                                                onClicked: {
-                                                    if (Services.FaceId) Services.FaceId.cancelEnroll()
-                                                }
-                                            }
-                                        }
-
-                                        // Remove Button
-                                        Rectangle {
-                                            visible: Services.FaceId && Services.FaceId.isEnrolled && !Services.FaceId.isEnrolling
-                                            height: 28
-                                            implicitWidth: clearBtnTxt.implicitWidth + 18
-                                            radius: 6
-                                            color: clearMouse.containsMouse ? Qt.rgba(0.95, 0.25, 0.25, 0.15) : "transparent"
-                                            border.color: clearMouse.containsMouse ? Qt.rgba(0.95, 0.25, 0.25, 0.4) : Services.Theme.border
-                                            border.width: 1
-
-                                            Text {
-                                                id: clearBtnTxt
-                                                anchors.centerIn: parent
-                                                text: "Remove"
-                                                font.pixelSize: 11
-                                                font.weight: Font.Medium
-                                                color: Services.Theme.danger || "#ef4444"
-                                            }
-
-                                            MouseArea {
-                                                id: clearMouse
-                                                anchors.fill: parent
-                                                hoverEnabled: true
-                                                cursorShape: Qt.PointingHandCursor
-                                                onClicked: {
-                                                    if (Services.FaceId) Services.FaceId.clearData()
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-
-                                SettingsDivider {}
-
-                                SettingsRow {
-                                    title: "Camera Device"
-                                    subtitle: "Webcam sensor for facial scanning"
-
-                                    SettingsDropdown {
-                                        currentValue: Services.Config ? Services.Config.faceIdCameraDevice : "/dev/video0"
-                                        model: {
-                                            var devs = (Services.FaceId && Services.FaceId.availableDevices && Services.FaceId.availableDevices.length > 0)
-                                                ? Services.FaceId.availableDevices
-                                                : ["/dev/video0", "/dev/video1", "/dev/video2"]
-                                            var items = []
-                                            for (var i = 0; i < devs.length; i++) {
-                                                items.push({ id: devs[i], label: devs[i] })
-                                            }
-                                            return items
-                                        }
-                                        onSelected: (val) => {
-                                            if (Services.Config) Services.Config.setFaceIdCameraDevice(val)
-                                        }
-                                    }
-                                }
-
-                                Connections {
-                                    target: Services.FaceId
-                                    function onEnrollSuccess(message) {
-                                        rootWindow.faceIdEnrollmentNotice = message || "Face ID enrolled successfully"
-                                    }
-                                    function onEnrollError(error) {
-                                        rootWindow.faceIdEnrollmentNotice = error || "Enrollment failed"
-                                    }
-                                }
-                            }
-
-                            SettingsSection {
-                                title: "Lockscreen Display"
-                                icon: Services.Icons.lock
-
-                                SettingsRow {
-                                    title: "Clock Presentation Style"
-                                    subtitle: "Visual typography layout of lockscreen clock"
-
-                                    SettingsDropdown {
-                                        currentValue: Services.Config ? Services.Config.lockscreenClockStyle : "hero"
-                                        model: [
-                                            { id: "hero",        label: "Hero Large (96px)" },
-                                            { id: "modern",      label: "Modern Stacked (HH / MM)" },
-                                            { id: "minimal",     label: "Minimal Thin" },
-                                            { id: "compact",     label: "Compact Capsule" },
-                                            { id: "vertical",    label: "Vertical Split" },
-                                            { id: "typographic", label: "Typographic Words" },
-                                            { id: "radial",      label: "Radial Ring Gauge" },
-                                            { id: "cyber",       label: "Cyberpunk HUD" }
-                                        ]
-                                        onSelected: (val) => { if (Services.Config) Services.Config.setLockscreenClockStyle(val) }
-                                    }
-                                }
-
-                                SettingsDivider {}
-
-                                SettingsRow {
-                                    title: "Wallpaper Backdrop Source"
-                                    subtitle: "Sync with active desktop or choose custom image"
-
-                                    SettingsDropdown {
-                                        currentValue: Services.Config ? Services.Config.lockscreenWallpaperMode : "sync"
-                                        model: [
-                                            { id: "sync",   label: "Sync Desktop Wallpaper" },
-                                            { id: "custom", label: "Custom Dedicated Image" }
-                                        ]
-                                        onSelected: (val) => { if (Services.Config) Services.Config.setLockscreenWallpaperMode(val) }
-                                    }
-                                }
-
-                                // Dedicated Lockscreen Wallpaper Selector (Visible when Custom is selected)
-                                ColumnLayout {
-                                    visible: Services.Config && Services.Config.lockscreenWallpaperMode === "custom"
-                                    Layout.fillWidth: true
-                                    Layout.leftMargin: 10
-                                    Layout.rightMargin: 10
-                                    Layout.topMargin: 2
-                                    Layout.bottomMargin: 6
-                                    spacing: 8
-
-                                    // Header with "Choose Image..." button
-                                    RowLayout {
-                                        Layout.fillWidth: true
-                                        spacing: 8
-
-                                        Text {
-                                            text: "Select Lockscreen Wallpaper"
-                                            font.pixelSize: 11
-                                            font.weight: Font.DemiBold
-                                            color: Services.Theme.textPrimary
-                                        }
-
-                                        Item { Layout.fillWidth: true }
-
-                                        // Choose File Button
-                                        Rectangle {
-                                            height: 26
-                                            implicitWidth: pickLwTxt.implicitWidth + 22
-                                            radius: 6
-                                            color: pickLwMouse.containsMouse 
-                                                ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.28)
-                                                : Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.15)
-                                            border.color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.45)
-                                            border.width: 1
-
-                                            RowLayout {
-                                                anchors.centerIn: parent
-                                                spacing: 5
-                                                Text {
-                                                    text: Services.Icons.image || "󰋩"
-                                                    font.family: Services.Theme.fontSymbols
-                                                    font.pixelSize: 10
-                                                    color: Services.Theme.accent
-                                                }
-                                                Text {
-                                                    id: pickLwTxt
-                                                    text: "Browse Image..."
-                                                    font.pixelSize: 10
-                                                    font.weight: Font.DemiBold
-                                                    color: Services.Theme.accent
-                                                }
-                                            }
-
-                                            MouseArea {
-                                                id: pickLwMouse
-                                                anchors.fill: parent
-                                                hoverEnabled: true
-                                                cursorShape: Qt.PointingHandCursor
-                                                onClicked: {
-                                                    if (Services.Wallpaper) {
-                                                        Services.Wallpaper.pickLockscreenWallpaper()
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-
-                                    // Wallpaper thumbnails flickable row
-                                    Item {
-                                        Layout.fillWidth: true
-                                        implicitHeight: (rootWindow.width < 750) ? 72 : 80
-
-                                        Flickable {
-                                            anchors.fill: parent
-                                            contentWidth: lockWpListRow.implicitWidth
-                                            contentHeight: parent.height
-                                            clip: true
-                                            boundsBehavior: Flickable.StopAtBounds
-
-                                            RowLayout {
-                                                id: lockWpListRow
-                                                spacing: 8
-
-                                                Repeater {
-                                                    model: Services.Wallpaper ? Services.Wallpaper.allWallpapers : []
-                                                    delegate: Rectangle {
-                                                        required property var modelData
-                                                        width: (rootWindow.width < 750) ? 96 : 108
-                                                        height: (rootWindow.width < 750) ? 62 : 70
-                                                        radius: 7
-                                                        clip: true
-                                                        readonly property string curCustomWp: Services.Config ? Services.Config.lockscreenCustomWallpaper : ""
-                                                        readonly property bool isCur: curCustomWp === modelData.path || (curCustomWp === "" && Services.Wallpaper && Services.Wallpaper.currentWallpaper === modelData.path)
-                                                        color: Services.Theme.bgDeep
-                                                        scale: isCur ? 1.02 : (lwCardMouse.pressed ? 0.96 : (lwCardMouse.containsMouse ? 1.02 : 1.0))
-                                                        Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutBack; easing.overshoot: 1.3 } }
-
-                                                        Image {
-                                                            anchors.fill: parent
-                                                            source: modelData.path.startsWith("/") ? ("file://" + modelData.path) : modelData.path
-                                                            sourceSize: Qt.size(216, 140)
-                                                            fillMode: Image.PreserveAspectCrop
-                                                            asynchronous: true
-                                                            cache: true
-                                                            smooth: true
-                                                            opacity: isCur || lwCardMouse.containsMouse ? 1.0 : 0.75
-                                                        }
-
-                                                        Rectangle {
-                                                            visible: isCur
-                                                            anchors.top: parent.top
-                                                            anchors.right: parent.right
-                                                            anchors.margins: 4
-                                                            width: 16; height: 16; radius: 8
-                                                            color: Services.Theme.accent
-                                                            Text { anchors.centerIn: parent; text: Services.Icons.check || "✓"; font.family: Services.Theme.fontSymbols; font.pixelSize: 8; color: Services.Theme.bgOnAccent }
-                                                        }
-
-                                                        // Top-level Highlight Border Overlay (Rendered above image)
-                                                        Rectangle {
-                                                            anchors.fill: parent
-                                                            radius: 7
-                                                            color: "transparent"
-                                                            z: 6
-                                                            border.color: isCur ? Services.Theme.accent : (lwCardMouse.containsMouse ? Services.Theme.borderHighlight : Qt.rgba(255, 255, 255, 0.12))
-                                                            border.width: isCur ? 2 : (lwCardMouse.containsMouse ? 1.5 : 1)
-                                                            Behavior on border.color { ColorAnimation { duration: 150 } }
-                                                            Behavior on border.width { NumberAnimation { duration: 150 } }
-                                                        }
-
-                                                        MouseArea {
-                                                            id: lwCardMouse
-                                                            anchors.fill: parent
-                                                            hoverEnabled: true
-                                                            cursorShape: Qt.PointingHandCursor
-                                                            onClicked: {
-                                                                if (Services.Config) {
-                                                                    Services.Config.setLockscreenCustomWallpaper(modelData.path)
-                                                                    Services.Config.setLockscreenWallpaperMode("custom")
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-
-                                SettingsDivider {}
-
-                                SettingsSwitch {
-                                    title: "Blur Wallpaper on Lockscreen"
-                                    subtitle: "Gaussian blur backdrop on locked screen"
-                                    checked: Services.Config ? Services.Config.lockscreenBlur : true
-                                    onToggled: (st) => { if (Services.Config) Services.Config.setLockscreenBlur(st) }
-                                }
-
-                                SettingsDivider {}
-
-                                SettingsSlider {
-                                    title: "Dimming Level"
-                                    subtitle: "Backdrop darkness percentage"
-                                    from: 0.10; to: 0.85; stepSize: 0.05; decimals: 2
-                                    value: Services.Config ? Services.Config.lockscreenDim : 0.45
-                                    onMoved: (v) => { if (Services.Config) Services.Config.setLockscreenDim(Number(v.toFixed(2))) }
-                                }
-
-                                SettingsDivider {}
-
-                                SettingsSwitch {
-                                    title: "Show Status Pill (Battery, Wi-Fi)"
-                                    checked: Services.Config ? Services.Config.lockscreenShowStatusPill : true
-                                    onToggled: (st) => { if (Services.Config) Services.Config.setLockscreenShowStatusPill(st) }
-                                }
-
-                                SettingsDivider {}
-
-                                SettingsSwitch {
-                                    title: "Show Profile Avatar"
-                                    subtitle: "Display your profile picture above the password field"
-                                    checked: Services.Config ? Services.Config.lockscreenShowAvatar : true
-                                    onToggled: (st) => { if (Services.Config) Services.Config.setLockscreenShowAvatar(st) }
-                                }
-
-                                SettingsDivider {}
-
-                                SettingsRow {
-                                    title: "Avatar Shape"
-                                    subtitle: "Corner style of the profile picture"
-
-                                    SettingsDropdown {
-                                        currentValue: Services.Config ? Services.Config.lockscreenAvatarShape : "squircle"
-                                        model: [
-                                            { id: "circle",   label: "Circle" },
-                                            { id: "squircle", label: "Squircle" },
-                                            { id: "rounded",  label: "Rounded Square" }
-                                        ]
-                                        onSelected: (val) => { if (Services.Config) Services.Config.setLockscreenAvatarShape(val) }
-                                    }
-                                }
-
-                                SettingsDivider {}
-
-                                SettingsSwitch {
-                                    title: "Avatar Focus Ring"
-                                    subtitle: "Accent ring around the avatar that reacts to typing and Face ID"
-                                    checked: Services.Config ? Services.Config.lockscreenAvatarRing : false
-                                    onToggled: (st) => { if (Services.Config) Services.Config.setLockscreenAvatarRing(st) }
-                                }
-
-                                SettingsDivider {}
-
-                                SettingsSwitch {
-                                    title: "Show Username Under Avatar"
-                                    checked: Services.Config ? Services.Config.lockscreenShowGreeting : false
-                                    onToggled: (st) => { if (Services.Config) Services.Config.setLockscreenShowGreeting(st) }
-                                }
-
-                                SettingsDivider {}
-
-                                SettingsSwitch {
-                                    title: "Show Notifications"
-                                    subtitle: "Display notification cards on the lockscreen"
-                                    checked: Services.Config ? Services.Config.lockscreenShowNotifs : false
-                                    onToggled: (st) => { if (Services.Config) Services.Config.setLockscreenShowNotifs(st) }
-                                }
-                            }
-
-                            // Password Input & Authentication Styling Section
-                            SettingsSection {
-                                title: "Password Authentication & Media"
-                                icon: Services.Icons.keyboard
-
-                                SettingsRow {
-                                    title: "Input Field Design"
-                                    subtitle: "Visual style of password entry field"
-
-                                    SettingsDropdown {
-                                        currentValue: Services.Config ? Services.Config.lockscreenInputStyle : "pill"
-                                        model: [
-                                            { id: "pill",      label: "Capsule Pill" },
-                                            { id: "underline", label: "Underline" },
-                                            { id: "box",       label: "Inset Box" },
-                                            { id: "dots",      label: "Dot Slots" }
-                                        ]
-                                        onSelected: (val) => { if (Services.Config) Services.Config.setLockscreenInputStyle(val) }
-                                    }
-                                }
-
-                                SettingsDivider {}
-
-                                SettingsSwitch {
-                                    title: "Show Media Player"
-                                    subtitle: "Display corner media playback controls when audio is playing"
-                                    checked: Services.Config ? Services.Config.lockscreenShowMedia : true
-                                    onToggled: (st) => { if (Services.Config) Services.Config.setLockscreenShowMedia(st) }
-                                }
-                            }
-
-                            SettingsSection {
-                                title: "Power Profile & Battery"
-                                icon: Services.Icons.power
-
-                                SettingsRow {
-                                    title: "CPU Governor Profile"
-                                    subtitle: "Performance vs battery consumption strategy"
-
-                                    SettingsDropdown {
-                                        currentValue: Services.PowerProfile ? Services.PowerProfile.currentProfile : "balanced"
-                                        model: [
-                                            { id: "power-saver", label: "Power Saver (Battery)" },
-                                            { id: "balanced",    label: "Balanced (Dynamic)" },
-                                            { id: "performance", label: "Performance (Max Clocks)" }
-                                        ]
-                                        onSelected: (val) => { if (Services.PowerProfile) Services.PowerProfile.setProfile(val) }
-                                    }
-                                }
-
-                                SettingsDivider {}
-
-                                SettingsSwitch {
-                                    title: "Low Battery Warning Alerts"
-                                    subtitle: "Notify when charge level drops critically low"
-                                    checked: Services.Config ? Services.Config.batteryShowWarnings : true
-                                    onToggled: (st) => { if (Services.Config) Services.Config.setBatteryShowWarnings(st) }
-                                }
-
-                                SettingsDivider {}
-
-                                SettingsSlider {
-                                    title: "Low Battery Alert Threshold"
-                                    from: 10; to: 35; stepSize: 5; valueSuffix: "%"
-                                    value: Services.Config ? Services.Config.batteryLowThreshold : 20
-                                    onMoved: (v) => { if (Services.Config) Services.Config.setBatteryLowThreshold(Math.round(v)) }
-                                }
-                            }
-
-                            SettingsSection {
-                                title: "Quick Power Actions"
-                                icon: Services.Icons.refresh || Services.Icons.reboot
-
-                                Item {
-                                    Layout.fillWidth: true
-                                    implicitHeight: 36
-                                    Layout.margins: 6
-
-                                    RowLayout {
-                                        anchors.fill: parent
-                                        spacing: 6
-
-                                        Rectangle {
-                                            Layout.fillWidth: true; Layout.fillHeight: true; radius: 4
-                                            color: p1Mouse.containsMouse ? Qt.rgba(1, 1, 1, 0.08) : Services.Theme.bgElevated
-                                            border.color: Services.Theme.border; border.width: 1
-                                            Text { anchors.centerIn: parent; text: "Lock Screen"; font.pixelSize: 11; font.weight: Font.Medium; color: Services.Theme.textPrimary }
-                                            MouseArea { id: p1Mouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: { rootWindow.hide(); lockSessionProc.running = true } }
-                                        }
-
-                                        Rectangle {
-                                            Layout.fillWidth: true; Layout.fillHeight: true; radius: 4
-                                            color: p2Mouse.containsMouse ? Qt.rgba(1, 1, 1, 0.08) : Services.Theme.bgElevated
-                                            border.color: Services.Theme.border; border.width: 1
-                                            Text { anchors.centerIn: parent; text: "Suspend"; font.pixelSize: 11; font.weight: Font.Medium; color: Services.Theme.textPrimary }
-                                            MouseArea { id: p2Mouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: suspendProc.running = true }
-                                        }
-
-                                        Rectangle {
-                                            Layout.fillWidth: true; Layout.fillHeight: true; radius: 4
-                                            color: p3Mouse.containsMouse ? Qt.rgba(1, 1, 1, 0.08) : Services.Theme.bgElevated
-                                            border.color: Services.Theme.border; border.width: 1
-                                            Text { anchors.centerIn: parent; text: "Reboot"; font.pixelSize: 11; font.weight: Font.Medium; color: Services.Theme.warning }
-                                            MouseArea { id: p3Mouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: rebootProc.running = true }
-                                        }
-
-                                        Rectangle {
-                                            Layout.fillWidth: true; Layout.fillHeight: true; radius: 4
-                                            color: p4Mouse.containsMouse ? Qt.rgba(0.9, 0.2, 0.2, 0.15) : Services.Theme.bgElevated
-                                            border.color: Services.Theme.border; border.width: 1
-                                            Text { anchors.centerIn: parent; text: "Power Off"; font.pixelSize: 11; font.weight: Font.Medium; color: Services.Theme.danger }
-                                            MouseArea { id: p4Mouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: poweroffProc.running = true }
-                                        }
-                                    }
-                                }
+                            Tag {
+                                text: (Services.Compositor && Services.Compositor.configType ? Services.Compositor.configType.toUpperCase() : "CONF") + " CONFIG"
+                                tint: ui.accent
                             }
                         }
 
-                        // ═════════════════════════════════════════════
-                        // TAB 5: COMPOSITOR & DISPLAYS
-                        // ═════════════════════════════════════════════
-                        ColumnLayout {
-                            id: tab5
+                        Text {
+                            text: {
+                                const v = Services.Compositor ? Services.Compositor.activeVersion : ""
+                                const cleanV = v.split(" built")[0].replace(/^hyprland\s*/i, "").trim()
+                                return (cleanV ? ("v" + cleanV + " · ") : "") + "Wayland Session"
+                            }
+                            font.pixelSize: 10
+                            color: ui.dim
+                            elide: Text.ElideRight
+                        }
+                    }
+
+                    Tag {
+                        text: {
+                            const c = Services.Compositor ? Services.Compositor.workspacesCount : 1
+                            return c + (c > 1 ? " Workspaces" : " Workspace")
+                        }
+                    }
+
+                    Btn {
+                        glyph: Services.Icons.refresh || "↻"
+                        text: "Reload"
+                        onClicked: { if (Services.Compositor) Services.Compositor.reloadCompositor() }
+                    }
+                }
+            }
+
+            RowLayout {
+                Layout.topMargin: 10
+                Seg {
+                    options: [
+                        { id: 0, label: "Appearance" }, { id: 1, label: "Displays" }, { id: 2, label: "Input" },
+                        { id: 3, label: "Power" }, { id: 4, label: "Autostart" }
+                    ]
+                    current: rootWindow.compSubTab
+                    onPicked: (id) => {
+                        rootWindow.compSubTab = id
+                        if (id === 4 && Services.Compositor) Services.Compositor.loadAutostart()
+                    }
+                }
+                Item { Layout.fillWidth: true }
+            }
+
+            // ── 0 · APPEARANCE ──
+            ColumnLayout {
+                visible: rootWindow.compSubTab === 0
+                Layout.fillWidth: true
+                spacing: 0
+
+                SettingsGroup {
+                    title: "Compositor Presets"
+                    OptSeg {
+                        label: "Style profile"
+                        options: [
+                            { id: "glass", label: "Glass" },
+                            { id: "material", label: "Material" },
+                            { id: "minimal", label: "Minimal" },
+                            { id: "gaming", label: "Gaming" }
+                        ]
+                        current: Services.Compositor ? Services.Compositor.activePreset : "custom"
+                        onPicked: (id) => { if (Services.Compositor) Services.Compositor.applyPreset(id) }
+                    }
+                }
+
+                SettingsGroup {
+                    title: "Window animation"
+                    OptSwitch {
+                        label: "Animations"
+                        checked: Services.Compositor ? Services.Compositor.hyprAnim : true
+                        onToggled: { if (Services.Compositor) Services.Compositor.toggleHyprAnim() }
+                    }
+                    OptPick {
+                        label: "Preset"
+                        model: (Services.Compositor && Services.Compositor.hyprAnimStyles && Services.Compositor.hyprAnimStyles.length > 0)
+                            ? Services.Compositor.hyprAnimStyles.map(function(s) { return { id: s.id, label: s.name } })
+                            : [{ id: "fluid", label: "Fluid" }, { id: "snappy", label: "Snappy" }, { id: "bouncy", label: "Bouncy" }, { id: "gentle", label: "Gentle" }, { id: "linear", label: "Linear" }, { id: "disabled", label: "Disabled" }]
+                        current: Services.Compositor ? Services.Compositor.hyprAnimStyle : "fluid"
+                        onPicked: (id) => { if (Services.Compositor) Services.Compositor.setHyprAnimStyle(id) }
+                    }
+                }
+
+                SettingsGroup {
+                    title: "Workspace transitions"
+                    OptSwitch {
+                        label: "Animate"
+                        checked: Services.Compositor ? Services.Compositor.hyprWorkspaceAnim : true
+                        onToggled: { if (Services.Compositor) Services.Compositor.toggleWorkspaceAnim() }
+                    }
+                    OptPick {
+                        label: "Effect"
+                        model: [
+                            { id: "slidevert", label: "Vertical slide" }, { id: "slide", label: "Horizontal slide" },
+                            { id: "slidefade", label: "Slide & fade" }, { id: "slidefadevert", label: "Vertical slide & fade" },
+                            { id: "fade", label: "Crossfade" }
+                        ]
+                        current: Services.Compositor ? Services.Compositor.hyprWorkspaceAnimStyle : "slidevert"
+                        onPicked: (id) => { if (Services.Compositor) Services.Compositor.setWorkspaceAnimStyle(id) }
+                    }
+                    OptPick {
+                        label: "Easing"
+                        model: (Services.Compositor && Services.Compositor.availableBeziers && Services.Compositor.availableBeziers.length > 0)
+                            ? Services.Compositor.availableBeziers.map(function(b) { return { id: b, label: b } })
+                            : [{ id: "quick", label: "quick" }, { id: "overshoot", label: "overshoot" }, { id: "easeOutQuint", label: "easeOutQuint" }, { id: "easeInOutCubic", label: "easeInOutCubic" }, { id: "almostLinear", label: "almostLinear" }, { id: "linear", label: "linear" }, { id: "default", label: "default" }]
+                        current: Services.Compositor ? Services.Compositor.hyprWorkspaceAnimBezier : "quick"
+                        onPicked: (id) => { if (Services.Compositor) Services.Compositor.setWorkspaceAnimBezier(id) }
+                    }
+                    OptSlide {
+                        label: "Speed"
+                        from: 1; to: 10; step: 0.5; decimals: 1; suffix: "x"
+                        value: Services.Compositor ? Services.Compositor.hyprWorkspaceAnimSpeed : 2.0
+                        onMoved: (v) => { if (Services.Compositor) Services.Compositor.setWorkspaceAnimSpeed(v) }
+                    }
+                }
+
+                SettingsGroup {
+                    title: "Blur & shadow"
+                    OptSwitch {
+                        label: "Blur"
+                        checked: Services.Compositor ? Services.Compositor.hyprBlur : true
+                        onToggled: { if (Services.Compositor) Services.Compositor.toggleHyprBlur() }
+                    }
+                    OptSlide {
+                        label: "Blur radius"
+                        from: 1; to: 16; step: 1; suffix: "px"
+                        value: Services.Compositor ? Services.Compositor.hyprBlurSize : 4
+                        onMoved: (v) => { if (Services.Compositor) Services.Compositor.setHyprBlurSize(Math.round(v)) }
+                    }
+                    OptSlide {
+                        label: "Blur passes"
+                        from: 1; to: 5; step: 1; suffix: "x"
+                        value: Services.Compositor ? Services.Compositor.hyprBlurPasses : 2
+                        onMoved: (v) => { if (Services.Compositor) Services.Compositor.setHyprBlurPasses(Math.round(v)) }
+                    }
+                    OptSwitch {
+                        label: "Drop shadows"
+                        checked: Services.Compositor ? Services.Compositor.hyprShadow : true
+                        onToggled: { if (Services.Compositor) Services.Compositor.toggleHyprShadow() }
+                    }
+                    OptSlide {
+                        label: "Shadow range"
+                        from: 0; to: 30; step: 1; suffix: "px"
+                        value: Services.Compositor ? Services.Compositor.hyprShadowRange : 4
+                        onMoved: (v) => { if (Services.Compositor) Services.Compositor.setHyprShadowRange(Math.round(v)) }
+                    }
+                }
+
+                SettingsGroup {
+                    title: "Opacity & Dimming"
+                    OptSlide {
+                        label: "Active window"
+                        from: 0.5; to: 1.0; step: 0.01; decimals: 2
+                        value: Services.Compositor ? Services.Compositor.hyprActiveOpacity : 0.9
+                        onMoved: (v) => { if (Services.Compositor) Services.Compositor.setHyprActiveOpacity(Number(v.toFixed(2))) }
+                    }
+                    OptSlide {
+                        label: "Inactive window"
+                        from: 0.5; to: 1.0; step: 0.01; decimals: 2
+                        value: Services.Compositor ? Services.Compositor.hyprInactiveOpacity : 0.95
+                        onMoved: (v) => { if (Services.Compositor) Services.Compositor.setHyprInactiveOpacity(Number(v.toFixed(2))) }
+                    }
+                    OptSwitch {
+                        label: "Dim inactive"
+                        hint: "Dim unfocused windows to direct visual focus"
+                        checked: Services.Compositor ? Services.Compositor.hyprDimInactive : false
+                        onToggled: { if (Services.Compositor) Services.Compositor.toggleHyprDimInactive() }
+                    }
+                    OptSlide {
+                        visible: Services.Compositor ? Services.Compositor.hyprDimInactive : false
+                        label: "Dim strength"
+                        from: 0.1; to: 1.0; step: 0.05; decimals: 2
+                        value: Services.Compositor ? Services.Compositor.hyprDimStrength : 0.5
+                        onMoved: (v) => { if (Services.Compositor) Services.Compositor.setHyprDimStrength(Number(v.toFixed(2))) }
+                    }
+                }
+
+                SettingsGroup {
+                    title: "Geometry"
+                    OptSlide {
+                        label: "Corner radius"
+                        from: 0; to: 28; step: 1; suffix: "px"
+                        value: Services.Compositor ? Services.Compositor.hyprRounding : 10
+                        onMoved: (v) => { if (Services.Compositor) Services.Compositor.setHyprRounding(Math.round(v)) }
+                    }
+                    OptSlide {
+                        label: "Border"
+                        from: 0; to: 6; step: 1; suffix: "px"
+                        value: Services.Compositor ? Services.Compositor.hyprBorderSize : 0
+                        onMoved: (v) => { if (Services.Compositor) Services.Compositor.setHyprBorderSize(Math.round(v)) }
+                    }
+                    OptSlide {
+                        label: "Gaps in"
+                        from: 0; to: 24; step: 1; suffix: "px"
+                        value: Services.Compositor ? Services.Compositor.hyprGapsIn : 5
+                        onMoved: (v) => { if (Services.Compositor) Services.Compositor.setHyprGapsIn(Math.round(v)) }
+                    }
+                    OptSlide {
+                        label: "Gaps out"
+                        from: 0; to: 36; step: 1; suffix: "px"
+                        value: Services.Compositor ? Services.Compositor.hyprGapsOut : 10
+                        onMoved: (v) => { if (Services.Compositor) Services.Compositor.setHyprGapsOut(Math.round(v)) }
+                    }
+                    OptSwitch {
+                        label: "Smart gaps"
+                        hint: "No gaps or borders with a single window"
+                        checked: Services.Compositor ? Services.Compositor.hyprSmartGaps : false
+                        onToggled: { if (Services.Compositor) Services.Compositor.toggleHyprSmartGaps() }
+                    }
+                }
+
+                SettingsGroup {
+                    title: "Layout"
+                    OptSeg {
+                        label: "Engine"
+                        options: (Services.Compositor && Services.Compositor.activeCompositor === "niri")
+                            ? [{ id: "scrolling", label: "Scrolling" }]
+                            : [{ id: "dwindle", label: "Dwindle" }, { id: "master", label: "Master" }, { id: "scrolling", label: "Scrolling" }]
+                        current: Services.Compositor ? Services.Compositor.hyprLayout : "dwindle"
+                        onPicked: (id) => { if (Services.Compositor) Services.Compositor.setHyprLayout(id) }
+                    }
+                    OptSlide {
+                        visible: Services.Compositor && (Services.Compositor.hyprLayout === "scrolling" || Services.Compositor.activeCompositor === "niri")
+                        label: "Column width"
+                        from: 0.3; to: 1.0; step: 0.01; decimals: 2
+                        value: Services.Compositor ? Services.Compositor.hyprScrollingColumnWidth : 0.89
+                        onMoved: (v) => { if (Services.Compositor) Services.Compositor.setHyprScrollingColumnWidth(Number(v.toFixed(2))) }
+                    }
+                    OptSwitch {
+                        visible: Services.Compositor && (Services.Compositor.hyprLayout === "scrolling" || Services.Compositor.activeCompositor === "niri")
+                        label: "Fullscreen single column"
+                        checked: Services.Compositor ? Services.Compositor.hyprScrollingFullscreenOnOneColumn : false
+                        onToggled: { if (Services.Compositor) Services.Compositor.toggleHyprScrollingFullscreenOnOneColumn() }
+                    }
+                }
+            }
+
+            // ── 1 · DISPLAYS ──
+            ColumnLayout {
+                visible: rootWindow.compSubTab === 1
+                Layout.fillWidth: true
+                spacing: 0
+
+                SettingsGroup {
+                    title: "Layout"
+                    DisplayStage { Layout.fillWidth: true; Layout.preferredHeight: 150 }
+
+                    Block {
+                        ruled: false
+                        Flow {
                             Layout.fillWidth: true
-                            spacing: 12
-
-                            // ── Hero / Status Header Card (Luxurious Compositor Glass Hero) ───────────────
-                            Rectangle {
-                                Layout.fillWidth: true
-                                height: 70
-                                radius: Services.Theme.radiusLg || 12
-                                color: Services.Theme.surfaceVariant
-                                border.color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.35)
-                                border.width: 1
-
-                                // Ambient Glass Refractive Glow
-                                Rectangle {
-                                    anchors.fill: parent
-                                    radius: parent.radius
-                                    gradient: Gradient {
-                                        orientation: Gradient.Horizontal
-                                        GradientStop { position: 0.0; color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.14) }
-                                        GradientStop { position: 0.45; color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.02) }
-                                        GradientStop { position: 1.0; color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.08) }
-                                    }
-                                }
-
-                                // Top Specular Glass Line
-                                Rectangle {
-                                    anchors.top: parent.top; anchors.left: parent.left; anchors.right: parent.right
-                                    anchors.leftMargin: 8; anchors.rightMargin: 8; anchors.topMargin: 1
-                                    height: 1; radius: 0.5
-                                    color: Qt.rgba(1, 1, 1, 0.30)
-                                }
-
-                                RowLayout {
-                                    anchors.fill: parent
-                                    anchors.leftMargin: 14
-                                    anchors.rightMargin: 14
-                                    spacing: 14
-
-                                    // Desktop / Compositor Icon Squircle Badge
-                                    Rectangle {
-                                        Layout.preferredWidth: 44
-                                        Layout.preferredHeight: 44
-                                        Layout.alignment: Qt.AlignVCenter
-                                        radius: 11
-                                        color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.18)
-                                        border.color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.45)
-                                        border.width: 1.2
-
-                                        Text {
-                                            anchors.centerIn: parent
-                                            text: Services.Icons.display
-                                            font.family: Services.Theme.fontSymbols
-                                            font.pixelSize: 20
-                                            color: Services.Theme.accent
-                                        }
-
-                                        // Pulsing live indicator dot
-                                        Rectangle {
-                                            anchors.top: parent.top; anchors.right: parent.right
-                                            anchors.topMargin: 3; anchors.rightMargin: 3
-                                            width: 7; height: 7; radius: 3.5
-                                            color: "#10b981"
-                                            border.color: Services.Theme.surfaceVariant
-                                            border.width: 1
-                                            SequentialAnimation on opacity {
-                                                running: true; loops: Animation.Infinite
-                                                NumberAnimation { to: 0.3; duration: 900; easing.type: Easing.InOutSine }
-                                                NumberAnimation { to: 1.0; duration: 900; easing.type: Easing.InOutSine }
-                                            }
-                                        }
-                                    }
-
-                                    // Title & Version Column
-                                    ColumnLayout {
-                                        Layout.fillWidth: true
-                                        Layout.minimumWidth: 0
-                                        spacing: 2
-                                        Layout.alignment: Qt.AlignVCenter
-
-                                        RowLayout {
-                                            Layout.fillWidth: true
-                                            spacing: 6
-                                            Text {
-                                                text: Services.Compositor ? Services.Compositor.activeDisplayName : "Hyprland"
-                                                font.pixelSize: 14
-                                                font.weight: Font.Bold
-                                                color: Services.Theme.textPrimary
-                                            }
-
-                                            // Config Type Pill
-                                            Rectangle {
-                                                height: 18
-                                                implicitWidth: cfgTypeBadge.implicitWidth + 12
-                                                radius: 4
-                                                color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.15)
-                                                border.color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.40)
-                                                border.width: 1
-                                                RowLayout {
-                                                    anchors.centerIn: parent; spacing: 4
-                                                    Text { text: Services.Icons.code || "󰅍"; font.family: Services.Theme.fontSymbols; font.pixelSize: 8; color: Services.Theme.accent }
-                                                    Text { id: cfgTypeBadge; text: (Services.Compositor && Services.Compositor.configType ? Services.Compositor.configType.toUpperCase() : "LUA") + " CONFIG"; font.pixelSize: 8; font.weight: Font.Bold; color: Services.Theme.accent; font.letterSpacing: 0.5 }
-                                                }
-                                            }
-                                        }
-
-                                        Text {
-                                            Layout.fillWidth: true
-                                            text: {
-                                                const v = Services.Compositor ? Services.Compositor.activeVersion : ""
-                                                const cleanV = v.split(" built")[0].replace(/^hyprland\s*/i, "").trim()
-                                                return (cleanV ? ("v" + cleanV + " · ") : "") + "Wayland Session"
-                                            }
-                                            font.pixelSize: 10
-                                            color: Services.Theme.textSecondary
-                                            elide: Text.ElideRight
-                                        }
-                                    }
-
-                                    Item { Layout.fillWidth: true }
-
-                                    // Badges & Actions Group (Balanced Heights & Spacing)
-                                    RowLayout {
-                                        spacing: 6
-                                        Layout.alignment: Qt.AlignVCenter
-
-                                        // Display count badge
-                                        Rectangle {
-                                            height: 28
-                                            implicitWidth: heroMonRow.implicitWidth + 12
-                                            radius: 6
-                                            color: Services.Theme.bgElevated
-                                            border.color: Services.Theme.border
-                                            border.width: 1
-                                            RowLayout {
-                                                id: heroMonRow
-                                                anchors.centerIn: parent; spacing: 4
-                                                Text { text: Services.Icons.display; font.family: Services.Theme.fontSymbols; font.pixelSize: 10; color: Services.Theme.textSecondary }
-                                                Text {
-                                                    text: {
-                                                        const c = Services.Compositor ? Services.Compositor.monitorsCount : 1
-                                                        return c + (c > 1 ? " Displays" : " Display")
-                                                    }
-                                                    font.pixelSize: 9; font.weight: Font.Medium; color: Services.Theme.textPrimary
-                                                }
-                                            }
-                                        }
-
-                                        // Workspace count badge
-                                        Rectangle {
-                                            visible: rootWindow.width > 700
-                                            height: 28
-                                            implicitWidth: heroWsRow.implicitWidth + 12
-                                            radius: 6
-                                            color: Services.Theme.bgElevated
-                                            border.color: Services.Theme.border
-                                            border.width: 1
-                                            RowLayout {
-                                                id: heroWsRow
-                                                anchors.centerIn: parent; spacing: 4
-                                                Text { text: Services.Icons.grid; font.family: Services.Theme.fontSymbols; font.pixelSize: 10; color: Services.Theme.textSecondary }
-                                                Text {
-                                                    text: {
-                                                        const c = Services.Compositor ? Services.Compositor.workspacesCount : 1
-                                                        return c + (c > 1 ? " Workspaces" : " Workspace")
-                                                    }
-                                                    font.pixelSize: 9; font.weight: Font.Medium; color: Services.Theme.textPrimary
-                                                }
-                                            }
-                                        }
-
-                                        // Reload button
-                                        Rectangle {
-                                            height: 32
-                                            implicitWidth: heroRlRow.implicitWidth + 18
-                                            radius: 6
-                                            color: heroRlMouse.containsMouse ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.28) : Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.14)
-                                            border.color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.50)
-                                            border.width: 1
-                                            scale: heroRlMouse.pressed ? 0.96 : (heroRlMouse.containsMouse ? 1.02 : 1.0)
-                                            Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutBack; easing.overshoot: 1.3 } }
-                                            Behavior on color { ColorAnimation { duration: 150 } }
-
-                                            RowLayout {
-                                                id: heroRlRow
-                                                anchors.centerIn: parent
-                                                spacing: 6
-                                                Text { text: Services.Icons.refresh; font.family: Services.Theme.fontSymbols; font.pixelSize: 12; color: Services.Theme.accent }
-                                                Text { text: "Reload"; font.pixelSize: 11; font.weight: Font.Bold; color: Services.Theme.accent }
-                                            }
-                                            MouseArea {
-                                                id: heroRlMouse
-                                                anchors.fill: parent
-                                                hoverEnabled: true
-                                                cursorShape: Qt.PointingHandCursor
-                                                onClicked: { if (Services.Compositor) Services.Compositor.reloadCompositor() }
-                                            }
-                                        }
-                                    }
+                            spacing: 6
+                            Repeater {
+                                model: rootWindow.dispLocalLayout
+                                delegate: Chip {
+                                    required property var modelData
+                                    text: modelData.name
+                                    on: rootWindow.dispSelectedMonitorName === modelData.name
+                                    onClicked: rootWindow.dispSelectedMonitorName = modelData.name
                                 }
                             }
+                        }
+                        Flow {
+                            Layout.fillWidth: true
+                            spacing: 6
+                            Btn { text: "Identify"; onClicked: { if (Services.Compositor) Services.Compositor.identifyMonitors() } }
+                            Btn { text: "Swap"; enabledState: rootWindow.dispLocalLayout.length > 1; onClicked: rootWindow.swapDisplays() }
+                            Btn { text: "Row ⇄"; onClicked: rootWindow.autoAlignDisplaysHorizontal() }
+                            Btn { text: "Column ⇅"; onClicked: rootWindow.autoAlignDisplaysVertical() }
+                            Btn { text: "Revert"; enabledState: rootWindow.dispHasPendingChanges; onClicked: rootWindow.revertDisplayChanges() }
+                            Btn { text: rootWindow.dispIsApplying ? "Applying…" : "Apply"; kind: "accent"; enabledState: rootWindow.dispHasPendingChanges && !rootWindow.dispIsApplying; onClicked: rootWindow.applyDisplayLayout(true) }
+                        }
+                        Text {
+                            visible: rootWindow.dispStatusMessage.length > 0
+                            text: rootWindow.dispStatusMessage
+                            font.pixelSize: 10
+                            color: ui.accent
+                        }
+                    }
+                }
 
-                            // ── Segment Switcher Pill Bar (Liquid Glass Elastic Tabs) ──────────────────────────
-                            Rectangle {
-                                id: compTabBar
-                                Layout.fillWidth: true
-                                height: 38
-                                radius: 8
-                                color: Services.Theme.surfaceVariant
-                                border.color: Services.Theme.border
-                                border.width: 1
-                                clip: true
-
-                                // Liquid Glass Sliding Indicator Pill
-                                Rectangle {
-                                    id: liquidPill
-                                    z: 1
-                                    y: 3
-                                    height: parent.height - 6
-                                    radius: 6
-
-                                    readonly property int tabCount: 5
-                                    readonly property real itemWidth: Math.max(0, (compTabBar.width - 6 - (tabCount - 1) * 3) / tabCount)
-                                    x: 3 + rootWindow.compSubTab * (itemWidth + 3)
-                                    width: itemWidth
-
-                                    // Liquid Transparent Glass Material
-                                    color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.22)
-                                    border.color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.55)
-                                    border.width: 1
-
-                                    property real stretchScaleX: 1.0
-                                    property real stretchScaleY: 1.0
-                                    transform: Scale {
-                                        origin.x: liquidPill.width / 2
-                                        origin.y: liquidPill.height / 2
-                                        xScale: liquidPill.stretchScaleX
-                                        yScale: liquidPill.stretchScaleY
-                                    }
-
-                                    // Top Specular Glass Highlight Line
-                                    Rectangle {
-                                        anchors.top: parent.top
-                                        anchors.left: parent.left
-                                        anchors.right: parent.right
-                                        anchors.topMargin: 1
-                                        anchors.leftMargin: 4
-                                        anchors.rightMargin: 4
-                                        height: 1
-                                        radius: 0.5
-                                        color: Qt.rgba(1, 1, 1, 0.40)
-                                    }
-
-                                    // Liquid Gloss Curved Sheen
-                                    Rectangle {
-                                        anchors.top: parent.top
-                                        anchors.left: parent.left
-                                        anchors.right: parent.right
-                                        anchors.topMargin: 1
-                                        anchors.leftMargin: 2
-                                        anchors.rightMargin: 2
-                                        height: parent.height * 0.46
-                                        radius: 5
-                                        gradient: Gradient {
-                                            GradientStop { position: 0.0; color: Qt.rgba(1, 1, 1, 0.16) }
-                                            GradientStop { position: 1.0; color: Qt.rgba(1, 1, 1, 0.0) }
-                                        }
-                                    }
-
-                                    // Fluid Sliding Transitions
-                                    Behavior on x {
-                                        NumberAnimation {
-                                            duration: 320
-                                            easing.type: Easing.OutBack
-                                            easing.overshoot: 1.15
-                                        }
-                                    }
-                                    Behavior on width {
-                                        NumberAnimation {
-                                            duration: 320
-                                            easing.type: Easing.OutBack
-                                            easing.overshoot: 1.15
-                                        }
-                                    }
-                                    Behavior on color { ColorAnimation { duration: 250 } }
-                                    Behavior on border.color { ColorAnimation { duration: 250 } }
-                                }
-
-                                // Fluid Elastic Squash & Stretch Animation
-                                SequentialAnimation {
-                                    id: fluidStretchAnim
-                                    ParallelAnimation {
-                                        NumberAnimation { target: liquidPill; property: "stretchScaleX"; to: 1.08; duration: 85; easing.type: Easing.OutQuad }
-                                        NumberAnimation { target: liquidPill; property: "stretchScaleY"; to: 0.92; duration: 85; easing.type: Easing.OutQuad }
-                                    }
-                                    ParallelAnimation {
-                                        NumberAnimation { target: liquidPill; property: "stretchScaleX"; to: 1.0; duration: 235; easing.type: Easing.OutBack; easing.overshoot: 1.28 }
-                                        NumberAnimation { target: liquidPill; property: "stretchScaleY"; to: 1.0; duration: 235; easing.type: Easing.OutBack; easing.overshoot: 1.28 }
-                                    }
-                                }
-
-                                Connections {
-                                    target: rootWindow
-                                    function onCompSubTabChanged() {
-                                        fluidStretchAnim.restart()
-                                    }
-                                }
-
-                                RowLayout {
-                                    anchors.fill: parent
-                                    anchors.margins: 3
-                                    spacing: 3
-                                    z: 2
-
-                                    Repeater {
-                                        model: [
-                                            { id: 0, label: (compTabBar.width < 520 ? "Styling" : "Window Styling"),  icon: Services.Icons.sparkles },
-                                            { id: 1, label: "Displays",                                                icon: Services.Icons.display },
-                                            { id: 2, label: (compTabBar.width < 520 ? "Input" : "Input & Gestures"),   icon: Services.Icons.sliders },
-                                            { id: 3, label: (compTabBar.width < 520 ? "Power" : "Power & Gaming"),     icon: Services.Icons.speed },
-                                            { id: 4, label: (compTabBar.width < 520 ? "Autostart" : "Autostart Apps"), icon: Services.Icons.rocket || "󰐥" }
-                                        ]
-
-                                        delegate: Item {
-                                            Layout.fillWidth: true
-                                            Layout.fillHeight: true
-                                            readonly property bool isCur: rootWindow.compSubTab === modelData.id
-                                            readonly property bool isHyprOnly: modelData.id !== 1 && modelData.id !== 4
-                                            readonly property bool nonHypr: isHyprOnly && !(Services.Compositor && (Services.Compositor.activeCompositor === "hyprland" || Services.Compositor.activeCompositor === "niri"))
-
-                                            // Hover effect for unselected tabs
-                                            Rectangle {
-                                                anchors.fill: parent
-                                                radius: 5
-                                                color: subMouse.containsMouse && !isCur ? Qt.rgba(1, 1, 1, 0.05) : "transparent"
-                                                Behavior on color { ColorAnimation { duration: 150 } }
-                                            }
-
-                                            RowLayout {
-                                                anchors.centerIn: parent
-                                                width: Math.min(parent.width - 6, implicitWidth)
-                                                spacing: 5
-                                                z: 2
-                                                Text {
-                                                    text: modelData.icon
-                                                    font.family: Services.Theme.fontSymbols; font.pixelSize: 11
-                                                    color: isCur ? Services.Theme.accent : (subMouse.containsMouse ? Services.Theme.textPrimary : Services.Theme.textSecondary)
-                                                    Behavior on color { ColorAnimation { duration: 200 } }
-                                                }
-                                                Text {
-                                                    Layout.fillWidth: true
-                                                    text: modelData.label
-                                                    font.pixelSize: 11
-                                                    font.weight: isCur ? Font.DemiBold : Font.Normal
-                                                    color: isCur ? Services.Theme.textPrimary : (subMouse.containsMouse ? Services.Theme.textPrimary : Services.Theme.textSecondary)
-                                                    elide: Text.ElideRight
-                                                    Behavior on color { ColorAnimation { duration: 200 } }
-                                                }
-                                            }
-                                            MouseArea {
-                                                id: subMouse
-                                                anchors.fill: parent
-                                                hoverEnabled: true
-                                                cursorShape: Qt.PointingHandCursor
-                                                onClicked: {
-                                                    rootWindow.compSubTab = modelData.id
-                                                    if (modelData.id === 4 && Services.Compositor) {
-                                                        Services.Compositor.loadAutostart()
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
+                SettingsGroup {
+                    title: "Output · " + (rootWindow.currentDisplayMon ? rootWindow.currentDisplayMon.name : "none")
+                    OptPick {
+                        label: "Mode"
+                        minW: 150
+                        maxW: 230
+                        model: {
+                            const list = [{ id: "preferred", label: "Auto" }, { id: "highrr", label: "Max refresh" }, { id: "highres", label: "Max resolution" }]
+                            const m = rootWindow.currentDisplayMon
+                            if (m && m.availableModes) {
+                                for (let i = 0; i < m.availableModes.length; i++) {
+                                    const s = String(m.availableModes[i])
+                                    list.push({ id: s, label: s.replace("@", " @ ").replace("Hz", " Hz") })
                                 }
                             }
-
-                            // ── SUB-TAB 0: WINDOW STYLING & GLASS ──────────────────
-                            ColumnLayout {
-                                visible: rootWindow.compSubTab === 0
-                                Layout.fillWidth: true
-                                spacing: 10
-
-                                SettingsSection {
-                                    title: "Window Animations"
-                                    icon: Services.Icons.sparkle
-
-                                    SettingsSwitch {
-                                        title: "Window Animations"
-                                        subtitle: "Enable window open, close and resize animations"
-                                        checked: Services.Compositor ? Services.Compositor.hyprAnim : true
-                                        onToggled: () => { if (Services.Compositor) Services.Compositor.toggleHyprAnim() }
-                                    }
-
-                                    SettingsDivider {}
-
-                                    SettingsRow {
-                                        title: "Animation Preset"
-                                        subtitle: "Select easing curve profile and global motion speed"
-
-                                        SettingsDropdown {
-                                            minButtonWidth: 140
-                                            maxButtonWidth: 190
-                                            model: (Services.Compositor && Services.Compositor.hyprAnimStyles && Services.Compositor.hyprAnimStyles.length > 0)
-                                                ? Services.Compositor.hyprAnimStyles.map(function(s) {
-                                                    return { id: s.id, label: s.name }
-                                                })
-                                                : [
-                                                    { id: "fluid", label: "Fluid" },
-                                                    { id: "snappy", label: "Snappy" },
-                                                    { id: "bouncy", label: "Bouncy" },
-                                                    { id: "gentle", label: "Gentle" },
-                                                    { id: "linear", label: "Linear" },
-                                                    { id: "disabled", label: "Disabled" }
-                                                ]
-                                            currentValue: Services.Compositor ? Services.Compositor.hyprAnimStyle : "fluid"
-                                            onSelected: function(val) {
-                                                if (Services.Compositor) Services.Compositor.setHyprAnimStyle(val)
-                                            }
-                                        }
-                                    }
-                                }
-
-                                SettingsSection {
-                                    title: "Workspace Animations"
-                                    icon: Services.Icons.grid
-
-                                    SettingsSwitch {
-                                        title: "Workspace Transitions"
-                                        subtitle: "Animate transitions when switching or swiping workspaces"
-                                        checked: Services.Compositor ? Services.Compositor.hyprWorkspaceAnim : true
-                                        onToggled: () => { if (Services.Compositor) Services.Compositor.toggleWorkspaceAnim() }
-                                    }
-
-                                    SettingsDivider {}
-
-                                    SettingsRow {
-                                        title: "Transition Effect"
-                                        subtitle: "Movement style and direction for workspace transitions"
-
-                                        SettingsDropdown {
-                                            minButtonWidth: 160
-                                            maxButtonWidth: 220
-                                            model: [
-                                                { id: "slidevert", label: "Vertical Slide" },
-                                                { id: "slide", label: "Horizontal Slide" },
-                                                { id: "slidefade", label: "Slide & Fade" },
-                                                { id: "slidefadevert", label: "Vertical Slide & Fade" },
-                                                { id: "fade", label: "Crossfade" }
-                                            ]
-                                            currentValue: Services.Compositor ? Services.Compositor.hyprWorkspaceAnimStyle : "slidevert"
-                                            onSelected: function(val) {
-                                                if (Services.Compositor) Services.Compositor.setWorkspaceAnimStyle(val)
-                                            }
-                                        }
-                                    }
-
-                                    SettingsDivider {}
-
-                                    SettingsRow {
-                                        title: "Easing Curve (Bezier)"
-                                        subtitle: "Motion curve and momentum deceleration"
-
-                                        SettingsDropdown {
-                                            minButtonWidth: 160
-                                            maxButtonWidth: 220
-                                            model: (Services.Compositor && Services.Compositor.availableBeziers && Services.Compositor.availableBeziers.length > 0)
-                                                ? Services.Compositor.availableBeziers.map(function(b) {
-                                                    return { id: b, label: b }
-                                                })
-                                                : [
-                                                    { id: "quick", label: "quick" },
-                                                    { id: "overshoot", label: "overshoot" },
-                                                    { id: "easeOutQuint", label: "easeOutQuint" },
-                                                    { id: "easeInOutCubic", label: "easeInOutCubic" },
-                                                    { id: "almostLinear", label: "almostLinear" },
-                                                    { id: "linear", label: "linear" },
-                                                    { id: "default", label: "default" }
-                                                ]
-                                            currentValue: Services.Compositor ? Services.Compositor.hyprWorkspaceAnimBezier : "quick"
-                                            onSelected: function(val) {
-                                                if (Services.Compositor) Services.Compositor.setWorkspaceAnimBezier(val)
-                                            }
-                                        }
-                                    }
-
-                                    SettingsDivider {}
-
-                                    SettingsSlider {
-                                        title: "Transition Speed"
-                                        from: 1; to: 10; stepSize: 0.5; decimals: 1; valueSuffix: "x"
-                                        value: Services.Compositor ? Services.Compositor.hyprWorkspaceAnimSpeed : 2.0
-                                        onMoved: (v) => { if (Services.Compositor) Services.Compositor.setWorkspaceAnimSpeed(v) }
-                                    }
-                                }
-
-                                SettingsSection {
-                                    title: "Blur & Drop Shadows"
-                                    icon: Services.Icons.eye
-
-                                    SettingsSwitch {
-                                        title: "Blur"
-                                        subtitle: "Background blur for transparent windows and panels"
-                                        checked: Services.Compositor ? Services.Compositor.hyprBlur : true
-                                        onToggled: () => { if (Services.Compositor) Services.Compositor.toggleHyprBlur() }
-                                    }
-
-                                    SettingsDivider {}
-
-                                    SettingsSlider {
-                                        title: "Blur Radius (Size)"
-                                        from: 1; to: 16; stepSize: 1; valueSuffix: "px"
-                                        value: Services.Compositor ? Services.Compositor.hyprBlurSize : 4
-                                        onMoved: (v) => { if (Services.Compositor) Services.Compositor.setHyprBlurSize(Math.round(v)) }
-                                    }
-
-                                    SettingsDivider {}
-
-                                    SettingsSlider {
-                                        title: "Blur Iterations (Passes)"
-                                        from: 1; to: 5; stepSize: 1; valueSuffix: "x"
-                                        value: Services.Compositor ? Services.Compositor.hyprBlurPasses : 2
-                                        onMoved: (v) => { if (Services.Compositor) Services.Compositor.setHyprBlurPasses(Math.round(v)) }
-                                    }
-
-                                    SettingsDivider {}
-
-                                    SettingsSwitch {
-                                        title: "Window Drop Shadows"
-                                        subtitle: "Render soft ambient depth shadows behind active and floating windows"
-                                        checked: Services.Compositor ? Services.Compositor.hyprShadow : true
-                                        onToggled: () => { if (Services.Compositor) Services.Compositor.toggleHyprShadow() }
-                                    }
-
-                                    SettingsDivider {}
-
-                                    SettingsSlider {
-                                        title: "Shadow Range / Blur"
-                                        from: 0; to: 30; stepSize: 1; valueSuffix: "px"
-                                        value: Services.Compositor ? Services.Compositor.hyprShadowRange : 4
-                                        onMoved: (v) => { if (Services.Compositor) Services.Compositor.setHyprShadowRange(Math.round(v)) }
-                                    }
-                                }
-
-                                SettingsSection {
-                                    title: "Window Opacity & Dimming"
-                                    icon: Services.Icons.contrast
-
-                                    SettingsSlider {
-                                        title: "Active Window Opacity"
-                                        from: 0.50; to: 1.00; stepSize: 0.01; decimals: 2
-                                        value: Services.Compositor ? Services.Compositor.hyprActiveOpacity : 0.90
-                                        onMoved: (v) => { if (Services.Compositor) Services.Compositor.setHyprActiveOpacity(Number(v.toFixed(2))) }
-                                    }
-
-                                    SettingsDivider {}
-
-                                    SettingsSlider {
-                                        title: "Inactive Window Opacity"
-                                        from: 0.50; to: 1.00; stepSize: 0.01; decimals: 2
-                                        value: Services.Compositor ? Services.Compositor.hyprInactiveOpacity : 0.95
-                                        onMoved: (v) => { if (Services.Compositor) Services.Compositor.setHyprInactiveOpacity(Number(v.toFixed(2))) }
-                                    }
-                                }
-
-                                SettingsSection {
-                                    title: "Window Geometry, Gaps & Layout"
-                                    icon: Services.Icons.layout
-
-                                    SettingsSlider {
-                                        title: "Window Corner Radius"
-                                        from: 0; to: 28; stepSize: 1; valueSuffix: "px"
-                                        value: Services.Compositor ? Services.Compositor.hyprRounding : 10
-                                        onMoved: (v) => { if (Services.Compositor) Services.Compositor.setHyprRounding(Math.round(v)) }
-                                    }
-
-                                    SettingsDivider {}
-
-                                    SettingsSlider {
-                                        title: "Border Thickness"
-                                        from: 0; to: 6; stepSize: 1; valueSuffix: "px"
-                                        value: Services.Compositor ? Services.Compositor.hyprBorderSize : 0
-                                        onMoved: (v) => { if (Services.Compositor) Services.Compositor.setHyprBorderSize(Math.round(v)) }
-                                    }
-
-                                    SettingsDivider {}
-
-                                    SettingsSlider {
-                                        title: "Gaps In (Between Windows)"
-                                        from: 0; to: 24; stepSize: 1; valueSuffix: "px"
-                                        value: Services.Compositor ? Services.Compositor.hyprGapsIn : 5
-                                        onMoved: (v) => { if (Services.Compositor) Services.Compositor.setHyprGapsIn(Math.round(v)) }
-                                    }
-
-                                    SettingsDivider {}
-
-                                    SettingsSlider {
-                                        title: "Gaps Out (Screen Margins)"
-                                        from: 0; to: 36; stepSize: 1; valueSuffix: "px"
-                                        value: Services.Compositor ? Services.Compositor.hyprGapsOut : 10
-                                        onMoved: (v) => { if (Services.Compositor) Services.Compositor.setHyprGapsOut(Math.round(v)) }
-                                    }
-
-                                    SettingsDivider {}
-
-                                    SettingsSwitch {
-                                        title: "Smart Gaps (No Gaps When Only)"
-                                        subtitle: "Automatically remove gaps and borders if only one window is open"
-                                        checked: Services.Compositor ? Services.Compositor.hyprSmartGaps : false
-                                        onToggled: () => { if (Services.Compositor) Services.Compositor.toggleHyprSmartGaps() }
-                                    }
-
-                                    SettingsDivider {}
-
-                                    SettingsRow {
-                                        title: "Tiling Layout Engine"
-                                        subtitle: "Select active window tiling algorithm"
-
-                                        SettingsDropdown {
-                                            currentValue: Services.Compositor ? Services.Compositor.hyprLayout : "dwindle"
-                                            model: (Services.Compositor && Services.Compositor.activeCompositor === "niri")
-                                                ? [ { id: "scrolling", label: "Scrolling" } ]
-                                                : [
-                                                    { id: "dwindle",   label: "Dwindle" },
-                                                    { id: "master",    label: "Master" },
-                                                    { id: "scrolling", label: "Scrolling" }
-                                                ]
-                                            onSelected: (val) => { if (Services.Compositor) Services.Compositor.setHyprLayout(val) }
-                                        }
-                                    }
-
-                                    SettingsDivider {
-                                        visible: Services.Compositor && (Services.Compositor.hyprLayout === "scrolling" || Services.Compositor.activeCompositor === "niri")
-                                    }
-
-                                    SettingsSlider {
-                                        visible: Services.Compositor && (Services.Compositor.hyprLayout === "scrolling" || Services.Compositor.activeCompositor === "niri")
-                                        title: "Scrolling Column Width"
-                                        subtitle: "Default viewport ratio allocated per window column"
-                                        from: 0.30; to: 1.00; stepSize: 0.01; decimals: 2
-                                        value: Services.Compositor ? Services.Compositor.hyprScrollingColumnWidth : 0.89
-                                        onMoved: (v) => { if (Services.Compositor) Services.Compositor.setHyprScrollingColumnWidth(Number(v.toFixed(2))) }
-                                    }
-
-                                    SettingsDivider {
-                                        visible: Services.Compositor && (Services.Compositor.hyprLayout === "scrolling" || Services.Compositor.activeCompositor === "niri")
-                                    }
-
-                                    SettingsSwitch {
-                                        visible: Services.Compositor && (Services.Compositor.hyprLayout === "scrolling" || Services.Compositor.activeCompositor === "niri")
-                                        title: "Fullscreen Single Column"
-                                        subtitle: "Automatically expand column to fullscreen if only one column exists"
-                                        checked: Services.Compositor ? Services.Compositor.hyprScrollingFullscreenOnOneColumn : false
-                                        onToggled: () => { if (Services.Compositor) Services.Compositor.toggleHyprScrollingFullscreenOnOneColumn() }
-                                    }
-                                }
+                            return list
+                        }
+                        current: (rootWindow.currentDisplayMon && rootWindow.currentDisplayMon.mode) ? rootWindow.currentDisplayMon.mode : "preferred"
+                        onPicked: (id) => rootWindow.updateDisplayProp("mode", id, true)
+                    }
+                    OptSlide {
+                        label: "Scale"
+                        from: 0.5; to: 2.5; step: 0.05; decimals: 2; suffix: "x"
+                        value: rootWindow.currentDisplayMon ? (rootWindow.currentDisplayMon.scale || 1.0) : 1.0
+                        onMoved: (v) => rootWindow.updateDisplayProp("scale", Number(Number(v).toFixed(2)), true)
+                    }
+                    OptSeg {
+                        label: "Rotation"
+                        options: [{ id: "0", label: "0°" }, { id: "1", label: "90°" }, { id: "2", label: "180°" }, { id: "3", label: "270°" }]
+                        current: rootWindow.currentDisplayMon ? String(rootWindow.currentDisplayMon.transform || 0) : "0"
+                        onPicked: (id) => rootWindow.updateDisplayProp("transform", parseInt(id), true)
+                    }
+                    OptSwitch {
+                        label: "Variable refresh (VRR)"
+                        checked: rootWindow.currentDisplayMon ? Boolean(rootWindow.currentDisplayMon.vrr) : false
+                        onToggled: (v) => rootWindow.updateDisplayProp("vrr", v, true)
+                    }
+                    OptSwitch {
+                        label: "Output enabled"
+                        checked: rootWindow.currentDisplayMon ? !Boolean(rootWindow.currentDisplayMon.disabled) : true
+                        onToggled: (v) => rootWindow.updateDisplayProp("disabled", !v, true)
+                    }
+                    OptSwitch {
+                        label: "Show bar here"
+                        checked: (rootWindow.currentDisplayMon && Services.Config) ? Services.Config.isBarMonitorEnabled(rootWindow.currentDisplayMon.name) : true
+                        onToggled: (v) => {
+                            if (!rootWindow.currentDisplayMon || !Services.Config) return
+                            if (Services.Config.barMonitorMode !== "custom") Services.Config.setBarMonitorMode("custom")
+                            Services.Config.setBarMonitor(rootWindow.currentDisplayMon.name, v)
+                        }
+                    }
+                    OptPick {
+                        label: "Mirror"
+                        minW: 120
+                        model: {
+                            const list = [{ id: "none", label: "None" }]
+                            for (let i = 0; i < rootWindow.dispLocalLayout.length; i++) {
+                                const m = rootWindow.dispLocalLayout[i]
+                                if (rootWindow.currentDisplayMon && m.name !== rootWindow.currentDisplayMon.name) list.push({ id: m.name, label: m.name })
                             }
-
-                            // ── SUB-TAB 1: DISPLAYS & MONITORS ─────────────────────
-                            ColumnLayout {
-                                visible: rootWindow.compSubTab === 1
-                                Layout.fillWidth: true
-                                spacing: 10
-
-                                // ── 1. SPATIAL TOPOLOGY CARD ────────────────────────
-                                SettingsSection {
-                                    title: "Display Layout & Canvas"
-                                    icon: Services.Icons.display
-
-                                    // Canvas Toolbar Row
-                                    SettingsRow {
-                                        title: "Display Arrangement"
-                                        subtitle: "Drag screens to arrange · Magnetic edge snapping (Zero Overlap)"
-
-                                        RowLayout {
-                                            spacing: 6
-
-                                            // Identify Displays
-                                            Rectangle {
-                                                height: 26
-                                                implicitWidth: idRow.implicitWidth + 14
-                                                radius: 4
-                                                color: idMouse.containsMouse ? Qt.rgba(1, 1, 1, 0.08) : Services.Theme.bgElevated
-                                                border.color: Services.Theme.border; border.width: 1
-                                                RowLayout {
-                                                    id: idRow; anchors.centerIn: parent; spacing: 4
-                                                    Text { text: "󰍹"; font.family: Services.Theme.fontSymbols; font.pixelSize: 11; color: Services.Theme.accent }
-                                                    Text { text: "Identify"; font.pixelSize: 11; color: Services.Theme.textPrimary }
-                                                }
-                                                MouseArea {
-                                                    id: idMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
-                                                    onClicked: { if (Services.Compositor) Services.Compositor.identifyMonitors() }
-                                                }
-                                            }
-
-                                            // Swap (if 2+ monitors)
-                                            Rectangle {
-                                                visible: rootWindow.dispLocalLayout.length >= 2
-                                                height: 26
-                                                implicitWidth: swpRow.implicitWidth + 12
-                                                radius: 4
-                                                color: swpMouse.containsMouse ? Qt.rgba(1, 1, 1, 0.08) : Services.Theme.bgElevated
-                                                border.color: Services.Theme.border; border.width: 1
-                                                RowLayout {
-                                                    id: swpRow; anchors.centerIn: parent; spacing: 4
-                                                    Text { text: "⇄"; font.pixelSize: 11; color: Services.Theme.textPrimary }
-                                                    Text { text: "Swap"; font.pixelSize: 11; color: Services.Theme.textPrimary }
-                                                }
-                                                MouseArea {
-                                                    id: swpMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
-                                                    onClicked: rootWindow.swapDisplays()
-                                                }
-                                            }
-
-                                            // Align Horizontal (Side by Side)
-                                            Rectangle {
-                                                height: 26
-                                                implicitWidth: ahRow.implicitWidth + 10
-                                                radius: 4
-                                                color: ahMouse.containsMouse ? Qt.rgba(1, 1, 1, 0.08) : Services.Theme.bgElevated
-                                                border.color: Services.Theme.border; border.width: 1
-                                                RowLayout {
-                                                    id: ahRow; anchors.centerIn: parent; spacing: 3
-                                                    Text { text: "⊞"; font.pixelSize: 11; color: Services.Theme.textPrimary }
-                                                    Text { text: "Side by Side"; font.pixelSize: 10; color: Services.Theme.textPrimary }
-                                                }
-                                                MouseArea {
-                                                    id: ahMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
-                                                    onClicked: rootWindow.autoAlignDisplaysHorizontal()
-                                                }
-                                            }
-
-                                            // Align Vertical (Stacked)
-                                            Rectangle {
-                                                height: 26
-                                                implicitWidth: avRow.implicitWidth + 10
-                                                radius: 4
-                                                color: avMouse.containsMouse ? Qt.rgba(1, 1, 1, 0.08) : Services.Theme.bgElevated
-                                                border.color: Services.Theme.border; border.width: 1
-                                                RowLayout {
-                                                    id: avRow; anchors.centerIn: parent; spacing: 3
-                                                    Text { text: "⊟"; font.pixelSize: 11; color: Services.Theme.textPrimary }
-                                                    Text { text: "Stacked"; font.pixelSize: 10; color: Services.Theme.textPrimary }
-                                                }
-                                                MouseArea {
-                                                    id: avMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
-                                                    onClicked: rootWindow.autoAlignDisplaysVertical()
-                                                }
-                                            }
-
-                                            // Revert
-                                            Rectangle {
-                                                visible: rootWindow.dispHasPendingChanges
-                                                height: 26
-                                                implicitWidth: rvtRow.implicitWidth + 12
-                                                radius: 4
-                                                color: rvtMouse.containsMouse ? Qt.rgba(0.9, 0.2, 0.2, 0.15) : Services.Theme.bgElevated
-                                                border.color: Services.Theme.border; border.width: 1
-                                                RowLayout {
-                                                    id: rvtRow; anchors.centerIn: parent; spacing: 4
-                                                    Text { text: "󰕌"; font.family: Services.Theme.fontSymbols; font.pixelSize: 10; color: Services.Theme.danger }
-                                                    Text { text: "Revert"; font.pixelSize: 10; color: Services.Theme.danger }
-                                                }
-                                                MouseArea {
-                                                    id: rvtMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
-                                                    onClicked: rootWindow.revertDisplayChanges()
-                                                }
-                                            }
-
-                                            // Save & Apply
-                                            Rectangle {
-                                                height: 26
-                                                implicitWidth: savRow.implicitWidth + 14
-                                                radius: 4
-                                                color: rootWindow.dispHasPendingChanges ? Services.Theme.accent : (savMouse.containsMouse ? Qt.rgba(1, 1, 1, 0.08) : Services.Theme.bgElevated)
-                                                border.color: rootWindow.dispHasPendingChanges ? Services.Theme.accent : Services.Theme.border
-                                                border.width: 1
-                                                RowLayout {
-                                                    id: savRow; anchors.centerIn: parent; spacing: 4
-                                                    Text {
-                                                        text: rootWindow.dispIsApplying ? "󰑮" : (rootWindow.dispHasPendingChanges ? "󰄬" : "󰆓")
-                                                        font.family: Services.Theme.fontSymbols
-                                                        font.pixelSize: 11
-                                                        color: rootWindow.dispHasPendingChanges ? Services.Theme.bgOnAccent : Services.Theme.textSecondary
-                                                    }
-                                                    Text {
-                                                        text: rootWindow.dispIsApplying ? "Saving..." : (rootWindow.dispHasPendingChanges ? "Save Layout" : "Saved")
-                                                        font.pixelSize: 11
-                                                        font.weight: rootWindow.dispHasPendingChanges ? Font.Bold : Font.Normal
-                                                        color: rootWindow.dispHasPendingChanges ? Services.Theme.bgOnAccent : Services.Theme.textSecondary
-                                                    }
-                                                }
-                                                MouseArea {
-                                                    id: savMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
-                                                    onClicked: rootWindow.applyDisplayLayout(true)
-                                                }
-                                            }
-                                        }
-                                    }
-
-                                    SettingsDivider {}
-
-                                    // Canvas Stage Box (Refined High-Precision Spatial Canvas)
-                                    Rectangle {
-                                        id: stageBox
-                                        Layout.fillWidth: true
-                                        Layout.margins: 8
-                                        height: 285
-                                        radius: Services.Theme.radiusSm || 8
-                                        color: Services.Theme.isDark ? "#101014" : "#e8ebf0"
-                                        border.color: Services.Theme.border
-                                        border.width: 1
-                                        clip: true
-
-                                        // Subtle Luxury Coordinate Blueprint Grid
-                                        Canvas {
-                                            anchors.fill: parent
-                                            opacity: Services.Theme.isDark ? 0.35 : 0.45
-                                            onPaint: {
-                                                var ctx = getContext("2d")
-                                                ctx.clearRect(0, 0, width, height)
-                                                ctx.strokeStyle = Services.Theme.isDark ? "#282834" : "#d1d5db"
-                                                ctx.lineWidth = 0.75
-                                                var step = 24
-                                                for (var x = 0; x < width; x += step) {
-                                                    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, height); ctx.stroke()
-                                                }
-                                                for (var y = 0; y < height; y += step) {
-                                                    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(width, y); ctx.stroke()
-                                                }
-                                            }
-                                        }
-
-                                        readonly property real totalVirtWidth: {
-                                            if (!rootWindow.dispLocalLayout || rootWindow.dispLocalLayout.length === 0) return 1920
-                                            var maxX = 0
-                                            for (var i = 0; i < rootWindow.dispLocalLayout.length; i++) {
-                                                var m = rootWindow.dispLocalLayout[i]
-                                                if (m.disabled) continue
-                                                var logW = rootWindow.getDisplayLogWidth(m)
-                                                var endX = (m.x || 0) + logW
-                                                if (endX > maxX) maxX = endX
-                                            }
-                                            return Math.max(800, maxX)
-                                        }
-
-                                        readonly property real totalVirtHeight: {
-                                            if (!rootWindow.dispLocalLayout || rootWindow.dispLocalLayout.length === 0) return 1080
-                                            var maxY = 0
-                                            for (var i = 0; i < rootWindow.dispLocalLayout.length; i++) {
-                                                var m = rootWindow.dispLocalLayout[i]
-                                                if (m.disabled) continue
-                                                var logH = rootWindow.getDisplayLogHeight(m)
-                                                var endY = (m.y || 0) + logH
-                                                if (endY > maxY) maxY = endY
-                                            }
-                                            return Math.max(600, maxY)
-                                        }
-
-                                        readonly property real stageScale: {
-                                            var availW = stageBox.width - 64
-                                            var availH = stageBox.height - 64
-                                            if (availW <= 0 || availH <= 0) return 0.20
-                                            return Math.min(availW / totalVirtWidth, availH / totalVirtHeight, 0.35)
-                                        }
-
-                                        readonly property real originStageX: {
-                                            var contentW = totalVirtWidth * stageScale
-                                            return Math.max(20, (stageBox.width - contentW) / 2)
-                                        }
-
-                                        readonly property real originStageY: {
-                                            var contentH = totalVirtHeight * stageScale
-                                            return Math.max(20, (stageBox.height - contentH) / 2)
-                                        }
-
-                                        // Snap laser guidelines
-                                        Rectangle {
-                                            visible: rootWindow.dispShowSnapGuideX
-                                            x: rootWindow.dispSnapGuideX
-                                            anchors.top: parent.top; anchors.bottom: parent.bottom
-                                            width: 1.5; color: Services.Theme.accent; z: 90
-                                        }
-                                        Rectangle {
-                                            visible: rootWindow.dispShowSnapGuideY
-                                            y: rootWindow.dispSnapGuideY
-                                            anchors.left: parent.left; anchors.right: parent.right
-                                            height: 1.5; color: Services.Theme.accent; z: 90
-                                        }
-
-                                        // Floating Magnetic Snap Badge Hint
-                                        Rectangle {
-                                            visible: rootWindow.dispIsDragging && rootWindow.dispDockMessage.length > 0
-                                            anchors.top: parent.top
-                                            anchors.horizontalCenter: parent.horizontalCenter
-                                            anchors.topMargin: 8
-                                            height: 24
-                                            implicitWidth: snapMsgTxt.implicitWidth + 24
-                                            radius: 12
-                                            color: Services.Theme.accent
-                                            z: 200
-                                            RowLayout {
-                                                anchors.centerIn: parent
-                                                spacing: 6
-                                                Text { text: "󰄬"; font.family: Services.Theme.fontSymbols; font.pixelSize: 11; color: Services.Theme.bgOnAccent || "#ffffff" }
-                                                Text { id: snapMsgTxt; text: "Magnetic Snap: " + rootWindow.dispDockMessage; font.pixelSize: 11; font.weight: Font.Bold; color: Services.Theme.bgOnAccent || "#ffffff" }
-                                            }
-                                        }
-
-                                        // Monitor screen cards
-                                        Repeater {
-                                            model: rootWindow.dispLocalLayout
-
-                                            delegate: Item {
-                                                id: mBox
-                                                required property var modelData
-                                                required property int index
-
-                                                property real dragVisualX: 0
-                                                property real dragVisualY: 0
-                                                property bool isBeingDragged: false
-
-                                                readonly property bool isSelected: rootWindow.dispSelectedMonitorName === modelData.name
-                                                readonly property real effLogW: rootWindow.getDisplayLogWidth(modelData)
-                                                readonly property real effLogH: rootWindow.getDisplayLogHeight(modelData)
-                                                readonly property real cardW: Math.max(120, effLogW * stageBox.stageScale)
-                                                readonly property real cardH: Math.max(80, effLogH * stageBox.stageScale)
-
-                                                readonly property real baseX: stageBox.originStageX + (modelData.x * stageBox.stageScale)
-                                                readonly property real baseY: stageBox.originStageY + (modelData.y * stageBox.stageScale)
-
-                                                x: isBeingDragged ? dragVisualX : baseX
-                                                y: isBeingDragged ? dragVisualY : baseY
-                                                width: cardW
-                                                height: cardH
-                                                z: isBeingDragged ? 100 : (isSelected ? 20 : 10)
-
-                                                Behavior on x { enabled: !mBox.isBeingDragged; NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
-                                                Behavior on y { enabled: !mBox.isBeingDragged; NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
-
-                                                Rectangle {
-                                                    anchors.fill: parent
-                                                    radius: 8
-                                                    color: mBox.isSelected ? Services.Theme.bgElevated : Services.Theme.surfaceVariant
-                                                    border.color: mBox.isSelected ? Services.Theme.accent : (mDrag.containsMouse ? Services.Theme.borderHighlight : Services.Theme.border)
-                                                    border.width: mBox.isSelected ? 2 : 1
-                                                    opacity: mBox.modelData.disabled ? 0.45 : (mBox.isBeingDragged ? 0.95 : 1.0)
-                                                    scale: mBox.isBeingDragged ? 1.04 : (mDrag.containsMouse ? 1.02 : 1.0)
-                                                    Behavior on scale { NumberAnimation { duration: 120 } }
-
-                                                    // Drag Grip Dots Indicator (Top Right)
-                                                    Text {
-                                                        anchors.top: parent.top
-                                                        anchors.right: parent.right
-                                                        anchors.margins: 6
-                                                        text: "⠿"
-                                                        font.pixelSize: 10
-                                                        color: mBox.isSelected ? Services.Theme.accent : Services.Theme.textDisabled
-                                                    }
-
-                                                    ColumnLayout {
-                                                        anchors.centerIn: parent
-                                                        spacing: 3
-
-                                                        RowLayout {
-                                                            Layout.alignment: Qt.AlignHCenter
-                                                            spacing: 5
-                                                            Text {
-                                                                text: mBox.modelData.name.toLowerCase().includes("edp") ? "󰌢" : "󰍹"
-                                                                font.family: Services.Theme.fontSymbols
-                                                                font.pixelSize: 12
-                                                                color: mBox.isSelected ? Services.Theme.accent : Services.Theme.textSecondary
-                                                            }
-                                                            Text {
-                                                                text: mBox.modelData.name + (mBox.modelData.focused ? " ★" : "")
-                                                                font.pixelSize: 11
-                                                                font.weight: Font.DemiBold
-                                                                color: mBox.isSelected ? Services.Theme.accent : Services.Theme.textPrimary
-                                                            }
-                                                        }
-
-                                                        Text {
-                                                            Layout.alignment: Qt.AlignHCenter
-                                                            text: mBox.modelData.width + "×" + mBox.modelData.height
-                                                            font.family: Services.Theme.fontMono
-                                                            font.pixelSize: 10
-                                                            color: Services.Theme.textSecondary
-                                                        }
-
-                                                        RowLayout {
-                                                            Layout.alignment: Qt.AlignHCenter
-                                                            spacing: 4
-                                                            Text {
-                                                                text: mBox.modelData.refreshRate + "Hz"
-                                                                font.pixelSize: 9
-                                                                color: Services.Theme.accent
-                                                            }
-                                                            Text { text: "·"; font.pixelSize: 9; color: Services.Theme.textDisabled }
-                                                            Text {
-                                                                text: (mBox.modelData.scale || 1.0) + "x"
-                                                                font.pixelSize: 9
-                                                                color: Services.Theme.textSecondary
-                                                            }
-                                                        }
-
-                                                        Text {
-                                                            Layout.alignment: Qt.AlignHCenter
-                                                            text: "(" + mBox.modelData.x + ", " + mBox.modelData.y + ")"
-                                                            font.family: Services.Theme.fontMono
-                                                            font.pixelSize: 8
-                                                            color: Services.Theme.textDisabled
-                                                        }
-                                                    }
-                                                }
-
-                                                // Floating Live Coordinate Tooltip while dragging
-                                                Rectangle {
-                                                    visible: mBox.isBeingDragged
-                                                    anchors.bottom: parent.top
-                                                    anchors.horizontalCenter: parent.horizontalCenter
-                                                    anchors.bottomMargin: 6
-                                                    height: 22
-                                                    implicitWidth: liveTipTxt.implicitWidth + 14
-                                                    radius: 4
-                                                    color: Services.Theme.bgElevated
-                                                    border.color: Services.Theme.accent
-                                                    border.width: 1
-                                                    z: 110
-
-                                                    Text {
-                                                        id: liveTipTxt
-                                                        anchors.centerIn: parent
-                                                        text: mBox.modelData.name + " · X: " + Math.max(0, Math.round((mBox.x - stageBox.originStageX) / stageBox.stageScale)) + "  Y: " + Math.max(0, Math.round((mBox.y - stageBox.originStageY) / stageBox.stageScale))
-                                                        font.family: Services.Theme.fontMono
-                                                        font.pixelSize: 10
-                                                        font.weight: Font.Bold
-                                                        color: Services.Theme.accent
-                                                    }
-                                                }
-
-                                                MouseArea {
-                                                    id: mDrag
-                                                    anchors.fill: parent
-                                                    hoverEnabled: true
-                                                    cursorShape: pressed ? Qt.ClosedHandCursor : Qt.OpenHandCursor
-
-                                                    property real grabOffsetX: 0
-                                                    property real grabOffsetY: 0
-
-                                                    onPressed: (mouse) => {
-                                                        rootWindow.dispSelectedMonitorName = mBox.modelData.name
-                                                        rootWindow.dispIsDragging = true
-                                                        mBox.isBeingDragged = true
-
-                                                        grabOffsetX = mouse.x
-                                                        grabOffsetY = mouse.y
-
-                                                        mBox.dragVisualX = mBox.x
-                                                        mBox.dragVisualY = mBox.y
-                                                    }
-
-                                                    onPositionChanged: (mouse) => {
-                                                        if (!pressed) return
-
-                                                        var curMouseStage = mapToItem(stageBox, mouse.x, mouse.y)
-                                                        var rawVisualX = curMouseStage.x - grabOffsetX
-                                                        var rawVisualY = curMouseStage.y - grabOffsetY
-
-                                                        rawVisualX = Math.max(6, Math.min(stageBox.width - mBox.width - 6, rawVisualX))
-                                                        rawVisualY = Math.max(6, Math.min(stageBox.height - mBox.height - 6, rawVisualY))
-
-                                                        if (rootWindow.dispLocalLayout.length > 1) {
-                                                            var snap = rootWindow.calcDisplaySnap(mBox.index, rawVisualX, rawVisualY, mBox.width, mBox.height, stageBox.originStageX, stageBox.originStageY, stageBox.stageScale)
-                                                            mBox.dragVisualX = snap.snappedStageX
-                                                            mBox.dragVisualY = snap.snappedStageY
-
-                                                            rootWindow.dispSnapGuideX = snap.guideX
-                                                            rootWindow.dispShowSnapGuideX = snap.hasGuideX
-                                                            rootWindow.dispSnapGuideY = snap.guideY
-                                                            rootWindow.dispShowSnapGuideY = snap.hasGuideY
-                                                            rootWindow.dispDockMessage = snap.dockMessage
-                                                        } else {
-                                                            mBox.dragVisualX = rawVisualX
-                                                            mBox.dragVisualY = rawVisualY
-                                                            rootWindow.dispShowSnapGuideX = false
-                                                            rootWindow.dispShowSnapGuideY = false
-                                                            rootWindow.dispDockMessage = ""
-                                                        }
-                                                    }
-
-                                                    onReleased: (mouse) => {
-                                                        rootWindow.dispIsDragging = false
-                                                        rootWindow.dispShowSnapGuideX = false
-                                                        rootWindow.dispShowSnapGuideY = false
-                                                        rootWindow.dispDockMessage = ""
-
-                                                        if (rootWindow.dispLocalLayout.length > 1) {
-                                                            rootWindow.commitDisplayDrop(mBox.index, mBox.dragVisualX, mBox.dragVisualY, stageBox.originStageX, stageBox.originStageY, stageBox.stageScale)
-                                                        }
-                                                        mBox.isBeingDragged = false
-                                                    }
-
-                                                    onCanceled: {
-                                                        rootWindow.dispIsDragging = false
-                                                        rootWindow.dispShowSnapGuideX = false
-                                                        rootWindow.dispShowSnapGuideY = false
-                                                        rootWindow.dispDockMessage = ""
-                                                        mBox.isBeingDragged = false
-                                                    }
-                                                }
-                                            }
-                                        }
-
-                                        // Empty state
-                                        ColumnLayout {
-                                            anchors.centerIn: parent
-                                            visible: !rootWindow.dispLocalLayout || rootWindow.dispLocalLayout.length === 0
-                                            spacing: 6
-                                            Text { Layout.alignment: Qt.AlignHCenter; text: Services.Icons.display; font.family: Services.Theme.fontSymbols; font.pixelSize: 24; color: Services.Theme.textDisabled }
-                                            Text { Layout.alignment: Qt.AlignHCenter; text: "Detecting connected displays..."; font.pixelSize: 11; color: Services.Theme.textSecondary }
-                                        }
-                                    }
-                                }
-
-                                // ── 2. STATUS TOAST BANNER ──────────────────────────
-                                Rectangle {
-                                    visible: rootWindow.dispStatusMessage.length > 0
-                                    Layout.fillWidth: true
-                                    height: 32
-                                    radius: Services.Theme.radiusSm || 4
-                                    color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.15)
-                                    border.color: Services.Theme.accent
-                                    border.width: 1
-
-                                    RowLayout {
-                                        anchors.fill: parent
-                                        anchors.margins: 8
-                                        spacing: 8
-                                        Text { text: "󰄬"; font.family: Services.Theme.fontSymbols; font.pixelSize: 11; color: Services.Theme.accent }
-                                        Text { text: rootWindow.dispStatusMessage; font.pixelSize: 11; font.weight: Font.Medium; color: Services.Theme.textPrimary; Layout.fillWidth: true }
-                                    }
-                                }
-
-                                // ── 3. DISPLAY SELECTOR SEGMENT PILLS ───────────────
-                                Rectangle {
-                                    visible: rootWindow.dispLocalLayout.length > 1
-                                    Layout.fillWidth: true
-                                    height: 36
-                                    radius: Services.Theme.radiusSm || 6
-                                    color: Services.Theme.surfaceVariant
-                                    border.color: Services.Theme.border
-                                    border.width: 1
-
-                                    RowLayout {
-                                        anchors.fill: parent
-                                        anchors.margins: 3
-                                        spacing: 3
-
-                                        Repeater {
-                                            model: rootWindow.dispLocalLayout
-
-                                            delegate: Rectangle {
-                                                required property var modelData
-                                                required property int index
-                                                Layout.fillWidth: true
-                                                Layout.fillHeight: true
-                                                radius: 4
-
-                                                readonly property bool isCur: rootWindow.dispSelectedMonitorName === modelData.name
-
-                                                color: isCur ? Services.Theme.bgElevated : (pMouse.containsMouse ? Qt.rgba(1, 1, 1, 0.05) : "transparent")
-                                                border.color: isCur ? Services.Theme.border : "transparent"
-                                                border.width: 1
-
-                                                RowLayout {
-                                                    anchors.centerIn: parent
-                                                    spacing: 6
-                                                    Text {
-                                                        text: modelData.name.toLowerCase().includes("edp") ? "󰌢" : "󰍹"
-                                                        font.family: Services.Theme.fontSymbols
-                                                        font.pixelSize: 11
-                                                        color: parent.parent.isCur ? Services.Theme.accent : Services.Theme.textSecondary
-                                                    }
-                                                    Text {
-                                                        text: (modelData.name || "Display") + (modelData.focused ? " ★" : "")
-                                                        font.pixelSize: 11
-                                                        font.weight: parent.parent.isCur ? Font.DemiBold : Font.Normal
-                                                        color: parent.parent.isCur ? Services.Theme.textPrimary : Services.Theme.textSecondary
-                                                    }
-                                                    Text {
-                                                        text: modelData.width + "×" + modelData.height
-                                                        font.family: Services.Theme.fontMono
-                                                        font.pixelSize: 9
-                                                        color: Services.Theme.textDisabled
-                                                    }
-                                                }
-
-                                                MouseArea {
-                                                    id: pMouse
-                                                    anchors.fill: parent
-                                                    hoverEnabled: true
-                                                    cursorShape: Qt.PointingHandCursor
-                                                    onClicked: rootWindow.dispSelectedMonitorName = modelData.name
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-
-                                // ── 4. DISPLAY CONFIGURATION (100% Native Settings Components) ──
-                                SettingsSection {
-                                    title: "Display Output & Scaling · " + (rootWindow.currentDisplayMon ? rootWindow.currentDisplayMon.name : "Active Output")
-                                    icon: Services.Icons.sliders
-
-                                    SettingsRow {
-                                        title: "Resolution & Refresh Rate"
-                                        subtitle: "Active display resolution and refresh rate mode"
-
-                                        SettingsDropdown {
-                                            currentValue: (rootWindow.currentDisplayMon && rootWindow.currentDisplayMon.mode) ? rootWindow.currentDisplayMon.mode : "preferred"
-                                            minButtonWidth: 200
-                                            model: {
-                                                var list = [
-                                                    { id: "preferred", label: "Auto (Preferred)" },
-                                                    { id: "highrr",     label: "Max Refresh Rate" },
-                                                    { id: "highres",   label: "Max Resolution" }
-                                                ]
-                                                if (rootWindow.currentDisplayMon && rootWindow.currentDisplayMon.availableModes) {
-                                                    var modes = rootWindow.currentDisplayMon.availableModes
-                                                    for (var i = 0; i < modes.length; i++) {
-                                                        var mStr = String(modes[i])
-                                                        list.push({ id: mStr, label: mStr.replace("@", " @ ").replace("Hz", " Hz") })
-                                                    }
-                                                }
-                                                return list
-                                            }
-                                            onSelected: (val) => rootWindow.updateDisplayProp("mode", val, true)
-                                        }
-                                    }
-
-                                    SettingsDivider {}
-
-                                    SettingsSlider {
-                                        title: "Display Scale Factor"
-                                        subtitle: "Scale UI elements for high-density monitors or low-resolution screens"
-                                        from: 0.50
-                                        to: 2.50
-                                        stepSize: 0.05
-                                        decimals: 2
-                                        valueSuffix: "x"
-                                        value: rootWindow.currentDisplayMon ? (rootWindow.currentDisplayMon.scale || 1.0) : 1.0
-                                        onMoved: (v) => rootWindow.updateDisplayProp("scale", Number(Number(v).toFixed(2)), true)
-                                    }
-
-                                    SettingsDivider {}
-
-                                    SettingsRow {
-                                        title: "Display Orientation"
-                                        subtitle: "Rotate screen layout for vertical monitors or flipped setups"
-
-                                        SettingsDropdown {
-                                            currentValue: rootWindow.currentDisplayMon ? String(rootWindow.currentDisplayMon.transform || 0) : "0"
-                                            minButtonWidth: 160
-                                            model: [
-                                                { id: "0", label: "0° (Standard Landscape)" },
-                                                { id: "1", label: "90° (Portrait Left)" },
-                                                { id: "2", label: "180° (Inverted Landscape)" },
-                                                { id: "3", label: "270° (Portrait Right)" }
-                                            ]
-                                            onSelected: (val) => rootWindow.updateDisplayProp("transform", parseInt(val), true)
-                                        }
-                                    }
-
-                                    SettingsDivider {}
-
-                                    SettingsSwitch {
-                                        title: "Variable Refresh Rate (VRR / FreeSync)"
-                                        subtitle: "Eliminate tearing and stuttering during gaming and high frame rates"
-                                        checked: rootWindow.currentDisplayMon ? Boolean(rootWindow.currentDisplayMon.vrr) : false
-                                        onToggled: (st) => rootWindow.updateDisplayProp("vrr", st, true)
-                                    }
-
-                                    SettingsDivider {}
-
-                                    SettingsSwitch {
-                                        title: "Display Power Output"
-                                        subtitle: "Turn monitor output on or off via DPMS"
-                                        checked: rootWindow.currentDisplayMon ? !Boolean(rootWindow.currentDisplayMon.disabled) : true
-                                        onToggled: (st) => rootWindow.updateDisplayProp("disabled", !st, true)
-                                    }
-
-                                    SettingsDivider {}
-
-                                    SettingsSwitch {
-                                        title: "Show Status Bar on this Monitor"
-                                        subtitle: "Display QuickShell top bar on this screen"
-                                        checked: (rootWindow.currentDisplayMon && Services.Config) ? Services.Config.isBarMonitorEnabled(rootWindow.currentDisplayMon.name) : true
-                                        onToggled: (st) => {
-                                            if (!rootWindow.currentDisplayMon || !Services.Config) return
-                                            if (Services.Config.barMonitorMode !== "custom") Services.Config.setBarMonitorMode("custom")
-                                            Services.Config.setBarMonitor(rootWindow.currentDisplayMon.name, st)
-                                        }
-                                    }
-
-                                    SettingsDivider {}
-
-                                    SettingsRow {
-                                        title: "Quick Screen Docking"
-                                        subtitle: "Instantly attach " + (rootWindow.currentDisplayMon ? rootWindow.currentDisplayMon.name : "display") + " next to adjacent screen"
-                                        visible: rootWindow.dispLocalLayout.length > 1
-
-                                        RowLayout {
-                                            spacing: 6
-
-                                            Rectangle {
-                                                height: 26; implicitWidth: 74; radius: 4
-                                                color: dockLMouse.containsMouse ? Qt.rgba(1,1,1,0.08) : Services.Theme.bgElevated
-                                                border.color: Services.Theme.border; border.width: 1
-                                                RowLayout {
-                                                    anchors.centerIn: parent; spacing: 4
-                                                    Text { text: "◀"; font.pixelSize: 9; color: Services.Theme.accent }
-                                                    Text { text: "Left"; font.pixelSize: 10; color: Services.Theme.textPrimary }
-                                                }
-                                                MouseArea { id: dockLMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: rootWindow.dockSelectedDisplay("left") }
-                                            }
-
-                                            Rectangle {
-                                                height: 26; implicitWidth: 74; radius: 4
-                                                color: dockRMouse.containsMouse ? Qt.rgba(1,1,1,0.08) : Services.Theme.bgElevated
-                                                border.color: Services.Theme.border; border.width: 1
-                                                RowLayout {
-                                                    anchors.centerIn: parent; spacing: 4
-                                                    Text { text: "Right"; font.pixelSize: 10; color: Services.Theme.textPrimary }
-                                                    Text { text: "▶"; font.pixelSize: 9; color: Services.Theme.accent }
-                                                }
-                                                MouseArea { id: dockRMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: rootWindow.dockSelectedDisplay("right") }
-                                            }
-
-                                            Rectangle {
-                                                height: 26; implicitWidth: 74; radius: 4
-                                                color: dockTMouse.containsMouse ? Qt.rgba(1,1,1,0.08) : Services.Theme.bgElevated
-                                                border.color: Services.Theme.border; border.width: 1
-                                                RowLayout {
-                                                    anchors.centerIn: parent; spacing: 4
-                                                    Text { text: "▲"; font.pixelSize: 9; color: Services.Theme.accent }
-                                                    Text { text: "Above"; font.pixelSize: 10; color: Services.Theme.textPrimary }
-                                                }
-                                                MouseArea { id: dockTMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: rootWindow.dockSelectedDisplay("top") }
-                                            }
-
-                                            Rectangle {
-                                                height: 26; implicitWidth: 74; radius: 4
-                                                color: dockBMouse.containsMouse ? Qt.rgba(1,1,1,0.08) : Services.Theme.bgElevated
-                                                border.color: Services.Theme.border; border.width: 1
-                                                RowLayout {
-                                                    anchors.centerIn: parent; spacing: 4
-                                                    Text { text: "▼"; font.pixelSize: 9; color: Services.Theme.accent }
-                                                    Text { text: "Below"; font.pixelSize: 10; color: Services.Theme.textPrimary }
-                                                }
-                                                MouseArea { id: dockBMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: rootWindow.dockSelectedDisplay("bottom") }
-                                            }
-                                        }
-                                    }
-
-                                    SettingsDivider { visible: rootWindow.dispLocalLayout.length > 1 }
-
-                                    SettingsRow {
-                                        title: "Manual Spatial Offsets"
-                                        subtitle: "Fine-tune precise X and Y pixel positions"
-
-                                        RowLayout {
-                                            spacing: 10
-
-                                            // X Stepper
-                                            RowLayout {
-                                                spacing: 4
-                                                Text { text: "X:"; font.family: Services.Theme.fontMono; font.pixelSize: 11; font.weight: Font.Bold; color: Services.Theme.textSecondary }
-                                                Rectangle {
-                                                    height: 26; implicitWidth: 84; radius: 4
-                                                    color: Services.Theme.bgElevated; border.color: Services.Theme.border; border.width: 1
-                                                    RowLayout {
-                                                        anchors.fill: parent; anchors.margins: 2; spacing: 2
-                                                        Rectangle {
-                                                            width: 20; height: 20; radius: 3
-                                                            color: xMinMouse.containsMouse ? Qt.rgba(1,1,1,0.1) : "transparent"
-                                                            Text { anchors.centerIn: parent; text: "−"; font.pixelSize: 12; color: Services.Theme.textPrimary }
-                                                            MouseArea { id: xMinMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: rootWindow.updateDisplayProp("x", Math.max(0, (rootWindow.currentDisplayMon ? rootWindow.currentDisplayMon.x : 0) - 50), true) }
-                                                        }
-                                                        Text { Layout.fillWidth: true; horizontalAlignment: Text.AlignHCenter; text: (rootWindow.currentDisplayMon ? rootWindow.currentDisplayMon.x : 0) + "px"; font.family: Services.Theme.fontMono; font.pixelSize: 10; color: Services.Theme.textPrimary }
-                                                        Rectangle {
-                                                            width: 20; height: 20; radius: 3
-                                                            color: xPlusMouse.containsMouse ? Qt.rgba(1,1,1,0.1) : "transparent"
-                                                            Text { anchors.centerIn: parent; text: "+"; font.pixelSize: 12; color: Services.Theme.textPrimary }
-                                                            MouseArea { id: xPlusMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: rootWindow.updateDisplayProp("x", (rootWindow.currentDisplayMon ? rootWindow.currentDisplayMon.x : 0) + 50, true) }
-                                                        }
-                                                    }
-                                                }
-                                            }
-
-                                            // Y Stepper
-                                            RowLayout {
-                                                spacing: 4
-                                                Text { text: "Y:"; font.family: Services.Theme.fontMono; font.pixelSize: 11; font.weight: Font.Bold; color: Services.Theme.textSecondary }
-                                                Rectangle {
-                                                    height: 26; implicitWidth: 84; radius: 4
-                                                    color: Services.Theme.bgElevated; border.color: Services.Theme.border; border.width: 1
-                                                    RowLayout {
-                                                        anchors.fill: parent; anchors.margins: 2; spacing: 2
-                                                        Rectangle {
-                                                            width: 20; height: 20; radius: 3
-                                                            color: yMinMouse.containsMouse ? Qt.rgba(1,1,1,0.1) : "transparent"
-                                                            Text { anchors.centerIn: parent; text: "−"; font.pixelSize: 12; color: Services.Theme.textPrimary }
-                                                            MouseArea { id: yMinMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: rootWindow.updateDisplayProp("y", Math.max(0, (rootWindow.currentDisplayMon ? rootWindow.currentDisplayMon.y : 0) - 50), true) }
-                                                        }
-                                                        Text { Layout.fillWidth: true; horizontalAlignment: Text.AlignHCenter; text: (rootWindow.currentDisplayMon ? rootWindow.currentDisplayMon.y : 0) + "px"; font.family: Services.Theme.fontMono; font.pixelSize: 10; color: Services.Theme.textPrimary }
-                                                        Rectangle {
-                                                            width: 20; height: 20; radius: 3
-                                                            color: yPlusMouse.containsMouse ? Qt.rgba(1,1,1,0.1) : "transparent"
-                                                            Text { anchors.centerIn: parent; text: "+"; font.pixelSize: 12; color: Services.Theme.textPrimary }
-                                                            MouseArea { id: yPlusMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: rootWindow.updateDisplayProp("y", (rootWindow.currentDisplayMon ? rootWindow.currentDisplayMon.y : 0) + 50, true) }
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-
-                                    SettingsDivider {}
-
-                                    SettingsRow {
-                                        title: "Mirror Display"
-                                        subtitle: "Clone another connected monitor's screen output"
-
-                                        SettingsDropdown {
-                                            currentValue: (rootWindow.currentDisplayMon && rootWindow.currentDisplayMon.mirrorOf) ? rootWindow.currentDisplayMon.mirrorOf : "none"
-                                            minButtonWidth: 160
-                                            model: {
-                                                var list = [{ id: "none", label: "None (Extend Display)" }]
-                                                for (var i = 0; i < rootWindow.dispLocalLayout.length; i++) {
-                                                    var m = rootWindow.dispLocalLayout[i]
-                                                    if (rootWindow.currentDisplayMon && m.name !== rootWindow.currentDisplayMon.name) {
-                                                        list.push({ id: m.name, label: "Mirror " + m.name })
-                                                    }
-                                                }
-                                                return list
-                                            }
-                                            onSelected: (val) => rootWindow.updateDisplayProp("mirrorOf", val, true)
-                                        }
-                                    }
-
-                                    SettingsDivider {}
-
-                                    SettingsRow {
-                                        title: "Primary Display Target"
-                                        subtitle: "Designate as active target for new windows and primary bar"
-
-                                        Rectangle {
-                                            height: 26
-                                            implicitWidth: primTxt.implicitWidth + 14
-                                            radius: 4
-                                            readonly property bool isPrim: rootWindow.currentDisplayMon && rootWindow.currentDisplayMon.focused
-                                            color: isPrim ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.18) : (primMouse.containsMouse ? Qt.rgba(1, 1, 1, 0.08) : Services.Theme.bgElevated)
-                                            border.color: isPrim ? Services.Theme.accent : Services.Theme.border
-                                            border.width: 1
-
-                                            RowLayout {
-                                                anchors.centerIn: parent
-                                                spacing: 4
-                                                Text { text: parent.parent.isPrim ? "★" : "☆"; font.pixelSize: 10; color: Services.Theme.accent }
-                                                Text { id: primTxt; text: parent.parent.isPrim ? "Primary Display" : "Set as Primary"; font.pixelSize: 11; font.weight: parent.parent.isPrim ? Font.Bold : Font.Normal; color: parent.parent.isPrim ? Services.Theme.accent : Services.Theme.textPrimary }
-                                            }
-                                            MouseArea {
-                                                id: primMouse
-                                                anchors.fill: parent
-                                                hoverEnabled: true
-                                                cursorShape: Qt.PointingHandCursor
-                                                onClicked: {
-                                                    if (rootWindow.currentDisplayMon) rootWindow.setDisplayAsPrimary(rootWindow.currentDisplayMon.name)
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-
-                                // ── 5. HARDWARE DIAGNOSTICS SECTION ─────────────────
-                                SettingsSection {
-                                    title: "Hardware Specifications & Diagnostics"
-                                    icon: Services.Icons.info
-
-                                    SettingsRow {
-                                        title: "Panel Model & Description"
-                                        subtitle: (rootWindow.currentDisplayMon ? (rootWindow.currentDisplayMon.description || (rootWindow.currentDisplayMon.make + " " + rootWindow.currentDisplayMon.model) || rootWindow.currentDisplayMon.name) : "No Display Detected")
-
-                                        Text {
-                                            text: "Port: " + (rootWindow.currentDisplayMon ? rootWindow.currentDisplayMon.name : "-")
-                                            font.family: Services.Theme.fontMono
-                                            font.pixelSize: 11
-                                            color: Services.Theme.textSecondary
-                                        }
-                                    }
-
-                                    SettingsDivider {}
-
-                                    SettingsRow {
-                                        title: "Physical Dimensions & Workspace"
-                                        subtitle: {
-                                            if (!rootWindow.currentDisplayMon) return "-"
-                                            var pw = rootWindow.currentDisplayMon.physicalWidth || 0
-                                            var ph = rootWindow.currentDisplayMon.physicalHeight || 0
-                                            var diag = Math.sqrt(pw * pw + ph * ph) / 25.4
-                                            return pw + " mm × " + ph + " mm" + (diag > 0 ? (" (~" + diag.toFixed(1) + "″ diagonal)") : "")
-                                        }
-
-                                        Rectangle {
-                                            height: 22
-                                            implicitWidth: wsTxt.implicitWidth + 10
-                                            radius: 4
-                                            color: Services.Theme.bgElevated
-                                            border.color: Services.Theme.border; border.width: 1
-                                            Text {
-                                                id: wsTxt; anchors.centerIn: parent
-                                                text: "Workspace " + (rootWindow.currentDisplayMon ? rootWindow.currentDisplayMon.activeWorkspace : "1")
-                                                font.pixelSize: 10; color: Services.Theme.accent
-                                            }
-                                        }
-                                    }
-                                }
+                            return list
+                        }
+                        current: (rootWindow.currentDisplayMon && rootWindow.currentDisplayMon.mirrorOf) ? rootWindow.currentDisplayMon.mirrorOf : "none"
+                        onPicked: (id) => rootWindow.updateDisplayProp("mirrorOf", id, true)
+                    }
+                    Opt {
+                        visible: rootWindow.dispLocalLayout.length > 1
+                        label: "Dock next to other"
+                        RowLayout {
+                            spacing: 4
+                            Btn { text: "◀"; onClicked: rootWindow.dockSelectedDisplay("left") }
+                            Btn { text: "▲"; onClicked: rootWindow.dockSelectedDisplay("top") }
+                            Btn { text: "▼"; onClicked: rootWindow.dockSelectedDisplay("bottom") }
+                            Btn { text: "▶"; onClicked: rootWindow.dockSelectedDisplay("right") }
+                        }
+                    }
+                    Opt {
+                        label: "Offset"
+                        hint: "Steps of 50px"
+                        RowLayout {
+                            spacing: 6
+                            Stepper {
+                                label: "X"
+                                valueText: (rootWindow.currentDisplayMon ? rootWindow.currentDisplayMon.x : 0) + ""
+                                onDec: rootWindow.updateDisplayProp("x", Math.max(0, (rootWindow.currentDisplayMon ? rootWindow.currentDisplayMon.x : 0) - 50), true)
+                                onInc: rootWindow.updateDisplayProp("x", (rootWindow.currentDisplayMon ? rootWindow.currentDisplayMon.x : 0) + 50, true)
                             }
-
-
-                            // ── SUB-TAB 2: INPUT & TOUCHPAD GESTURES ───────────────
-                            ColumnLayout {
-                                visible: rootWindow.compSubTab === 2
-                                Layout.fillWidth: true
-                                spacing: 10
-
-                                // Hyprland-only content
-                                ColumnLayout {
-                                    visible: Services.Compositor && Services.Compositor.activeCompositor === "hyprland"
-                                    Layout.fillWidth: true
-                                    spacing: 10
-
-                                    SettingsSection {
-                                        title: "Window Focus Behavior"
-                                        icon: Services.Icons.sliders
-
-                                        SettingsRow {
-                                            title: "Focus Follows Mouse"
-                                            subtitle: "How window focus is shifted when moving the cursor"
-
-                                            SettingsDropdown {
-                                                currentValue: Services.Compositor ? String(Services.Compositor.hyprFollowMouse) : "1"
-                                                model: [
-                                                    { id: "1", label: "Hover Focus (Continuous)" },
-                                                    { id: "0", label: "Click to Focus (Strict)" },
-                                                    { id: "2", label: "Click on Tiled, Hover on Floating" }
-                                                ]
-                                                onSelected: (val) => { if (Services.Compositor) Services.Compositor.setHyprFollowMouse(val) }
-                                            }
-                                        }
-                                    }
-
-                                    SettingsSection {
-                                        title: "Touchpad & Gestures"
-                                        icon: Services.Icons.touchpad || Services.Icons.sliders
-
-                                        SettingsSwitch {
-                                            title: "Natural Scrolling"
-                                            subtitle: "Reverse scrolling direction (swipe up scrolls content up)"
-                                            checked: Services.Compositor ? Services.Compositor.hyprTouchpadNatural : true
-                                            onToggled: (val) => { if (Services.Compositor) Services.Compositor.setHyprTouchpadNatural(val) }
-                                        }
-
-                                        SettingsDivider {}
-
-                                        SettingsSwitch {
-                                            title: "Tap to Click"
-                                            subtitle: "Tap touchpad surface to trigger primary click"
-                                            checked: Services.Compositor ? Services.Compositor.hyprTouchpadTap : true
-                                            onToggled: (val) => { if (Services.Compositor) Services.Compositor.setHyprTouchpadTap(val) }
-                                        }
-
-                                        SettingsDivider {}
-
-                                        SettingsSwitch {
-                                            title: "Disable While Typing (DWT)"
-                                            subtitle: "Prevent accidental palm clicks when typing on the keyboard"
-                                            checked: Services.Compositor ? Services.Compositor.hyprTouchpadDwt : true
-                                            onToggled: (val) => { if (Services.Compositor) Services.Compositor.setHyprTouchpadDwt(val) }
-                                        }
-
-                                        SettingsDivider {}
-
-                                        SettingsSwitch {
-                                            title: "Touchpad 3-Finger Workspace Swipe"
-                                            subtitle: "Smooth 1:1 trackpad swipe gesture to switch active workspace"
-                                            checked: Services.Compositor ? Services.Compositor.hyprWorkspaceSwipe : true
-                                            onToggled: (val) => { if (Services.Compositor) Services.Compositor.setHyprWorkspaceSwipe(val) }
-                                        }
-
-                                        SettingsDivider {}
-
-                                        SettingsSlider {
-                                            title: "Touchpad Pointer Sensitivity"
-                                            from: -1.0; to: 1.0; stepSize: 0.05; decimals: 2
-                                            value: Services.Compositor ? Services.Compositor.hyprSensitivity : 0.0
-                                            onMoved: (v) => { if (Services.Compositor) Services.Compositor.setHyprSensitivity(Number(v.toFixed(2))) }
-                                        }
-                                    }
-                                }
-
-                                // Non-Hyprland fallback card
-                                Rectangle {
-                                    visible: !(Services.Compositor && Services.Compositor.activeCompositor === "hyprland")
-                                    Layout.fillWidth: true
-                                    implicitHeight: noHyprInput.implicitHeight + 40
-                                    radius: Services.Theme.radiusMd
-                                    color: Services.Theme.surfaceVariant
-                                    border.color: Services.Theme.border; border.width: 1
-
-                                    ColumnLayout {
-                                        id: noHyprInput
-                                        anchors.centerIn: parent
-                                        spacing: 8
-                                        Text { Layout.alignment: Qt.AlignHCenter; text: Services.Icons.sliders; font.family: Services.Theme.fontSymbols; font.pixelSize: 24; color: Services.Theme.textDisabled }
-                                        Text { Layout.alignment: Qt.AlignHCenter; text: "Input & gesture controls require Hyprland"; font.pixelSize: 12; font.weight: Font.Medium; color: Services.Theme.textSecondary }
-                                        Text { Layout.alignment: Qt.AlignHCenter; text: "Detected compositor: " + (Services.Compositor ? Services.Compositor.activeDisplayName : "Unknown"); font.pixelSize: 10; color: Services.Theme.textDisabled }
-                                    }
-                                }
+                            Stepper {
+                                label: "Y"
+                                valueText: (rootWindow.currentDisplayMon ? rootWindow.currentDisplayMon.y : 0) + ""
+                                onDec: rootWindow.updateDisplayProp("y", Math.max(0, (rootWindow.currentDisplayMon ? rootWindow.currentDisplayMon.y : 0) - 50), true)
+                                onInc: rootWindow.updateDisplayProp("y", (rootWindow.currentDisplayMon ? rootWindow.currentDisplayMon.y : 0) + 50, true)
                             }
+                        }
+                    }
+                    Opt {
+                        label: "Primary"
+                        hint: rootWindow.currentDisplayMon
+                            ? (rootWindow.currentDisplayMon.description || ((rootWindow.currentDisplayMon.make || "") + " " + (rootWindow.currentDisplayMon.model || "")))
+                            : ""
+                        Btn {
+                            text: (rootWindow.currentDisplayMon && rootWindow.currentDisplayMon.focused) ? "Primary" : "Make primary"
+                            kind: (rootWindow.currentDisplayMon && rootWindow.currentDisplayMon.focused) ? "accent" : "plain"
+                            enabledState: rootWindow.currentDisplayMon && !rootWindow.currentDisplayMon.focused
+                            onClicked: { if (rootWindow.currentDisplayMon) rootWindow.setDisplayAsPrimary(rootWindow.currentDisplayMon.name) }
+                        }
+                    }
+                    Opt {
+                        label: "Panel"
+                        hint: {
+                            const m = rootWindow.currentDisplayMon
+                            if (!m) return "-"
+                            const pw = m.physicalWidth || 0
+                            const ph = m.physicalHeight || 0
+                            const diag = Math.sqrt(pw * pw + ph * ph) / 25.4
+                            return pw + " × " + ph + " mm" + (diag > 0 ? " · ~" + diag.toFixed(1) + "″" : "")
+                        }
+                        Tag { text: "WS " + (rootWindow.currentDisplayMon ? rootWindow.currentDisplayMon.activeWorkspace : "-") }
+                    }
+                }
+            }
 
-                            // ── SUB-TAB 3: POWER & GAMING ──────────────────────────
-                            ColumnLayout {
-                                visible: rootWindow.compSubTab === 3
-                                Layout.fillWidth: true
-                                spacing: 10
+            // ── 2 · INPUT ──
+            ColumnLayout {
+                visible: rootWindow.compSubTab === 2
+                Layout.fillWidth: true
+                spacing: 0
 
-                                // Hyprland-only content
-                                ColumnLayout {
-                                    visible: Services.Compositor && Services.Compositor.activeCompositor === "hyprland"
-                                    Layout.fillWidth: true
-                                    spacing: 10
+                SettingsGroup {
+                    title: "Focus"
+                    OptSeg {
+                        label: "Follow mouse"
+                        options: [{ id: "1", label: "Hover" }, { id: "0", label: "Click" }, { id: "2", label: "Click tiled" }]
+                        current: Services.Compositor ? String(Services.Compositor.hyprFollowMouse) : "1"
+                        onPicked: (id) => { if (Services.Compositor) Services.Compositor.setHyprFollowMouse(id) }
+                    }
+                }
+                SettingsGroup {
+                    title: "Touchpad"
+                    OptSwitch {
+                        label: "Natural scrolling"
+                        checked: Services.Compositor ? Services.Compositor.hyprTouchpadNatural : true
+                        onToggled: (v) => { if (Services.Compositor) Services.Compositor.setHyprTouchpadNatural(v) }
+                    }
+                    OptSwitch {
+                        label: "Tap to click"
+                        checked: Services.Compositor ? Services.Compositor.hyprTouchpadTap : true
+                        onToggled: (v) => { if (Services.Compositor) Services.Compositor.setHyprTouchpadTap(v) }
+                    }
+                    OptSwitch {
+                        label: "Disable while typing"
+                        checked: Services.Compositor ? Services.Compositor.hyprTouchpadDwt : true
+                        onToggled: (v) => { if (Services.Compositor) Services.Compositor.setHyprTouchpadDwt(v) }
+                    }
+                    OptSwitch {
+                        label: "3-finger workspace swipe"
+                        checked: Services.Compositor ? Services.Compositor.hyprWorkspaceSwipe : true
+                        onToggled: (v) => { if (Services.Compositor) Services.Compositor.setHyprWorkspaceSwipe(v) }
+                    }
+                    OptSlide {
+                        label: "Sensitivity"
+                        from: -1; to: 1; step: 0.05; decimals: 2
+                        value: Services.Compositor ? Services.Compositor.hyprSensitivity : 0
+                        onMoved: (v) => { if (Services.Compositor) Services.Compositor.setHyprSensitivity(Number(v.toFixed(2))) }
+                    }
+                }
+            }
 
-                                    SettingsSection {
-                                        title: "Battery & Performance Optimizations"
-                                        icon: Services.Icons.speed
+            // ── 3 · POWER & GAMING ──
+            ColumnLayout {
+                visible: rootWindow.compSubTab === 3
+                Layout.fillWidth: true
+                spacing: 0
 
-                                        SettingsSwitch {
-                                            title: "Variable Frame Rate (VFR)"
-                                            subtitle: "Lower rendering refresh rate when the screen is static to conserve laptop battery"
-                                            checked: Services.Compositor ? Services.Compositor.hyprVFR : true
-                                            onToggled: () => { if (Services.Compositor) Services.Compositor.toggleHyprVFR() }
-                                        }
+                SettingsGroup {
+                    title: "Performance"
+                    OptSwitch {
+                        label: "Variable frame rate"
+                        hint: "Render less when the screen is static"
+                        checked: Services.Compositor ? Services.Compositor.hyprVFR : true
+                        onToggled: { if (Services.Compositor) Services.Compositor.toggleHyprVFR() }
+                    }
+                    OptSwitch {
+                        label: "Allow tearing"
+                        hint: "Lower input lag in games"
+                        checked: Services.Compositor ? Services.Compositor.hyprAllowTearing : false
+                        onToggled: { if (Services.Compositor) Services.Compositor.toggleHyprTearing() }
+                    }
+                    OptSwitch {
+                        label: "Resize on border"
+                        checked: Services.Compositor ? Services.Compositor.hyprResizeOnBorder : false
+                        onToggled: { if (Services.Compositor) Services.Compositor.toggleHyprResizeBorder() }
+                    }
+                    OptSwitch {
+                        label: "Hide Hyprland logo"
+                        checked: Services.Compositor ? Services.Compositor.hyprDisableLogo : false
+                        onToggled: { if (Services.Compositor) Services.Compositor.toggleHyprDisableLogo() }
+                    }
+                }
+            }
 
-                                        SettingsDivider {}
+            // ── 4 · AUTOSTART ──
+            ColumnLayout {
+                id: subTab4
+                visible: rootWindow.compSubTab === 4
+                Layout.fillWidth: true
+                spacing: 0
 
-                                        SettingsSwitch {
-                                            title: "Allow Screen Tearing (Gaming Low-Latency)"
-                                            subtitle: "Enable direct scanout tearing for competitive games to reduce input lag"
-                                            checked: Services.Compositor ? Services.Compositor.hyprAllowTearing : false
-                                            onToggled: () => { if (Services.Compositor) Services.Compositor.toggleHyprTearing() }
-                                        }
-
-                                        SettingsDivider {}
-
-                                        SettingsSwitch {
-                                            title: "Resize Windows on Border"
-                                            subtitle: "Allow dragging window borders directly to resize tiled windows"
-                                            checked: Services.Compositor ? Services.Compositor.hyprResizeOnBorder : false
-                                            onToggled: () => { if (Services.Compositor) Services.Compositor.toggleHyprResizeBorder() }
-                                        }
-
-                                        SettingsDivider {}
-
-                                        SettingsSwitch {
-                                            title: "Disable Hyprland Default Splash & Logo"
-                                            subtitle: "Suppress anime mascot splash screen on session start"
-                                            checked: Services.Compositor ? Services.Compositor.hyprDisableLogo : false
-                                            onToggled: () => { if (Services.Compositor) Services.Compositor.toggleHyprDisableLogo() }
-                                        }
-                                    }
-                                }
-
-                                // Non-Hyprland fallback card
-                                Rectangle {
-                                    visible: !(Services.Compositor && Services.Compositor.activeCompositor === "hyprland")
-                                    Layout.fillWidth: true
-                                    implicitHeight: noHyprPower.implicitHeight + 40
-                                    radius: Services.Theme.radiusMd
-                                    color: Services.Theme.surfaceVariant
-                                    border.color: Services.Theme.border; border.width: 1
-
-                                    ColumnLayout {
-                                        id: noHyprPower
-                                        anchors.centerIn: parent
-                                        spacing: 8
-                                        Text { Layout.alignment: Qt.AlignHCenter; text: Services.Icons.speed; font.family: Services.Theme.fontSymbols; font.pixelSize: 24; color: Services.Theme.textDisabled }
-                                        Text { Layout.alignment: Qt.AlignHCenter; text: "Power & gaming controls require Hyprland"; font.pixelSize: 12; font.weight: Font.Medium; color: Services.Theme.textSecondary }
-                                        Text { Layout.alignment: Qt.AlignHCenter; text: "Detected compositor: " + (Services.Compositor ? Services.Compositor.activeDisplayName : "Unknown"); font.pixelSize: 10; color: Services.Theme.textDisabled }
-                                    }
-                                }
-                            }
-
-                            // ── SUB-TAB 4: AUTOSTART APPS & DAEMONS ─────────────────
-                            ColumnLayout {
-                                id: subTab4
-                                visible: rootWindow.compSubTab === 4
-                                Layout.fillWidth: true
-                                spacing: 14
-
-                                Component.onCompleted: {
-                                    if (Services.Compositor) {
-                                        Services.Compositor.loadAutostart()
-                                    }
-                                }
-
-                                property string autostartSearchText: ""
-                                property bool isAdding: false
-                                property string newCmd: ""
-                                property string newType: "exec-once" // "exec-once", "exec"
-                                property string selectedPreset: ""
+                property string search: ""
+                property bool isAdding: false
+                property string newCmd: ""
+                property string newType: "exec-once"
+                property string selectedPreset: ""
 
                                 readonly property var recommendedPresets: [
                                     { id: "cliphist-text", name: "Clipboard Text", desc: "Save copy history for text and snippets", icon: "󰅍", cmd: "wl-paste --type text --watch cliphist store" },
@@ -7634,792 +4077,159 @@ FloatingWindow {
                                 }
 
                                 // ── Top Toolbar: Search + Stats + Add Button ────────
-                                RowLayout {
-                                    Layout.fillWidth: true
-                                    spacing: 10
 
-                                    // Search input box
-                                    Rectangle {
-                                        Layout.fillWidth: true
-                                        Layout.preferredHeight: 38
-                                        implicitHeight: 38
-                                        radius: Services.Theme.radiusSm || 8
-                                        color: Services.Theme.surfaceVariant
-                                        border.color: autoSearchInput.activeFocus ? Services.Theme.accent : Services.Theme.border
-                                        border.width: autoSearchInput.activeFocus ? 1.5 : 1
-
-                                        RowLayout {
-                                            anchors.fill: parent
-                                            anchors.leftMargin: 12
-                                            anchors.rightMargin: 10
-                                            spacing: 8
-
-                                            Text {
-                                                text: Services.Icons.search || "󰍉"
-                                                font.family: Services.Theme.fontSymbols
-                                                font.pixelSize: 12
-                                                color: autoSearchInput.activeFocus ? Services.Theme.accent : Services.Theme.textDisabled
-                                            }
-
-                                            TextField {
-                                                id: autoSearchInput
-                                                Layout.fillWidth: true
-                                                placeholderText: "Search startup programs, commands, daemons..."
-                                                placeholderTextColor: Services.Theme.textDisabled
-                                                text: subTab4.autostartSearchText
-                                                onTextChanged: subTab4.autostartSearchText = text
-                                                color: Services.Theme.textPrimary
-                                                font.pixelSize: 12
-                                                background: null
-                                                verticalAlignment: TextInput.AlignVCenter
-                                            }
-
-                                            // Clear Button
-                                            Rectangle {
-                                                visible: autoSearchInput.text.length > 0
-                                                width: 20
-                                                height: 20
-                                                radius: 10
-                                                color: autoClearMouse.containsMouse ? Qt.rgba(1,1,1,0.15) : "transparent"
-                                                Text {
-                                                    anchors.centerIn: parent
-                                                    text: "✕"
-                                                    font.pixelSize: 9
-                                                    color: Services.Theme.textSecondary
-                                                }
-                                                MouseArea {
-                                                    id: autoClearMouse
-                                                    anchors.fill: parent
-                                                    hoverEnabled: true
-                                                    cursorShape: Qt.PointingHandCursor
-                                                    onClicked: autoSearchInput.text = ""
-                                                }
-                                            }
-                                        }
-                                    }
-
-                                    // Quick Stats Pill
-                                    Rectangle {
-                                        Layout.preferredHeight: 38
-                                        implicitHeight: 38
-                                        implicitWidth: autoStatsRow.implicitWidth + 24
-                                        radius: Services.Theme.radiusSm || 8
-                                        color: Services.Theme.surfaceVariant
-                                        border.color: Services.Theme.border
-                                        border.width: 1
-
-                                        RowLayout {
-                                            id: autoStatsRow
-                                            anchors.centerIn: parent
-                                            spacing: 6
-                                            Rectangle {
-                                                width: 7; height: 7; radius: 3.5
-                                                color: "#10b981"
-                                                SequentialAnimation on opacity {
-                                                    running: true; loops: Animation.Infinite
-                                                    NumberAnimation { to: 0.3; duration: 900; easing.type: Easing.InOutSine }
-                                                    NumberAnimation { to: 1.0; duration: 900; easing.type: Easing.InOutSine }
-                                                }
-                                            }
-                                            Text {
-                                                text: {
-                                                    const list = (Services.Compositor && Services.Compositor.autostartList) ? Services.Compositor.autostartList : []
-                                                    const enabledCount = list.filter(i => i.enabled).length
-                                                    return enabledCount + " Active / " + list.length + " Total"
-                                                }
-                                                font.pixelSize: 11
-                                                font.weight: Font.Medium
-                                                color: Services.Theme.textPrimary
-                                            }
-                                        }
-                                    }
-
-                                    // Add Program Button (Hero Accent)
-                                    Rectangle {
-                                        Layout.preferredHeight: 38
-                                        implicitHeight: 38
-                                        implicitWidth: autoAddRow.implicitWidth + 24
-                                        radius: Services.Theme.radiusSm || 8
-                                        color: autoAddMouse.containsMouse ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.28) : Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.16)
-                                        border.color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.50)
-                                        border.width: 1
-                                        scale: autoAddMouse.pressed ? 0.96 : (autoAddMouse.containsMouse ? 1.02 : 1.0)
-                                        Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutBack; easing.overshoot: 1.3 } }
-                                        Behavior on color { ColorAnimation { duration: 150 } }
-
-                                        RowLayout {
-                                            id: autoAddRow
-                                            anchors.centerIn: parent
-                                            spacing: 6
-                                            Text {
-                                                text: subTab4.isAdding ? "✕" : (Services.Icons.plus || "+")
-                                                font.family: Services.Theme.fontSymbols
-                                                font.pixelSize: 12
-                                                color: Services.Theme.accent
-                                            }
-                                            Text {
-                                                text: subTab4.isAdding ? "Cancel" : "Add Startup"
-                                                font.pixelSize: 11
-                                                font.weight: Font.Bold
-                                                color: Services.Theme.accent
-                                            }
-                                        }
-                                        MouseArea {
-                                            id: autoAddMouse
-                                            anchors.fill: parent
-                                            hoverEnabled: true
-                                            cursorShape: Qt.PointingHandCursor
-                                            onClicked: {
-                                                subTab4.isAdding = !subTab4.isAdding
-                                                if (subTab4.isAdding) {
-                                                    subTab4.newCmd = ""
-                                                    subTab4.selectedPreset = ""
-                                                }
-                                            }
-                                        }
-                                    }
-
-                                    // Refresh Button
-                                    Rectangle {
-                                        Layout.preferredHeight: 38
-                                        Layout.preferredWidth: 38
-                                        implicitHeight: 38
-                                        implicitWidth: 38
-                                        radius: Services.Theme.radiusSm || 8
-                                        color: autoRfMouse.containsMouse ? Qt.rgba(1, 1, 1, 0.10) : Services.Theme.surfaceVariant
-                                        border.color: Services.Theme.border
-                                        border.width: 1
-                                        scale: autoRfMouse.pressed ? 0.94 : (autoRfMouse.containsMouse ? 1.04 : 1.0)
-                                        Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutBack } }
-
-                                        Text {
-                                            anchors.centerIn: parent
-                                            text: Services.Icons.refresh || "󰑐"
-                                            font.family: Services.Theme.fontSymbols
-                                            font.pixelSize: 14
-                                            color: Services.Theme.textPrimary
-
-                                            NumberAnimation on rotation {
-                                                id: autoSpinAnim
-                                                running: Services.Compositor && Services.Compositor.isLoadingAutostart
-                                                loops: Animation.Infinite
-                                                from: 0; to: 360; duration: 800
-                                            }
-                                        }
-
-                                        MouseArea {
-                                            id: autoRfMouse
-                                            anchors.fill: parent
-                                            hoverEnabled: true
-                                            cursorShape: Qt.PointingHandCursor
-                                            onClicked: {
-                                                if (Services.Compositor) Services.Compositor.loadAutostart()
-                                            }
-                                        }
-                                    }
-                                }
-
-                                // ── Add Custom Program Form (Expandable Glass Card) ──
-                                Rectangle {
-                                    visible: subTab4.isAdding
-                                    Layout.fillWidth: true
-                                    implicitHeight: autoAddFormCol.implicitHeight + 28
-                                    radius: Services.Theme.radiusMd || 12
-                                    color: Services.Theme.surfaceVariant
-                                    border.color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.40)
-                                    border.width: 1.2
-
-                                    ColumnLayout {
-                                        id: autoAddFormCol
-                                        anchors.fill: parent
-                                        anchors.margins: 14
-                                        spacing: 12
-
-                                        // Form Header
-                                        RowLayout {
-                                            Layout.fillWidth: true
-                                            spacing: 8
-                                            Rectangle {
-                                                Layout.preferredWidth: 28; Layout.preferredHeight: 28
-                                                implicitWidth: 28; implicitHeight: 28
-                                                radius: 7
-                                                color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.20)
-                                                Text { anchors.centerIn: parent; text: "󰐥"; font.family: Services.Theme.fontSymbols; font.pixelSize: 14; color: Services.Theme.accent }
-                                            }
-                                            ColumnLayout {
-                                                spacing: 2
-                                                Text { text: "Add New Startup Application / Daemon"; font.pixelSize: 12; font.weight: Font.Bold; color: Services.Theme.textPrimary }
-                                                Text { text: "Pick a popular preset below or type any command to run automatically on session boot"; font.pixelSize: 10; color: Services.Theme.textSecondary }
-                                            }
-                                        }
-
-                                        // Quick Presets Chip Bar
-                                        Text { text: "POPULAR PRESETS"; font.pixelSize: 9; font.weight: Font.Bold; color: Services.Theme.accent; font.letterSpacing: 0.5 }
-
-                                        GridLayout {
-                                            Layout.fillWidth: true
-                                            columns: subTab4.width > 600 ? 4 : 2
-                                            columnSpacing: 6
-                                            rowSpacing: 6
-
-                                            Repeater {
-                                                model: subTab4.recommendedPresets
-
-                                                delegate: Rectangle {
-                                                    required property var modelData
-                                                    Layout.fillWidth: true
-                                                    Layout.preferredHeight: 28
-                                                    implicitHeight: 28
-                                                    radius: 6
-                                                    readonly property bool isSel: subTab4.selectedPreset === modelData.id
-                                                    color: isSel ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.25) : (autoPresetMouse.containsMouse ? Qt.rgba(1, 1, 1, 0.08) : Services.Theme.bgElevated)
-                                                    border.color: isSel ? Services.Theme.accent : Services.Theme.border
-                                                    border.width: 1
-                                                    Behavior on color { ColorAnimation { duration: 150 } }
-
-                                                    RowLayout {
-                                                        anchors.centerIn: parent
-                                                        spacing: 5
-                                                        Text { text: modelData.icon; font.family: Services.Theme.fontSymbols; font.pixelSize: 11; color: isSel ? Services.Theme.accent : Services.Theme.textSecondary }
-                                                        Text { text: modelData.name; font.pixelSize: 10; font.weight: isSel ? Font.Bold : Font.Medium; color: isSel ? Services.Theme.accent : Services.Theme.textPrimary; elide: Text.ElideRight }
-                                                    }
-
-                                                    MouseArea {
-                                                        id: autoPresetMouse
-                                                        anchors.fill: parent
-                                                        hoverEnabled: true
-                                                        cursorShape: Qt.PointingHandCursor
-                                                        onClicked: {
-                                                            subTab4.selectedPreset = modelData.id
-                                                            subTab4.newCmd = modelData.cmd
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-
-                                        // Command Input Row
-                                        ColumnLayout {
-                                            Layout.fillWidth: true
-                                            spacing: 4
-                                            Text { text: "EXECUTION COMMAND"; font.pixelSize: 9; font.weight: Font.Bold; color: Services.Theme.textSecondary; font.letterSpacing: 0.5 }
-
-                                            Rectangle {
-                                                Layout.fillWidth: true
-                                                Layout.preferredHeight: 38
-                                                implicitHeight: 38
-                                                radius: Services.Theme.radiusSm || 8
-                                                color: Services.Theme.bgElevated
-                                                border.color: autoCmdInputField.activeFocus ? Services.Theme.accent : Services.Theme.border
-                                                border.width: 1
-
-                                                RowLayout {
-                                                    anchors.fill: parent
-                                                    anchors.leftMargin: 12
-                                                    anchors.rightMargin: 10
-                                                    spacing: 8
-
-                                                    Text { text: "󰅍"; font.family: Services.Theme.fontSymbols; font.pixelSize: 12; color: Services.Theme.textDisabled }
-
-                                                    TextField {
-                                                        id: autoCmdInputField
-                                                        Layout.fillWidth: true
-                                                        placeholderText: "e.g. wl-paste --type text --watch cliphist store, spotify, vesktop"
-                                                        placeholderTextColor: Services.Theme.textDisabled
-                                                        text: subTab4.newCmd
-                                                        onTextChanged: subTab4.newCmd = text
-                                                        color: Services.Theme.textPrimary
-                                                        font.family: Services.Theme.fontMono || "Monospace"
-                                                        font.pixelSize: 11
-                                                        background: null
-                                                        verticalAlignment: TextInput.AlignVCenter
-                                                    }
-                                                }
-                                            }
-                                        }
-
-                                        // Options Row (Type & Buttons)
-                                        RowLayout {
-                                            Layout.fillWidth: true
-                                            spacing: 12
-
-                                            // Startup Type (exec-once vs exec)
-                                            RowLayout {
-                                                spacing: 6
-                                                Text { text: "Mode:"; font.pixelSize: 10; color: Services.Theme.textSecondary }
-
-                                                Rectangle {
-                                                    Layout.preferredHeight: 26
-                                                    implicitHeight: 26
-                                                    implicitWidth: autoTypeRow1.implicitWidth + 14
-                                                    radius: 5
-                                                    color: subTab4.newType === "exec-once" ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.22) : Services.Theme.bgElevated
-                                                    border.color: subTab4.newType === "exec-once" ? Services.Theme.accent : Services.Theme.border
-                                                    border.width: 1
-                                                    RowLayout {
-                                                        id: autoTypeRow1
-                                                        anchors.centerIn: parent; spacing: 4
-                                                        Text { text: "exec-once (Boot only)"; font.pixelSize: 9; font.weight: subTab4.newType === "exec-once" ? Font.Bold : Font.Normal; color: subTab4.newType === "exec-once" ? Services.Theme.accent : Services.Theme.textSecondary }
-                                                    }
-                                                    MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: subTab4.newType = "exec-once" }
-                                                }
-
-                                                Rectangle {
-                                                    Layout.preferredHeight: 26
-                                                    implicitHeight: 26
-                                                    implicitWidth: autoTypeRow2.implicitWidth + 14
-                                                    radius: 5
-                                                    color: subTab4.newType === "exec" ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.22) : Services.Theme.bgElevated
-                                                    border.color: subTab4.newType === "exec" ? Services.Theme.accent : Services.Theme.border
-                                                    border.width: 1
-                                                    RowLayout {
-                                                        id: autoTypeRow2
-                                                        anchors.centerIn: parent; spacing: 4
-                                                        Text { text: "exec (Every reload)"; font.pixelSize: 9; font.weight: subTab4.newType === "exec" ? Font.Bold : Font.Normal; color: subTab4.newType === "exec" ? Services.Theme.accent : Services.Theme.textSecondary }
-                                                    }
-                                                    MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: subTab4.newType = "exec" }
-                                                }
-                                            }
-
-                                            Item { Layout.fillWidth: true }
-
-                                            // Save / Add Action Button
-                                            Rectangle {
-                                                Layout.preferredHeight: 32
-                                                implicitHeight: 32
-                                                implicitWidth: autoSaveBtnRow.implicitWidth + 20
-                                                radius: 6
-                                                color: subTab4.newCmd.trim().length > 0 ? Services.Theme.accent : Qt.rgba(1, 1, 1, 0.10)
-                                                scale: autoSaveBtnMouse.pressed ? 0.96 : (autoSaveBtnMouse.containsMouse ? 1.02 : 1.0)
-                                                Behavior on scale { NumberAnimation { duration: 150 } }
-
-                                                RowLayout {
-                                                    id: autoSaveBtnRow
-                                                    anchors.centerIn: parent
-                                                    spacing: 6
-                                                    Text { text: "󰄬"; font.family: Services.Theme.fontSymbols; font.pixelSize: 11; color: subTab4.newCmd.trim().length > 0 ? Services.Theme.bgPure : Services.Theme.textDisabled }
-                                                    Text { text: "Add to Autostart"; font.pixelSize: 10; font.weight: Font.Bold; color: subTab4.newCmd.trim().length > 0 ? Services.Theme.bgPure : Services.Theme.textDisabled }
-                                                }
-
-                                                MouseArea {
-                                                    id: autoSaveBtnMouse
-                                                    anchors.fill: parent
-                                                    enabled: subTab4.newCmd.trim().length > 0
-                                                    cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                                                    onClicked: {
-                                                        if (Services.Compositor && subTab4.newCmd.trim().length > 0) {
-                                                            Services.Compositor.addAutostart(subTab4.newCmd.trim(), subTab4.newType)
-                                                            subTab4.isAdding = false
-                                                            subTab4.newCmd = ""
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-
-                                // ── Recommended Essential Daemons Section (1-Click Status) ──
-                                SettingsSection {
-                                    title: "Essential Desktop Daemons"
-                                    icon: Services.Icons.sparkles || "󰏘"
-
-                                    ColumnLayout {
-                                        Layout.fillWidth: true
-                                        spacing: 8
-
-                                        Text {
-                                            text: "Status of core desktop services. Click '+ Add' on any missing daemon to configure it in startup immediately."
-                                            font.pixelSize: 10
-                                            color: Services.Theme.textSecondary
-                                            Layout.leftMargin: 4
-                                        }
-
-                                        GridLayout {
-                                            Layout.fillWidth: true
-                                            columns: subTab4.width > 620 ? 2 : 1
-                                            columnSpacing: 8
-                                            rowSpacing: 8
-
-                                            Repeater {
-                                                model: [
-                                                    { id: "cliphist-text", name: "Clipboard Text", desc: "wl-paste text cliphist watcher", icon: "󰅍", cmd: "wl-paste --type text --watch cliphist store" },
-                                                    { id: "cliphist-img",  name: "Clipboard Images", desc: "wl-paste screenshot & image watcher", icon: "󰄄", cmd: "wl-paste --type image --watch cliphist store" },
-                                                    { id: "polkit",        name: "Polkit Agent",   desc: "hyprpolkitagent system auth", icon: "󰌋", cmd: "systemctl enable --now --user hyprpolkitagent" },
-                                                    { id: "wallpaper",     name: "Wallpaper Engine", desc: "awww / swaybg background", icon: "󰸉", cmd: "awww-daemon" },
-                                                    { id: "hypridle",      name: "Hypridle Daemon", desc: "idle & lock timeout manager", icon: "󰒲", cmd: "hypridle" },
-                                                    { id: "nm-applet",     name: "Network Applet", desc: "nm-applet tray indicator", icon: "󰤨", cmd: "nm-applet --indicator" },
-                                                    { id: "blueman",       name: "Bluetooth Applet", desc: "blueman-applet tray manager", icon: "󰂯", cmd: "blueman-applet" }
-                                                ]
-
-                                                delegate: Rectangle {
-                                                    required property var modelData
-                                                    Layout.fillWidth: true
-                                                    Layout.preferredHeight: 52
-                                                    implicitHeight: 52
-                                                    radius: 8
-                                                    readonly property bool isConf: subTab4.isPresetConfigured(modelData.cmd)
-                                                    color: Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.04) : Qt.rgba(0, 0, 0, 0.03)
-                                                    border.color: isConf ? Qt.rgba(16/255, 185/255, 129/255, 0.40) : Services.Theme.border
-                                                    border.width: 1
-
-                                                    RowLayout {
-                                                        anchors.fill: parent
-                                                        anchors.margins: 8
-                                                        spacing: 8
-
-                                                        // Squircle Icon
-                                                        Rectangle {
-                                                            Layout.preferredWidth: 34
-                                                            Layout.preferredHeight: 34
-                                                            implicitWidth: 34
-                                                            implicitHeight: 34
-                                                            radius: 8
-                                                            color: isConf ? Qt.rgba(16/255, 185/255, 129/255, 0.15) : Qt.rgba(1, 1, 1, 0.06)
-                                                            Text {
-                                                                anchors.centerIn: parent
-                                                                text: modelData.icon
-                                                                font.family: Services.Theme.fontSymbols
-                                                                font.pixelSize: 15
-                                                                color: isConf ? "#10b981" : Services.Theme.textSecondary
-                                                            }
-                                                        }
-
-                                                        ColumnLayout {
-                                                            Layout.fillWidth: true
-                                                            spacing: 1
-                                                            Text { text: modelData.name; font.pixelSize: 11; font.weight: Font.Bold; color: Services.Theme.textPrimary; elide: Text.ElideRight }
-                                                            Text { text: modelData.desc; font.pixelSize: 9; color: Services.Theme.textSecondary; elide: Text.ElideRight }
-                                                        }
-
-                                                        // Status / Add Action
-                                                        Rectangle {
-                                                            Layout.preferredHeight: 24
-                                                            implicitHeight: 24
-                                                            implicitWidth: autoStatusRow.implicitWidth + 12
-                                                            radius: 4
-                                                            color: isConf ? Qt.rgba(16/255, 185/255, 129/255, 0.15) : Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.15)
-                                                            border.color: isConf ? Qt.rgba(16/255, 185/255, 129/255, 0.35) : Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.40)
-                                                            border.width: 1
-
-                                                            RowLayout {
-                                                                id: autoStatusRow
-                                                                anchors.centerIn: parent; spacing: 3
-                                                                Text {
-                                                                    text: isConf ? "󰄬" : "+"
-                                                                    font.family: Services.Theme.fontSymbols; font.pixelSize: 9
-                                                                    color: isConf ? "#10b981" : Services.Theme.accent
-                                                                }
-                                                                Text {
-                                                                    text: isConf ? "Configured" : "Add"
-                                                                    font.pixelSize: 9; font.weight: Font.Bold
-                                                                    color: isConf ? "#10b981" : Services.Theme.accent
-                                                                }
-                                                            }
-
-                                                            MouseArea {
-                                                                anchors.fill: parent
-                                                                enabled: !isConf
-                                                                cursorShape: !isConf ? Qt.PointingHandCursor : Qt.ArrowCursor
-                                                                onClicked: {
-                                                                    if (Services.Compositor) {
-                                                                        Services.Compositor.addAutostart(modelData.cmd, "exec-once")
-                                                                    }
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-
-                                // ── Active Configured Startup Programs List ───────────
-                                SettingsSection {
-                                    title: "Configured Startup Applications"
-                                    icon: Services.Icons.rocket || "󰐥"
-
-                                    ColumnLayout {
-                                        id: autostartListCol
-                                        Layout.fillWidth: true
-                                        spacing: 8
-
-                                        // Filtered autostart list
-                                        readonly property var filteredList: {
-                                            const list = (Services.Compositor && Services.Compositor.autostartList) ? Services.Compositor.autostartList : []
-                                            const q = subTab4.autostartSearchText.toLowerCase().trim()
-                                            if (!q) return list
-                                            return list.filter(item => {
-                                                return (item.name && item.name.toLowerCase().includes(q)) ||
-                                                       (item.command && item.command.toLowerCase().includes(q)) ||
-                                                       (item.desc && item.desc.toLowerCase().includes(q)) ||
-                                                       (item.fileName && item.fileName.toLowerCase().includes(q))
-                                            })
-                                        }
-
-                                        // Empty State Card
-                                        Rectangle {
-                                            visible: (autostartListCol.filteredList || []).length === 0
-                                            Layout.fillWidth: true
-                                            Layout.preferredHeight: 110
-                                            implicitHeight: 110
-                                            radius: 8
-                                            color: Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.03) : Qt.rgba(0, 0, 0, 0.02)
-                                            border.color: Services.Theme.border
-                                            border.width: 1
-
-                                            ColumnLayout {
-                                                anchors.centerIn: parent
-                                                spacing: 6
-                                                Text { Layout.alignment: Qt.AlignHCenter; text: "󰐥"; font.family: Services.Theme.fontSymbols; font.pixelSize: 24; color: Services.Theme.textDisabled }
-                                                Text { Layout.alignment: Qt.AlignHCenter; text: subTab4.autostartSearchText.length > 0 ? "No startup programs matching your search" : "No autostart programs found in compositor config"; font.pixelSize: 11; font.weight: Font.Medium; color: Services.Theme.textSecondary }
-                                                Text { Layout.alignment: Qt.AlignHCenter; text: "Click '+ Add Startup' above to configure a startup program"; font.pixelSize: 9; color: Services.Theme.textDisabled }
-                                            }
-                                        }
-
-                                        // Startup Program Cards
-                                        Repeater {
-                                            model: autostartListCol.filteredList
-
-                                            delegate: Rectangle {
-                                                id: autoItemCard
-                                                required property var modelData
-                                                required property int index
-
-                                                Layout.fillWidth: true
-                                                Layout.preferredHeight: autoItemCardRow.implicitHeight + 18
-                                                implicitHeight: autoItemCardRow.implicitHeight + 18
-                                                radius: 8
-                                                color: modelData.enabled ? (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.04) : Qt.rgba(0, 0, 0, 0.03)) : (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.015) : Qt.rgba(0, 0, 0, 0.015))
-                                                border.color: modelData.enabled ? Services.Theme.border : Qt.rgba(Services.Theme.border.r, Services.Theme.border.g, Services.Theme.border.b, 0.40)
-                                                border.width: 1
-                                                opacity: modelData.enabled ? 1.0 : 0.65
-                                                Behavior on opacity { NumberAnimation { duration: 200 } }
-
-                                                RowLayout {
-                                                    id: autoItemCardRow
-                                                    anchors.fill: parent
-                                                    anchors.leftMargin: 12
-                                                    anchors.rightMargin: 12
-                                                    anchors.topMargin: 9
-                                                    anchors.bottomMargin: 9
-                                                    spacing: 12
-
-                                                    // Program Squircle Icon
-                                                    Rectangle {
-                                                        Layout.preferredWidth: 38
-                                                        Layout.preferredHeight: 38
-                                                        implicitWidth: 38
-                                                        implicitHeight: 38
-                                                        radius: 9
-                                                        color: {
-                                                            if (!modelData.enabled) return Qt.rgba(1, 1, 1, 0.05)
-                                                            const cat = (modelData.category || "").toLowerCase()
-                                                            if (cat === "system") return Qt.rgba(59/255, 130/255, 246/255, 0.18)
-                                                            if (cat === "service") return Qt.rgba(16/255, 185/255, 129/255, 0.18)
-                                                            if (cat === "shell") return Qt.rgba(139/255, 92/255, 246/255, 0.18)
-                                                            if (cat === "power") return Qt.rgba(239/255, 68/255, 68/255, 0.18)
-                                                            if (cat === "network") return Qt.rgba(6/255, 182/255, 212/255, 0.18)
-                                                            if (cat === "bluetooth") return Qt.rgba(14/255, 165/255, 233/255, 0.18)
-                                                            return Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.18)
-                                                        }
-                                                        border.color: modelData.enabled ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.35) : Services.Theme.border
-                                                        border.width: 1
-
-                                                        Text {
-                                                            anchors.centerIn: parent
-                                                            text: modelData.icon || "󰐥"
-                                                            font.family: Services.Theme.fontSymbols
-                                                            font.pixelSize: 17
-                                                            color: modelData.enabled ? Services.Theme.accent : Services.Theme.textDisabled
-                                                        }
-                                                    }
-
-                                                    // Details Column
-                                                    ColumnLayout {
-                                                        Layout.fillWidth: true
-                                                        Layout.minimumWidth: 0
-                                                        spacing: 3
-
-                                                        RowLayout {
-                                                            Layout.fillWidth: true
-                                                            spacing: 6
-
-                                                            Text {
-                                                                text: modelData.name
-                                                                font.pixelSize: 12
-                                                                font.weight: Font.Bold
-                                                                color: modelData.enabled ? Services.Theme.textPrimary : Services.Theme.textSecondary
-                                                                elide: Text.ElideRight
-                                                            }
-
-                                                            // Type Badge (exec-once)
-                                                            Rectangle {
-                                                                Layout.preferredHeight: 16
-                                                                implicitHeight: 16
-                                                                implicitWidth: autoTypeTxt.implicitWidth + 8
-                                                                radius: 3
-                                                                color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.12)
-                                                                Text { id: autoTypeTxt; anchors.centerIn: parent; text: modelData.type || "exec-once"; font.pixelSize: 8; font.weight: Font.Bold; color: Services.Theme.accent }
-                                                            }
-
-                                                            // File Source Pill
-                                                            Rectangle {
-                                                                Layout.preferredHeight: 16
-                                                                implicitHeight: 16
-                                                                implicitWidth: autoFileTxt.implicitWidth + 8
-                                                                radius: 3
-                                                                color: Qt.rgba(1, 1, 1, 0.06)
-                                                                Text { id: autoFileTxt; anchors.centerIn: parent; text: (modelData.fileName || "config") + ":" + (modelData.line || ""); font.pixelSize: 8; color: Services.Theme.textDisabled }
-                                                            }
-                                                        }
-
-                                                        // Monospaced Command Pill
-                                                        Rectangle {
-                                                            Layout.fillWidth: true
-                                                            Layout.preferredHeight: 22
-                                                            implicitHeight: 22
-                                                            radius: 4
-                                                            color: Services.Theme.bgElevated
-                                                            border.color: Services.Theme.border
-                                                            border.width: 1
-                                                            clip: true
-
-                                                            RowLayout {
-                                                                anchors.fill: parent
-                                                                anchors.leftMargin: 6
-                                                                anchors.rightMargin: 6
-                                                                spacing: 4
-                                                                Text { text: "$"; font.pixelSize: 9; font.weight: Font.Bold; color: Services.Theme.accent }
-                                                                Text {
-                                                                    Layout.fillWidth: true
-                                                                    text: modelData.command
-                                                                    font.family: Services.Theme.fontMono || "Monospace"
-                                                                    font.pixelSize: 10
-                                                                    color: modelData.enabled ? Services.Theme.textPrimary : Services.Theme.textDisabled
-                                                                    elide: Text.ElideRight
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-
-                                                    // Action Controls Group
-                                                    RowLayout {
-                                                        spacing: 8
-                                                        Layout.alignment: Qt.AlignVCenter
-
-                                                        // Run Now Button
-                                                        Rectangle {
-                                                            Layout.preferredHeight: 28
-                                                            implicitHeight: 28
-                                                            implicitWidth: autoRunRow.implicitWidth + 14
-                                                            radius: 5
-                                                            color: autoRunMouse.containsMouse ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.25) : Qt.rgba(1, 1, 1, 0.06)
-                                                            border.color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.35)
-                                                            border.width: 1
-                                                            scale: autoRunMouse.pressed ? 0.94 : (autoRunMouse.containsMouse ? 1.04 : 1.0)
-                                                            Behavior on scale { NumberAnimation { duration: 120 } }
-
-                                                            RowLayout {
-                                                                id: autoRunRow
-                                                                anchors.centerIn: parent; spacing: 4
-                                                                Text { text: "▶"; font.pixelSize: 8; color: Services.Theme.accent }
-                                                                Text { text: "Run"; font.pixelSize: 9; font.weight: Font.Bold; color: Services.Theme.accent }
-                                                            }
-
-                                                            MouseArea {
-                                                                id: autoRunMouse
-                                                                anchors.fill: parent
-                                                                hoverEnabled: true
-                                                                cursorShape: Qt.PointingHandCursor
-                                                                onClicked: {
-                                                                    if (Services.Compositor) {
-                                                                        Services.Compositor.runAutostart(modelData.command)
-                                                                    }
-                                                                }
-                                                            }
-                                                        }
-
-                                                        // Enable / Disable Switch Toggle
-                                                        Rectangle {
-                                                            Layout.preferredWidth: 36
-                                                            Layout.preferredHeight: 20
-                                                            implicitWidth: 36
-                                                            implicitHeight: 20
-                                                            radius: 10
-                                                            color: modelData.enabled ? Services.Theme.accent : Qt.rgba(1, 1, 1, 0.15)
-                                                            Behavior on color { ColorAnimation { duration: 180 } }
-
-                                                            Rectangle {
-                                                                width: 14
-                                                                height: 14
-                                                                radius: 7
-                                                                color: "#ffffff"
-                                                                y: 3
-                                                                x: modelData.enabled ? 19 : 3
-                                                                Behavior on x { NumberAnimation { duration: 180; easing.type: Easing.OutBack } }
-                                                            }
-
-                                                            MouseArea {
-                                                                anchors.fill: parent
-                                                                cursorShape: Qt.PointingHandCursor
-                                                                onClicked: {
-                                                                    if (Services.Compositor) {
-                                                                        Services.Compositor.toggleAutostart(modelData.file, modelData.line, !modelData.enabled)
-                                                                    }
-                                                                }
-                                                            }
-                                                        }
-
-                                                        // Delete Button
-                                                        Rectangle {
-                                                            Layout.preferredWidth: 28
-                                                            Layout.preferredHeight: 28
-                                                            implicitWidth: 28
-                                                            implicitHeight: 28
-                                                            radius: 6
-                                                            color: autoDelMouse.containsMouse ? Qt.rgba(239/255, 68/255, 68/255, 0.22) : "transparent"
-                                                            border.color: autoDelMouse.containsMouse ? Qt.rgba(239/255, 68/255, 68/255, 0.50) : "transparent"
-                                                            border.width: 1
-                                                            Behavior on color { ColorAnimation { duration: 150 } }
-
-                                                            Text {
-                                                                anchors.centerIn: parent
-                                                                text: Services.Icons.trash || "󰆴"
-                                                                font.family: Services.Theme.fontSymbols
-                                                                font.pixelSize: 12
-                                                                color: autoDelMouse.containsMouse ? "#ef4444" : Services.Theme.textDisabled
-                                                            }
-
-                                                            MouseArea {
-                                                                id: autoDelMouse
-                                                                anchors.fill: parent
-                                                                hoverEnabled: true
-                                                                cursorShape: Qt.PointingHandCursor
-                                                                onClicked: {
-                                                                    if (Services.Compositor) {
-                                                                        Services.Compositor.deleteAutostart(modelData.file, modelData.line)
-                                                                    }
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
+                readonly property var essentials: recommendedPresets.filter(function(p) { return p.id !== "spotify" && p.id !== "discord" })
+                readonly property var items: {
+                    const list = (Services.Compositor && Services.Compositor.autostartList) ? Services.Compositor.autostartList : []
+                    const q = subTab4.search.toLowerCase().trim()
+                    if (!q) return list
+                    return list.filter(function(it) {
+                        return (it.name && it.name.toLowerCase().includes(q)) ||
+                               (it.command && it.command.toLowerCase().includes(q)) ||
+                               (it.desc && it.desc.toLowerCase().includes(q)) ||
+                               (it.fileName && it.fileName.toLowerCase().includes(q))
+                    })
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    Layout.topMargin: 10
+                    spacing: 6
+                    Inp {
+                        Layout.fillWidth: true
+                        placeholder: "Search startup entries"
+                        onEdited: (v) => { subTab4.search = v }
+                    }
+                    Btn {
+                        glyph: Services.Icons.refresh || "↻"
+                        onClicked: { if (Services.Compositor) Services.Compositor.loadAutostart() }
+                    }
+                    Btn {
+                        glyph: subTab4.isAdding ? "✕" : (Services.Icons.plus || "+")
+                        text: subTab4.isAdding ? "Close" : "Add"
+                        kind: subTab4.isAdding ? "plain" : "accent"
+                        onClicked: { subTab4.isAdding = !subTab4.isAdding; subTab4.newCmd = ""; subTab4.selectedPreset = "" }
+                    }
+                }
+
+                Block {
+                    visible: subTab4.isAdding
+                    ruled: false
+                    Flow {
+                        Layout.fillWidth: true
+                        spacing: 6
+                        Repeater {
+                            model: subTab4.recommendedPresets
+                            delegate: Chip {
+                                required property var modelData
+                                text: modelData.name
+                                glyph: modelData.icon
+                                on: subTab4.selectedPreset === modelData.id
+                                onClicked: { subTab4.selectedPreset = modelData.id; subTab4.newCmd = modelData.cmd }
+                            }
+                        }
+                    }
+                    Inp {
+                        Layout.fillWidth: true
+                        mono: true
+                        placeholder: "command to run"
+                        text: subTab4.newCmd
+                        onEdited: (v) => { subTab4.newCmd = v; subTab4.selectedPreset = "" }
+                    }
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Seg {
+                            options: [{ id: "exec-once", label: "exec-once" }, { id: "exec", label: "exec" }]
+                            current: subTab4.newType
+                            onPicked: (id) => { subTab4.newType = id }
+                        }
+                        Item { Layout.fillWidth: true }
+                        Btn {
+                            text: "Add to startup"
+                            kind: "accent"
+                            enabledState: subTab4.newCmd.trim().length > 0
+                            onClicked: {
+                                if (Services.Compositor) Services.Compositor.addAutostart(subTab4.newCmd.trim(), subTab4.newType)
+                                subTab4.newCmd = ""
+                                subTab4.selectedPreset = ""
+                                subTab4.isAdding = false
+                            }
+                        }
+                    }
+                }
+
+                SettingsGroup {
+                    title: "Essentials"
+                    Block {
+                        Flow {
+                            Layout.fillWidth: true
+                            spacing: 6
+                            Repeater {
+                                model: subTab4.essentials
+                                delegate: Chip {
+                                    required property var modelData
+                                    readonly property bool conf: subTab4.isPresetConfigured(modelData.cmd)
+                                    text: modelData.name
+                                    glyph: conf ? (Services.Icons.check || "✓") : "+"
+                                    on: conf
+                                    onClicked: { if (!conf && Services.Compositor) Services.Compositor.addAutostart(modelData.cmd, "exec-once") }
                                 }
                             }
                         }
+                    }
+                }
 
-                        // ═════════════════════════════════════════════
-                        // TAB 6: KEYBINDINGS (LIVE FROM COMPOSITOR CONFIG)
-                        // ═════════════════════════════════════════════
-                        ColumnLayout {
-                            id: tab6
-                            Layout.fillWidth: true
-                            spacing: 14
+                SettingsGroup {
+                    title: "Startup entries (" + subTab4.items.length + ")"
+                    Text {
+                        visible: subTab4.items.length === 0
+                        Layout.leftMargin: 4
+                        Layout.topMargin: 6
+                        text: subTab4.search.length > 0 ? "No entries match" : "No startup entries found"
+                        font.pixelSize: 11
+                        color: ui.faint
+                    }
+                    Repeater {
+                        model: subTab4.items
+                        delegate: Opt {
+                            id: au
+                            required property var modelData
+                            label: au.modelData.name || au.modelData.command
+                            hint: au.modelData.command
+                            opacity: au.modelData.enabled ? 1.0 : 0.55
+                            RowLayout {
+                                spacing: 6
+                                Tag { text: au.modelData.type || "exec-once"; tint: ui.accent }
+                                Tag { text: (au.modelData.fileName || "config") + ":" + (au.modelData.line || "") }
+                                Btn { glyph: "▶"; onClicked: { if (Services.Compositor) Services.Compositor.runAutostart(au.modelData.command) } }
+                                Tgl {
+                                    on: au.modelData.enabled
+                                    onFlipped: (v) => { if (Services.Compositor) Services.Compositor.toggleAutostart(au.modelData.file, au.modelData.line, v) }
+                                }
+                                Btn {
+                                    glyph: Services.Icons.trash || "✕"
+                                    kind: "danger"
+                                    onClicked: { if (Services.Compositor) Services.Compositor.deleteAutostart(au.modelData.file, au.modelData.line) }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Item { Layout.preferredHeight: 8 }
+        }
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    //  PAGE 6 · KEYBINDINGS
+    // ═════════════════════════════════════════════════════════════════════════
+    Component {
+        id: pgKeys
+
+        ColumnLayout {
+            id: tab6
+            spacing: 0
 
                             property string addCategoryType: "shell" // "shell", "compositor", "apps", "custom"
                             property int currentPage: 0
@@ -8777,2035 +4587,499 @@ FloatingWindow {
                                 return filteredBinds.slice(start, start + itemsPerPage)
                             }
 
-                            // ── Top Header Row ──────────────────────────────────
-                            RowLayout {
-                                Layout.fillWidth: true
-                                spacing: 12
+            readonly property bool formOpen: rootWindow.isAddingKeybind || rootWindow.editingBindLine > 0
 
-                                ColumnLayout {
-                                    Layout.fillWidth: true
-                                    spacing: 2
+            function resetForm() {
+                rootWindow.isAddingKeybind = false
+                rootWindow.editingBindId = ""
+                rootWindow.editingBindLine = -1
+                rootWindow.formKeys = ""
+                rootWindow.formAction = ""
+                rootWindow.formDesc = ""
+            }
 
-                                    RowLayout {
-                                        spacing: 8
-                                        Text {
-                                            text: "Compositor Keybindings"
-                                            font.pixelSize: Services.Theme.fontSizeLg
-                                            font.weight: Font.Bold
-                                            color: Services.Theme.textPrimary
-                                        }
+            function startAdd() {
+                rootWindow.isAddingKeybind = true
+                rootWindow.editingBindId = ""
+                rootWindow.editingBindLine = -1
+                rootWindow.formKeys = ""
+                tab6.addCategoryType = "shell"
+                rootWindow.formAction = tab6.shellActions[0].id
+                rootWindow.formDesc = tab6.shellActions[0].label
+                rootWindow.formRepeat = Boolean(tab6.shellActions[0].defaultRepeat)
+                rootWindow.formLocked = Boolean(tab6.shellActions[0].defaultLocked)
+                rootWindow.formMouse = false
+                rootWindow.formNonConsuming = false
+            }
 
-                                        // Total Count Badge
-                                        Rectangle {
-                                            radius: 10
-                                            implicitHeight: 20
-                                            implicitWidth: kb_totalTxt.implicitWidth + 12
-                                            color: Services.Theme.isDark ? "#26262e" : "#e5e7eb"
-                                            Text {
-                                                id: kb_totalTxt
-                                                anchors.centerIn: parent
-                                                text: tab6.totalBindsCount + " Binds"
-                                                font.pixelSize: 10
-                                                font.weight: Font.DemiBold
-                                                color: Services.Theme.textSecondary
-                                            }
-                                        }
-                                    }
+            function saveForm() {
+                if (Services.Compositor) {
+                    const opts = {
+                        repeat: Boolean(rootWindow.formRepeat),
+                        locked: Boolean(rootWindow.formLocked),
+                        mouse: Boolean(rootWindow.formMouse),
+                        nonConsuming: Boolean(rootWindow.formNonConsuming)
+                    }
+                    if (rootWindow.editingBindLine > 0) {
+                        Services.Compositor.updateKeybind(rootWindow.editingBindLine, rootWindow.formKeys.trim(), rootWindow.formAction.trim(), rootWindow.formDesc.trim(), rootWindow.formFile, opts)
+                    } else {
+                        Services.Compositor.addKeybind(rootWindow.formKeys.trim(), rootWindow.formAction.trim(), rootWindow.formDesc.trim(), "", opts)
+                    }
+                }
+                resetForm()
+            }
 
-                                    Text {
-                                        text: "Manage active keyboard and mouse shortcuts directly in your compositor configuration"
-                                        font.pixelSize: Services.Theme.fontSizeSm
-                                        color: Services.Theme.textSecondary
-                                    }
-                                }
+            function applyPreset(id) {
+                rootWindow.formAction = id
+                const list = tab6.getActionListForCategory(tab6.addCategoryType)
+                for (let i = 0; i < list.length; i++) {
+                    if (list[i].id === id) {
+                        rootWindow.formDesc = list[i].label
+                        rootWindow.formRepeat = Boolean(list[i].defaultRepeat)
+                        rootWindow.formLocked = Boolean(list[i].defaultLocked)
+                        break
+                    }
+                }
+            }
 
-                                // "+ New Shortcut" Button
-                                Rectangle {
-                                    implicitHeight: 36
-                                    implicitWidth: kb_addBtnRow.implicitWidth + 24
-                                    radius: 8
-                                    color: (rootWindow.isAddingKeybind || rootWindow.editingBindLine > 0)
-                                        ? (Services.Theme.isDark ? "#2a2a34" : "#e2e8f0")
-                                        : Services.Theme.accent
-                                    border.color: (rootWindow.isAddingKeybind || rootWindow.editingBindLine > 0)
-                                        ? Services.Theme.border : "transparent"
-                                    border.width: 1
+            // toolbar
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.topMargin: 10
+                spacing: 6
+                Inp {
+                    Layout.fillWidth: true
+                    placeholder: "Search shortcuts"
+                    text: rootWindow.keySearchQuery
+                    onEdited: (v) => { rootWindow.keySearchQuery = v; tab6.currentPage = 0 }
+                }
+                Btn {
+                    glyph: tab6.formOpen ? "✕" : (Services.Icons.plus || "+")
+                    text: tab6.formOpen ? "Close" : "New"
+                    kind: tab6.formOpen ? "plain" : "accent"
+                    onClicked: { if (tab6.formOpen) tab6.resetForm(); else tab6.startAdd() }
+                }
+            }
 
-                                    RowLayout {
-                                        id: kb_addBtnRow
-                                        anchors.centerIn: parent
-                                        spacing: 6
-                                        Text {
-                                            text: (rootWindow.isAddingKeybind || rootWindow.editingBindLine > 0) ? "✕" : "+"
-                                            font.pixelSize: 13
-                                            font.bold: true
-                                            color: (rootWindow.isAddingKeybind || rootWindow.editingBindLine > 0)
-                                                ? Services.Theme.textPrimary
-                                                : Services.Theme.bgOnAccent
-                                        }
-                                        Text {
-                                            text: (rootWindow.isAddingKeybind || rootWindow.editingBindLine > 0) ? "Close Studio" : "Add Keybind"
-                                            font.pixelSize: Services.Theme.fontSizeSm
-                                            font.weight: Font.DemiBold
-                                            color: (rootWindow.isAddingKeybind || rootWindow.editingBindLine > 0)
-                                                ? Services.Theme.textPrimary
-                                                : Services.Theme.bgOnAccent
-                                        }
-                                    }
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.topMargin: 8
+                Seg {
+                    options: [
+                        { id: "all", label: "All" }, { id: "quickshell", label: "Shell" }, { id: "window", label: "Window" },
+                        { id: "apps", label: "Apps" }, { id: "media", label: "Media" }, { id: "system", label: "System" }, { id: "custom", label: "Custom" }
+                    ]
+                    current: rootWindow.keyCategory
+                    onPicked: (id) => { rootWindow.keyCategory = id; tab6.currentPage = 0 }
+                }
+                Item { Layout.fillWidth: true }
+            }
 
-                                    MouseArea {
-                                        anchors.fill: parent
-                                        cursorShape: Qt.PointingHandCursor
-                                        hoverEnabled: true
-                                        onClicked: {
-                                            if (rootWindow.isAddingKeybind || rootWindow.editingBindLine > 0) {
-                                                rootWindow.isAddingKeybind = false
-                                                rootWindow.editingBindId = ""
-                                                rootWindow.editingBindLine = -1
-                                                rootWindow.formKeys = ""
-                                                rootWindow.formAction = ""
-                                                rootWindow.formDesc = ""
-                                            } else {
-                                                rootWindow.isAddingKeybind = true
-                                                rootWindow.editingBindId = ""
-                                                rootWindow.editingBindLine = -1
-                                                rootWindow.formKeys = ""
-                                                tab6.addCategoryType = "shell"
-                                                rootWindow.formAction = tab6.shellActions[0].id
-                                                rootWindow.formDesc = tab6.shellActions[0].label
-                                                rootWindow.formRepeat = Boolean(tab6.shellActions[0].defaultRepeat)
-                                                rootWindow.formLocked = Boolean(tab6.shellActions[0].defaultLocked)
-                                                rootWindow.formMouse = false
-                                                rootWindow.formNonConsuming = false
-                                            }
-                                        }
+            Flow {
+                Layout.fillWidth: true
+                Layout.topMargin: 8
+                spacing: 6
+                Chip { text: "All " + tab6.totalBindsCount; on: rootWindow.keyBehaviourFilter === "all"; onClicked: { rootWindow.keyBehaviourFilter = "all"; tab6.currentPage = 0 } }
+                Chip { text: "Repeat " + tab6.repeatBindsCount; on: rootWindow.keyBehaviourFilter === "repeat"; onClicked: { rootWindow.keyBehaviourFilter = "repeat"; tab6.currentPage = 0 } }
+                Chip { text: "Locked " + tab6.lockedBindsCount; on: rootWindow.keyBehaviourFilter === "locked"; onClicked: { rootWindow.keyBehaviourFilter = "locked"; tab6.currentPage = 0 } }
+                Chip { text: "Mouse " + tab6.mouseBindsCount; on: rootWindow.keyBehaviourFilter === "mouse"; onClicked: { rootWindow.keyBehaviourFilter = "mouse"; tab6.currentPage = 0 } }
+            }
+
+            // status
+            Rectangle {
+                readonly property bool isErr: Services.Compositor && Services.Compositor.keybindError.length > 0
+                visible: Services.Compositor && (Services.Compositor.keybindStatus.length > 0 || Services.Compositor.keybindError.length > 0)
+                Layout.fillWidth: true
+                Layout.topMargin: 8
+                implicitHeight: stRow.implicitHeight + 12
+                radius: ui.r
+                color: isErr ? ui.dng(0.12) : Qt.rgba(ui.ok.r, ui.ok.g, ui.ok.b, 0.12)
+                RowLayout {
+                    id: stRow
+                    anchors.fill: parent
+                    anchors.margins: 6
+                    anchors.leftMargin: 10
+                    spacing: 8
+                    Text {
+                        Layout.fillWidth: true
+                        text: Services.Compositor ? (parent.parent.isErr ? Services.Compositor.keybindError : Services.Compositor.keybindStatus) : ""
+                        wrapMode: Text.WordWrap
+                        font.pixelSize: 11
+                        color: parent.parent.isErr ? ui.danger : ui.ok
+                    }
+                    Text {
+                        text: "✕"
+                        font.pixelSize: 10
+                        color: ui.dim
+                        MouseArea {
+                            anchors.fill: parent
+                            anchors.margins: -6
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: { if (Services.Compositor) { Services.Compositor.keybindStatus = ""; Services.Compositor.keybindError = "" } }
+                        }
+                    }
+                }
+            }
+
+            // editor
+            Rectangle {
+                visible: tab6.formOpen
+                Layout.fillWidth: true
+                Layout.topMargin: 10
+                implicitHeight: formCol.implicitHeight + 24
+                radius: 8
+                color: ui.fill
+
+                ColumnLayout {
+                    id: formCol
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: parent.top
+                    anchors.margins: 12
+                    spacing: 8
+
+                    Text {
+                        text: rootWindow.editingBindLine > 0 ? "Edit shortcut" : "New shortcut"
+                        font.pixelSize: 11
+                        font.weight: Font.DemiBold
+                        color: ui.fg
+                    }
+
+                    KeyRec {
+                        id: formRec
+                        Layout.fillWidth: true
+                        onRecorded: (k) => { rootWindow.formKeys = k }
+                        onCleared: { rootWindow.formKeys = "" }
+                    }
+                    Binding { target: formRec; property: "value"; value: rootWindow.formKeys }
+
+                    Flow {
+                        Layout.fillWidth: true
+                        spacing: 6
+                        Repeater {
+                            model: ["SUPER", "CTRL", "ALT", "SHIFT"]
+                            delegate: Chip {
+                                required property string modelData
+                                text: modelData
+                                on: (rootWindow.formKeys || "").toUpperCase().split("+").map(function(s) { return s.trim() }).includes(modelData)
+                                onClicked: tab6.toggleModifier(modelData)
+                            }
+                        }
+                        Repeater {
+                            model: ["Return", "Space", "Tab", "Q", "F", "Print"]
+                            delegate: Chip {
+                                required property string modelData
+                                text: modelData
+                                dimmed: true
+                                onClicked: tab6.appendKey(modelData)
+                            }
+                        }
+                    }
+
+                    Tag {
+                        readonly property var hit: tab6.checkConflict(rootWindow.formKeys)
+                        visible: hit !== null && hit !== undefined
+                        text: hit ? ("Already used by: " + tab6.getHumanActionTitle(hit.action)) : ""
+                        tint: ui.warn
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 6
+                        Text { text: "Action"; font.pixelSize: 11; color: ui.dim }
+                        Pick {
+                            model: tab6.actionCategories
+                            current: tab6.addCategoryType
+                            minW: 150
+                            maxW: 230
+                            onPicked: (id) => {
+                                tab6.addCategoryType = id
+                                if (id === "custom") {
+                                    rootWindow.formAction = ""
+                                    rootWindow.formDesc = ""
+                                } else {
+                                    const list = tab6.getActionListForCategory(id) || []
+                                    if (list.length > 0) {
+                                        rootWindow.formAction = list[0].id || ""
+                                        rootWindow.formDesc = list[0].label || ""
+                                        rootWindow.formRepeat = Boolean(list[0].defaultRepeat)
+                                        rootWindow.formLocked = Boolean(list[0].defaultLocked)
                                     }
                                 }
                             }
-
-                            // ── Status / Feedback Notification Banner ────────────
-                            Rectangle {
-                                visible: (Services.Compositor && (Services.Compositor.keybindStatus.length > 0 || Services.Compositor.keybindError.length > 0))
-                                Layout.fillWidth: true
-                                implicitHeight: kb_notifRow.implicitHeight + 16
-                                radius: 8
-                                color: (Services.Compositor && Services.Compositor.keybindError.length > 0)
-                                    ? (Services.Theme.isDark ? "#3f1414" : "#fef2f2")
-                                    : (Services.Theme.isDark ? "#143324" : "#f0fdf4")
-                                border.color: (Services.Compositor && Services.Compositor.keybindError.length > 0)
-                                    ? "#ef4444" : "#10b981"
-                                border.width: 1
-
-                                RowLayout {
-                                    id: kb_notifRow
-                                    anchors.fill: parent
-                                    anchors.leftMargin: 12
-                                    anchors.rightMargin: 12
-                                    spacing: 8
-
-                                    Text {
-                                        text: (Services.Compositor && Services.Compositor.keybindError.length > 0) ? "󰅚" : "󰄬"
-                                        font.family: Services.Theme.fontSymbols
-                                        font.pixelSize: 13
-                                        color: (Services.Compositor && Services.Compositor.keybindError.length > 0) ? "#ef4444" : "#10b981"
-                                    }
-
-                                    Text {
-                                        Layout.fillWidth: true
-                                        text: (Services.Compositor && Services.Compositor.keybindError.length > 0)
-                                            ? Services.Compositor.keybindError
-                                            : (Services.Compositor ? Services.Compositor.keybindStatus : "")
-                                        font.pixelSize: Services.Theme.fontSizeSm
-                                        color: Services.Theme.textPrimary
-                                        elide: Text.ElideRight
-                                    }
-
-                                    Text {
-                                        text: "✕"
-                                        font.pixelSize: 11
-                                        color: Services.Theme.textSecondary
-                                        MouseArea {
-                                            anchors.fill: parent
-                                            cursorShape: Qt.PointingHandCursor
-                                            onClicked: {
-                                                if (Services.Compositor) {
-                                                    Services.Compositor.keybindStatus = ""
-                                                    Services.Compositor.keybindError = ""
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-
-                            // ═════════════════════════════════════════════════
-                            // ── KEYBIND STUDIO CARD (Clean, Simple Flat, Fun) ──
-                            // ═════════════════════════════════════════════════
-                            Rectangle {
-                                id: kb_studioCard
-                                visible: rootWindow.isAddingKeybind || rootWindow.editingBindLine > 0
-                                Layout.fillWidth: true
-                                implicitHeight: kb_studioContent.implicitHeight + 24
-                                radius: 12
-                                color: Services.Theme.isDark ? "#1a1a20" : "#ffffff"
-                                border.color: (rootWindow.editingBindLine > 0) ? Services.Theme.accent : (Services.Theme.isDark ? "#2a2a36" : "#e2e8f0")
-                                border.width: 1
-
-                                ColumnLayout {
-                                    id: kb_studioContent
-                                    anchors.left: parent.left
-                                    anchors.right: parent.right
-                                    anchors.top: parent.top
-                                    anchors.margins: 14
-                                    spacing: 12
-
-                                    // Studio Header
-                                    RowLayout {
-                                        Layout.fillWidth: true
-                                        spacing: 8
-
-                                        Text {
-                                            text: rootWindow.editingBindLine > 0 ? "󰏫" : "󰐕"
-                                            font.family: Services.Theme.fontSymbols
-                                            font.pixelSize: 14
-                                            color: Services.Theme.accent
-                                        }
-
-                                        Text {
-                                            text: rootWindow.editingBindLine > 0 ? ("Edit Keybind (Line " + rootWindow.editingBindLine + ")") : "Create New Keybind"
-                                            font.pixelSize: Services.Theme.fontSizeMd
-                                            font.weight: Font.Bold
-                                            color: Services.Theme.textPrimary
-                                        }
-
-                                        Item { Layout.fillWidth: true }
-
-                                        // Cancel Studio
-                                        Text {
-                                            text: "Cancel"
-                                            font.pixelSize: Services.Theme.fontSizeXs
-                                            font.weight: Font.Medium
-                                            color: Services.Theme.textSecondary
-                                            MouseArea {
-                                                anchors.fill: parent
-                                                cursorShape: Qt.PointingHandCursor
-                                                onClicked: {
-                                                    rootWindow.isAddingKeybind = false
-                                                    rootWindow.editingBindId = ""
-                                                    rootWindow.editingBindLine = -1
-                                                    rootWindow.formKeys = ""
-                                                    rootWindow.formAction = ""
-                                                    rootWindow.formDesc = ""
-                                                }
-                                            }
-                                        }
-                                    }
-
-                                    // Studio Divider
-                                    Rectangle {
-                                        Layout.fillWidth: true
-                                        height: 1
-                                        color: Services.Theme.isDark ? "#252530" : "#f1f5f9"
-                                    }
-
-                                    // ── Section 1: Shortcut Keys Combination ────
-                                    ColumnLayout {
-                                        Layout.fillWidth: true
-                                        spacing: 6
-
-                                        RowLayout {
-                                            id: conflictHeaderRow
-                                            spacing: 6
-                                            readonly property var conflictItem: tab6.checkConflict(rootWindow.formKeys)
-
-                                            Text {
-                                                text: "KEY COMBINATION"
-                                                font.pixelSize: 10
-                                                font.weight: Font.Bold
-                                                font.letterSpacing: 0.6
-                                                color: Services.Theme.textSecondary
-                                            }
-
-                                            // Conflict Warning Badge
-                                            Rectangle {
-                                                visible: conflictHeaderRow.conflictItem !== null
-                                                radius: 4
-                                                implicitHeight: 18
-                                                implicitWidth: kb_confTxt.implicitWidth + 10
-                                                color: Services.Theme.isDark ? "#451a03" : "#fef3c7"
-                                                border.color: "#f59e0b"; border.width: 1
-                                                Text {
-                                                    id: kb_confTxt
-                                                    anchors.centerIn: parent
-                                                    text: "󰀦 Already in use: " + (conflictHeaderRow.conflictItem ? tab6.getHumanActionTitle(conflictHeaderRow.conflictItem.action) : "")
-                                                    font.pixelSize: 9
-                                                    font.bold: true
-                                                    color: "#f59e0b"
-                                                }
-                                            }
-                                        }
-
-                                        // Key Recorder + Clear Button
-                                        RowLayout {
-                                            Layout.fillWidth: true
-                                            spacing: 8
-
-                                            KeyRecorder {
-                                                id: kb_addKeyRec
-                                                Layout.fillWidth: true
-                                                height: 36
-                                                compact: false
-                                                value: rootWindow.formKeys
-                                                placeholder: "Click here and press key combo on your keyboard..."
-                                                onRecorded: (k) => { rootWindow.formKeys = k }
-                                                onCleared: { rootWindow.formKeys = "" }
-                                            }
-
-                                            Rectangle {
-                                                visible: (rootWindow.formKeys || "").length > 0
-                                                height: 36; width: 36; radius: 6
-                                                color: kb_clrRecMouse.containsMouse ? (Services.Theme.isDark ? "#282832" : "#e2e8f0") : (Services.Theme.isDark ? "#202026" : "#f1f5f9")
-                                                border.color: Services.Theme.border; border.width: 1
-                                                Text {
-                                                    anchors.centerIn: parent
-                                                    text: "󰩹"
-                                                    font.family: Services.Theme.fontSymbols
-                                                    font.pixelSize: 13
-                                                    color: Services.Theme.textSecondary
-                                                }
-                                                MouseArea {
-                                                    id: kb_clrRecMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
-                                                    onClicked: rootWindow.formKeys = ""
-                                                }
-                                            }
-                                        }
-
-                                        // Quick Modifiers (Click to toggle)
-                                        RowLayout {
-                                            Layout.fillWidth: true
-                                            spacing: 6
-
-                                            Text {
-                                                text: "Modifiers:"
-                                                font.pixelSize: 10
-                                                color: Services.Theme.textSecondary
-                                                Layout.alignment: Qt.AlignVCenter
-                                            }
-
-                                            Repeater {
-                                                model: ["SUPER", "CTRL", "ALT", "SHIFT"]
-                                                delegate: Rectangle {
-                                                    id: kb_modBtn
-                                                    readonly property bool isActive: (rootWindow.formKeys || "").toUpperCase().split("+").map(s => s.trim()).includes(modelData)
-                                                    implicitHeight: 24
-                                                    implicitWidth: kb_modLabel.implicitWidth + 14
-                                                    radius: 5
-                                                    color: isActive ? Services.Theme.accent : (kb_modBtnMouse.containsMouse ? (Services.Theme.isDark ? "#2a2a34" : "#e5e7eb") : (Services.Theme.isDark ? "#1f1f26" : "#f3f4f6"))
-                                                    border.color: isActive ? "transparent" : Services.Theme.border
-                                                    border.width: 1
-
-                                                    Text {
-                                                        id: kb_modLabel
-                                                        anchors.centerIn: parent
-                                                        text: modelData
-                                                        font.pixelSize: 10
-                                                        font.weight: Font.DemiBold
-                                                        color: kb_modBtn.isActive ? Services.Theme.bgOnAccent : Services.Theme.textPrimary
-                                                    }
-
-                                                    MouseArea {
-                                                        id: kb_modBtnMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
-                                                        onClicked: tab6.toggleModifier(kb_modBtn.modelData)
-                                                    }
-                                                }
-                                            }
-
-                                            Item { Layout.fillWidth: true }
-
-                                            // Common Key quick-clicks
-                                            Text {
-                                                text: "Common Keys:"
-                                                font.pixelSize: 10
-                                                color: Services.Theme.textSecondary
-                                                Layout.alignment: Qt.AlignVCenter
-                                            }
-
-                                            Repeater {
-                                                model: ["Return", "Space", "Tab", "Q", "F", "Print"]
-                                                delegate: Rectangle {
-                                                    implicitHeight: 24
-                                                    implicitWidth: kb_keyLabel.implicitWidth + 12
-                                                    radius: 5
-                                                    color: kb_keyQuickMouse.containsMouse ? (Services.Theme.isDark ? "#2a2a34" : "#e5e7eb") : (Services.Theme.isDark ? "#1f1f26" : "#f3f4f6")
-                                                    border.color: Services.Theme.border
-                                                    border.width: 1
-
-                                                    Text {
-                                                        id: kb_keyLabel
-                                                        anchors.centerIn: parent
-                                                        text: modelData
-                                                        font.pixelSize: 10
-                                                        color: Services.Theme.textPrimary
-                                                    }
-
-                                                    MouseArea {
-                                                        id: kb_keyQuickMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
-                                                        onClicked: tab6.appendKey(modelData)
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-
-                                    // ── Section 2: Action / Command Selection (Dropdowns) ────
-                                    ColumnLayout {
-                                        Layout.fillWidth: true
-                                        spacing: 6
-
-                                        Text {
-                                            text: "ACTION & DISPATCHER"
-                                            font.pixelSize: 10
-                                            font.weight: Font.Bold
-                                            font.letterSpacing: 0.6
-                                            color: Services.Theme.textSecondary
-                                        }
-
-                                        Rectangle {
-                                            Layout.fillWidth: true
-                                            implicitHeight: kb_actionCardCol.implicitHeight + 20
-                                            radius: 8
-                                            color: Services.Theme.isDark ? "#141418" : "#f8fafc"
-                                            border.color: Services.Theme.isDark ? "#22222a" : "#e2e8f0"
-                                            border.width: 1
-
-                                            ColumnLayout {
-                                                id: kb_actionCardCol
-                                                anchors.left: parent.left
-                                                anchors.right: parent.right
-                                                anchors.top: parent.top
-                                                anchors.margins: 10
-                                                spacing: 10
-
-                                                // Row of Dropdowns: Category + Action / Dispatcher
-                                                RowLayout {
-                                                    Layout.fillWidth: true
-                                                    spacing: 10
-
-                                                    // Dropdown 1: Category
-                                                    ColumnLayout {
-                                                        Layout.preferredWidth: 230
-                                                        spacing: 4
-
-                                                        Text {
-                                                            text: "Category"
-                                                            font.pixelSize: 10
-                                                            font.weight: Font.DemiBold
-                                                            color: Services.Theme.textSecondary
-                                                        }
-
-                                                        SettingsDropdown {
-                                                            Layout.fillWidth: true
-                                                            minButtonWidth: 220
-                                                            maxButtonWidth: 260
-                                                            buttonHeight: 32
-                                                            currentValue: tab6.addCategoryType
-                                                            model: tab6.actionCategories
-                                                            onSelected: (val) => {
-                                                                tab6.addCategoryType = val
-                                                                if (val === "custom") {
-                                                                    rootWindow.formAction = ""
-                                                                    rootWindow.formDesc = ""
-                                                                } else {
-                                                                    const list = tab6.getActionListForCategory(val) || []
-                                                                    if (list.length > 0 && list[0]) {
-                                                                        rootWindow.formAction = list[0].id || ""
-                                                                        rootWindow.formDesc = list[0].label || ""
-                                                                        rootWindow.formRepeat = Boolean(list[0].defaultRepeat)
-                                                                        rootWindow.formLocked = Boolean(list[0].defaultLocked)
-                                                                    }
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-
-                                                    // Dropdown 2: Action / Dispatcher (visible when not custom)
-                                                    ColumnLayout {
-                                                        visible: tab6.addCategoryType !== "custom"
-                                                        Layout.fillWidth: true
-                                                        spacing: 4
-
-                                                        RowLayout {
-                                                            spacing: 6
-                                                            Text {
-                                                                text: "Action / Dispatcher Preset"
-                                                                font.pixelSize: 10
-                                                                font.weight: Font.DemiBold
-                                                                color: Services.Theme.textSecondary
-                                                            }
-                                                            Text {
-                                                                text: "(" + tab6.getActionListForCategory(tab6.addCategoryType).length + " available)"
-                                                                font.pixelSize: 9
-                                                                color: Services.Theme.textSecondary
-                                                            }
-                                                        }
-
-                                                        SettingsDropdown {
-                                                            Layout.fillWidth: true
-                                                            minButtonWidth: 280
-                                                            maxButtonWidth: 600
-                                                            buttonHeight: 32
-                                                            searchable: true
-                                                            searchPlaceholder: "Search action / dispatcher..."
-                                                            currentValue: rootWindow.formAction
-                                                            model: tab6.getActionListForCategory(tab6.addCategoryType)
-                                                            onSelected: (val) => {
-                                                                rootWindow.formAction = val
-                                                                const list = tab6.getActionListForCategory(tab6.addCategoryType)
-                                                                for (let i = 0; i < list.length; i++) {
-                                                                    if (list[i].id === val) {
-                                                                        rootWindow.formDesc = list[i].label
-                                                                        rootWindow.formRepeat = Boolean(list[i].defaultRepeat)
-                                                                        rootWindow.formLocked = Boolean(list[i].defaultLocked)
-                                                                        break
-                                                                    }
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-                                                }
-
-                                                // Selected Preset Information / Description Box
-                                                Rectangle {
-                                                    visible: tab6.addCategoryType !== "custom" && (rootWindow.formAction || "").length > 0
-                                                    Layout.fillWidth: true
-                                                    implicitHeight: kb_sumRow.implicitHeight + 12
-                                                    radius: 6
-                                                    color: Services.Theme.isDark ? "#1b1b22" : "#edf0f5"
-                                                    border.color: Services.Theme.isDark ? "#282834" : "#d8dde6"
-                                                    border.width: 1
-
-                                                    RowLayout {
-                                                        id: kb_sumRow
-                                                        anchors.fill: parent
-                                                        anchors.margins: 8
-                                                        spacing: 8
-
-                                                        Text {
-                                                            text: "󰅂"
-                                                            font.family: Services.Theme.fontSymbols
-                                                            font.pixelSize: 12
-                                                            color: Services.Theme.accent
-                                                        }
-
-                                                        ColumnLayout {
-                                                            Layout.fillWidth: true
-                                                            spacing: 2
-
-                                                            Text {
-                                                                text: rootWindow.formDesc || tab6.getHumanActionTitle(rootWindow.formAction)
-                                                                font.pixelSize: 11
-                                                                font.weight: Font.DemiBold
-                                                                color: Services.Theme.textPrimary
-                                                            }
-
-                                                            Text {
-                                                                text: {
-                                                                    const list = tab6.getActionListForCategory(tab6.addCategoryType)
-                                                                    for (let i = 0; i < list.length; i++) {
-                                                                        if (list[i].id === rootWindow.formAction && list[i].desc) return list[i].desc
-                                                                    }
-                                                                    return rootWindow.formAction
-                                                                }
-                                                                font.pixelSize: 10
-                                                                color: Services.Theme.textSecondary
-                                                                elide: Text.ElideRight
-                                                            }
-                                                        }
-
-                                                        Rectangle {
-                                                            implicitHeight: 20
-                                                            implicitWidth: kb_sumCmd.implicitWidth + 12
-                                                            radius: 4
-                                                            color: Services.Theme.isDark ? "#242430" : "#e2e6ed"
-
-                                                            Text {
-                                                                id: kb_sumCmd
-                                                                anchors.centerIn: parent
-                                                                text: rootWindow.formAction
-                                                                font.pixelSize: 9
-                                                                font.family: "Monospace"
-                                                                color: Services.Theme.accent
-                                                            }
-                                                        }
-                                                    }
-                                                }
-
-                                                // Custom Command Inputs (visible when Category is 'custom')
-                                                ColumnLayout {
-                                                    visible: tab6.addCategoryType === "custom"
-                                                    Layout.fillWidth: true
-                                                    spacing: 8
-
-                                                    ColumnLayout {
-                                                        Layout.fillWidth: true
-                                                        spacing: 3
-
-                                                        Text {
-                                                            text: "Command / Dispatcher to Execute"
-                                                            font.pixelSize: 10
-                                                            font.weight: Font.DemiBold
-                                                            color: Services.Theme.textSecondary
-                                                        }
-
-                                                        Rectangle {
-                                                            Layout.fillWidth: true
-                                                            height: 34
-                                                            radius: 6
-                                                            color: Services.Theme.isDark ? "#15151a" : "#ffffff"
-                                                            border.color: Services.Theme.border; border.width: 1
-
-                                                            TextInput {
-                                                                anchors.fill: parent
-                                                                anchors.margins: 8
-                                                                text: rootWindow.formAction
-                                                                color: Services.Theme.textPrimary
-                                                                font.pixelSize: Services.Theme.fontSizeSm
-                                                                font.family: "Monospace"
-                                                                selectByMouse: true
-                                                                verticalAlignment: TextInput.AlignVCenter
-                                                                onTextChanged: rootWindow.formAction = text
-
-                                                                Text {
-                                                                    anchors.fill: parent
-                                                                    text: "Type custom command, e.g. kitty -e btop or hyprctl dispatch ..."
-                                                                    color: Services.Theme.textSecondary
-                                                                    font.pixelSize: Services.Theme.fontSizeSm
-                                                                    visible: parent.text.length === 0
-                                                                    verticalAlignment: Text.AlignVCenter
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-
-                                                    ColumnLayout {
-                                                        Layout.fillWidth: true
-                                                        spacing: 3
-
-                                                        Text {
-                                                            text: "Friendly Description (Optional)"
-                                                            font.pixelSize: 10
-                                                            font.weight: Font.DemiBold
-                                                            color: Services.Theme.textSecondary
-                                                        }
-
-                                                        Rectangle {
-                                                            Layout.fillWidth: true
-                                                            height: 32
-                                                            radius: 6
-                                                            color: Services.Theme.isDark ? "#15151a" : "#ffffff"
-                                                            border.color: Services.Theme.border; border.width: 1
-
-                                                            TextInput {
-                                                                anchors.fill: parent
-                                                                anchors.margins: 8
-                                                                text: rootWindow.formDesc
-                                                                color: Services.Theme.textPrimary
-                                                                font.pixelSize: Services.Theme.fontSizeXs
-                                                                selectByMouse: true
-                                                                verticalAlignment: TextInput.AlignVCenter
-                                                                onTextChanged: rootWindow.formDesc = text
-
-                                                                Text {
-                                                                    anchors.fill: parent
-                                                                    text: "Friendly shortcut description (e.g. Launch Task Manager)"
-                                                                    color: Services.Theme.textSecondary
-                                                                    font.pixelSize: Services.Theme.fontSizeXs
-                                                                    visible: parent.text.length === 0
-                                                                    verticalAlignment: Text.AlignVCenter
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-
-                                    // ── Section 3: Behaviour Configuration Switches ────
-                                    ColumnLayout {
-                                        Layout.fillWidth: true
-                                        spacing: 6
-
-                                        Text {
-                                            text: "KEYBIND BEHAVIOUR & FLAGS"
-                                            font.pixelSize: 10
-                                            font.weight: Font.Bold
-                                            font.letterSpacing: 0.6
-                                            color: Services.Theme.textSecondary
-                                        }
-
-                                        Rectangle {
-                                            Layout.fillWidth: true
-                                            implicitHeight: kb_behLayout.implicitHeight + 8
-                                            radius: 8
-                                            color: Services.Theme.isDark ? "#141418" : "#f8fafc"
-                                            border.color: Services.Theme.isDark ? "#22222a" : "#e2e8f0"
-                                            border.width: 1
-
-                                            ColumnLayout {
-                                                id: kb_behLayout
-                                                anchors.left: parent.left
-                                                anchors.right: parent.right
-                                                anchors.top: parent.top
-                                                anchors.margins: 4
-                                                spacing: 0
-
-                                                // 1. Repeat Switch
-                                                SettingsSwitch {
-                                                    title: "Repeat on Hold (repeating)"
-                                                    subtitle: "Continuously triggers action while key is held (Volume, brightness, workspace resize)"
-                                                    checked: rootWindow.formRepeat
-                                                    onToggled: (st) => { rootWindow.formRepeat = st }
-                                                }
-
-                                                Rectangle { Layout.fillWidth: true; height: 1; color: Services.Theme.isDark ? "#202028" : "#f1f5f9" }
-
-                                                // 2. Locked Switch
-                                                SettingsSwitch {
-                                                    title: "Active on Lockscreen (locked)"
-                                                    subtitle: "Works even when screen locker is active (Media keys, volume, mute, power)"
-                                                    checked: rootWindow.formLocked
-                                                    onToggled: (st) => { rootWindow.formLocked = st }
-                                                }
-
-                                                Rectangle { Layout.fillWidth: true; height: 1; color: Services.Theme.isDark ? "#202028" : "#f1f5f9" }
-
-                                                // 3. Mouse Binding Switch
-                                                SettingsSwitch {
-                                                    title: "Mouse Button Trigger (mouse)"
-                                                    subtitle: "Binds shortcut to a mouse click or drag event"
-                                                    checked: rootWindow.formMouse
-                                                    onToggled: (st) => { rootWindow.formMouse = st }
-                                                }
-
-                                                Rectangle { Layout.fillWidth: true; height: 1; color: Services.Theme.isDark ? "#202028" : "#f1f5f9" }
-
-                                                // 4. Non-consuming Switch
-                                                SettingsSwitch {
-                                                    title: "Pass-through Event (non_consuming)"
-                                                    subtitle: "Does not consume the key press, passing it through to the active window"
-                                                    checked: rootWindow.formNonConsuming
-                                                    onToggled: (st) => { rootWindow.formNonConsuming = st }
-                                                }
-                                            }
-                                        }
-                                    }
-
-                                    // ── Section 4: Live Config Syntax Preview ────
-                                    RowLayout {
-                                        Layout.fillWidth: true
-                                        spacing: 8
-
-                                        Text {
-                                            text: "Syntax:"
-                                            font.pixelSize: 10
-                                            font.weight: Font.DemiBold
-                                            color: Services.Theme.textSecondary
-                                        }
-
-                                        Rectangle {
-                                            Layout.fillWidth: true
-                                            height: 26
-                                            radius: 5
-                                            color: Services.Theme.isDark ? "#121216" : "#f1f5f9"
-                                            border.color: Services.Theme.border; border.width: 1
-
-                                            Text {
-                                                anchors.fill: parent
-                                                anchors.leftMargin: 8
-                                                anchors.rightMargin: 8
-                                                text: tab6.previewConfigSyntax(rootWindow.formKeys, rootWindow.formAction, rootWindow.formRepeat, rootWindow.formLocked, rootWindow.formMouse, rootWindow.formNonConsuming)
-                                                font.pixelSize: 9
-                                                font.family: "Monospace"
-                                                color: Services.Theme.textSecondary
-                                                verticalAlignment: Text.AlignVCenter
-                                                elide: Text.ElideRight
-                                            }
-                                        }
-                                    }
-
-                                    // ── Studio Bottom Actions ────────────────────
-                                    RowLayout {
-                                        Layout.fillWidth: true
-                                        spacing: 8
-
-                                        Item { Layout.fillWidth: true }
-
-                                        // Cancel Button
-                                        Rectangle {
-                                            implicitHeight: 32
-                                            implicitWidth: kb_cancelTxt.implicitWidth + 20
-                                            radius: 6
-                                            color: kb_cancelMouse.containsMouse ? (Services.Theme.isDark ? "#252530" : "#e2e8f0") : "transparent"
-                                            border.color: Services.Theme.border; border.width: 1
-
-                                            Text {
-                                                id: kb_cancelTxt
-                                                anchors.centerIn: parent
-                                                text: "Cancel"
-                                                font.pixelSize: Services.Theme.fontSizeSm
-                                                color: Services.Theme.textSecondary
-                                            }
-
-                                            MouseArea {
-                                                id: kb_cancelMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
-                                                onClicked: {
-                                                    rootWindow.isAddingKeybind = false
-                                                    rootWindow.editingBindId = ""
-                                                    rootWindow.editingBindLine = -1
-                                                    rootWindow.formKeys = ""
-                                                    rootWindow.formAction = ""
-                                                    rootWindow.formDesc = ""
-                                                }
-                                            }
-                                        }
-
-                                        // Save / Apply Button
-                                        Rectangle {
-                                            readonly property bool isValid: (rootWindow.formKeys.trim().length > 0) && (rootWindow.formAction.trim().length > 0)
-                                            implicitHeight: 32
-                                            implicitWidth: kb_saveTxt.implicitWidth + 24
-                                            radius: 6
-                                            color: isValid ? Services.Theme.accent : (Services.Theme.isDark ? "#2a2a34" : "#cbd5e1")
-                                            opacity: isValid ? 1.0 : 0.6
-
-                                            Text {
-                                                id: kb_saveTxt
-                                                anchors.centerIn: parent
-                                                text: rootWindow.editingBindLine > 0 ? "Update Keybind" : "Add Keybind"
-                                                font.pixelSize: Services.Theme.fontSizeSm
-                                                font.bold: true
-                                                color: parent.isValid ? Services.Theme.bgOnAccent : Services.Theme.textDisabled
-                                            }
-
-                                            MouseArea {
-                                                anchors.fill: parent
-                                                cursorShape: parent.isValid ? Qt.PointingHandCursor : Qt.ArrowCursor
-                                                onClicked: {
-                                                    if (!parent.isValid) return
-                                                    if (Services.Compositor) {
-                                                        const opts = {
-                                                            repeat: Boolean(rootWindow.formRepeat),
-                                                            locked: Boolean(rootWindow.formLocked),
-                                                            mouse: Boolean(rootWindow.formMouse),
-                                                            nonConsuming: Boolean(rootWindow.formNonConsuming)
-                                                        }
-
-                                                        if (rootWindow.editingBindLine > 0) {
-                                                            Services.Compositor.updateKeybind(
-                                                                rootWindow.editingBindLine,
-                                                                rootWindow.formKeys.trim(),
-                                                                rootWindow.formAction.trim(),
-                                                                rootWindow.formDesc.trim(),
-                                                                rootWindow.formFile,
-                                                                opts
-                                                            )
-                                                        } else {
-                                                            Services.Compositor.addKeybind(
-                                                                rootWindow.formKeys.trim(),
-                                                                rootWindow.formAction.trim(),
-                                                                rootWindow.formDesc.trim(),
-                                                                "",
-                                                                opts
-                                                            )
-                                                        }
-                                                    }
-
-                                                    rootWindow.isAddingKeybind = false
-                                                    rootWindow.editingBindId = ""
-                                                    rootWindow.editingBindLine = -1
-                                                    rootWindow.formKeys = ""
-                                                    rootWindow.formAction = ""
-                                                    rootWindow.formDesc = ""
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-
-                            // ═════════════════════════════════════════════════
-                            // ── SEARCH & BEHAVIOUR FILTERS ("Kurangi Listnya") ─
-                            // ═════════════════════════════════════════════════
-                            ColumnLayout {
-                                Layout.fillWidth: true
-                                spacing: 8
-
-                                // Row 1: Search Bar + Behaviour Filter Pills
-                                RowLayout {
-                                    Layout.fillWidth: true
-                                    spacing: 8
-
-                                    // Search Bar
-                                    Rectangle {
-                                        Layout.fillWidth: true
-                                        height: 36
-                                        radius: 8
-                                        color: Services.Theme.isDark ? "#1a1a20" : "#ffffff"
-                                        border.color: kb_searchInput.activeFocus ? Services.Theme.accent : (Services.Theme.isDark ? "#282834" : "#e2e8f0")
-                                        border.width: 1
-
-                                        RowLayout {
-                                            anchors.fill: parent
-                                            anchors.leftMargin: 10
-                                            anchors.rightMargin: 10
-                                            spacing: 8
-
-                                            Text {
-                                                text: "󰍉"
-                                                font.family: Services.Theme.fontSymbols
-                                                font.pixelSize: 13
-                                                color: Services.Theme.textSecondary
-                                            }
-
-                                            TextInput {
-                                                id: kb_searchInput
-                                                Layout.fillWidth: true
-                                                text: rootWindow.keySearchQuery
-                                                font.pixelSize: Services.Theme.fontSizeSm
-                                                color: Services.Theme.textPrimary
-                                                selectByMouse: true
-                                                onTextChanged: {
-                                                    rootWindow.keySearchQuery = text
-                                                    tab6.currentPage = 0
-                                                }
-
-                                                Text {
-                                                    anchors.fill: parent
-                                                    text: "Search shortcut, command, or action..."
-                                                    font.pixelSize: Services.Theme.fontSizeSm
-                                                    color: Services.Theme.textSecondary
-                                                    visible: parent.text.length === 0
-                                                    verticalAlignment: Text.AlignVCenter
-                                                }
-                                            }
-
-                                            Text {
-                                                visible: rootWindow.keySearchQuery.length > 0
-                                                text: "✕"
-                                                font.pixelSize: 11
-                                                color: Services.Theme.textSecondary
-                                                MouseArea {
-                                                    anchors.fill: parent
-                                                    cursorShape: Qt.PointingHandCursor
-                                                    onClicked: {
-                                                        rootWindow.keySearchQuery = ""
-                                                        tab6.currentPage = 0
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-
-                                    // Behaviour Filter Chips: All, Repeat, Locked, Mouse
-                                    RowLayout {
-                                        spacing: 4
-
-                                        Repeater {
-                                            model: [
-                                                { id: "all",    label: "All",    icon: "󰌌", count: tab6.totalBindsCount },
-                                                { id: "repeat", label: "Repeat", icon: "󰑖", count: tab6.repeatBindsCount },
-                                                { id: "locked", label: "Locked", icon: "󰌾", count: tab6.lockedBindsCount },
-                                                { id: "mouse",  label: "Mouse",  icon: "󰍽", count: tab6.mouseBindsCount }
-                                            ]
-                                            delegate: Rectangle {
-                                                readonly property bool isSelected: rootWindow.keyBehaviourFilter === modelData.id
-                                                implicitHeight: 36
-                                                implicitWidth: kb_behChipRow.implicitWidth + 16
-                                                radius: 8
-                                                color: isSelected ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.15) : (kb_behChipMouse.containsMouse ? (Services.Theme.isDark ? "#252530" : "#e5e7eb") : (Services.Theme.isDark ? "#1a1a20" : "#ffffff"))
-                                                border.color: isSelected ? Services.Theme.accent : (Services.Theme.isDark ? "#282834" : "#e2e8f0")
-                                                border.width: isSelected ? 1.5 : 1
-
-                                                RowLayout {
-                                                    id: kb_behChipRow
-                                                    anchors.centerIn: parent
-                                                    spacing: 5
-
-                                                    Text {
-                                                        text: modelData.icon
-                                                        font.family: Services.Theme.fontSymbols
-                                                        font.pixelSize: 11
-                                                        color: isSelected ? Services.Theme.accent : Services.Theme.textSecondary
-                                                    }
-
-                                                    Text {
-                                                        text: modelData.label
-                                                        font.pixelSize: Services.Theme.fontSizeXs
-                                                        font.weight: isSelected ? Font.Bold : Font.Normal
-                                                        color: isSelected ? Services.Theme.textPrimary : Services.Theme.textSecondary
-                                                    }
-
-                                                    Text {
-                                                        text: String(modelData.count)
-                                                        font.pixelSize: 9
-                                                        font.bold: true
-                                                        color: isSelected ? Services.Theme.accent : Services.Theme.textSecondary
-                                                    }
-                                                }
-
-                                                MouseArea {
-                                                    id: kb_behChipMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
-                                                    onClicked: {
-                                                        rootWindow.keyBehaviourFilter = modelData.id
-                                                        tab6.currentPage = 0
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-
-                                // Row 2: Category Segment Switcher Bar (Unified with Tab 5 subtabs, without icons)
-                                Rectangle {
-                                    id: kbCategoryTabBar
-                                    Layout.fillWidth: true
-                                    height: 38
-                                    radius: 8
-                                    color: Services.Theme.surfaceVariant
-                                    border.color: Services.Theme.border
-                                    border.width: 1
-                                    clip: true
-
-                                    // Liquid Glass Sliding Indicator Pill
-                                    Rectangle {
-                                        id: kbCatPill
-                                        z: 1
-                                        y: 3
-                                        height: parent.height - 6
-                                        radius: 6
-
-                                        readonly property var catKeys: ["all", "quickshell", "window", "apps", "media", "system", "custom"]
-                                        readonly property int activeIdx: {
-                                            const idx = catKeys.indexOf(rootWindow.keyCategory)
-                                            return idx >= 0 ? idx : 0
-                                        }
-                                        readonly property int tabCount: 7
-                                        readonly property real itemWidth: Math.max(0, (kbCategoryTabBar.width - 6 - (tabCount - 1) * 3) / tabCount)
-
-                                        x: 3 + activeIdx * (itemWidth + 3)
-                                        width: itemWidth
-
-                                        // Liquid Transparent Glass Material
-                                        color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.22)
-                                        border.color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.55)
-                                        border.width: 1
-
-                                        // Top Specular Glass Highlight Line
-                                        Rectangle {
-                                            anchors.top: parent.top
-                                            anchors.left: parent.left
-                                            anchors.right: parent.right
-                                            anchors.topMargin: 1
-                                            anchors.leftMargin: 4
-                                            anchors.rightMargin: 4
-                                            height: 1
-                                            radius: 0.5
-                                            color: Qt.rgba(1, 1, 1, 0.40)
-                                        }
-
-                                        // Liquid Gloss Curved Sheen
-                                        Rectangle {
-                                            anchors.top: parent.top
-                                            anchors.left: parent.left
-                                            anchors.right: parent.right
-                                            anchors.topMargin: 1
-                                            anchors.leftMargin: 2
-                                            anchors.rightMargin: 2
-                                            height: parent.height * 0.46
-                                            radius: 5
-                                            gradient: Gradient {
-                                                GradientStop { position: 0.0; color: Qt.rgba(1, 1, 1, 0.16) }
-                                                GradientStop { position: 1.0; color: Qt.rgba(1, 1, 1, 0.0) }
-                                            }
-                                        }
-
-                                        // Fluid Sliding Transitions
-                                        Behavior on x {
-                                            NumberAnimation {
-                                                duration: 260
-                                                easing.type: Easing.OutBack
-                                                easing.overshoot: 1.15
-                                            }
-                                        }
-                                        Behavior on width {
-                                            NumberAnimation {
-                                                duration: 260
-                                                easing.type: Easing.OutBack
-                                                easing.overshoot: 1.15
-                                            }
-                                        }
-                                        Behavior on color { ColorAnimation { duration: 200 } }
-                                        Behavior on border.color { ColorAnimation { duration: 200 } }
-                                    }
-
-                                    RowLayout {
-                                        anchors.fill: parent
-                                        anchors.margins: 3
-                                        spacing: 3
-                                        z: 2
-
-                                        Repeater {
-                                            model: [
-                                                { id: "all",        label: "All" },
-                                                { id: "quickshell", label: "Quickshell" },
-                                                { id: "window",     label: "Window" },
-                                                { id: "apps",       label: "Apps" },
-                                                { id: "media",      label: "Media" },
-                                                { id: "system",     label: "System" },
-                                                { id: "custom",     label: "Custom" }
-                                            ]
-
-                                            delegate: Item {
-                                                Layout.fillWidth: true
-                                                Layout.fillHeight: true
-
-                                                readonly property bool isCur: rootWindow.keyCategory === modelData.id
-
-                                                // Hover effect for unselected tabs
-                                                Rectangle {
-                                                    anchors.fill: parent
-                                                    radius: 5
-                                                    color: keySubMouse.containsMouse && !isCur ? Qt.rgba(1, 1, 1, 0.05) : "transparent"
-                                                    Behavior on color { ColorAnimation { duration: 150 } }
-                                                }
-
-                                                Text {
-                                                    anchors.centerIn: parent
-                                                    width: Math.min(parent.width - 6, implicitWidth)
-                                                    text: modelData.label
-                                                    font.pixelSize: 11
-                                                    font.weight: isCur ? Font.DemiBold : Font.Normal
-                                                    color: isCur ? Services.Theme.textPrimary : (keySubMouse.containsMouse ? Services.Theme.textPrimary : Services.Theme.textSecondary)
-                                                    horizontalAlignment: Text.AlignHCenter
-                                                    elide: Text.ElideRight
-                                                    Behavior on color { ColorAnimation { duration: 200 } }
-                                                }
-
-                                                MouseArea {
-                                                    id: keySubMouse
-                                                    anchors.fill: parent
-                                                    hoverEnabled: true
-                                                    cursorShape: Qt.PointingHandCursor
-                                                    onClicked: {
-                                                        rootWindow.keyCategory = modelData.id
-                                                        tab6.currentPage = 0
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-
-                            // ═════════════════════════════════════════════════
-                            // ── THE KEYBINDINGS LIST (Clean Flat Cards, No 3D) ─
-                            // ═════════════════════════════════════════════════
-                            ColumnLayout {
-                                Layout.fillWidth: true
-                                spacing: 6
-
-                                // Empty State
-                                Rectangle {
-                                    visible: tab6.filteredBinds.length === 0
-                                    Layout.fillWidth: true
-                                    implicitHeight: 120
-                                    radius: 10
-                                    color: Services.Theme.isDark ? "#18181f" : "#f9fafb"
-                                    border.color: Services.Theme.isDark ? "#24242e" : "#e5e7eb"
-                                    border.width: 1
-
-                                    ColumnLayout {
-                                        anchors.centerIn: parent
-                                        spacing: 6
-                                        Text {
-                                            Layout.alignment: Qt.AlignHCenter
-                                            text: "󰌌"
-                                            font.family: Services.Theme.fontSymbols
-                                            font.pixelSize: 24
-                                            color: Services.Theme.textSecondary
-                                        }
-                                        Text {
-                                            Layout.alignment: Qt.AlignHCenter
-                                            text: "No keybindings matched your filter or search"
-                                            font.pixelSize: Services.Theme.fontSizeSm
-                                            color: Services.Theme.textSecondary
-                                        }
-                                    }
-                                }
-
-                                // Keybind Items Repeater (Paginated)
+                        }
+                        Pick {
+                            visible: tab6.addCategoryType !== "custom"
+                            Layout.fillWidth: true
+                            searchable: true
+                            minW: 150
+                            maxW: 400
+                            model: tab6.getActionListForCategory(tab6.addCategoryType)
+                            current: rootWindow.formAction
+                            onPicked: (id) => tab6.applyPreset(id)
+                        }
+                    }
+
+                    Inp {
+                        visible: tab6.addCategoryType === "custom"
+                        Layout.fillWidth: true
+                        mono: true
+                        placeholder: "Command, e.g. kitty -e btop"
+                        text: rootWindow.formAction
+                        onEdited: (v) => { rootWindow.formAction = v }
+                    }
+                    Inp {
+                        visible: tab6.addCategoryType === "custom"
+                        Layout.fillWidth: true
+                        placeholder: "Description (optional)"
+                        text: rootWindow.formDesc
+                        onEdited: (v) => { rootWindow.formDesc = v }
+                    }
+
+                    Flow {
+                        Layout.fillWidth: true
+                        spacing: 6
+                        Chip { text: "Repeat"; on: rootWindow.formRepeat; onClicked: rootWindow.formRepeat = !rootWindow.formRepeat }
+                        Chip { text: "Locked"; on: rootWindow.formLocked; onClicked: rootWindow.formLocked = !rootWindow.formLocked }
+                        Chip { text: "Mouse"; on: rootWindow.formMouse; onClicked: rootWindow.formMouse = !rootWindow.formMouse }
+                        Chip { text: "Pass-through"; on: rootWindow.formNonConsuming; onClicked: rootWindow.formNonConsuming = !rootWindow.formNonConsuming }
+                    }
+
+                    Text {
+                        Layout.fillWidth: true
+                        text: tab6.previewConfigSyntax(rootWindow.formKeys, rootWindow.formAction, rootWindow.formRepeat, rootWindow.formLocked, rootWindow.formMouse, rootWindow.formNonConsuming)
+                        wrapMode: Text.WrapAnywhere
+                        font.family: Services.Theme.fontMono
+                        font.pixelSize: 10
+                        color: ui.dim
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Item { Layout.fillWidth: true }
+                        Btn { text: "Cancel"; onClicked: tab6.resetForm() }
+                        Btn {
+                            text: rootWindow.editingBindLine > 0 ? "Save" : "Add"
+                            kind: "accent"
+                            enabledState: rootWindow.formKeys.trim().length > 0 && rootWindow.formAction.trim().length > 0
+                            onClicked: tab6.saveForm()
+                        }
+                    }
+                }
+            }
+
+            // list
+            SettingsGroup {
+                title: "Shortcuts (" + tab6.filteredBinds.length + ")"
+                Text {
+                    visible: tab6.filteredBinds.length === 0
+                    Layout.leftMargin: 4
+                    Layout.topMargin: 6
+                    text: "No shortcuts match"
+                    font.pixelSize: 11
+                    color: ui.faint
+                }
+                Repeater {
+                    model: tab6.pagedBinds
+                    delegate: Opt {
+                        id: kr
+                        required property var modelData
+                        readonly property bool editing: rootWindow.editingBindLine > 0 && rootWindow.editingBindLine === kr.modelData.startLine
+                        label: tab6.getHumanActionTitle(kr.modelData.action)
+                        hint: kr.modelData.action
+                        opacity: (rootWindow.editingBindLine > 0 && !kr.editing) ? 0.5 : 1.0
+                        RowLayout {
+                            spacing: 6
+                            Tag { visible: Boolean(kr.modelData.repeat); text: "REP" }
+                            Tag { visible: Boolean(kr.modelData.locked); text: "LOCK" }
+                            Tag { visible: Boolean(kr.modelData.mouse); text: "MOUSE" }
+                            Row {
+                                spacing: 3
                                 Repeater {
-                                    model: tab6.pagedBinds
-                                    delegate: Rectangle {
-                                        id: kb_bindItemRoot
-                                        Layout.fillWidth: true
-                                        implicitHeight: 52
-                                        radius: 8
-                                        color: kb_bindMouse.containsMouse ? (Services.Theme.isDark ? "#202028" : "#f8fafc") : (Services.Theme.isDark ? "#17171d" : "#ffffff")
-                                        border.color: (rootWindow.editingBindLine > 0 && rootWindow.editingBindLine === modelData.startLine)
-                                            ? Services.Theme.accent
-                                            : (Services.Theme.isDark ? "#252530" : "#e2e8f0")
-                                        border.width: 1
-
-                                        RowLayout {
-                                            anchors.fill: parent
-                                            anchors.leftMargin: 12
-                                            anchors.rightMargin: 12
-                                            spacing: 12
-
-                                            // 1. Flat Keycaps (Simple, NO 3D)
-                                            RowLayout {
-                                                spacing: 4
-                                                Layout.minimumWidth: 150
-                                                Layout.preferredWidth: 180
-
-                                                readonly property var tokens: (modelData.keys || "").split("+").map(s => s.trim()).filter(s => s.length > 0)
-
-                                                Repeater {
-                                                    model: parent.tokens
-                                                    delegate: RowLayout {
-                                                        spacing: 4
-                                                        Rectangle {
-                                                            implicitHeight: 24
-                                                            implicitWidth: kb_keyCapTxt.implicitWidth + 12
-                                                            radius: 5
-                                                            color: Services.Theme.isDark ? "#252530" : "#f1f5f9"
-                                                            border.color: Services.Theme.isDark ? "#363644" : "#cbd5e1"
-                                                            border.width: 1
-
-                                                            Text {
-                                                                id: kb_keyCapTxt
-                                                                anchors.centerIn: parent
-                                                                text: modelData
-                                                                font.pixelSize: 10
-                                                                font.weight: Font.DemiBold
-                                                                color: Services.Theme.textPrimary
-                                                            }
-                                                        }
-
-                                                        Text {
-                                                            visible: index < (parent.parent.tokens.length - 1)
-                                                            text: "+"
-                                                            font.pixelSize: 10
-                                                            font.bold: true
-                                                            color: Services.Theme.textSecondary
-                                                        }
-                                                    }
-                                                }
-                                            }
-
-                                            // 2. Action Title & Subtitle
-                                            ColumnLayout {
-                                                Layout.fillWidth: true
-                                                spacing: 1
-
-                                                RowLayout {
-                                                    spacing: 6
-                                                    Text {
-                                                        text: tab6.getHumanActionTitle(modelData.action)
-                                                        font.pixelSize: Services.Theme.fontSizeSm
-                                                        font.weight: Font.Medium
-                                                        color: Services.Theme.textPrimary
-                                                        elide: Text.ElideRight
-                                                    }
-
-                                                    // Category Badge
-                                                    Rectangle {
-                                                        visible: (modelData.category || "").length > 0
-                                                        radius: 4
-                                                        implicitHeight: 16
-                                                        implicitWidth: kb_catTagTxt.implicitWidth + 8
-                                                        color: Services.Theme.isDark ? "#202028" : "#f1f5f9"
-                                                        Text {
-                                                            id: kb_catTagTxt
-                                                            anchors.centerIn: parent
-                                                            text: (modelData.category || "custom").toUpperCase()
-                                                            font.pixelSize: 8
-                                                            font.weight: Font.DemiBold
-                                                            color: Services.Theme.textSecondary
-                                                        }
-                                                    }
-                                                }
-
-                                                Text {
-                                                    Layout.fillWidth: true
-                                                    text: modelData.action
-                                                    font.pixelSize: 10
-                                                    font.family: "Monospace"
-                                                    color: Services.Theme.textSecondary
-                                                    elide: Text.ElideRight
-                                                }
-                                            }
-
-                                            // 3. Behaviour Badges (Repeat, Locked, Mouse)
-                                            RowLayout {
-                                                spacing: 4
-
-                                                // Repeat Badge
-                                                Rectangle {
-                                                    visible: Boolean(modelData.repeat)
-                                                    radius: 4
-                                                    implicitHeight: 20
-                                                    implicitWidth: kb_repTagRow.implicitWidth + 10
-                                                    color: Services.Theme.isDark ? "#2e1065" : "#f3e8ff"
-                                                    border.color: "#a855f7"; border.width: 1
-
-                                                    RowLayout {
-                                                        id: kb_repTagRow
-                                                        anchors.centerIn: parent
-                                                        spacing: 3
-                                                        Text { text: "󰑖"; font.family: Services.Theme.fontSymbols; font.pixelSize: 9; color: "#c084fc" }
-                                                        Text { text: "Repeat"; font.pixelSize: 9; font.bold: true; color: "#c084fc" }
-                                                    }
-                                                }
-
-                                                // Locked Badge
-                                                Rectangle {
-                                                    visible: Boolean(modelData.locked)
-                                                    radius: 4
-                                                    implicitHeight: 20
-                                                    implicitWidth: kb_lkTagRow.implicitWidth + 10
-                                                    color: Services.Theme.isDark ? "#064e3b" : "#ecfdf5"
-                                                    border.color: "#10b981"; border.width: 1
-
-                                                    RowLayout {
-                                                        id: kb_lkTagRow
-                                                        anchors.centerIn: parent
-                                                        spacing: 3
-                                                        Text { text: "󰌾"; font.family: Services.Theme.fontSymbols; font.pixelSize: 9; color: "#34d399" }
-                                                        Text { text: "Locked"; font.pixelSize: 9; font.bold: true; color: "#34d399" }
-                                                    }
-                                                }
-
-                                                // Mouse Badge
-                                                Rectangle {
-                                                    visible: Boolean(modelData.mouse)
-                                                    radius: 4
-                                                    implicitHeight: 20
-                                                    implicitWidth: kb_msTagRow.implicitWidth + 10
-                                                    color: Services.Theme.isDark ? "#451a03" : "#fef3c7"
-                                                    border.color: "#f59e0b"; border.width: 1
-
-                                                    RowLayout {
-                                                        id: kb_msTagRow
-                                                        anchors.centerIn: parent
-                                                        spacing: 3
-                                                        Text { text: "󰍽"; font.family: Services.Theme.fontSymbols; font.pixelSize: 9; color: "#fbbf24" }
-                                                        Text { text: "Mouse"; font.pixelSize: 9; font.bold: true; color: "#fbbf24" }
-                                                    }
-                                                }
-                                            }
-
-                                            // 4. Quick Action Buttons (Edit & Delete)
-                                            RowLayout {
-                                                spacing: 4
-
-                                                // Edit Button
-                                                Rectangle {
-                                                    implicitHeight: 28; implicitWidth: 28; radius: 5
-                                                    color: kb_editMouse.containsMouse ? (Services.Theme.isDark ? "#2c2c38" : "#e2e8f0") : "transparent"
-                                                    border.color: kb_editMouse.containsMouse ? Services.Theme.border : "transparent"
-                                                    border.width: 1
-
-                                                    Text {
-                                                        anchors.centerIn: parent
-                                                        text: "󰏫"
-                                                        font.family: Services.Theme.fontSymbols
-                                                        font.pixelSize: 12
-                                                        color: kb_editMouse.containsMouse ? Services.Theme.accent : Services.Theme.textSecondary
-                                                    }
-
-                                                    MouseArea {
-                                                        id: kb_editMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
-                                                        onClicked: {
-                                                            rootWindow.editingBindId = modelData.id || ""
-                                                            rootWindow.editingBindLine = modelData.startLine || -1
-                                                            rootWindow.formKeys = modelData.keys || ""
-                                                            rootWindow.formAction = modelData.action || ""
-                                                            rootWindow.formDesc = modelData.desc || tab6.getHumanActionTitle(modelData.action)
-                                                            rootWindow.formRepeat = Boolean(modelData.repeat)
-                                                            rootWindow.formLocked = Boolean(modelData.locked)
-                                                            rootWindow.formMouse = Boolean(modelData.mouse)
-                                                            rootWindow.formNonConsuming = Boolean(modelData.nonConsuming)
-                                                            rootWindow.formFile = modelData.file || ""
-                                                            tab6.addCategoryType = tab6.findCategoryForAction(modelData.action)
-                                                            rootWindow.isAddingKeybind = false
-                                                        }
-                                                    }
-                                                }
-
-                                                // Delete Button
-                                                Rectangle {
-                                                    implicitHeight: 28; implicitWidth: 28; radius: 5
-                                                    color: kb_delMouse.containsMouse ? (Services.Theme.isDark ? "#3b1717" : "#fee2e2") : "transparent"
-                                                    border.color: kb_delMouse.containsMouse ? "#ef4444" : "transparent"
-                                                    border.width: 1
-
-                                                    Text {
-                                                        anchors.centerIn: parent
-                                                        text: "󰆴"
-                                                        font.family: Services.Theme.fontSymbols
-                                                        font.pixelSize: 12
-                                                        color: kb_delMouse.containsMouse ? "#ef4444" : Services.Theme.textSecondary
-                                                    }
-
-                                                    MouseArea {
-                                                        id: kb_delMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
-                                                        onClicked: {
-                                                            if (Services.Compositor) {
-                                                                Services.Compositor.deleteKeybind(modelData.startLine, modelData.file)
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-
-                                        MouseArea {
-                                            id: kb_bindMouse
-                                            anchors.fill: parent
-                                            hoverEnabled: true
-                                            z: -1
-                                        }
-                                    }
+                                    model: (kr.modelData.keys || "").split("+").map(function(s) { return s.trim() }).filter(function(s) { return s.length > 0 })
+                                    delegate: Cap { required property string modelData; text: modelData }
                                 }
                             }
-
-                            // ═════════════════════════════════════════════════
-                            // ── PAGINATION CONTROLS ("Kurangi Listnya") ──────
-                            // ═════════════════════════════════════════════════
-                            RowLayout {
-                                visible: tab6.filteredBinds.length > 0
-                                Layout.fillWidth: true
-                                spacing: 8
-
-                                Text {
-                                    text: "Showing " + ((tab6.currentPage * tab6.itemsPerPage) + 1) + "–" + Math.min((tab6.currentPage + 1) * tab6.itemsPerPage, tab6.filteredBinds.length) + " of " + tab6.filteredBinds.length + " keybindings"
-                                    font.pixelSize: Services.Theme.fontSizeXs
-                                    color: Services.Theme.textSecondary
-                                }
-
-                                Text {
-                                    visible: Boolean(Services.Compositor && Services.Compositor.configPath)
-                                    text: "• " + ((Services.Compositor && Services.Compositor.configPath) ? Services.Compositor.configPath.split("/").pop() : "")
-                                    font.pixelSize: 10
-                                    font.family: "Monospace"
-                                    color: Services.Theme.textDisabled
-                                }
-
-                                Item { Layout.fillWidth: true }
-
-                                RowLayout {
-                                    spacing: 6
-
-                                    // Previous Button
-                                    Rectangle {
-                                        readonly property bool canPrev: tab6.currentPage > 0
-                                        implicitHeight: 26
-                                        implicitWidth: kb_prevTxt.implicitWidth + 16
-                                        radius: 5
-                                        color: canPrev ? (kb_prevMouse.containsMouse ? (Services.Theme.isDark ? "#282834" : "#e2e8f0") : (Services.Theme.isDark ? "#1c1c24" : "#f1f5f9")) : "transparent"
-                                        border.color: Services.Theme.border; border.width: 1
-                                        opacity: canPrev ? 1.0 : 0.4
-
-                                        Text {
-                                            id: kb_prevTxt
-                                            anchors.centerIn: parent
-                                            text: "‹ Previous"
-                                            font.pixelSize: 10
-                                            font.weight: Font.DemiBold
-                                            color: Services.Theme.textPrimary
-                                        }
-
-                                        MouseArea {
-                                            id: kb_prevMouse; anchors.fill: parent; hoverEnabled: parent.canPrev
-                                            cursorShape: parent.canPrev ? Qt.PointingHandCursor : Qt.ArrowCursor
-                                            onClicked: {
-                                                if (parent.canPrev) tab6.currentPage--
-                                            }
-                                        }
-                                    }
-
-                                    // Page Number Indicator
-                                    Rectangle {
-                                        implicitHeight: 26
-                                        implicitWidth: kb_pageNumTxt.implicitWidth + 14
-                                        radius: 5
-                                        color: Services.Theme.isDark ? "#16161c" : "#e5e7eb"
-
-                                        Text {
-                                            id: kb_pageNumTxt
-                                            anchors.centerIn: parent
-                                            text: "Page " + (tab6.currentPage + 1) + " of " + tab6.totalPages
-                                            font.pixelSize: 10
-                                            font.bold: true
-                                            color: Services.Theme.textPrimary
-                                        }
-                                    }
-
-                                    // Next Button
-                                    Rectangle {
-                                        readonly property bool canNext: tab6.currentPage < (tab6.totalPages - 1)
-                                        implicitHeight: 26
-                                        implicitWidth: kb_nextTxt.implicitWidth + 16
-                                        radius: 5
-                                        color: canNext ? (kb_nextMouse.containsMouse ? (Services.Theme.isDark ? "#282834" : "#e2e8f0") : (Services.Theme.isDark ? "#1c1c24" : "#f1f5f9")) : "transparent"
-                                        border.color: Services.Theme.border; border.width: 1
-                                        opacity: canNext ? 1.0 : 0.4
-
-                                        Text {
-                                            id: kb_nextTxt
-                                            anchors.centerIn: parent
-                                            text: "Next ›"
-                                            font.pixelSize: 10
-                                            font.weight: Font.DemiBold
-                                            color: Services.Theme.textPrimary
-                                        }
-
-                                        MouseArea {
-                                            id: kb_nextMouse; anchors.fill: parent; hoverEnabled: parent.canNext
-                                            cursorShape: parent.canNext ? Qt.PointingHandCursor : Qt.ArrowCursor
-                                            onClicked: {
-                                                if (parent.canNext) tab6.currentPage++
-                                            }
-                                        }
-                                    }
+                            Btn {
+                                glyph: "✎"
+                                onClicked: {
+                                    rootWindow.editingBindId = kr.modelData.id || ""
+                                    rootWindow.editingBindLine = kr.modelData.startLine || -1
+                                    rootWindow.formKeys = kr.modelData.keys || ""
+                                    rootWindow.formAction = kr.modelData.action || ""
+                                    rootWindow.formDesc = kr.modelData.desc || tab6.getHumanActionTitle(kr.modelData.action)
+                                    rootWindow.formRepeat = Boolean(kr.modelData.repeat)
+                                    rootWindow.formLocked = Boolean(kr.modelData.locked)
+                                    rootWindow.formMouse = Boolean(kr.modelData.mouse)
+                                    rootWindow.formNonConsuming = Boolean(kr.modelData.nonConsuming)
+                                    rootWindow.formFile = kr.modelData.file || ""
+                                    tab6.addCategoryType = tab6.findCategoryForAction(kr.modelData.action)
+                                    rootWindow.isAddingKeybind = false
                                 }
                             }
-                        }
-
-                        // ═════════════════════════════════════════════
-                        // TAB 7: BACKUP & RESET
-                        // ═════════════════════════════════════════════
-                        ColumnLayout {
-                            id: tab7
-                            Layout.fillWidth: true
-                            spacing: 14
-
-                            SettingsSection {
-                                title: "Configuration Management"
-                                icon: Services.Icons.undo
-
-                                SettingsRow {
-                                    title: "Export Configuration"
-                                    subtitle: "Save a backup snapshot of your current settings"
-
-                                    Rectangle {
-                                        height: 26
-                                        implicitWidth: expTxt.implicitWidth + 14
-                                        radius: 4
-                                        color: expMouse.containsMouse ? Qt.rgba(1, 1, 1, 0.08) : Services.Theme.bgElevated
-                                        border.color: Services.Theme.border; border.width: 1
-                                        Text { id: expTxt; anchors.centerIn: parent; text: "Backup..."; font.pixelSize: 11; color: Services.Theme.textPrimary }
-                                        MouseArea {
-                                            id: expMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
-                                            onClicked: { if (Services.Config) Services.Config.exportConfig() }
-                                        }
-                                    }
-                                }
-
-                                SettingsDivider {}
-
-                                SettingsRow {
-                                    title: "Import Configuration"
-                                    subtitle: "Restore previously exported settings snapshot"
-
-                                    Rectangle {
-                                        height: 26
-                                        implicitWidth: impTxt.implicitWidth + 14
-                                        radius: 4
-                                        color: impMouse.containsMouse ? Qt.rgba(1, 1, 1, 0.08) : Services.Theme.bgElevated
-                                        border.color: Services.Theme.border; border.width: 1
-                                        Text { id: impTxt; anchors.centerIn: parent; text: "Restore..."; font.pixelSize: 11; color: Services.Theme.textPrimary }
-                                        MouseArea {
-                                            id: impMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
-                                            onClicked: { if (Services.Config) Services.Config.importConfig() }
-                                        }
-                                    }
-                                }
-
-                                SettingsDivider {}
-
-                                SettingsRow {
-                                    title: "Reset to Defaults"
-                                    subtitle: "Restore factory theme, layout, and configuration"
-
-                                    Rectangle {
-                                        height: 26
-                                        implicitWidth: rstTxt.implicitWidth + 14
-                                        radius: 4
-                                        color: rstMouse.containsMouse ? Qt.rgba(0.9, 0.2, 0.2, 0.15) : Services.Theme.bgElevated
-                                        border.color: Services.Theme.border; border.width: 1
-                                        Text { id: rstTxt; anchors.centerIn: parent; text: "Reset All"; font.pixelSize: 11; color: Services.Theme.danger }
-                                        MouseArea {
-                                            id: rstMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
-                                            onClicked: { if (Services.Config) Services.Config.resetToDefaults() }
-                                        }
-                                    }
-                                }
-
-                                SettingsDivider {}
-
-                                // ── Re-run Setup Wizard ─────────────────────────────────
-                                SettingsRow {
-                                    title: "Re-run Setup Wizard"
-                                    subtitle: "Open the first-run onboarding wizard to reconfigure themes, icons, and fonts"
-
-                                    Rectangle {
-                                        id: wizBtn
-                                        height: 26
-                                        implicitWidth: wizTxt.implicitWidth + 14
-                                        radius: 4
-                                        color: wizMouse.containsMouse
-                                            ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.15)
-                                            : Services.Theme.bgElevated
-                                        border.color: wizMouse.containsMouse
-                                            ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.5)
-                                            : Services.Theme.border
-                                        border.width: 1
-                                        Behavior on color { ColorAnimation { duration: 150 } }
-
-                                        Text {
-                                            id: wizTxt
-                                            anchors.centerIn: parent
-                                            text: "Run Wizard"
-                                            font.pixelSize: 11
-                                            color: wizMouse.containsMouse ? Services.Theme.accent : Services.Theme.textPrimary
-                                            Behavior on color { ColorAnimation { duration: 150 } }
-                                        }
-
-                                        MouseArea {
-                                            id: wizMouse
-                                            anchors.fill: parent
-                                            hoverEnabled: true
-                                            cursorShape: Qt.PointingHandCursor
-                                            onClicked: {
-                                                if (Services.Config) {
-                                                    Services.Config.setFirstRunCompleted(false)
-                                                    Services.Config.saveConfig()
-                                                }
-                                                rootWindow.hide()
-                                                Services.OverlayManager.welcomeShowRequested()
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        // ═════════════════════════════════════════════
-                        // ═════════════════════════════════════════════
-                        // TAB 8: ABOUT & SYSTEM INFORMATION (Calm, Subtle & Minimalist)
-                        // ═════════════════════════════════════════════
-                        ColumnLayout {
-                            id: tab8
-                            Layout.fillWidth: true
-                            spacing: 12
-
-                            // ── User Profile Hero Banner (Refined Minimal Card) ────────
-                            Rectangle {
-                                Layout.fillWidth: true
-                                height: 84
-                                radius: Services.Theme.radiusSm || 8
-                                color: Services.Theme.surfaceVariant
-                                border.color: Services.Theme.border
-                                border.width: 1
-
-                                RowLayout {
-                                    anchors.fill: parent
-                                    anchors.leftMargin: 16
-                                    anchors.rightMargin: 16
-                                    anchors.topMargin: 12
-                                    anchors.bottomMargin: 12
-                                    spacing: 16
-
-                                    // Interactive Avatar Frame with Live Photo & Camera Hover
-                                    Item {
-                                        id: aboutHeroAvatarFrame
-                                        Layout.preferredWidth: 60
-                                        Layout.preferredHeight: 60
-                                        Layout.alignment: Qt.AlignVCenter
-
-                                        Services.AvatarFrame {
-                                            anchors.fill: parent
-                                            source: Services.OsInfo.avatarPath
-                                            shapeRadius: 16
-                                            backgroundColor: Services.Theme.bgElevated
-                                            borderColor: Services.Theme.border
-                                            borderWidth: 1
-                                            fallbackText: {
-                                                const u = (Services.OsInfo.username || Quickshell.env("USER") || "user").toUpperCase()
-                                                return u.length > 0 ? u.charAt(0) : "󰌽"
-                                            }
-                                            fallbackFontFamily: Services.Theme.fontSymbols
-                                            fallbackFontSize: 24
-                                            fallbackColor: Services.Theme.accent
-                                        }
-
-                                        // Camera overlay on hover (indicates clicking changes avatar)
-                                        Rectangle {
-                                            anchors.fill: parent
-                                            radius: 16
-                                            color: Qt.rgba(0, 0, 0, 0.45)
-                                            visible: aboutHeroAvatarMouse.containsMouse
-                                            antialiasing: true
-
-                                            Text {
-                                                anchors.centerIn: parent
-                                                text: "󰄀"
-                                                font.family: Services.Theme.fontSymbols
-                                                font.pixelSize: 18
-                                                color: "white"
-                                            }
-                                        }
-
-
-                                        MouseArea {
-                                            id: aboutHeroAvatarMouse
-                                            anchors.fill: parent
-                                            hoverEnabled: true
-                                            cursorShape: Qt.PointingHandCursor
-                                            onClicked: Services.OsInfo.pickCustomAvatar()
-                                        }
-                                    }
-
-                                    // User & Host Information Column (hugging avatar)
-                                    ColumnLayout {
-                                        spacing: 2
-                                        Layout.alignment: Qt.AlignVCenter
-
-                                        Text {
-                                            text: Services.OsInfo.username || Quickshell.env("USER") || "User"
-                                            font.pixelSize: 15
-                                            font.weight: Font.DemiBold
-                                            color: Services.Theme.textPrimary
-                                        }
-
-                                        Text {
-                                            text: (Services.OsInfo.username || "user") + "@" + (Services.OsInfo.hostname || "local") + "  ·  " + (Services.OsInfo.shellName || "sh")
-                                            font.pixelSize: 11
-                                            font.weight: Font.Medium
-                                            color: Services.Theme.textSecondary
-                                        }
-
-                                        Text {
-                                            text: (Services.OsInfo.distroName || "Linux") + "  ·  Kernel " + (Services.OsInfo.kernel || "")
-                                            font.family: Services.Theme.fontMono
-                                            font.pixelSize: 9
-                                            color: Services.Theme.textDisabled
-                                        }
-                                    }
-
-                                    // Spacer pushing content to the left
-                                    Item { Layout.fillWidth: true }
-
-                                    // Action Buttons Group
-                                    RowLayout {
-                                        spacing: 8
-                                        Layout.alignment: Qt.AlignVCenter
-
-                                        // Choose Photo / Change Avatar Button
-                                        Rectangle {
-                                            implicitHeight: 32
-                                            implicitWidth: aboutChooseAvatarRow.implicitWidth + 24
-                                            radius: 6
-                                            color: aboutChooseAvatarMouse.containsMouse 
-                                                ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.22)
-                                                : Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.12)
-                                            border.color: Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.45)
-                                            border.width: 1
-
-                                            RowLayout {
-                                                id: aboutChooseAvatarRow
-                                                anchors.centerIn: parent
-                                                spacing: 6
-
-                                                Text {
-                                                    text: "󰄀"
-                                                    font.family: Services.Theme.fontSymbols
-                                                    font.pixelSize: 13
-                                                    color: Services.Theme.accent
-                                                }
-
-                                                Text {
-                                                    text: Services.OsInfo.isPickingAvatar ? "Opening..." : "Choose Image"
-                                                    font.pixelSize: Services.Theme.fontSizeSm
-                                                    font.weight: Font.DemiBold
-                                                    color: Services.Theme.accent
-                                                }
-                                            }
-
-                                            MouseArea {
-                                                id: aboutChooseAvatarMouse
-                                                anchors.fill: parent
-                                                cursorShape: Qt.PointingHandCursor
-                                                hoverEnabled: true
-                                                onClicked: Services.OsInfo.pickCustomAvatar()
-                                            }
-                                        }
-
-                                        // Reset Button (if custom avatar set)
-                                        Rectangle {
-                                            visible: Services.OsInfo.isCustomAvatar
-                                            implicitHeight: 32
-                                            implicitWidth: aboutResetAvatarRow.implicitWidth + 20
-                                            radius: 6
-                                            color: aboutResetAvatarMouse.containsMouse 
-                                                ? (Services.Theme.isDark ? "#2a1e20" : "#fee2e2")
-                                                : "transparent"
-                                            border.color: Services.Theme.border
-                                            border.width: 1
-
-                                            RowLayout {
-                                                id: aboutResetAvatarRow
-                                                anchors.centerIn: parent
-                                                spacing: 5
-
-                                                Text {
-                                                    text: "✕"
-                                                    font.pixelSize: 10
-                                                    color: Services.Theme.textSecondary
-                                                }
-
-                                                Text {
-                                                    text: "Reset"
-                                                    font.pixelSize: Services.Theme.fontSizeSm
-                                                    color: Services.Theme.textSecondary
-                                                }
-                                            }
-
-                                            MouseArea {
-                                                id: aboutResetAvatarMouse
-                                                anchors.fill: parent
-                                                cursorShape: Qt.PointingHandCursor
-                                                hoverEnabled: true
-                                                onClicked: Services.OsInfo.clearCustomAvatar()
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-
-                            // ── System Hardware & Environment Grid ────────────────
-                            GridLayout {
-                                Layout.fillWidth: true
-                                columns: 2
-                                rowSpacing: 8
-                                columnSpacing: 8
-
-                                // Tile 1: OS Distro
-                                Rectangle {
-                                    Layout.fillWidth: true
-                                    height: 50
-                                    radius: 6
-                                    color: Services.Theme.surfaceVariant
-                                    border.color: Services.Theme.border
-                                    border.width: 1
-
-                                    RowLayout {
-                                        anchors.fill: parent; anchors.leftMargin: 10; anchors.rightMargin: 10; spacing: 10
-                                        Rectangle {
-                                            Layout.preferredWidth: 28; Layout.preferredHeight: 28; radius: 5
-                                            color: Services.Theme.bgElevated
-                                            border.color: Services.Theme.border
-                                            border.width: 1
-                                            Text { anchors.centerIn: parent; text: (Services.OsInfo && Services.OsInfo.logoGlyph) ? Services.OsInfo.logoGlyph : "󰌽"; font.family: Services.Theme.fontSymbols; font.pixelSize: 13; color: Services.Theme.textSecondary }
-                                        }
-                                        ColumnLayout {
-                                            spacing: 1; Layout.fillWidth: true
-                                            Text { text: "Distribution"; font.pixelSize: 8; font.weight: Font.Bold; color: Services.Theme.textDisabled }
-                                            Text { text: Services.OsInfo.distroName || "Linux"; font.pixelSize: 11; font.weight: Font.Medium; color: Services.Theme.textPrimary; elide: Text.ElideRight; Layout.fillWidth: true }
-                                        }
-                                    }
-                                }
-
-                                // Tile 2: Kernel
-                                Rectangle {
-                                    Layout.fillWidth: true
-                                    height: 50
-                                    radius: 6
-                                    color: Services.Theme.surfaceVariant
-                                    border.color: Services.Theme.border
-                                    border.width: 1
-
-                                    RowLayout {
-                                        anchors.fill: parent; anchors.leftMargin: 10; anchors.rightMargin: 10; spacing: 10
-                                        Rectangle {
-                                            Layout.preferredWidth: 28; Layout.preferredHeight: 28; radius: 5
-                                            color: Services.Theme.bgElevated
-                                            border.color: Services.Theme.border
-                                            border.width: 1
-                                            Text { anchors.centerIn: parent; text: "󰌽"; font.family: Services.Theme.fontSymbols; font.pixelSize: 13; color: Services.Theme.textSecondary }
-                                        }
-                                        ColumnLayout {
-                                            spacing: 1; Layout.fillWidth: true
-                                            Text { text: "Linux Kernel"; font.pixelSize: 8; font.weight: Font.Bold; color: Services.Theme.textDisabled }
-                                            Text { text: Services.OsInfo.kernel || "-"; font.family: Services.Theme.fontMono; font.pixelSize: 10.5 ? 10 : 10; font.weight: Font.Medium; color: Services.Theme.textPrimary; elide: Text.ElideRight; Layout.fillWidth: true }
-                                        }
-                                    }
-                                }
-
-                                // Tile 3: Compositor
-                                Rectangle {
-                                    Layout.fillWidth: true
-                                    height: 50
-                                    radius: 6
-                                    color: Services.Theme.surfaceVariant
-                                    border.color: Services.Theme.border
-                                    border.width: 1
-
-                                    RowLayout {
-                                        anchors.fill: parent; anchors.leftMargin: 10; anchors.rightMargin: 10; spacing: 10
-                                        Rectangle {
-                                            Layout.preferredWidth: 28; Layout.preferredHeight: 28; radius: 5
-                                            color: Services.Theme.bgElevated
-                                            border.color: Services.Theme.border
-                                            border.width: 1
-                                            Text { anchors.centerIn: parent; text: Services.Icons.display; font.family: Services.Theme.fontSymbols; font.pixelSize: 13; color: Services.Theme.textSecondary }
-                                        }
-                                        ColumnLayout {
-                                            spacing: 1; Layout.fillWidth: true
-                                            Text { text: "Window Compositor"; font.pixelSize: 8; font.weight: Font.Bold; color: Services.Theme.textDisabled }
-                                            Text { text: (Services.Compositor ? Services.Compositor.activeDisplayName : "Wayland") + " (" + (Services.Compositor && Services.Compositor.configType ? Services.Compositor.configType.toUpperCase() : "CONF") + ")"; font.pixelSize: 11; font.weight: Font.Medium; color: Services.Theme.textPrimary; elide: Text.ElideRight; Layout.fillWidth: true }
-                                        }
-                                    }
-                                }
-
-                                // Tile 4: Desktop & Shell (Green Area in Screenshot)
-                                Rectangle {
-                                    Layout.fillWidth: true
-                                    height: 50
-                                    radius: 6
-                                    color: Services.Theme.surfaceVariant
-                                    border.color: Services.Theme.border
-                                    border.width: 1
-
-                                    RowLayout {
-                                        anchors.fill: parent; anchors.leftMargin: 10; anchors.rightMargin: 10; spacing: 10
-                                        Rectangle {
-                                            Layout.preferredWidth: 28; Layout.preferredHeight: 28; radius: 5
-                                            color: Services.Theme.bgElevated
-                                            border.color: Services.Theme.border
-                                            border.width: 1
-                                            Text { anchors.centerIn: parent; text: Services.Icons.terminal || Services.Icons.sparkle || "󰞷"; font.family: Services.Theme.fontSymbols; font.pixelSize: 13; color: Services.Theme.textSecondary }
-                                        }
-                                        ColumnLayout {
-                                            spacing: 1; Layout.fillWidth: true
-                                            Text { text: "Desktop & Shell"; font.pixelSize: 8; font.weight: Font.Bold; color: Services.Theme.textDisabled }
-                                            Text { text: "Quickshell Desktop v1.2 · " + (Services.OsInfo.shellName || "sh"); font.pixelSize: 11; font.weight: Font.Medium; color: Services.Theme.textPrimary; elide: Text.ElideRight; Layout.fillWidth: true }
-                                        }
-                                    }
-                                }
-                            }
-
-                            // ── Interactive Actions Bar ───────────────────────────
-                            SettingsSection {
-                                title: "Quick Actions & Tools"
-                                icon: Services.Icons.sliders
-
-                                RowLayout {
-                                    Layout.fillWidth: true
-                                    Layout.margins: 10
-                                    spacing: 8
-
-                                    // Copy System Specs Button
-                                    Rectangle {
-                                        property bool justCopied: false
-                                        Layout.fillWidth: true
-                                        height: 32
-                                        radius: 5
-                                        color: justCopied ? Qt.rgba(0.2, 0.8, 0.3, 0.15) : (copyMouse.containsMouse ? Services.Theme.bgHover : Services.Theme.bgElevated)
-                                        border.color: justCopied ? (Services.Theme.success || "#10b981") : Services.Theme.border
-                                        border.width: 1
-
-                                        RowLayout {
-                                            anchors.centerIn: parent; spacing: 6
-                                            Text { text: parent.parent.justCopied ? (Services.Icons.check || "✓") : (Services.Icons.clipboard || "󰅌"); font.family: Services.Theme.fontSymbols; font.pixelSize: 10; color: parent.parent.justCopied ? (Services.Theme.success || "#10b981") : Services.Theme.textSecondary }
-                                            Text { text: parent.parent.justCopied ? "Copied to Clipboard!" : "Copy System Specs"; font.pixelSize: 10; font.weight: Font.Medium; color: parent.parent.justCopied ? (Services.Theme.success || "#10b981") : Services.Theme.textPrimary }
-                                        }
-
-                                        Timer {
-                                            id: copySpecsTimer
-                                            interval: 1800
-                                            onTriggered: parent.justCopied = false
-                                        }
-
-                                        MouseArea {
-                                            id: copyMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
-                                            onClicked: {
-                                                const specs = `OS: ${Services.OsInfo.distroName || "Linux"}\nKernel: ${Services.OsInfo.kernel || "-"}\nHost: ${Services.OsInfo.hostname || "local"}\nCompositor: ${Services.Compositor ? Services.Compositor.activeDisplayName : "Wayland"}\nShell: ${Services.OsInfo.shellName || "sh"}\nUser: ${Services.OsInfo.username || "user"}\nDesktop: Quickshell v1.2`
-                                                if (Services.Clipboard) Services.Clipboard.copyText(specs)
-                                                parent.justCopied = true
-                                                copySpecsTimer.restart()
-                                            }
-                                        }
-                                    }
-
-                                    // Open Terminal Button
-                                    Rectangle {
-                                        Layout.fillWidth: true
-                                        height: 32
-                                        radius: 5
-                                        color: termMouse.containsMouse ? Services.Theme.bgHover : Services.Theme.bgElevated
-                                        border.color: Services.Theme.border
-                                        border.width: 1
-
-                                        RowLayout {
-                                            anchors.centerIn: parent; spacing: 6
-                                            Text { text: Services.Icons.terminal || "󰞷"; font.family: Services.Theme.fontSymbols; font.pixelSize: 10; color: Services.Theme.textSecondary }
-                                            Text { text: "Open Terminal"; font.pixelSize: 10; font.weight: Font.Medium; color: Services.Theme.textPrimary }
-                                        }
-
-                                        MouseArea {
-                                            id: termMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
-                                            onClicked: {
-                                                openTermProc.running = true
-                                            }
-                                        }
-                                    }
-                                }
+                            ArmBtn {
+                                idle: "✕"
+                                onConfirmed: { if (Services.Compositor) Services.Compositor.deleteKeybind(kr.modelData.startLine, kr.modelData.file) }
                             }
                         }
                     }
                 }
             }
+
+            RowLayout {
+                visible: tab6.totalPages > 1
+                Layout.fillWidth: true
+                Layout.topMargin: 8
+                Item { Layout.fillWidth: true }
+                Btn { text: "‹"; enabledState: tab6.currentPage > 0; onClicked: tab6.currentPage-- }
+                Text { text: (tab6.currentPage + 1) + " / " + tab6.totalPages; font.family: Services.Theme.fontMono; font.pixelSize: 10; color: ui.dim }
+                Btn { text: "›"; enabledState: tab6.currentPage < tab6.totalPages - 1; onClicked: tab6.currentPage++ }
+                Item { Layout.fillWidth: true }
+            }
+
+            Item { Layout.preferredHeight: 8 }
         }
     }
 
-    // ── Helper Processes ─────────────────────────────────────────────────────
-    Process {
-        id: openTermProc
-        command: ["sh", "-c", "kitty || alacritty || foot || xterm || ghostty"]
+    // ═════════════════════════════════════════════════════════════════════════
+    //  PAGE 7 · BACKUP
+    // ═════════════════════════════════════════════════════════════════════════
+    Component {
+        id: pgBackup
+
+        ColumnLayout {
+            spacing: 0
+
+            SettingsGroup {
+                title: "Configuration"
+                Opt {
+                    label: "Export"
+                    hint: "Save a snapshot of your settings"
+                    Btn { glyph: "󰆓"; text: "Export…"; onClicked: { if (Services.Config) Services.Config.exportConfig() } }
+                }
+                Opt {
+                    label: "Restore"
+                    hint: "Load a previously exported snapshot"
+                    Btn { glyph: "󰁯"; text: "Restore…"; onClicked: { if (Services.Config) Services.Config.importConfig() } }
+                }
+                Opt {
+                    label: "Reset to defaults"
+                    hint: "Restores theme, layout and configuration"
+                    ArmBtn { idle: "Reset all"; onConfirmed: { if (Services.Config) Services.Config.resetToDefaults() } }
+                }
+            }
+
+            SettingsGroup {
+                title: "Setup"
+                Opt {
+                    label: "Setup wizard"
+                    hint: "Re-run first-run onboarding"
+                    Btn {
+                        text: "Run wizard"
+                        onClicked: {
+                            if (Services.Config) {
+                                Services.Config.setFirstRunCompleted(false)
+                                Services.Config.saveConfig()
+                            }
+                            Services.OverlayManager.welcomeShowRequested()
+                        }
+                    }
+                }
+            }
+
+            Item { Layout.preferredHeight: 8 }
+        }
     }
-    Process {
-        id: testNotifProc
-        command: ["notify-send", "-a", "Quickshell Settings", "Settings Test", "Your notification preferences are working!"]
+
+    // ═════════════════════════════════════════════════════════════════════════
+    //  PAGE 8 · ABOUT
+    // ═════════════════════════════════════════════════════════════════════════
+    Component {
+        id: pgAbout
+
+        ColumnLayout {
+            id: tab8
+            property bool copied: false
+            spacing: 0
+
+            Timer { id: copiedTimer; interval: 1800; onTriggered: tab8.copied = false }
+
+            // identity
+            RowLayout {
+                Layout.topMargin: 18
+                Layout.bottomMargin: 6
+                spacing: 12
+                Rectangle {
+                    Layout.preferredWidth: 40; Layout.preferredHeight: 40; radius: 10
+                    color: ui.accent
+                    Text {
+                        anchors.centerIn: parent
+                        text: (Services.OsInfo && Services.OsInfo.logoGlyph) ? Services.OsInfo.logoGlyph : (Services.Icons.settings || "")
+                        font.family: Services.Theme.fontSymbols
+                        font.pixelSize: 20
+                        color: ui.onAccent
+                    }
+                }
+                ColumnLayout {
+                    spacing: 1
+                    Text { text: Services.OsInfo.distroName || "Linux"; font.pixelSize: 15; font.weight: Font.DemiBold; color: ui.fg }
+                    Text { text: (Services.OsInfo.username || "user") + "@" + (Services.OsInfo.hostname || "local"); font.family: Services.Theme.fontMono; font.pixelSize: 11; color: ui.dim }
+                }
+            }
+
+            SettingsGroup {
+                title: "System"
+                Opt { label: "Kernel"; Text { text: Services.OsInfo.kernel || "-"; font.family: Services.Theme.fontMono; font.pixelSize: 11; color: ui.fg } }
+                Opt {
+                    label: "Compositor"
+                    Text {
+                        text: (Services.Compositor ? Services.Compositor.activeDisplayName : "Wayland") + " (" + (Services.Compositor && Services.Compositor.configType ? Services.Compositor.configType.toUpperCase() : "CONF") + ")"
+                        font.pixelSize: 11
+                        color: ui.fg
+                    }
+                }
+                Opt { label: "Shell"; Text { text: "Quickshell Desktop v1.2 · " + (Services.OsInfo.shellName || "sh"); font.pixelSize: 11; color: ui.fg } }
+            }
+
+            SettingsGroup {
+                title: "Tools"
+                Opt {
+                    label: "System info"
+                    hint: "Copy a summary to the clipboard"
+                    Btn {
+                        glyph: tab8.copied ? (Services.Icons.check || "✓") : (Services.Icons.clipboard || "")
+                        text: tab8.copied ? "Copied" : "Copy"
+                        kind: tab8.copied ? "accent" : "plain"
+                        onClicked: {
+                            const specs = "OS: " + (Services.OsInfo.distroName || "Linux")
+                                + "\nKernel: " + (Services.OsInfo.kernel || "-")
+                                + "\nHost: " + (Services.OsInfo.hostname || "local")
+                                + "\nCompositor: " + (Services.Compositor ? Services.Compositor.activeDisplayName : "Wayland")
+                                + "\nShell: " + (Services.OsInfo.shellName || "sh")
+                                + "\nUser: " + (Services.OsInfo.username || "user")
+                                + "\nDesktop: Quickshell v1.2"
+                            if (Services.Clipboard) Services.Clipboard.copyText(specs)
+                            tab8.copied = true
+                            copiedTimer.restart()
+                        }
+                    }
+                }
+                Opt {
+                    label: "Terminal"
+                    Btn { glyph: Services.Icons.terminal || ""; text: "Open"; onClicked: openTermProc.running = true }
+                }
+            }
+
+            Item { Layout.preferredHeight: 8 }
+        }
     }
-    Process {
-        id: lockSessionProc
-        command: ["sh", "-c", "qs ipc call lockscreen lock || loginctl lock-session"]
-    }
-    Process {
-        id: suspendProc
-        command: ["systemctl", "suspend"]
-    }
-    Process {
-        id: rebootProc
-        command: ["systemctl", "reboot"]
-    }
-    Process {
-        id: poweroffProc
-        command: ["systemctl", "poweroff"]
-    }
+
+    // ── helper processes ─────────────────────────────────────────────────────
+    Process { id: openTermProc;   command: ["sh", "-c", "kitty || alacritty || foot || xterm || ghostty"] }
+    Process { id: pavuProc;       command: ["pavucontrol"] }
+    Process { id: testNotifProc;  command: ["notify-send", "-a", "Quickshell Settings", "Settings Test", "Your notification preferences are working!"] }
+    Process { id: lockSessionProc; command: ["sh", "-c", "qs ipc call lockscreen lock || loginctl lock-session"] }
+    Process { id: suspendProc;    command: ["systemctl", "suspend"] }
+    Process { id: rebootProc;     command: ["systemctl", "reboot"] }
+    Process { id: poweroffProc;   command: ["systemctl", "poweroff"] }
 }

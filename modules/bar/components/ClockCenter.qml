@@ -16,7 +16,7 @@ Rectangle {
     property bool trayYielded: false
     property int hPadOverride: -1
 
-    readonly property int baseHPad: isMinimal ? 12 : 20
+    readonly property int baseHPad: isMinimal ? 10 : (isMacMenuBar ? 14 : 18)
     readonly property int hPad: hPadOverride >= 0 ? hPadOverride : baseHPad
 
     TextMetrics {
@@ -50,12 +50,12 @@ Rectangle {
 
     implicitHeight: isMinimal ? 24 : 28
     implicitWidth: trayCompact ? trayWidthCompact : trayWidthFull
-    radius: isMinimal ? 6 : (isMacMenuBar ? 7 : 10)
+    radius: isMinimal ? 6 : (isMacMenuBar ? 14 : 10)
 
     readonly property bool glassDark: Services.Theme.isDark
     // Dock glass material
     color: isMacMenuBar
-         ? (clockArea.containsMouse ? (glassDark ? Qt.rgba(1, 1, 1, 0.13) : Qt.rgba(0, 0, 0, 0.08)) : "transparent")
+         ? (clockArea.containsMouse ? Qt.rgba(1, 1, 1, glassDark ? 0.14 : 0.22) : "transparent")
          : (isMinimal ? (clockArea.containsMouse ? Services.Theme.bgHover : "transparent")
          : (clockArea.containsMouse ? (glassDark ? Qt.rgba(1, 1, 1, 0.20) : Qt.rgba(1, 1, 1, 0.65))
                                     : (glassDark ? Qt.rgba(0.11, 0.11, 0.12, 0.55) : Qt.rgba(1, 1, 1, 0.48))))
@@ -65,7 +65,6 @@ Rectangle {
          : (clockArea.containsMouse ? (glassDark ? Qt.rgba(1, 1, 1, 0.38) : Qt.rgba(1, 1, 1, 0.85))
                                     : (glassDark ? Qt.rgba(1, 1, 1, 0.28) : Qt.rgba(1, 1, 1, 0.65))))
     border.width: (isMinimal || isMacMenuBar) ? 0 : 1
-
 
     Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
     Behavior on border.color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
@@ -79,7 +78,7 @@ Rectangle {
         font.pixelSize: clockPill.isMinimal || clockPill.isMacMenuBar ? Services.Theme.fontSizeMd : Services.Theme.fontSizeLg
         font.weight: clockPill.isMacMenuBar ? Font.Medium : Font.DemiBold
         font.letterSpacing: 0.3
-        color: Services.Theme.textPrimary
+        color: clockPill.isMacMenuBar ? "#f6f6f9" : Services.Theme.textPrimary
 
         function updateTime() {
             const is24 = Services.Config ? Services.Config.clock24h : true

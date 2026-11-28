@@ -52,17 +52,18 @@ Singleton {
     property color surfaceVariant: isDark ? "#cc24242c" : "#e8ecf2"
 
     // ─── Text & Typography ─────────────────────────────────────────────────
-    property color textPrimary:   isDark ? "#f0f0f4" : "#09090b"
-    property color textSecondary: isDark ? "#c4c4ce" : "#475569"
-    property color textDisabled:  isDark ? "#8a8a9a" : "#94a3b8"
+    property color textPrimary:   isDark ? "#f6f6f9" : "#09090b"
+    property color textSecondary: isDark ? "#c8c8d8" : "#475569"
+    property color textTertiary:  isDark ? "#a2a2b8" : "#64748b"
+    property color textDisabled:  isDark ? "#9898ad" : "#94a3b8"
     readonly property color white: "#ffffff"
     property color textOnSafe:    isDark ? "#c8c8d4" : "#475569"
 
     // ─── Icon Colors ───────────────────────────────────────────────────────
-    property color iconPrimary:   isDark ? "#f0f0f4" : "#09090b"
-    property color iconSecondary: isDark ? "#c4c4ce" : "#475569"
+    property color iconPrimary:   isDark ? "#f6f6f9" : "#09090b"
+    property color iconSecondary: isDark ? "#c8c8d8" : "#475569"
     property color iconAccent:    accent
-    property color iconDisabled:  isDark ? "#8a8a9a" : "#94a3b8"
+    property color iconDisabled:  isDark ? "#9898ad" : "#94a3b8"
 
     // ─── Secondary Accents & Status ────────────────────────────────────────
     property color accentDim:  Qt.rgba(accent.r, accent.g, accent.b, isDark ? 0.55 : 0.65)

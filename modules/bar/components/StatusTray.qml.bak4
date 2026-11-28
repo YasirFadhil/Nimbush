@@ -1,0 +1,618 @@
+import QtQuick
+import QtQuick.Layouts
+import Quickshell.Io
+import Quickshell.Services.SystemTray
+import "../../../services" as Services
+import "." as Components
+
+RowLayout {
+    id: root
+    spacing: 0
+
+    // ── Input dari Bar ────────────────────────────────────────────
+    property real barWidth: 1920
+    property real rightMargin: 12
+    property real centerReservedWidth: 0
+    property string islandDemand: "idle"
+
+    // ── Auto-detect LAN / Ethernet (via shared NetworkState service) ──────
+    readonly property bool ethConnected: Services.NetworkState ? Services.NetworkState.connected : false
+    readonly property string ethIface: Services.NetworkState ? Services.NetworkState.interfaceName : ""
+    readonly property string ethIp: Services.NetworkState ? Services.NetworkState.ipv4Address : ""
+    readonly property string ethGlyph: Services.NetworkState ? Services.NetworkState.glyph : "\udb80\ude00"
+
+    // ── Konstanta tuning ──────────────────────────────────────────
+    readonly property real safetyGap: 16
+    readonly property real hysteresisPx: 6
+    readonly property int restoreDelayMs: 80
+
+    // ── Ruang yang tersedia ───────────────────────────────────────
+    readonly property real centerRightEdge: (barWidth + centerReservedWidth) / 2
+    readonly property real availableWidth:
+        Math.max(0, barWidth - rightMargin - centerRightEdge - safetyGap)
+
+    readonly property string barStyle: Services.Config ? Services.Config.barStyle : "islands"
+    readonly property bool isIslands: barStyle === "islands"
+    readonly property bool isMinimal: barStyle === "minimal"
+    readonly property bool isFloating: barStyle === "floating"
+    readonly property bool isUnified: barStyle === "unified"
+    readonly property bool isMacMenuBar: isIslands
+
+    readonly property int pillHeight: isMinimal ? 24 : 28
+    readonly property int pillRadius: isMinimal ? 6 : (isMacMenuBar ? 14 : 10)
+    readonly property int innerSpacing: isMinimal ? 4 : 6
+
+    // Dock glass material (Dock.qml): neutral low-alpha fill, white hairline border.
+    readonly property bool glassDark: Services.Theme.isDark
+    function getPillBg(hovered) {
+        if (isMacMenuBar)
+            return hovered
+                ? (glassDark ? Qt.rgba(1, 1, 1, 0.13) : Qt.rgba(0, 0, 0, 0.08))
+                : "transparent"
+        if (isMinimal) return hovered ? Services.Theme.bgHover : "transparent"
+        if (hovered) return glassDark ? Qt.rgba(1, 1, 1, 0.20) : Qt.rgba(1, 1, 1, 0.65)
+        return glassDark ? Qt.rgba(0.11, 0.11, 0.12, 0.55) : Qt.rgba(1, 1, 1, 0.48)
+    }
+
+    function getPillBorder(hovered) {
+        if (isMacMenuBar) return "transparent"
+        if (isMinimal) return hovered ? Services.Theme.borderHighlight : "transparent"
+        if (hovered) return glassDark ? Qt.rgba(1, 1, 1, 0.38) : Qt.rgba(1, 1, 1, 0.85)
+        return glassDark ? Qt.rgba(1, 1, 1, 0.28) : Qt.rgba(1, 1, 1, 0.65)
+    }
+
+    // ── Daftar item dan urutan mengalah ───────────────────────────
+    // Visual order: CPU, volume, battery, system tray, menu extras, clock.
+    readonly property var yieldOrder: [sysmonInd, volPill, batPill, sysTrayIcons, ctrlPill, clockCenterPill]
+    readonly property var compactStages: [[volPill, sysmonInd], [batPill]]
+    readonly property int compactStageCount: compactStages.length
+    readonly property int yieldCount: Math.max(0, layoutTier - compactStageCount)
+
+    function isCompactAt(item, tier) {
+        const stages = Math.min(tier, compactStageCount)
+        for (let s = 0; s < stages; s++) {
+            if (compactStages[s].indexOf(item) !== -1) return true
+        }
+        return false
+    }
+
+    // macOS menu extras use a tighter, consistent rhythm between items.
+    readonly property int itemSpacing: isMinimal ? 4 : (isMacMenuBar ? 6 : 8)
+
+    function widthAtTier(tier) {
+        const spacing = itemSpacing
+        let total = 0
+        const yields = Math.max(0, tier - compactStageCount)
+
+        for (let i = 0; i < yieldOrder.length; i++) {
+            const item = yieldOrder[i]
+            if (!item || !item.visible) continue
+            if (i < yields) continue
+            const useCompact = isCompactAt(item, tier)
+            const gap = (item === clockCenterPill) ? 0 : spacing
+            total += (useCompact ? item.trayWidthCompact : item.trayWidthFull) + gap
+        }
+        return Math.max(0, total)
+    }
+
+    readonly property real fullWidthSignal: widthAtTier(0)
+    readonly property real compactWidthSignal: widthAtTier(1)
+    readonly property real compactWidthSignal2: widthAtTier(2)
+    onFullWidthSignalChanged: requestLayout()
+    onCompactWidthSignalChanged: requestLayout()
+    onCompactWidthSignal2Changed: requestLayout()
+
+    property bool debugLayout: false
+    property int layoutTier: 0
+    readonly property int maxTier: compactStageCount + yieldOrder.length
+
+    function recomputeLayout() {
+        const avail = availableWidth
+        let tier = layoutTier
+
+        if (debugLayout)
+            console.log("[StatusTray] tier", layoutTier, "bar", barWidth,
+                        "reserved", centerReservedWidth, "avail", avail,
+                        "w0", widthAtTier(0), "w1", widthAtTier(1))
+
+        while (tier < maxTier && widthAtTier(tier) > avail) {
+            tier++
+        }
+
+        while (tier > 0 && widthAtTier(tier - 1) + hysteresisPx <= avail) {
+            tier--
+        }
+
+        layoutTier = tier
+    }
+
+    Timer {
+        id: restoreTimer
+        interval: root.restoreDelayMs
+        onTriggered: root.recomputeLayout()
+    }
+
+    function requestLayout() {
+        if (widthAtTier(layoutTier) > availableWidth) {
+            restoreTimer.stop()
+            recomputeLayout()
+        } else {
+            restoreTimer.restart()
+        }
+    }
+
+    onAvailableWidthChanged: requestLayout()
+    onIslandDemandChanged: requestLayout()
+    Component.onCompleted: recomputeLayout()
+
+    Connections {
+        target: Services.Config
+        function onConfigChanged() {
+            root.requestLayout()
+        }
+    }
+
+    // ── 1. CPU / Sysmon Indicator ─────────────────────────────────────────
+    Components.SysmonIndicator {
+        id: sysmonInd
+        hPadOverride: -1
+
+        readonly property int yieldIndex: root.yieldOrder.indexOf(sysmonInd)
+        readonly property bool isYielded: Services.OverlayManager.isLocked || yieldIndex < root.yieldCount
+        readonly property bool isCompact: root.isCompactAt(sysmonInd, root.layoutTier)
+
+        trayCompact: isCompact
+        trayYielded: isYielded
+
+        Layout.preferredWidth: isYielded ? 0 : (isCompact ? trayWidthCompact : trayWidthFull)
+        Layout.preferredHeight: implicitHeight
+        Layout.rightMargin: isYielded ? 0 : root.itemSpacing
+        Layout.alignment: Qt.AlignVCenter
+        clip: true
+        opacity: isYielded ? 0.0 : 1.0
+        visible: Services.Config ? Services.Config.showSysmonTray : true
+        enabled: opacity > 0.5
+
+        Behavior on Layout.preferredWidth { NumberAnimation { duration: 360; easing.type: Easing.OutCubic } }
+        Behavior on Layout.rightMargin { NumberAnimation { duration: 360; easing.type: Easing.OutCubic } }
+        Behavior on opacity { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
+    }
+
+    // ── 2. Volume Pill ────────────────────────────────────────────────────
+    Rectangle {
+        id: volPill
+
+        readonly property int yieldIndex: root.yieldOrder.indexOf(volPill)
+        readonly property bool isYielded: Services.OverlayManager.isLocked || yieldIndex < root.yieldCount
+        readonly property bool isCompact: root.isCompactAt(volPill, root.layoutTier)
+
+        property bool trayCompact: isCompact
+        property bool trayYielded: isYielded
+
+        readonly property int baseHPad: root.isMinimal ? 10 : (root.isMacMenuBar ? 12 : 20)
+        readonly property int innerSpacing: root.isMinimal ? 4 : 6
+
+        TextMetrics {
+            id: mVolPct
+            font.family: Services.Theme.fontMono
+            font.pixelSize: root.isMinimal ? Services.Theme.fontSizeSm : Services.Theme.fontSizeMd
+            text: "100%"
+        }
+        TextMetrics {
+            id: mVolIcon
+            font.family: Services.Theme.fontSymbols
+            font.pixelSize: root.isMinimal ? Services.Theme.fontSizeMd : Services.Theme.fontSizeXl
+            text: Services.Icons.volumeIcon(Services.Audio.volume, Services.Audio.muted, Services.Audio.isHeadphone, Services.Audio.isTws)
+        }
+
+        readonly property real trayWidthCompact: Math.ceil(mVolIcon.width) + baseHPad
+        readonly property real trayWidthFull: trayWidthCompact + innerSpacing + Math.ceil(mVolPct.width)
+
+        implicitHeight: root.pillHeight
+        implicitWidth: trayWidthFull
+        Layout.preferredWidth: isYielded ? 0 : (isCompact ? trayWidthCompact : trayWidthFull)
+        Layout.preferredHeight: implicitHeight
+        Layout.rightMargin: isYielded ? 0 : root.itemSpacing
+        Layout.alignment: Qt.AlignVCenter
+        clip: true
+        radius: root.pillRadius
+        color: root.getPillBg(volMouse.containsMouse || Services.OverlayManager.volumePanelVisible)
+        border.color: root.getPillBorder(volMouse.containsMouse || Services.OverlayManager.volumePanelVisible)
+        border.width: root.isMinimal ? 0 : 1
+
+        opacity: isYielded ? 0.0 : 1.0
+        visible: Services.Config ? Services.Config.showVolumeTray : true
+        enabled: opacity > 0.5
+
+        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+        Behavior on border.color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+        Behavior on Layout.preferredWidth { NumberAnimation { duration: 360; easing.type: Easing.OutCubic } }
+        Behavior on Layout.rightMargin { NumberAnimation { duration: 360; easing.type: Easing.OutCubic } }
+        Behavior on opacity { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
+
+        Item {
+            id: volIconBox
+            anchors.verticalCenter: parent.verticalCenter
+            anchors.left: parent.left
+            anchors.leftMargin: root.isMinimal ? 5 : (root.isMacMenuBar ? 6 : 10)
+
+            property string icon: Services.Icons.volumeIcon(Services.Audio.volume, Services.Audio.muted, Services.Audio.isHeadphone, Services.Audio.isTws)
+            property string oldIcon: ""
+            property color iconColor: (volMouse.containsMouse || Services.OverlayManager.volumePanelVisible) ? Services.Theme.accent : Services.Theme.textPrimary
+            Behavior on iconColor { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+
+            implicitWidth: mainVolText.implicitWidth
+            implicitHeight: mainVolText.implicitHeight
+
+            onIconChanged: {
+                if (icon !== mainVolText.text) {
+                    oldIcon = mainVolText.text
+                    oldVolText.opacity = 1.0
+                    mainVolText.text = icon
+                    mainVolText.opacity = 0.0
+                    volCrossFade.restart()
+                }
+            }
+
+            Component.onCompleted: mainVolText.text = icon
+
+            Text {
+                id: oldVolText
+                anchors.centerIn: parent
+                text: volIconBox.oldIcon
+                font.family: Services.Theme.fontSymbols
+                font.pixelSize: root.isMinimal ? Services.Theme.fontSizeMd : Services.Theme.fontSizeXl
+                color: volIconBox.iconColor
+                opacity: 0.0
+                visible: opacity > 0
+            }
+
+            Text {
+                id: mainVolText
+                anchors.centerIn: parent
+                font.family: Services.Theme.fontSymbols
+                font.pixelSize: root.isMinimal ? Services.Theme.fontSizeMd : Services.Theme.fontSizeXl
+                color: volIconBox.iconColor
+                opacity: 1.0
+            }
+
+            ParallelAnimation {
+                id: volCrossFade
+                NumberAnimation { target: oldVolText; property: "opacity"; to: 0.0; duration: 200; easing.type: Easing.OutCubic }
+                NumberAnimation { target: mainVolText; property: "opacity"; to: 1.0; duration: 200; easing.type: Easing.OutCubic }
+            }
+        }
+
+        Text {
+            id: volPctText
+            anchors.verticalCenter: parent.verticalCenter
+            anchors.left: volIconBox.right
+            anchors.leftMargin: root.innerSpacing
+            text: Math.round(Services.Audio.volume * 100) + "%"
+            font.family: Services.Theme.fontMono
+            font.pixelSize: root.isMinimal ? Services.Theme.fontSizeSm : Services.Theme.fontSizeMd
+            color: (volMouse.containsMouse || Services.OverlayManager.volumePanelVisible) ? Services.Theme.accent : Services.Theme.textSecondary
+            opacity: volPill.trayCompact ? 0.0 : 1.0
+            visible: opacity > 0.01
+            clip: true
+            Behavior on opacity { NumberAnimation { duration: volPill.trayCompact ? 160 : 260; easing.type: Easing.OutCubic } }
+        }
+
+        MouseArea {
+            id: volMouse
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onClicked: {
+                const centerX = volPill.mapToItem(null, volPill.width / 2, 0).x
+                Services.OverlayManager.volumeTargetX = centerX
+                const newState = !Services.OverlayManager.volumePanelVisible
+                if (newState) Services.OverlayManager.closeAllExcept("volumePanel")
+                Services.OverlayManager.volumePanelVisible = newState
+            }
+        }
+    }
+
+    // ── 3. Battery Pill (Anchor) ──────────────────────────────────────────
+    Rectangle {
+        id: batPill
+
+        readonly property int yieldIndex: root.yieldOrder.indexOf(batPill)
+        readonly property bool isYielded: Services.OverlayManager.isLocked || yieldIndex < root.yieldCount
+        readonly property bool isCompact: root.isCompactAt(batPill, root.layoutTier)
+
+        property bool trayCompact: isCompact
+        property bool trayYielded: isYielded
+
+        readonly property int baseHPad: root.isMinimal ? 10 : (root.isMacMenuBar ? 12 : 20)
+        readonly property int innerSpacing: root.isMinimal ? 4 : 6
+
+        TextMetrics {
+            id: mBatPct
+            font.family: Services.Theme.fontMono
+            font.pixelSize: root.isMinimal ? Services.Theme.fontSizeSm : Services.Theme.fontSizeMd
+            text: "100%"
+        }
+        TextMetrics {
+            id: mBatIcon
+            font.family: Services.Theme.fontSymbols
+            font.pixelSize: root.isMinimal ? Services.Theme.fontSizeMd : Services.Theme.fontSizeXl
+            text: Services.Icons.powerIcon(Services.Power.charging, Services.Power.percentage * 100, Services.Power.holding)
+        }
+
+        readonly property real trayWidthCompact: Math.ceil(mBatIcon.width) + baseHPad
+        readonly property real trayWidthFull: trayWidthCompact + innerSpacing + Math.ceil(mBatPct.width)
+
+        implicitHeight: root.pillHeight
+        implicitWidth: trayWidthFull
+        Layout.preferredWidth: isYielded ? 0 : (isCompact ? trayWidthCompact : trayWidthFull)
+        Layout.preferredHeight: implicitHeight
+        Layout.rightMargin: isYielded ? 0 : root.itemSpacing
+        Layout.alignment: Qt.AlignVCenter
+        clip: true
+        radius: root.pillRadius
+        color: root.getPillBg(batMouse.containsMouse || Services.OverlayManager.batteryPanelVisible)
+        border.color: root.getPillBorder(batMouse.containsMouse || Services.OverlayManager.batteryPanelVisible)
+        border.width: root.isMinimal ? 0 : 1
+
+        opacity: isYielded ? 0.0 : 1.0
+        visible: Services.Config ? Services.Config.showBatteryTray : true
+        enabled: opacity > 0.5
+
+        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+        Behavior on border.color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+        Behavior on Layout.preferredWidth { NumberAnimation { duration: 360; easing.type: Easing.OutCubic } }
+        Behavior on Layout.rightMargin { NumberAnimation { duration: 360; easing.type: Easing.OutCubic } }
+        Behavior on opacity { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
+
+        RowLayout {
+            id: batLayout
+            anchors.verticalCenter: parent.verticalCenter
+            anchors.left: parent.left
+            anchors.leftMargin: root.isMinimal ? 5 : (root.isMacMenuBar ? 6 : 10)
+            spacing: root.innerSpacing
+
+            Text {
+                id: batIconText
+                text: Services.Icons.powerIcon(Services.Power.charging, Services.Power.percentage * 100, Services.Power.holding)
+                font.family: Services.Theme.fontSymbols
+                font.pixelSize: root.isMinimal ? Services.Theme.fontSizeMd : Services.Theme.fontSizeXl
+                color: Services.Power.isLow ? "#ff4444" : (Services.Power.isWarning ? "#e06c75" : (Services.PowerProfile.saverEnabled ? "#ff9800" : ((batMouse.containsMouse || Services.OverlayManager.batteryPanelVisible) ? Services.Theme.accent : Services.Theme.textPrimary)))
+                Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+
+                SequentialAnimation {
+                    id: blinkAnim
+                    running: Services.Power.isLow
+                    loops: Animation.Infinite
+                    NumberAnimation { target: batIconText; property: "opacity"; to: 0.2; duration: 500; easing.type: Easing.InOutQuad }
+                    NumberAnimation { target: batIconText; property: "opacity"; to: 1.0; duration: 500; easing.type: Easing.InOutQuad }
+                }
+
+                Connections {
+                    target: Services.Power
+                    function onIsLowChanged() {
+                        if (!Services.Power.isLow) {
+                            batIconText.opacity = 1.0
+                        }
+                    }
+                }
+            }
+            Text {
+                id: batPctText
+                text: Math.round(Services.Power.percentage * 100) + "%"
+                font.family: Services.Theme.fontMono
+                font.pixelSize: root.isMinimal ? Services.Theme.fontSizeSm : Services.Theme.fontSizeMd
+                color: Services.Power.isLow ? "#ff4444" : (Services.Power.isWarning ? "#e06c75" : (Services.PowerProfile.saverEnabled ? "#ff9800" : ((batMouse.containsMouse || Services.OverlayManager.batteryPanelVisible) ? Services.Theme.accent : Services.Theme.textSecondary)))
+                opacity: batPill.trayCompact ? 0.0 : 1.0
+                visible: opacity > 0.01
+                Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                Behavior on opacity { NumberAnimation { duration: batPill.trayCompact ? 160 : 260; easing.type: Easing.OutCubic } }
+            }
+        }
+
+        MouseArea {
+            id: batMouse
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onClicked: {
+                const centerX = batPill.mapToItem(null, batPill.width / 2, 0).x
+                Services.OverlayManager.batteryTargetX = centerX
+                const newState = !Services.OverlayManager.batteryPanelVisible
+                if (newState) Services.OverlayManager.closeAllExcept("batteryPanel")
+                Services.OverlayManager.batteryPanelVisible = newState
+            }
+        }
+    }
+
+    // ── 4. Notification Bell & Control Center Pill ────────────────────────
+    Rectangle {
+        id: ctrlPill
+
+        readonly property int yieldIndex: root.yieldOrder.indexOf(ctrlPill)
+        readonly property bool isYielded: Services.OverlayManager.isLocked || yieldIndex < root.yieldCount
+        readonly property bool isCompact: false
+
+        property bool trayCompact: false
+        property bool trayYielded: isYielded
+
+        readonly property real trayWidthFull: ctrlLayout.implicitWidth + (root.isMinimal ? 10 : (root.isMacMenuBar ? 14 : 18))
+        readonly property real trayWidthCompact: trayWidthFull
+
+        implicitHeight: root.pillHeight
+        implicitWidth: ctrlLayout.implicitWidth + (root.isMinimal ? 10 : (root.isMacMenuBar ? 14 : 18))
+        Layout.preferredWidth: isYielded ? 0 : trayWidthFull
+        Layout.preferredHeight: implicitHeight
+        Layout.rightMargin: isYielded ? 0 : root.itemSpacing
+        Layout.alignment: Qt.AlignVCenter
+        clip: true
+        radius: root.pillRadius
+        color: root.getPillBg(networkStatusMouse.containsMouse || Services.OverlayManager.controlCenterVisible || Services.Notifications.centerVisible)
+        border.color: root.getPillBorder(networkStatusMouse.containsMouse || Services.OverlayManager.controlCenterVisible || Services.Notifications.centerVisible)
+        border.width: root.isMinimal ? 0 : 1
+
+        opacity: isYielded ? 0.0 : 1.0
+        visible: Services.Config ? Services.Config.showControlCenterTray : true
+        enabled: opacity > 0.5
+
+        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+        Behavior on border.color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+        Behavior on Layout.preferredWidth { NumberAnimation { duration: 360; easing.type: Easing.OutCubic } }
+        Behavior on Layout.rightMargin { NumberAnimation { duration: 360; easing.type: Easing.OutCubic } }
+        Behavior on opacity { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
+
+        RowLayout {
+            id: ctrlLayout
+            anchors.centerIn: parent
+            spacing: root.isMinimal ? 6 : (root.isMacMenuBar ? 8 : 10)
+
+            Components.NotificationIndicator {}
+
+            Rectangle {
+                visible: !root.isMacMenuBar
+                width: 1
+                height: root.isMinimal ? 10 : 12
+                color: Services.Theme.border
+                opacity: 0.8
+            }
+
+            // Network and Control Center menu extras. Existing click target is unchanged.
+            Item {
+                id: networkStatusToggle
+                implicitWidth: networkStatusRow.implicitWidth
+                implicitHeight: networkStatusRow.implicitHeight
+                Layout.alignment: Qt.AlignVCenter
+
+                RowLayout {
+                    id: networkStatusRow
+                    anchors.centerIn: parent
+                    spacing: root.isMinimal ? 5 : 8
+
+                    Services.WifiSignal {
+                        visible: Services.Wifi && !root.ethConnected
+                        width: root.isMinimal ? 16 : (root.isMacMenuBar ? 16 : 18)
+                        height: root.isMinimal ? 16 : (root.isMacMenuBar ? 16 : 18)
+                        signalStrength: Services.Wifi ? Services.Wifi.signalStrength : 0
+                        connected: Services.Wifi ? Services.Wifi.connected : false
+                        wifiEnabled: Services.Wifi ? Services.Wifi.enabled : false
+                        showDisabledStatus: true
+                        activeColor: Services.Wifi && Services.Wifi.connected
+                            ? Services.Theme.accent
+                            : Services.Theme.textDisabled
+                        inactiveColor: Services.Theme.textSecondary
+                    }
+
+                    // Ikon LAN menggantikan ikon Wi-Fi saat kabel terhubung.
+                    Text {
+                        visible: root.ethConnected
+                        text: root.ethGlyph
+                        font.family: Services.Theme.fontSymbols
+                        font.pixelSize: root.isMinimal ? 16 : (root.isMacMenuBar ? 16 : 18)
+                        color: Services.Theme.accent
+                        Layout.alignment: Qt.AlignVCenter
+                    }
+
+                    Text {
+                        visible: Services.Bluetooth
+                            && Services.Bluetooth.enabled
+                        text: Services.Bluetooth.hasConnectedDevice
+                            ? Services.Icons.bluetoothConnect
+                            : Services.Icons.bluetooth
+                        font.family: Services.Theme.fontSymbols
+                        font.pixelSize: root.isMinimal
+                            ? Services.Theme.fontSizeLg
+                            : (root.isMacMenuBar ? Services.Theme.fontSizeXl : Math.round(Services.Theme.fontSizeXl * 1.25))
+                        color: Services.Theme.accent
+                    }
+
+                    Text {
+                        text: Services.Icons.controlcenter
+                        font.family: Services.Theme.fontSymbols
+                        font.pixelSize: root.isMinimal ? Services.Theme.fontSizeLg : Services.Theme.fontSizeXl
+                        color: Services.OverlayManager.controlCenterVisible || networkStatusMouse.containsMouse
+                            ? Services.Theme.accent
+                            : Services.Theme.textPrimary
+                        Layout.alignment: Qt.AlignVCenter
+                    }
+                }
+
+                MouseArea {
+                    id: networkStatusMouse
+                    anchors.fill: parent
+                    anchors.margins: -4
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: {
+                        const newState = !Services.OverlayManager.controlCenterVisible
+                        if (newState) Services.OverlayManager.closeAllExcept("controlCenter")
+                        Services.OverlayManager.controlCenterVisible = newState
+                    }
+                }
+            }
+        }
+    }
+
+    // ── 5. System Tray App Icons ───────────────────────────────────────────
+    // App menu extras sit after the system indicators and before the clock.
+    Components.SystemTrayIcons {
+        id: sysTrayIcons
+        trayMenuPopup: trayMenuPopup
+        trayOverflowPopup: trayOverflowPopup
+
+        readonly property int yieldIndex: root.yieldOrder.indexOf(sysTrayIcons)
+        readonly property bool isYielded: Services.OverlayManager.isLocked || yieldIndex < root.yieldCount
+        readonly property bool isCompact: false
+
+        trayCompact: false
+        trayYielded: isYielded
+
+        Layout.preferredWidth: isYielded ? 0 : trayWidthFull
+        Layout.preferredHeight: implicitHeight
+        Layout.rightMargin: isYielded ? 0 : root.itemSpacing
+        Layout.alignment: Qt.AlignVCenter
+        clip: true
+        opacity: isYielded ? 0.0 : 1.0
+        visible: Services.Config ? Services.Config.showSysTray : true
+        enabled: opacity > 0.5
+
+        onVisibleChanged: root.requestLayout()
+
+        Behavior on Layout.preferredWidth { NumberAnimation { duration: 360; easing.type: Easing.OutCubic } }
+        Behavior on Layout.rightMargin { NumberAnimation { duration: 360; easing.type: Easing.OutCubic } }
+        Behavior on opacity { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
+    }
+
+    Components.TrayMenuPopup {
+        id: trayMenuPopup
+    }
+
+    Components.TrayOverflowPopup {
+        id: trayOverflowPopup
+        trayMenuPopup: trayMenuPopup
+        maxVisibleCount: sysTrayIcons.maxVisibleCount
+    }
+
+    // ── 6. Clock & Date Pill ──────────────────────────────────────────────
+    Components.ClockCenter {
+        id: clockCenterPill
+        hPadOverride: -1
+
+        readonly property int yieldIndex: root.yieldOrder.indexOf(clockCenterPill)
+        readonly property bool isYielded: Services.OverlayManager.isLocked || yieldIndex < root.yieldCount
+
+        trayCompact: false
+        trayYielded: isYielded
+
+        Layout.preferredWidth: isYielded ? 0 : trayWidthFull
+        Layout.preferredHeight: implicitHeight
+        Layout.rightMargin: 0
+        Layout.alignment: Qt.AlignVCenter
+        clip: true
+        opacity: isYielded ? 0.0 : 1.0
+        visible: root.isIslands && (Services.Config ? Services.Config.showClockTray : true)
+        enabled: opacity > 0.5
+
+        Behavior on Layout.preferredWidth { NumberAnimation { duration: 360; easing.type: Easing.OutCubic } }
+        Behavior on opacity { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
+    }
+}

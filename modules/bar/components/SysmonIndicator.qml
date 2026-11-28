@@ -19,7 +19,7 @@ Rectangle {
     property bool trayYielded: false
     property int hPadOverride: -1
 
-    readonly property int baseHPad: isMinimal ? 12 : (isMacMenuBar ? 8 : 20)
+    readonly property int baseHPad: isMinimal ? 10 : (isMacMenuBar ? 12 : 20)
     readonly property int hPad: hPadOverride >= 0 ? hPadOverride : baseHPad
     readonly property int innerSpacing: isMinimal ? 4 : 6
 
@@ -42,12 +42,12 @@ Rectangle {
 
     implicitHeight: isMinimal ? 24 : 28
     implicitWidth: trayCompact ? trayWidthCompact : trayWidthFull
-    radius: isMinimal ? 6 : (isMacMenuBar ? 7 : 10)
+    radius: isMinimal ? 6 : (isMacMenuBar ? 14 : 10)
 
     readonly property bool glassDark: Services.Theme.isDark
     readonly property bool lit: sysmonMouse.containsMouse || isActive
     color: isMacMenuBar
-        ? (lit ? (glassDark ? Qt.rgba(1, 1, 1, 0.13) : Qt.rgba(0, 0, 0, 0.08)) : "transparent")
+        ? (lit ? Qt.rgba(1, 1, 1, glassDark ? 0.14 : 0.22) : "transparent")
         : (isMinimal
             ? (lit ? Services.Theme.bgHover : "transparent")
             : (lit ? (glassDark ? Qt.rgba(1, 1, 1, 0.20) : Qt.rgba(1, 1, 1, 0.65))
@@ -67,7 +67,7 @@ Rectangle {
         id: sysmonIconBox
         anchors.verticalCenter: parent.verticalCenter
         anchors.left: parent.left
-        anchors.leftMargin: sysmonPill.isMinimal ? 6 : (sysmonPill.isMacMenuBar ? 4 : 10)
+        anchors.leftMargin: sysmonPill.isMinimal ? 5 : (sysmonPill.isMacMenuBar ? 6 : 10)
         width: sysmonIconText.implicitWidth
         height: sysmonIconText.implicitHeight
 
@@ -77,7 +77,7 @@ Rectangle {
             text: Services.Icons.cpu
             font.family: Services.Theme.fontSymbols
             font.pixelSize: sysmonPill.isMinimal ? Services.Theme.fontSizeMd : Services.Theme.fontSizeXl
-            color: (sysmonMouse.containsMouse || sysmonPill.isActive) ? Services.Theme.accent : Services.Theme.textPrimary
+            color: (sysmonMouse.containsMouse || sysmonPill.isActive) ? Services.Theme.accent : (sysmonPill.isMacMenuBar ? "#f6f6f9" : Services.Theme.textPrimary)
             Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
         }
     }
@@ -90,7 +90,7 @@ Rectangle {
         text: Math.round(Services.Sysmon.cpuUsage) + "%"
         font.family: Services.Theme.fontMono
         font.pixelSize: sysmonPill.isMinimal ? Services.Theme.fontSizeSm : Services.Theme.fontSizeMd
-        color: (sysmonMouse.containsMouse || sysmonPill.isActive) ? Services.Theme.accent : Services.Theme.textSecondary
+        color: (sysmonMouse.containsMouse || sysmonPill.isActive) ? Services.Theme.accent : (sysmonPill.isMacMenuBar ? "#d8d8e4" : Services.Theme.textSecondary)
         visible: opacity > 0.01
         opacity: sysmonPill.trayCompact ? 0.0 : 1.0
         clip: true

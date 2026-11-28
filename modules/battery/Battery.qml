@@ -1,8 +1,6 @@
 import QtQuick
 import QtQuick.Layouts
-import QtQuick.Controls
 import Quickshell
-import Quickshell.Io
 import Quickshell.Wayland
 import "../../services" as Services
 
@@ -12,13 +10,43 @@ PanelWindow {
 
     readonly property bool isBottom: Services.Config ? (Services.Config.barPosition === "bottom") : false
     readonly property string barStyle: Services.Config ? Services.Config.barStyle : "islands"
-    readonly property bool isFloating: barStyle === "floating"
-    readonly property int barTotalHeight: Services.Config ? (Services.Config.barStyle === "minimal" ? 30 : (Services.Config.barStyle === "unified" ? 38 : (Services.Config.barStyle === "floating" ? 46 : 36))) : 36
+    readonly property int barTotalHeight: Services.Config ? (barStyle === "minimal" ? 30 : (barStyle === "unified" ? 38 : (barStyle === "floating" ? 46 : 36))) : 36
+
+    readonly property bool isOpen: Services.OverlayManager.batteryPanelVisible
+    readonly property int pct: Math.round((Services.Power.percentage || 0) * 100)
+    readonly property bool chargeLimitOn: Boolean(Services.Config && Services.Config.batteryChargeLimitEnabled)
+
+    readonly property color stateColor: {
+        if (Services.Power.isChargeInhibited) return Services.Theme.accent
+        if (Services.Power.charging) return Services.Theme.success
+        if (Services.Power.isLow) return Services.Theme.danger
+        if (Services.Power.isWarning) return Services.Theme.warning
+        if (Services.PowerProfile.saverEnabled) return "#f59e0b"
+        return Services.Theme.accent
+    }
+
+    readonly property string statusLabel: {
+        if (Services.Power.isChargeInhibited) return "Bypass"
+        if (Services.Power.charging) return "Charging"
+        if (Services.Power.hasBattery) return "On Battery"
+        return "AC Power"
+    }
+
+    readonly property string subStatusText: {
+        if (Services.Power.isChargeInhibited) return "Power bypassed • Charge limit (80%) active"
+        if (Services.Power.charging) {
+            return Services.Power.timeRemaining ? (Services.Power.timeRemaining + " until full") : "Connected to power source"
+        }
+        return Services.Power.timeRemaining ? (Services.Power.timeRemaining + " remaining") : Services.Power.stateString
+    }
+
+    readonly property color tileBg: Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.06) : Qt.rgba(0, 0, 0, 0.05)
+    readonly property color tileBgHover: Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.11) : Qt.rgba(0, 0, 0, 0.09)
+    readonly property color tileBorder: Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.07)
 
     anchors { top: true; bottom: true; left: true; right: true }
     color: "transparent"
     exclusiveZone: 0
-    readonly property bool isOpen: Services.OverlayManager.batteryPanelVisible
     visible: isOpen || (panel && panel.opacity > 0.01)
     WlrLayershell.layer: WlrLayer.Top
     WlrLayershell.namespace: "quickshell:battery"
@@ -32,8 +60,6 @@ PanelWindow {
             height: root.height - root.barTotalHeight
         }
     }
-
-    readonly property bool isCenteredBar: barStyle !== "islands"
 
     function open() {
         Services.OverlayManager.closeAllExcept(root)
@@ -73,15 +99,14 @@ PanelWindow {
 
         Rectangle {
             id: panel
-            width: 360
+            width: 340
             implicitHeight: mainCol.implicitHeight + 32
-            readonly property real targetX: Services.OverlayManager.batteryTargetX > 0 
-                ? Services.OverlayManager.batteryTargetX 
+            readonly property real targetX: Services.OverlayManager.batteryTargetX > 0
+                ? Services.OverlayManager.batteryTargetX
                 : (parent.width - 160)
             x: Math.max(12, Math.min(parent.width - width - 12, targetX - (width / 2)))
             y: root.isBottom ? (parent.height - height - 12) : 12
             radius: 20
-            // macOS menu material (DockMenu.qml); blur comes from the compositor
             color: Services.Theme.isDark ? Qt.rgba(0.14, 0.14, 0.15, 0.62) : Qt.rgba(1, 1, 1, 0.66)
             border.color: Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.12)
             border.width: 1
@@ -91,10 +116,10 @@ PanelWindow {
             scale: root.isOpen ? 1.0 : 0.96
             transform: Translate {
                 y: root.isOpen ? 0 : (root.isBottom ? 20 : -20)
-                Behavior on y { NumberAnimation { duration: 280; easing.type: Easing.OutCubic } }
+                Behavior on y { NumberAnimation { duration: 240; easing.type: Easing.OutCubic } }
             }
-            Behavior on opacity { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
-            Behavior on scale   { NumberAnimation { duration: 280; easing.type: Easing.OutBack } }
+            Behavior on opacity { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
+            Behavior on scale   { NumberAnimation { duration: 240; easing.type: Easing.OutCubic } }
 
             MouseArea { anchors.fill: parent; onClicked: {} }
 
@@ -104,455 +129,176 @@ PanelWindow {
                 anchors.margins: 16
                 spacing: 14
 
-                // ── 1. Header ──
-                RowLayout {
-                    Layout.fillWidth: true
-                    spacing: 8
-
-                    Text {
-                        text: Services.Icons.powerIcon(Services.Power.charging, Services.Power.percentage * 100)
-                        font.family: Services.Theme.fontSymbols
-                        font.pixelSize: 16
-                        color: Services.Power.charging ? Services.Theme.success : (Services.Power.isLow ? Services.Theme.danger : (Services.Power.isWarning ? Services.Theme.warning : Services.Theme.accent))
-                    }
-
-                    Text {
-                        text: "Battery & Power"
-                        font.family: Services.Theme.fontPrimary
-                        font.bold: true
-                        font.pixelSize: Services.Theme.fontSizeXl
-                        color: Services.Theme.textPrimary
-                        Layout.fillWidth: true
-                    }
-
-                    // Status Badge
-                    Rectangle {
-                        implicitHeight: 22
-                        implicitWidth: statusBadgeText.implicitWidth + 14
-                        radius: 11
-                        color: Services.Power.isChargeInhibited
-                            ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.18)
-                            : (Services.Power.charging 
-                                ? Qt.rgba(Services.Theme.success.r, Services.Theme.success.g, Services.Theme.success.b, 0.18)
-                                : (Services.Power.isLow 
-                                    ? Qt.rgba(Services.Theme.danger.r, Services.Theme.danger.g, Services.Theme.danger.b, 0.18)
-                                    : Qt.rgba(Services.Theme.textSecondary.r, Services.Theme.textSecondary.g, Services.Theme.textSecondary.b, 0.15)))
-                        border.color: Services.Power.isChargeInhibited ? Services.Theme.accent : (Services.Power.charging ? Services.Theme.success : "transparent")
-                        border.width: 1
-
-                        Text {
-                            id: statusBadgeText
-                            anchors.centerIn: parent
-                            text: Services.Power.isChargeInhibited ? "Bypass / Idle" : (Services.Power.charging ? "Charging" : (Services.Power.hasBattery ? "On Battery" : "AC Power"))
-                            font.pixelSize: 10
-                            font.bold: true
-                            color: Services.Power.isChargeInhibited ? Services.Theme.accent : (Services.Power.charging ? Services.Theme.success : (Services.Power.isLow ? Services.Theme.danger : Services.Theme.textSecondary))
-                        }
-                    }
-
-                    // Close Button
-                    Rectangle {
-                        width: 24; height: 24; radius: 12
-                        color: closeBtnArea.containsMouse ? (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.10)) : "transparent"
-                        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
-
-                        Text {
-                            anchors.centerIn: parent
-                            text: Services.Icons.close
-                            font.family: Services.Theme.fontSymbols
-                            font.pixelSize: 11
-                            color: closeBtnArea.containsMouse ? Services.Theme.accent : Services.Theme.textSecondary
-                        }
-                        MouseArea {
-                            id: closeBtnArea
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: root.close()
-                        }
-                    }
-                }
-
-                // ── 2. Hero Battery Status Card ──
-                Rectangle {
-                    Layout.fillWidth: true
-                    radius: Services.Theme.radiusMd
-                    color: (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06))
-                    border.color: (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06))
-                    border.width: 1
-                    implicitHeight: heroCol.implicitHeight + 24
-
-                    ColumnLayout {
-                        id: heroCol
-                        anchors.fill: parent
-                        anchors.margins: 14
-                        spacing: 10
-
-                        RowLayout {
-                            Layout.fillWidth: true
-                            spacing: 12
-
-                            ColumnLayout {
-                                Layout.fillWidth: true
-                                spacing: 2
-
-                                RowLayout {
-                                    spacing: 6
-                                    Text {
-                                        text: Math.round(Services.Power.percentage * 100) + "%"
-                                        font.family: Services.Theme.fontMono
-                                        font.pixelSize: 32
-                                        font.bold: true
-                                        color: Services.Power.isLow ? Services.Theme.danger : (Services.Power.isWarning ? Services.Theme.warning : Services.Theme.textPrimary)
-                                    }
-                                    Text {
-                                        visible: Services.Power.charging || Services.Power.isChargeInhibited
-                                        text: Services.Power.isChargeInhibited ? "󰚥" : Services.Icons.bolt
-                                        font.family: Services.Theme.fontSymbols
-                                        font.pixelSize: 18
-                                        color: Services.Power.isChargeInhibited ? Services.Theme.accent : Services.Theme.success
-                                    }
-                                }
-
-                                Text {
-                                    text: {
-                                        if (Services.Power.isChargeInhibited) return "Power bypassed • Charge limit (80%) active"
-                                        if (Services.Power.charging) {
-                                            if (Services.Power.timeRemaining) return Services.Power.timeRemaining + " until full"
-                                            return "Connected to power source"
-                                        }
-                                        if (Services.Power.timeRemaining) return Services.Power.timeRemaining + " remaining"
-                                        return Services.Power.stateString
-                                    }
-                                    font.pixelSize: Services.Theme.fontSizeSm
-                                    color: Services.Theme.textSecondary
-                                    elide: Text.ElideRight
-                                    Layout.fillWidth: true
-                                }
-                            }
-
-                            // Battery Icon Big Visual
-                            Rectangle {
-                                width: 44
-                                height: 44
-                                radius: 22
-                                color: Services.Power.isChargeInhibited
-                                    ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.2)
-                                    : (Services.Power.charging 
-                                        ? Qt.rgba(Services.Theme.success.r, Services.Theme.success.g, Services.Theme.success.b, 0.2)
-                                        : (Services.PowerProfile.saverEnabled ? Qt.rgba(245/255, 158/255, 11/255, 0.2) : Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.15)))
-                                border.color: Services.Power.isChargeInhibited ? Services.Theme.accent : (Services.Power.charging ? Services.Theme.success : "transparent")
-                                border.width: 1
-
-                                Text {
-                                    anchors.centerIn: parent
-                                    text: Services.Power.isChargeInhibited ? "󰚥" : Services.Icons.powerIcon(Services.Power.charging, Services.Power.percentage * 100)
-                                    font.family: Services.Theme.fontSymbols
-                                    font.pixelSize: 20
-                                    color: Services.Power.isChargeInhibited ? Services.Theme.accent : (Services.Power.charging ? Services.Theme.success : (Services.PowerProfile.saverEnabled ? "#f59e0b" : Services.Theme.accent))
-                                }
-                            }
-                        }
-
-                        // Animated Level Progress Bar
-                        Rectangle {
-                            Layout.fillWidth: true
-                            height: 8
-                            radius: 4
-                            color: (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.10) : Qt.rgba(0, 0, 0, 0.08))
-
-                            Rectangle {
-                                id: levelFill
-                                height: parent.height
-                                radius: parent.radius
-                                width: Math.max(8, Math.min(parent.width, (Services.Power.percentage || 0) * parent.width))
-                                color: Services.Power.isChargeInhibited
-                                    ? Services.Theme.accent
-                                    : (Services.Power.charging 
-                                        ? Services.Theme.success 
-                                        : (Services.Power.isLow ? Services.Theme.danger : (Services.Power.isWarning ? Services.Theme.warning : (Services.PowerProfile.saverEnabled ? "#f59e0b" : Services.Theme.accent))))
-                                Behavior on width { NumberAnimation { duration: 300; easing.type: Easing.OutCubic } }
-                                Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
-                            }
-                        }
-                    }
-                }
-
-                // ── 3. Power Profile Selector ──
+                // ── 1. Unified Hero Header ──────────────────────────────────
                 ColumnLayout {
                     Layout.fillWidth: true
                     spacing: 8
 
                     RowLayout {
                         Layout.fillWidth: true
+                        spacing: 8
+
                         Text {
-                            text: "Power Profile"
-                            font.bold: true
-                            font.pixelSize: Services.Theme.fontSizeMd
-                            color: Services.Theme.textPrimary
-                            Layout.fillWidth: true
+                            text: Services.Power.isChargeInhibited ? "󰚥" : Services.Icons.powerIcon(Services.Power.charging, root.pct)
+                            font.family: Services.Theme.fontSymbols
+                            font.pixelSize: 22
+                            color: root.stateColor
                         }
+
                         Text {
-                            text: Services.PowerProfile.profile.toUpperCase()
+                            text: root.pct + "%"
                             font.family: Services.Theme.fontMono
+                            font.pixelSize: 28
                             font.bold: true
-                            font.pixelSize: Services.Theme.fontSizeXs
-                            color: Services.Theme.accent
+                            color: Services.Power.isLow ? Services.Theme.danger : Services.Theme.textPrimary
+                        }
+
+                        // Compact Status Pill
+                        Rectangle {
+                            implicitHeight: 20
+                            implicitWidth: statusPillText.implicitWidth + 12
+                            radius: 10
+                            color: Qt.rgba(root.stateColor.r, root.stateColor.g, root.stateColor.b, 0.16)
+
+                            Text {
+                                id: statusPillText
+                                anchors.centerIn: parent
+                                text: root.statusLabel
+                                font.pixelSize: 10
+                                font.weight: Font.DemiBold
+                                color: root.stateColor
+                            }
+                        }
+
+                        Item { Layout.fillWidth: true }
+
+                        // Minimal Close Button
+                        Rectangle {
+                            width: 24; height: 24; radius: 12
+                            color: closeMouse.containsMouse ? root.tileBgHover : "transparent"
+
+                            Text {
+                                anchors.centerIn: parent
+                                text: Services.Icons.close
+                                font.family: Services.Theme.fontSymbols
+                                font.pixelSize: 11
+                                color: closeMouse.containsMouse ? Services.Theme.textPrimary : Services.Theme.textTertiary
+                            }
+                            MouseArea {
+                                id: closeMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: root.close()
+                            }
                         }
                     }
 
-                    // 3 Mode Tiles
-                    RowLayout {
+                    Text {
                         Layout.fillWidth: true
-                        spacing: 8
+                        text: root.subStatusText
+                        font.pixelSize: Services.Theme.fontSizeSm
+                        color: Services.Theme.textSecondary
+                        elide: Text.ElideRight
+                    }
 
-                        // 1. Power Saver
+                    // Clean Battery Level Bar (with 80% marker when limit is active)
+                    Rectangle {
+                        Layout.fillWidth: true
+                        height: 6
+                        radius: 3
+                        color: Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.10) : Qt.rgba(0, 0, 0, 0.08)
+
                         Rectangle {
-                            id: saverBtn
-                            Layout.fillWidth: true
-                            implicitHeight: 64
-                            radius: Services.Theme.radiusMd
-                            readonly property bool isCurrent: Services.PowerProfile.profile === "power-saver"
-                            color: isCurrent 
-                                ? Qt.rgba(245/255, 158/255, 11/255, 0.18) 
-                                : (saverMouse.containsMouse ? (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.10)) : (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)))
-                            border.color: isCurrent ? "#f59e0b" : (saverMouse.containsMouse ? (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.12)) : (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)))
-                            border.width: isCurrent ? 1.5 : 1
-
-                            Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
-                            Behavior on border.color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
-
-                            MouseArea {
-                                id: saverMouse
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: Services.PowerProfile.setProfile("power-saver")
-                            }
-
-                            ColumnLayout {
-                                anchors.centerIn: parent
-                                spacing: 4
-
-                                Text {
-                                    Layout.alignment: Qt.AlignHCenter
-                                    text: Services.Icons.leaf
-                                    font.family: Services.Theme.fontSymbols
-                                    font.pixelSize: 15
-                                    color: saverBtn.isCurrent ? "#f59e0b" : Services.Theme.textSecondary
-                                }
-
-                                Text {
-                                    Layout.alignment: Qt.AlignHCenter
-                                    text: "Saver"
-                                    font.bold: saverBtn.isCurrent
-                                    font.pixelSize: 11
-                                    color: saverBtn.isCurrent ? "#f59e0b" : Services.Theme.textPrimary
-                                }
-                            }
+                            height: parent.height
+                            radius: parent.radius
+                            width: Math.max(6, Math.min(parent.width, (Services.Power.percentage || 0) * parent.width))
+                            color: root.stateColor
+                            Behavior on width { NumberAnimation { duration: 280; easing.type: Easing.OutCubic } }
+                            Behavior on color { ColorAnimation { duration: 220; easing.type: Easing.OutCubic } }
                         }
 
-                        // 2. Balanced
+                        // Subtle 80% threshold marker
                         Rectangle {
-                            id: balancedBtn
-                            Layout.fillWidth: true
-                            implicitHeight: 64
-                            radius: Services.Theme.radiusMd
-                            readonly property bool isCurrent: Services.PowerProfile.profile === "balanced"
-                            color: isCurrent 
-                                ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.18) 
-                                : (balancedMouse.containsMouse ? (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.10)) : (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)))
-                            border.color: isCurrent ? Services.Theme.accent : (balancedMouse.containsMouse ? (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.12)) : (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)))
-                            border.width: isCurrent ? 1.5 : 1
-
-                            Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
-                            Behavior on border.color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
-
-                            MouseArea {
-                                id: balancedMouse
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: Services.PowerProfile.setProfile("balanced")
-                            }
-
-                            ColumnLayout {
-                                anchors.centerIn: parent
-                                spacing: 4
-
-                                Text {
-                                    Layout.alignment: Qt.AlignHCenter
-                                    text: Services.Icons.balance
-                                    font.family: Services.Theme.fontSymbols
-                                    font.pixelSize: 15
-                                    color: balancedBtn.isCurrent ? Services.Theme.accent : Services.Theme.textSecondary
-                                }
-
-                                Text {
-                                    Layout.alignment: Qt.AlignHCenter
-                                    text: "Balanced"
-                                    font.bold: balancedBtn.isCurrent
-                                    font.pixelSize: 11
-                                    color: balancedBtn.isCurrent ? Services.Theme.accent : Services.Theme.textPrimary
-                                }
-                            }
+                            visible: Services.Power.chargeLimitSupported && root.chargeLimitOn
+                            x: parent.width * 0.8 - 1
+                            width: 2
+                            height: parent.height
+                            color: Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.45) : Qt.rgba(0, 0, 0, 0.35)
                         }
+                    }
+                }
 
-                        // 3. Performance
-                        Rectangle {
-                            id: perfBtn
+                // ── 2. Power Profile Selector (Segmented Row) ───────────────
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 6
+
+                    Repeater {
+                        model: [
+                            { id: "power-saver", label: "Saver",    icon: Services.Icons.leaf,    tint: "#f59e0b" },
+                            { id: "balanced",    label: "Balanced", icon: Services.Icons.balance, tint: Services.Theme.accent },
+                            { id: "performance", label: "Perf",     icon: Services.Icons.speed,   tint: Services.Theme.danger }
+                        ]
+                        delegate: Rectangle {
+                            readonly property bool isCurrent: Services.PowerProfile.profile === modelData.id
+                            readonly property color activeTint: modelData.tint
+
                             Layout.fillWidth: true
-                            implicitHeight: 64
+                            height: 38
                             radius: Services.Theme.radiusMd
-                            readonly property bool isCurrent: Services.PowerProfile.profile === "performance"
-                            color: isCurrent 
-                                ? Qt.rgba(239/255, 68/255, 68/255, 0.18) 
-                                : (perfMouse.containsMouse ? (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.10)) : (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)))
-                            border.color: isCurrent ? Services.Theme.danger : (perfMouse.containsMouse ? (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.12)) : (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)))
-                            border.width: isCurrent ? 1.5 : 1
+                            color: isCurrent
+                                ? Qt.rgba(activeTint.r, activeTint.g, activeTint.b, 0.16)
+                                : (profMouse.containsMouse ? root.tileBgHover : root.tileBg)
+                            border.color: isCurrent ? activeTint : root.tileBorder
+                            border.width: 1
 
-                            Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
-                            Behavior on border.color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
+                            Behavior on color { ColorAnimation { duration: 180; easing.type: Easing.OutCubic } }
+                            Behavior on border.color { ColorAnimation { duration: 180; easing.type: Easing.OutCubic } }
 
                             MouseArea {
-                                id: perfMouse
+                                id: profMouse
                                 anchors.fill: parent
                                 hoverEnabled: true
                                 cursorShape: Qt.PointingHandCursor
-                                onClicked: Services.PowerProfile.setProfile("performance")
+                                onClicked: Services.PowerProfile.setProfile(modelData.id)
                             }
 
-                            ColumnLayout {
+                            RowLayout {
                                 anchors.centerIn: parent
-                                spacing: 4
+                                spacing: 5
 
                                 Text {
-                                    Layout.alignment: Qt.AlignHCenter
-                                    text: Services.Icons.speed
+                                    text: modelData.icon
                                     font.family: Services.Theme.fontSymbols
-                                    font.pixelSize: 15
-                                    color: perfBtn.isCurrent ? Services.Theme.danger : Services.Theme.textSecondary
+                                    font.pixelSize: 13
+                                    color: isCurrent ? activeTint : Services.Theme.textSecondary
                                 }
-
                                 Text {
-                                    Layout.alignment: Qt.AlignHCenter
-                                    text: "Performance"
-                                    font.bold: perfBtn.isCurrent
-                                    font.pixelSize: 11
-                                    color: perfBtn.isCurrent ? Services.Theme.danger : Services.Theme.textPrimary
+                                    text: modelData.label
+                                    font.pixelSize: Services.Theme.fontSizeSm
+                                    font.weight: isCurrent ? Font.DemiBold : Font.Medium
+                                    color: isCurrent ? activeTint : Services.Theme.textPrimary
                                 }
                             }
                         }
                     }
                 }
 
-                // ── 3.5 Battery Protection / Charge Limit ──
+                // ── 3. Charge Limit (80%) Compact Toggle ────────────────────
                 Rectangle {
                     visible: Services.Power.chargeLimitSupported
                     Layout.fillWidth: true
-                    implicitHeight: limitCol.implicitHeight + 20
+                    height: 46
                     radius: Services.Theme.radiusMd
-                    color: (Services.Config && Services.Config.batteryChargeLimitEnabled)
-                        ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.12)
-                        : (limitMouse.containsMouse ? (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.10)) : (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)))
-                    border.color: (Services.Config && Services.Config.batteryChargeLimitEnabled)
-                        ? Services.Theme.accent
-                        : (limitMouse.containsMouse ? (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.12)) : (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06)))
+                    color: root.chargeLimitOn
+                        ? Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.10)
+                        : (limitMouse.containsMouse ? root.tileBgHover : root.tileBg)
+                    border.color: root.chargeLimitOn ? Services.Theme.accent : root.tileBorder
                     border.width: 1
 
-                    Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
-                    Behavior on border.color { ColorAnimation { duration: 250; easing.type: Easing.OutCubic } }
-
-                    ColumnLayout {
-                        id: limitCol
-                        anchors.fill: parent
-                        anchors.margins: 12
-                        spacing: 6
-
-                        RowLayout {
-                            Layout.fillWidth: true
-                            spacing: 10
-
-                            Text {
-                                text: Services.Power.isChargeInhibited ? "󰚥" : "󰂄"
-                                font.family: Services.Theme.fontSymbols
-                                font.pixelSize: 18
-                                color: (Services.Config && Services.Config.batteryChargeLimitEnabled)
-                                    ? (Services.Power.isChargeInhibited ? Services.Theme.success : Services.Theme.accent)
-                                    : Services.Theme.textSecondary
-                            }
-
-                            ColumnLayout {
-                                Layout.fillWidth: true
-                                spacing: 2
-
-                                RowLayout {
-                                    spacing: 6
-                                    Text {
-                                        text: "Charge Limit (80%)"
-                                        font.bold: true
-                                        font.pixelSize: Services.Theme.fontSizeSm
-                                        color: Services.Theme.textPrimary
-                                    }
-                                    Rectangle {
-                                        visible: Services.Config && Services.Config.batteryChargeLimitEnabled
-                                        implicitHeight: 16
-                                        implicitWidth: badgeText.implicitWidth + 8
-                                        radius: 4
-                                        color: Services.Power.isChargeInhibited
-                                            ? Qt.rgba(16/255, 185/255, 129/255, 0.2)
-                                            : Qt.rgba(Services.Theme.accent.r, Services.Theme.accent.g, Services.Theme.accent.b, 0.2)
-                                        Text {
-                                            id: badgeText
-                                            anchors.centerIn: parent
-                                            text: Services.Power.isChargeInhibited ? "Bypass / Idle" : "Charging"
-                                            font.pixelSize: 9
-                                            font.bold: true
-                                            color: Services.Power.isChargeInhibited ? Services.Theme.success : Services.Theme.accent
-                                        }
-                                    }
-                                }
-
-                                Text {
-                                    text: Services.Power.isChargeInhibited
-                                        ? "Battery protected: Power supplied directly from charger (bypass)"
-                                        : ((Services.Config && Services.Config.batteryChargeLimitEnabled)
-                                            ? "Limits charging to 80% to preserve battery lifespan"
-                                            : "Battery will charge normally up to 100%")
-                                    font.pixelSize: 10
-                                    color: Services.Theme.textSecondary
-                                    Layout.fillWidth: true
-                                    wrapMode: Text.WordWrap
-                                }
-                            }
-
-                            // Switch Toggle
-                            Rectangle {
-                                implicitWidth: 38
-                                implicitHeight: 22
-                                radius: 11
-                                color: (Services.Config && Services.Config.batteryChargeLimitEnabled)
-                                    ? Services.Theme.accent
-                                    : (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06))
-                                border.color: (Services.Config && Services.Config.batteryChargeLimitEnabled)
-                                    ? Services.Theme.accent
-                                    : (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(0, 0, 0, 0.12))
-                                border.width: 1
-
-                                Behavior on color { ColorAnimation { duration: 200 } }
-
-                                Rectangle {
-                                    width: 16
-                                    height: 16
-                                    radius: 8
-                                    color: (Services.Config && Services.Config.batteryChargeLimitEnabled) ? "#ffffff" : Services.Theme.textSecondary
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    x: (Services.Config && Services.Config.batteryChargeLimitEnabled) ? parent.width - width - 3 : 3
-                                    Behavior on x { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
-                                }
-                            }
-                        }
-                    }
+                    Behavior on color { ColorAnimation { duration: 180; easing.type: Easing.OutCubic } }
+                    Behavior on border.color { ColorAnimation { duration: 180; easing.type: Easing.OutCubic } }
 
                     MouseArea {
                         id: limitMouse
@@ -565,197 +311,158 @@ PanelWindow {
                             }
                         }
                     }
-                }
 
-                // ── 4. Detailed Hardware Metrics Grid ──
-                ColumnLayout {
-                    Layout.fillWidth: true
-                    spacing: 8
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.leftMargin: 12
+                        anchors.rightMargin: 12
+                        spacing: 10
 
-                    Text {
-                        text: "Battery Health & Stats"
-                        font.bold: true
-                        font.pixelSize: Services.Theme.fontSizeMd
-                        color: Services.Theme.textPrimary
-                    }
-
-                    GridLayout {
-                        Layout.fillWidth: true
-                        columns: 2
-                        columnSpacing: 8
-                        rowSpacing: 8
-
-                        // Health / Capacity
-                        Rectangle {
-                            Layout.fillWidth: true
-                            implicitHeight: 52
-                            radius: Services.Theme.radiusMd
-                            color: (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06))
-                            border.color: (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06))
-                            border.width: 1
-
-                            RowLayout {
-                                anchors.fill: parent
-                                anchors.margins: 10
-                                spacing: 10
-
-                                Text {
-                                    text: Services.Icons.heartPulse
-                                    font.family: Services.Theme.fontSymbols
-                                    font.pixelSize: 15
-                                    color: Services.Theme.accent
-                                }
-                                ColumnLayout {
-                                    Layout.fillWidth: true
-                                    spacing: 1
-                                    Text { text: "Health"; font.pixelSize: 10; color: Services.Theme.textSecondary }
-                                    Text {
-                                        text: Services.Power.health || "100%"
-                                        font.bold: true
-                                        font.pixelSize: 11
-                                        color: Services.Theme.textPrimary
-                                    }
-                                }
-                            }
+                        Text {
+                            text: Services.Power.isChargeInhibited ? "󰚥" : "󰂄"
+                            font.family: Services.Theme.fontSymbols
+                            font.pixelSize: 16
+                            color: root.chargeLimitOn
+                                ? (Services.Power.isChargeInhibited ? Services.Theme.success : Services.Theme.accent)
+                                : Services.Theme.textSecondary
                         }
 
-                        // Energy Rate / Power Draw
-                        Rectangle {
+                        ColumnLayout {
                             Layout.fillWidth: true
-                            implicitHeight: 52
-                            radius: Services.Theme.radiusMd
-                            color: (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06))
-                            border.color: (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06))
-                            border.width: 1
-
-                            RowLayout {
-                                anchors.fill: parent
-                                anchors.margins: 10
-                                spacing: 10
-
-                                Text {
-                                    text: Services.Power.isChargeInhibited ? "󰚥" : Services.Icons.bolt
-                                    font.family: Services.Theme.fontSymbols
-                                    font.pixelSize: 15
-                                    color: Services.Power.isChargeInhibited ? Services.Theme.accent : (Services.Power.charging ? Services.Theme.success : Services.Theme.warning)
-                                }
-                                ColumnLayout {
-                                    Layout.fillWidth: true
-                                    spacing: 1
-                                    Text { 
-                                        text: Services.Power.isChargeInhibited ? "Power Flow" : (Services.Power.charging ? "Charge Rate" : "Discharge Rate")
-                                        font.pixelSize: 10
-                                        color: Services.Theme.textSecondary 
-                                    }
-                                    Text {
-                                        text: Services.Power.isChargeInhibited ? "Bypass / Idle" : (Services.Power.energyRate || "0.0 W")
-                                        font.bold: true
-                                        font.pixelSize: 11
-                                        color: Services.Theme.textPrimary
-                                    }
-                                }
-                            }
-                        }
-
-                        // Voltage
-                        Rectangle {
-                            Layout.fillWidth: true
-                            implicitHeight: 52
-                            radius: Services.Theme.radiusMd
-                            color: (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06))
-                            border.color: (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06))
-                            border.width: 1
-
-                            RowLayout {
-                                anchors.fill: parent
-                                anchors.margins: 10
-                                spacing: 10
-
-                                Text {
-                                    text: Services.Icons.sliders
-                                    font.family: Services.Theme.fontSymbols
-                                    font.pixelSize: 15
-                                    color: Services.Theme.textSecondary
-                                }
-                                ColumnLayout {
-                                    Layout.fillWidth: true
-                                    spacing: 1
-                                    Text { text: "Voltage"; font.pixelSize: 10; color: Services.Theme.textSecondary }
-                                    Text {
-                                        text: Services.Power.voltage || "--"
-                                        font.bold: true
-                                        font.pixelSize: 11
-                                        color: Services.Theme.textPrimary
-                                    }
-                                }
-                            }
-                        }
-
-                        // Charge Cycles
-                        Rectangle {
-                            Layout.fillWidth: true
-                            implicitHeight: 52
-                            radius: Services.Theme.radiusMd
-                            color: (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06))
-                            border.color: (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06))
-                            border.width: 1
-
-                            RowLayout {
-                                anchors.fill: parent
-                                anchors.margins: 10
-                                spacing: 10
-
-                                Text {
-                                    text: Services.Icons.cycle
-                                    font.family: Services.Theme.fontSymbols
-                                    font.pixelSize: 15
-                                    color: Services.Theme.textSecondary
-                                }
-                                ColumnLayout {
-                                    Layout.fillWidth: true
-                                    spacing: 1
-                                    Text { text: "Charge Cycles"; font.pixelSize: 10; color: Services.Theme.textSecondary }
-                                    Text {
-                                        text: Services.Power.chargeCycles ? (Services.Power.chargeCycles + " cycles") : "N/A"
-                                        font.bold: true
-                                        font.pixelSize: 11
-                                        color: Services.Theme.textPrimary
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // Energy Capacity Info Line
-                    Rectangle {
-                        Layout.fillWidth: true
-                        implicitHeight: 38
-                        radius: Services.Theme.radiusMd
-                        color: (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06))
-                        border.color: (Services.Theme.isDark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0, 0, 0, 0.06))
-                        border.width: 1
-
-                        RowLayout {
-                            anchors.fill: parent
-                            anchors.leftMargin: 12
-                            anchors.rightMargin: 12
-                            spacing: 8
+                            spacing: 1
 
                             Text {
-                                text: Services.Icons.disk
-                                font.family: Services.Theme.fontSymbols
-                                font.pixelSize: 13
-                                color: Services.Theme.textSecondary
+                                text: "Charge Limit (80%)"
+                                font.weight: Font.DemiBold
+                                font.pixelSize: Services.Theme.fontSizeSm
+                                color: Services.Theme.textPrimary
                             }
-
                             Text {
-                                text: (Services.Power.model ? (Services.Power.model + " • ") : "") + (Services.Power.energyCurrent ? (Services.Power.energyCurrent + " / " + Services.Power.energyFull) : "Battery")
-                                font.pixelSize: 11
-                                color: Services.Theme.textSecondary
+                                text: Services.Power.isChargeInhibited
+                                    ? "Bypass active (AC direct)"
+                                    : (root.chargeLimitOn ? "Stops charging at 80%" : "Charges up to 100%")
+                                font.pixelSize: 10
+                                color: Services.Theme.textTertiary
                                 elide: Text.ElideRight
                                 Layout.fillWidth: true
                             }
                         }
+
+                        // Switch
+                        Rectangle {
+                            width: 34; height: 20; radius: 10
+                            color: root.chargeLimitOn ? Services.Theme.accent : root.tileBg
+                            border.color: root.chargeLimitOn ? Services.Theme.accent : root.tileBorder
+                            border.width: 1
+                            Behavior on color { ColorAnimation { duration: 180 } }
+
+                            Rectangle {
+                                width: 14; height: 14; radius: 7
+                                color: root.chargeLimitOn ? Services.Theme.bgOnAccent : Services.Theme.textSecondary
+                                anchors.verticalCenter: parent.verticalCenter
+                                x: root.chargeLimitOn ? parent.width - width - 3 : 3
+                                Behavior on x { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
+                            }
+                        }
+                    }
+                }
+
+                // ── 4. Compact 2x2 Telemetry Grid ───────────────────────────
+                GridLayout {
+                    Layout.fillWidth: true
+                    columns: 2
+                    columnSpacing: 6
+                    rowSpacing: 6
+
+                    Repeater {
+                        model: [
+                            {
+                                icon: Services.Icons.heartPulse,
+                                iconColor: Services.Theme.accent,
+                                label: "Health",
+                                value: Services.Power.health || "100%"
+                            },
+                            {
+                                icon: Services.Power.isChargeInhibited ? "󰚥" : Services.Icons.bolt,
+                                iconColor: Services.Power.isChargeInhibited ? Services.Theme.accent : (Services.Power.charging ? Services.Theme.success : Services.Theme.warning),
+                                label: Services.Power.isChargeInhibited ? "Power Flow" : (Services.Power.charging ? "Charge Rate" : "Power Draw"),
+                                value: Services.Power.isChargeInhibited ? "Bypass" : (Services.Power.energyRate || "0.0 W")
+                            },
+                            {
+                                icon: Services.Icons.sliders,
+                                iconColor: Services.Theme.textSecondary,
+                                label: "Voltage",
+                                value: Services.Power.voltage || "--"
+                            },
+                            {
+                                icon: Services.Icons.cycle,
+                                iconColor: Services.Theme.textSecondary,
+                                label: "Cycles",
+                                value: Services.Power.chargeCycles ? (Services.Power.chargeCycles + " cycles") : "N/A"
+                            }
+                        ]
+                        delegate: Rectangle {
+                            Layout.fillWidth: true
+                            height: 44
+                            radius: Services.Theme.radiusMd
+                            color: root.tileBg
+                            border.color: root.tileBorder
+                            border.width: 1
+
+                            RowLayout {
+                                anchors.fill: parent
+                                anchors.leftMargin: 10
+                                anchors.rightMargin: 10
+                                spacing: 8
+
+                                Text {
+                                    text: modelData.icon
+                                    font.family: Services.Theme.fontSymbols
+                                    font.pixelSize: 14
+                                    color: modelData.iconColor
+                                }
+
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 1
+                                    Text {
+                                        text: modelData.label
+                                        font.pixelSize: 10
+                                        color: Services.Theme.textTertiary
+                                    }
+                                    Text {
+                                        text: modelData.value
+                                        font.weight: Font.DemiBold
+                                        font.pixelSize: Services.Theme.fontSizeSm
+                                        color: Services.Theme.textPrimary
+                                        elide: Text.ElideRight
+                                        Layout.fillWidth: true
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // ── 5. Subtle Model & Energy Footer ─────────────────────────
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 6
+
+                    Text {
+                        text: Services.Icons.disk
+                        font.family: Services.Theme.fontSymbols
+                        font.pixelSize: 11
+                        color: Services.Theme.textDisabled
+                    }
+
+                    Text {
+                        text: (Services.Power.model ? (Services.Power.model + " • ") : "")
+                            + (Services.Power.energyCurrent ? (Services.Power.energyCurrent + " / " + Services.Power.energyFull) : "Battery")
+                        font.pixelSize: 10
+                        color: Services.Theme.textTertiary
+                        elide: Text.ElideRight
+                        Layout.fillWidth: true
                     }
                 }
             }
